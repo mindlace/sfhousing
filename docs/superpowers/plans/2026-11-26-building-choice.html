@@ -79,10 +79,11 @@
     <p>The spec leaves these to the builder. The plan needs them now, so each is marked as a builder's call with its reason. A builder may change one only by stating the evidence in the task's commit.</p>
     <ul>
       <li><strong>Base (builder's call).</strong> Build on the scenario-engine removal. If it has merged, branch from <code>origin/main</code>. If not, branch from <code>worktree-remove-scenario-engine</code> (49e64c1c) and rebase onto main when it merges. Reason: the spec ports nothing of the old engine, and building on it avoids keeping it compiling.</li>
-      <li><strong>K and encoding (builder's call).</strong> Rows have variable width (CSR offsets, as <code>gross-table.ts:29-37</code>), sorted by stories, then type, then form, and capped at 255 options a lot. Reason: one surviving option per (type, stories) gives about 1 to 91 per lot. A fixed width would cost several times the memory of today's 5-wide rows.</li>
-      <li><strong>One candidate per (type, stories) (builder's call).</strong> Each candidate is the form with the most homes. Several towers use the most plates that fit. Reason: forms of the same type and stories share cost, value and time, so the others are always pruned.</li>
+      <li><strong>K and encoding (builder's call).</strong> Rows have variable width (CSR offsets, as <code>gross-table.ts:29-37</code>), sorted by stories, then type, then form, with a u16 count per row (<code>OPTIONS_MAX_PER_LOT = 1023</code>). Reason: under cost-independent pruning (spec, Pruning, amended 2026-11-26) one option survives per (type, form, stories) at most, so a row holds up to a few hundred. A fixed width would cost several times the memory of today's 5-wide rows.</li>
+      <li><strong>One candidate per (type, form, stories) (amended 2026-11-26).</strong> Forms are not collapsed, since pruning may compare only options of the same type and form. Several towers use the most plates that fit (fewer plates have fewer homes at the same type, form and stories, so they are always pruned).</li>
       <li><strong>Districts (builder's call).</strong> A district parcel has one option row. Each option sums its district lots, each massed at the same type and stories. Reason: the world runs one project per parcel row (<code>world.ts:392-420</code>).</li>
-      <li><strong>Choice row computed lazily (builder's call).</strong> <code>precomputeOf</code> memoises per lot the expected homes, the expected stories, the margin and a gain flag. The cumulative row is built in O(K) into a scratch buffer when a start draws. Reason: memory, since <code>sizeCum</code>-sized arrays per view grow with K. The numbers are identical either way.</li>
+      <li><strong>Choice row computed lazily, memo keyed by (lot, step) (builder's call).</strong> <code>precomputeOf</code> memoises, per cost step and lot, the expected homes, the expected stories, the margin and a gain flag. The cumulative row is built in O(K) into a scratch buffer when a start draws, for the step in force at its month. Reason: memory, since <code>sizeCum</code>-sized arrays per view grow with K. The numbers are identical either way.</li>
+      <li><strong>Dated step series (spec, Costs as dated steps, amended 2026-11-26).</strong> <code>costPerHome</code> (by type), <code>valuePerHome</code>, <code>carryPerHome</code> and the stage-time multipliers live in <code>{ from, value }</code> step lists shaped like <code>SimInput.market</code>. Exactly one step ships for each, <code>from</code> = <code>calibration.asOf</code>. A start, a stage entry and a funding price read the step in force on their day through <code>stepAt</code>. <code>breakEvenValue</code>, <code>meanOptionHomes</code> and <code>meanOptionCost</code> are per (lot, step), computed at run time, not baked. Cost-step days join <code>Precompute.segments.days</code> as later market days do (<code>input.ts:474-497</code>), so start odds also read the step in force.</li>
       <li><strong>Value above 24 stories (builder's call).</strong> D's value per home, not scaled. Only cost takes the fitted permit-valuation ratio. Reason: no record supports value per home rising with height. Scaling it by a cost ratio would invent that.</li>
       <li><strong>Carrying cost <code>carryPerHome</code> (builder's call).</strong> <code>carryPerHome = costPerHome × 0.085 × 0.55 × max(0, constructionMonths(option) − constructionMonths(anchor)) ÷ 12</code>. <code>constructionMonths</code> is the construction-stage median months of the option's height band. The anchor is the prototype or prototypes its cost is read from (the stories-weighted mean where it interpolates). Reason: this is the spec's "months beyond the prototype's own band" with the band defined.</li>
       <li><strong>Height bands (builder's call).</strong> Edges ≤ 4, 5 to 7, 8 to 12, 13 to 20 and 21 and above, as in the raw pull. A band with fewer than <code>cal.sizeMinN</code> completed spells merges into its lower neighbour. Reason: these match the evidence table, and the merge rule is the size model's.</li>
@@ -101,6 +102,7 @@
     <h2>Spec and code contradictions found</h2>
     <ul>
       <li>The spec's stage Call reads "permit stage … first construction document to issued; construction stage … issued to completion". In the records, issued comes before the first construction document (permits.json: issued 2024-08-19, first construction document 2025-10-27). The model's stages are issued → first construction document (<code>permitIssued</code>) and first construction document → complete (<code>construction</code>) (<code>stages.ts:159-168</code>). The plan follows the Call's principle (fit each stage on its own interval, check on the same one) on the model's real intervals. The check table's raw issued-to-completion medians (28.4 … 40.1) then compare against <code>permitIssued</code> plus construction, summed per project. The owner should confirm this.</li>
+      <li>The amended Pruning section says options of the same type and form "have the same <code>costPerHome</code>, <code>valuePerHome</code> and <code>carryPerHome</code> step series". That is not exact for Type V: under 25 homes it prices as E, not A. A drop across that line (a 24-home option dropped for a 30-home one at fewer stories) can still change the cheapest per-home price. The plan follows the spec's rule as written and reports how many drops cross the 25-home line (<code>options.e_crossings</code>, Task 7).</li>
       <li>The spec's Baked section says "a fixed-width row of K", while K and the encoding are left to the builder. The plan uses variable width (see Rulings).</li>
       <li>The spec cites <code>src/lib/sim/scenario/{input,funded,massing,card,finance-score}.ts</code>. After the removal these are moved or deleted (see File Structure).</li>
     </ul>
@@ -123,9 +125,11 @@
     <ul>
       <li>Produces: <code>type BuildingType = 'V' | 'III' | 'I'</code>; <code>BUILDING_TYPES = ['V', 'III', 'I'] as const</code> (codes 0, 1, 2); <code>type BuildingForm = 'plex' | 'walkup' | 'podium' | 'midrise' | 'block' | 'tower'</code>; <code>BUILDING_FORMS</code> (codes 0 to 5); <code>TYPE_STORIES: Record&lt;BuildingType, readonly [number, number]&gt;</code> = V [1, 6], III [4, 8], I [1, 80]; <code>TOWER_MIN_STORIES = 13</code>; <code>TYPE_FORMS: Record&lt;BuildingType, readonly BuildingForm[]&gt;</code> = V plex, walkup, podium; III podium, midrise; I midrise, block, tower.</li>
       <li>Produces: <code>interface Option { type: BuildingType; form: BuildingForm; stories: number; homes: number; plates: number }</code>.</li>
-      <li>Produces: <code>interface ChoiceModel { anchors: Record&lt;PrototypeId, { stories: number; homes: number; costPerHome: Dollars; valuePerHome: Dollars }&gt;; aboveTopCostRatio: number; carrying: { rate: number; drawn: number }; choiceSpread: number; affordableRule: 'most-homes' | 'market'; provenance: Record&lt;'anchors' | 'aboveTopCostRatio' | 'carrying' | 'choiceSpread' | 'affordableRule' | 'locationValue', Provenance&gt; }</code>.</li>
-      <li>Produces: <code>interface HeightTimeModel { upTo: number[]; permitIssued: number[]; construction: number[]; constructionMonths: number[]; provenance: Provenance }</code>. <code>upTo</code> holds the band edges in stories, with 999 for "any". The multipliers and the construction-stage median months are given per band.</li>
-      <li>Produces in <code>pricing.ts</code>: <code>costPerHome(o: Pick&lt;Option, 'type' | 'stories' | 'homes'&gt;, m: ChoiceModel): Dollars</code>; <code>valuePerHome(o, m): Dollars</code>; <code>carryPerHome(o, m, ht: HeightTimeModel): Dollars</code>; <code>bandOf(ht: HeightTimeModel, stories: number): number</code>; <code>type PriceKey = PrototypeId | &#96;I&#36;{number}&#96;</code> (a template-literal type: 'I' followed by the story count); <code>optionPrototype(o, m): Prototype &amp; { id: PriceKey }</code>, which returns PROTOTYPES' own object for A, B, C, D and E and a frozen synthetic prototype, keyed by stories, for Type I where it interpolates or extrapolates.</li>
+      <li>Produces: <code>interface DatedStep&lt;T&gt; { from: Day; value: T }</code>; <code>stepAt&lt;T&gt;(series: readonly DatedStep&lt;T&gt;[], day: Day): { index: number; value: T }</code>, the last step with <code>from ≤ day</code>, or step 0 before the first. It throws on an empty series or unsorted <code>from</code>.</li>
+      <li>Produces: <code>interface PriceStep { anchors: Record&lt;PrototypeId, { stories: number; homes: number; costPerHome: Dollars; valuePerHome: Dollars }&gt;; aboveTopCostRatio: number; carrying: { rate: number; drawn: number } }</code>.</li>
+      <li>Produces: <code>interface ChoiceModel { prices: DatedStep&lt;PriceStep&gt;[]; choiceSpread: number; affordableRule: 'most-homes' | 'market'; provenance: Record&lt;'anchors' | 'aboveTopCostRatio' | 'carrying' | 'choiceSpread' | 'affordableRule' | 'locationValue', Provenance&gt; }</code>.</li>
+      <li>Produces: <code>interface HeightTimeStep { permitIssued: number[]; construction: number[]; constructionMonths: number[] }</code> and <code>interface HeightTimeModel { upTo: number[]; steps: DatedStep&lt;HeightTimeStep&gt;[]; provenance: Provenance }</code>. <code>upTo</code> holds the band edges in stories, with 999 for "any", fixed across steps. Each step gives the multipliers and the construction-stage median months per band.</li>
+      <li>Produces in <code>pricing.ts</code> (every function takes one resolved step, never a series): <code>costPerHome(o: Pick&lt;Option, 'type' | 'stories' | 'homes'&gt;, prices: PriceStep): Dollars</code>; <code>valuePerHome(o, prices): Dollars</code>; <code>carryPerHome(o, prices, time: HeightTimeStep, upTo: number[]): Dollars</code>; <code>bandOf(ht: HeightTimeModel, stories: number): number</code>; <code>type PriceKey = PrototypeId | &#96;I&#36;{number}&#96;</code> (a template-literal type: 'I' followed by the story count); <code>optionPrototype(o, prices: PriceStep): Prototype &amp; { id: PriceKey }</code>, which returns PROTOTYPES' own object for A, B, C, D and E and a frozen synthetic prototype, keyed by stories, for Type I where it interpolates or extrapolates.</li>
     </ul>
     <ol>
       <li id="t1-s1"><input type="checkbox"> Write <code>pricing.spec.ts</code> with a fixture <code>ChoiceModel</code> built from <code>PROTOTYPES</code> and <code>aboveTopCostRatio</code> 1.39 (≈ 502k ÷ 361k):
@@ -158,10 +162,18 @@ it('charges carrying cost only beyond the anchor band', () =&gt; {
 it('keys Type I prices by stories and reuses PROTOTYPES for anchors', () =&gt; {
   expect(optionPrototype({ type: 'V', stories: 5, homes: 45 }, m)).toBe(PROTOTYPES[0]);
   expect(optionPrototype({ type: 'I', stories: 18, homes: 300 }, m).id).toBe('I18');
+});
+// m and ht in the cases above are single resolved steps (PriceStep, HeightTimeStep)
+it('reads the step in force on a day', () =&gt; {
+  const series = [{ from: 100, value: 'a' }, { from: 200, value: 'b' }];
+  expect(stepAt(series, 50)).toEqual({ index: 0, value: 'a' });
+  expect(stepAt(series, 199).index).toBe(0);
+  expect(stepAt(series, 200)).toEqual({ index: 1, value: 'b' });
+  expect(() =&gt; stepAt([], 0)).toThrow();
 });</code></pre>
       </li>
       <li id="t1-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/choice/pricing.spec.ts</code>. Expected: FAIL, module not found.</li>
-      <li id="t1-s3"><input type="checkbox"> Implement <code>types.ts</code> and <code>pricing.ts</code> with the signatures above. All dollar inputs come from <code>m</code>, so nothing reads <code>PROTOTYPES</code> except <code>optionPrototype</code>'s identity reuse. Add <code>choice?: ChoiceModel</code> and <code>heightTime?: HeightTimeModel</code> to <code>Calibration</code>. They are optional until Task 8 writes them. Add <code>src/lib/sim/choice</code> to <code>PATHS</code> and to the version-paths test.</li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>types.ts</code> and <code>pricing.ts</code> with the signatures above. All dollar inputs come from the resolved <code>PriceStep</code>, so nothing reads <code>PROTOTYPES</code> except <code>optionPrototype</code>'s identity reuse. Add <code>choice?: ChoiceModel</code> and <code>heightTime?: HeightTimeModel</code> to <code>Calibration</code>. They are optional until Task 8 writes them. Add <code>src/lib/sim/choice</code> to <code>PATHS</code> and to the version-paths test.</li>
       <li id="t1-s4"><input type="checkbox"> Run the spec and <code>npm run test:pipeline -- pipeline/test/version-paths.test.ts</code>. Expected: PASS.</li>
       <li id="t1-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(choice): construction types and pricing by option"</code>.</li>
     </ol>
@@ -207,21 +219,28 @@ it('never exceeds the physical maximum', () =&gt; {
     <p><strong>Files:</strong> create <code>src/lib/sim/choice/options.ts</code>, <code>options.spec.ts</code>, <code>src/lib/data/option-table.ts</code>, <code>option-table.test.ts</code> and <code>docs/dev/building-choice.md</code> (the option set and the pruning). Add the doc's entry to <code>CLAUDE.md</code>'s scoped docs.</p>
     <p><strong>Interfaces</strong></p>
     <ul>
-      <li>Consumes: <code>generateForm</code> (Task 2); <code>costPerHome</code>, <code>valuePerHome</code> and <code>carryPerHome</code> (Task 1).</li>
-      <li>Produces: <code>candidatesOf(rec: ParcelRecord, seed: number): Option[]</code>. It gives one option per (type, stories) that some form of the type fits, with the most homes, unpruned and uncapped, sorted by (stories, type code, form code). This is the input to <code>hostable</code> and capacity, which pruning never changes.</li>
-      <li>Produces: <code>pruneOptions(options: readonly Option[], m: ChoiceModel, ht: HeightTimeModel): Option[]</code>. It drops an option when some other option has stories ≤, homes ≥, cost per home ≤, value per home ≥ and construction months ≤ the option's, with at least one strict. Of two exactly equal options it keeps the lower index.</li>
-      <li>Produces: <code>lotConstants(opts: readonly Option[], m, ht): { breakEvenValue: number; meanOptionHomes: number; meanOptionCost: number }</code>. <code>breakEvenValue = min over all options of (costPerHome + carryPerHome) ÷ valuePerHome</code>. <code>meanOptionHomes</code> and <code>meanOptionCost</code> are means over all options. An empty row gives <code>{ breakEvenValue: Infinity, meanOptionHomes: 0, meanOptionCost: 0 }</code>.</li>
-      <li>Produces <code>option-table.ts</code>: <code>interface OptionTable { format: 'sfh-options/1'; datasetVersion: string; count: number; offset: Uint32Array; type: Uint8Array; form: Uint8Array; stories: Uint8Array; plates: Uint8Array; homes: Uint16Array; locationValue: Float32Array; breakEvenValue: Float32Array; meanOptionHomes: Float32Array; meanOptionCost: Float32Array }</code>; <code>optionTableOf(datasetVersion, rows: readonly { options: Option[]; locationValue: number; breakEvenValue: number; meanOptionHomes: number; meanOptionCost: number }[]): OptionTable</code>; <code>encodeOptionPayload</code>, <code>decodeOptionPayload</code>, <code>readOptionTable(body)</code> (deflate-raw, as <code>readGrossTable</code>, <code>gross-table.ts:202-229</code>); <code>optionTableProblem(t, p: ScenarioParcels): string | null</code>; <code>OPTIONS_MAX_PER_LOT = 255</code>.</li>
+      <li>Consumes: <code>generateForm</code> (Task 2); <code>Option</code> and <code>TYPE_FORMS</code> (Task 1). No pricing: nothing baked here depends on cost.</li>
+      <li>Produces: <code>candidatesOf(rec: ParcelRecord, seed: number): Option[]</code>. It gives one option per (type, form, stories) that the form fits, unpruned and uncapped, sorted by (stories, type code, form code). This is the input to <code>hostable</code> and capacity, which pruning never changes.</li>
+      <li>Produces: <code>pruneOptions(options: readonly Option[]): Option[]</code>, cost-independent only (spec, Pruning, amended 2026-11-26). It drops an option only when another option of the same type and the same form has homes ≥ and stories ≤ the option's. Of two equal options it keeps the lower index. It takes no prices, so no cost step can change it.</li>
+      <li>Produces, for the report only: <code>pruneByCost(options, prices: PriceStep, time: HeightTimeStep, upTo: number[]): Option[]</code>, the cost-based pruning the spec first proposed. Task 7 uses it only to report the growth of option counts, never to bake.</li>
+      <li>Produces: <code>lotConstants(opts: readonly Option[], prices: PriceStep, time: HeightTimeStep, upTo: number[]): { breakEvenValue: number; meanOptionHomes: number; meanOptionCost: number }</code>, called per (lot, step) at run time (Task 4). <code>breakEvenValue = min over all options of (costPerHome + carryPerHome) ÷ valuePerHome</code>. <code>meanOptionHomes</code> and <code>meanOptionCost</code> are means over all options. An empty row gives <code>{ breakEvenValue: Infinity, meanOptionHomes: 0, meanOptionCost: 0 }</code>.</li>
+      <li>Produces <code>option-table.ts</code>: <code>interface OptionTable { format: 'sfh-options/1'; datasetVersion: string; count: number; offset: Uint32Array; type: Uint8Array; form: Uint8Array; stories: Uint8Array; plates: Uint8Array; homes: Uint16Array; locationValue: Float32Array }</code>; <code>optionTableOf(datasetVersion, rows: readonly { options: Option[]; locationValue: number }[]): OptionTable</code>; <code>encodeOptionPayload</code>, <code>decodeOptionPayload</code>, <code>readOptionTable(body)</code> (deflate-raw, as <code>readGrossTable</code>, <code>gross-table.ts:202-229</code>); <code>optionTableProblem(t, p: ScenarioParcels): string | null</code>; <code>OPTIONS_MAX_PER_LOT = 1023</code>.</li>
     </ul>
     <ol>
       <li id="t3-s1"><input type="checkbox"> Write <code>options.spec.ts</code>:
-        <pre><code data-lang="ts">it('drops a taller option of the same type with fewer homes', () =&gt; {
-  const c = [opt('I', 12, 1663), opt('I', 13, 797)];
-  expect(pruneOptions(c, m, ht).map((o) =&gt; o.stories)).toEqual([12]);
+        <pre><code data-lang="ts">it('drops a taller option of the same type and form with fewer homes', () =&gt; {
+  const c = [opt('I', 'block', 12, 1663), opt('I', 'block', 13, 797)];
+  expect(pruneOptions(c).map((o) =&gt; o.stories)).toEqual([12]);
 });
-it('keeps a costlier taller option with more homes', () =&gt; {
-  const c = [opt('III', 8, 130), opt('I', 13, 227)];
-  expect(pruneOptions(c, m, ht)).toHaveLength(2);
+it('never drops an option because of cost', () =&gt; {
+  // Type III (B prices) at 5 stories and 24 homes beats a 20-home Type V (E prices) at 5 stories on
+  // cost, value, homes and stories, but different types are never compared
+  const c = [opt('III', 'podium', 5, 24), opt('V', 'walkup', 5, 20)];
+  expect(pruneOptions(c)).toHaveLength(2);
+  // a different form of the same type with fewer homes stays too
+  expect(pruneOptions([opt('I', 'block', 13, 300), opt('I', 'tower', 13, 200)])).toHaveLength(2);
+  // and cost-based pruning would have dropped one of them, which only the report sees
+  expect(pruneByCost(c, prices, time, upTo).length).toBeLessThan(2);
 });
 it('never builds Type V above 6 or Type III above 8', () =&gt; {
   for (const o of candidatesOf(bigRec, seed)) {
@@ -231,17 +250,17 @@ it('never builds Type V above 6 or Type III above 8', () =&gt; {
 });
 it('keeps the most-homes option at every cap', () =&gt; {
   const c = candidatesOf(bigRec, seed);
-  const p = pruneOptions(c, m, ht);
+  const p = pruneOptions(c);
   for (let s = 1; s &lt;= 80; s++) expect(maxHomes(p, s)).toBe(maxHomes(c, s));
 });
-it('takes breakEvenValue over all options, as a cap-free lot constant', () =&gt; {
-  const k = lotConstants(p, m, ht);
+it('takes breakEvenValue over all options, as a cap-free constant of the lot and step', () =&gt; {
+  const k = lotConstants(p, prices, time, upTo);
   expect(k.breakEvenValue).toBeCloseTo(Math.min(...p.map((o) =&gt; (cost(o) + carry(o)) / value(o))), 9);
 });</code></pre>
       </li>
-      <li id="t3-s2"><input type="checkbox"> Write <code>option-table.test.ts</code>: an encode and decode round trip of three rows (one empty, one with 91 options, one with <code>locationValue</code> 2.5). Assert that decoding a truncated payload throws <code>options: truncated</code>, that a row of 256 options throws a RangeError, and that a homes value above 65,535 throws.</li>
+      <li id="t3-s2"><input type="checkbox"> Write <code>option-table.test.ts</code>: an encode and decode round trip of three rows (one empty, one with 300 options, one with <code>locationValue</code> 2.5). Assert that decoding a truncated payload throws <code>options: truncated</code>, that a row of 1,024 options throws a RangeError, and that a homes value above 65,535 throws.</li>
       <li id="t3-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/choice/options.spec.ts src/lib/data/option-table.test.ts</code>. Expected: FAIL.</li>
-      <li id="t3-s4"><input type="checkbox"> Implement them. The wire format is <code>SFHO</code>, a u8 version, the <code>datasetVersion</code> string, a u32 count, then per row a u8 n, four f32 lot constants, and n × <code>(u8 type, u8 form, u8 stories, u8 plates, LEB128 homes)</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Implement them. The wire format is <code>SFHO</code>, a u8 version, the <code>datasetVersion</code> string, a u32 count, then per row a u16 n, one f32 <code>locationValue</code>, and n × <code>(u8 type, u8 form, u8 stories, u8 plates, LEB128 homes)</code>.</li>
       <li id="t3-s5"><input type="checkbox"> Run both. Expected: PASS. Write <code>docs/dev/building-choice.md</code>: the option set, the pruning, the tiers table copied from the spec with each value's source, and the codec.</li>
       <li id="t3-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(choice): option rows, pruning and the sfh-options codec"</code>.</li>
     </ol>
@@ -252,31 +271,31 @@ it('takes breakEvenValue over all options, as a cap-free lot constant', () =&gt;
     <p><strong>Files:</strong> create <code>src/lib/sim/choice/choose.ts</code>, <code>choose.spec.ts</code> and <code>choose.property.spec.ts</code>. Extend <code>docs/dev/building-choice.md</code> with the rule.</p>
     <p><strong>Interfaces</strong></p>
     <ul>
-      <li>Consumes: <code>OptionTable</code> (Task 3); pricing (Task 1).</li>
+      <li>Consumes: <code>OptionTable</code>, <code>lotConstants</code> (Task 3); pricing and <code>stepAt</code> (Task 1).</li>
       <li>Produces: <code>allowedCount(t: OptionTable, lot: number, stories: number): number</code>, the length of the prefix with stories ≤ <code>stories</code>.</li>
       <li>Produces: <code>optionHomes(t, j: number, cap: number | null, existing: number): number</code>, which is <code>capScenarioYield</code>'s rule (<code>scenario-yield.ts:10-14</code>) on option j's homes.</li>
-      <li>Produces: <code>interface ChoiceCtx { t: OptionTable; m: ChoiceModel; ht: HeightTimeModel; price: Float64Array }</code>. <code>price</code> holds, per global option index j, the precomputed <code>(costPerHome, valuePerHome, carryPerHome)</code> as 3 × total (built once per table and model by <code>choiceCtxOf(t, m, ht)</code>, memoised).</li>
-      <li>Produces: <code>choiceRow(ctx, lot, n: number, cap: number | null, existing: number, rule: 'market' | 'most-homes', out: Float32Array): boolean</code>. It fills <code>out[0..n)</code> with cumulative probabilities over the first n options. An option gaining no home (clipped <code>homes ≤ existing</code>) has probability 0, and the last gaining one and everything after it are exactly 1. It returns false when none gains, leaving the row 0. 'market' is the softmax of <code>residualLandValue(option, choiceValue) ÷ (choiceSpread × meanOptionHomes × meanOptionCost)</code> with the row maximum subtracted. 'most-homes' puts 1 on the first gaining option with the most clipped homes.</li>
+      <li>Produces: <code>interface ChoiceCtx { t: OptionTable; m: ChoiceModel; ht: HeightTimeModel; step(index: number): ChoiceStep }</code> and <code>interface ChoiceStep { price: Float64Array; breakEvenValue: Float32Array; meanOptionHomes: Float32Array; meanOptionCost: Float32Array }</code>. For cost step <code>index</code>, <code>price</code> holds the <code>(costPerHome, valuePerHome, carryPerHome)</code> of every global option j (3 × total), and the three lot arrays hold <code>lotConstants</code> per lot. Each step is built once on first use and memoised in the context (<code>choiceCtxOf(t, m, ht)</code>, memoised per table and model). The price step and the height-time step share indices: both series ship one step, and Task 8 writes them with the same <code>from</code> days.</li>
+      <li>Produces: <code>choiceRow(ctx, step: number, lot, n: number, cap: number | null, existing: number, rule: 'market' | 'most-homes', out: Float32Array): boolean</code>. It fills <code>out[0..n)</code> with cumulative probabilities over the first n options. An option gaining no home (clipped <code>homes ≤ existing</code>) has probability 0, and the last gaining one and everything after it are exactly 1. It returns false when none gains, leaving the row 0. 'market' is the softmax of <code>residualLandValue(option, choiceValue) ÷ (choiceSpread × meanOptionHomes × meanOptionCost)</code> with the row maximum subtracted. 'most-homes' puts 1 on the first gaining option with the most clipped homes.</li>
       <li>Produces: <code>pickOption(cum: Float32Array, n: number, u: number): number</code>, the first k with u &lt; cum[k], or -1.</li>
-      <li>Produces: <code>expectations(ctx, lot, n, cap, existing): { homes: number; stories: number; margin: number; gains: boolean }</code>. These are the expected clipped homes and stories under the market row, and <code>margin</code> = <code>max over gaining options of residualLandValue(option, choiceValue) ÷ (meanOptionHomes × meanOptionCost)</code>.</li>
+      <li>Produces: <code>expectations(ctx, step, lot, n, cap, existing): { homes: number; stories: number; margin: number; gains: boolean }</code>. These are the expected clipped homes and stories under the market row, and <code>margin</code> = <code>max over gaining options of residualLandValue(option, choiceValue) ÷ (meanOptionHomes × meanOptionCost)</code>.</li>
       <li>Produces: <code>mostHomes(t, lot, n, cap, existing): number</code>, the option index or -1. Capacity (rule A) is <code>max(0, homes − existing)</code> of that option.</li>
     </ul>
     <ol>
       <li id="t4-s1"><input type="checkbox"> Write <code>choose.spec.ts</code>:
         <pre><code data-lang="ts">it('becomes the argmax as choiceSpread goes to 0', () =&gt; {
   const out = new Float32Array(8);
-  choiceRow(ctxChoiceSpread(1e-9), lot, 3, null, 0, 'market', out);
+  choiceRow(ctxChoiceSpread(1e-9), 0, lot, 3, null, 0, 'market', out);
   expect(pickOption(out, 3, 0.5)).toBe(bestRlvIndex);
 });
 it('stays finite at locationValue 30 and thousands of homes', () =&gt; {
   const out = new Float32Array(8);
-  expect(choiceRow(ctxLocationValue(30), bigLot, 5, null, 0, 'market', out)).toBe(true);
+  expect(choiceRow(ctxLocationValue(30), 0, bigLot, 5, null, 0, 'market', out)).toBe(true);
   for (let k = 0; k &lt; 5; k++) expect(Number.isFinite(out[k])).toBe(true);
   expect(out[4]).toBe(1);
 });
 it('returns false and leaves zeros when no option gains a home', () =&gt; {
   const out = new Float32Array(8);
-  expect(choiceRow(ctx, lot, 3, 10, 12, 'market', out)).toBe(false);
+  expect(choiceRow(ctx, 0, lot, 3, 10, 12, 'market', out)).toBe(false);
   expect([...out.slice(0, 3)]).toEqual([0, 0, 0]);
 });
 it('treats a lot below break-even as at break-even', () =&gt; {
@@ -285,13 +304,22 @@ it('treats a lot below break-even as at break-even', () =&gt; {
 });
 it('picks the most homes under the most-homes rule', () =&gt; {
   const out = new Float32Array(8);
-  choiceRow(ctx, lot, 3, null, 0, 'most-homes', out);
+  choiceRow(ctx, 0, lot, 3, null, 0, 'most-homes', out);
   expect(pickOption(out, 3, 0)).toBe(mostHomes(ctx.t, lot, 3, null, 0));
+});
+it('reads each cost step on its own', () =&gt; {
+  // ctxTwoSteps: step 1 cuts Type I costPerHome by 30%
+  const a = new Float32Array(8);
+  const b = new Float32Array(8);
+  choiceRow(ctxTwoSteps, 0, lot, 5, null, 0, 'market', a);
+  choiceRow(ctxTwoSteps, 1, lot, 5, null, 0, 'market', b);
+  expect([...b.slice(0, 5)]).not.toEqual([...a.slice(0, 5)]);
+  expect(ctxTwoSteps.step(1).breakEvenValue[lot]).toBeLessThan(ctxTwoSteps.step(0).breakEvenValue[lot]);
 });</code></pre>
       </li>
       <li id="t4-s2"><input type="checkbox"> Write <code>choose.property.spec.ts</code> (fast-check, 200 runs over random option rows, <code>locationValue</code> and caps). Raising <code>n</code> never changes the ratio <code>share(i) ÷ share(j)</code> for i, j &lt; n. It never lowers <code>mostHomes</code>' homes. The row is non-decreasing and ends at 1 when it gains.</li>
       <li id="t4-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/choice</code>. Expected: FAIL.</li>
-      <li id="t4-s4"><input type="checkbox"> Implement them. <code>choiceValue = max(locationValue, breakEvenValue)</code> per lot from the table.</li>
+      <li id="t4-s4"><input type="checkbox"> Implement them. <code>choiceValue = max(locationValue, breakEvenValue)</code> per lot, with <code>breakEvenValue</code> from the step's arrays.</li>
       <li id="t4-s5"><input type="checkbox"> Run them. Expected: PASS. Document the rule, <code>choiceValue</code> and the margin in <code>building-choice.md</code>.</li>
       <li id="t4-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(choice): the developer's choice row, expectations and capacity"</code>.</li>
     </ol>
@@ -303,7 +331,7 @@ it('picks the most homes under the most-homes rule', () =&gt; {
     <p><strong>Interfaces</strong></p>
     <ul>
       <li>Consumes: <code>NormHistory</code> and the spells (<code>pipeline/lib/fzp-cal/types.ts</code>, <code>spells.ts</code>); <code>HeightTimeModel</code> (Task 1).</li>
-      <li>Produces: <code>fitHeightTime(spells, histories, cal: CalProfile, window): { model: HeightTimeModel; filedToIssued: { upTo: number; median: number; n: number }[] }</code>. Bands are ≤ 4, 7, 12, 20 and 999, merged when thin. The filed-to-issued medians are reported only.</li>
+      <li>Produces: <code>fitHeightTime(spells, histories, cal: CalProfile, window, asOf: Day): { model: HeightTimeModel; filedToIssued: { upTo: number; median: number; n: number }[] }</code>. Bands are ≤ 4, 7, 12, 20 and 999, merged when thin. <code>model.steps</code> has exactly one step, <code>from: asOf</code>. The filed-to-issued medians are reported only.</li>
       <li>Produces: <code>aboveTopCostRatio(permits: PermitRow[]): { ratio: number; n: [number, number]; provenance: Provenance }</code>. It is the median valuation per home of permits for 10 or more homes issued 2015 on above 24 stories, ÷ that at 13 to 24. Tier 2, flagged weak. If either n &lt; 10, the ratio is 1 and the provenance says so.</li>
       <li>Produces: <code>recordTargets(histories, permits, parcels): RecordTargets</code>, written to <code>pipeline/.cache/derived/&lt;v&gt;/record-targets.json</code> and never uploaded. Per check in the spec's Acceptance table it holds the statistic, n, the SE and the tolerance. It also holds the affordable-against-private cohort means and their SE of difference.</li>
     </ul>
@@ -339,10 +367,10 @@ it('picks the most homes under the most-homes rule', () =&gt; {
     <p><strong>Interfaces</strong></p>
     <ul>
       <li>Consumes: <code>candidatesOf</code>, <code>pruneOptions</code>, <code>lotConstants</code> and the codec (Task 3); <code>fitHeightTime</code> and <code>aboveTopCostRatio</code> (Task 5); <code>locationValueByLot</code> (Task 6).</li>
-      <li>Produces: <code>scenarios/fzp/options.bin</code> and the report counts <code>options.rows</code>, <code>options.values</code>, <code>options.per_lot.p50</code>, <code>p90</code>, <code>p99</code> and <code>max</code>, <code>options.clamped</code> and <code>options.district_rows</code>.</li>
+      <li>Produces: <code>scenarios/fzp/options.bin</code> and the report counts <code>options.rows</code>, <code>options.values</code>, <code>options.per_lot.p50</code>, <code>p90</code>, <code>p99</code> and <code>max</code>, <code>options.clamped</code> and <code>options.district_rows</code>. It also reports <code>options.e_crossings</code> and the growth against cost-based pruning (spec, Pruning Call): <code>options.per_lot_cost_pruned.p50</code>, <code>p90</code>, <code>p99</code> and <code>max</code> from <code>pruneByCost</code> on the shipped step, and <code>options.growth</code> (total options ÷ the cost-pruned total). Nothing cost-based is written to <code>options.bin</code>.</li>
       <li>Produces: <code>hostable</code> in parcels.bin = eligible, envelope ≥ 1 and some candidate with stories ≤ envelope gaining after the FZP cap. It is computed from candidates, since pruning keeps the most-homes option.</li>
       <li>Produces, for Task 8: the panel's candidate rows per (lot, roll-year inputs) key in a build-internal file <code>pipeline/.cache/derived/&lt;v&gt;/panel-options.bin</code>, in the same codec.</li>
-      <li>Invariants. V36: options.bin has one row per parcels.bin row and the same <code>datasetVersion</code>; rows are sorted; no row has more than 255 options. V17 is rewritten on capacity by rule A. New V40: no Type V option above 6 stories and no Type III above 8. New V41: every <code>locationValue</code> is finite and above 0, and every <code>breakEvenValue</code> is finite or the row is empty.</li>
+      <li>Invariants. V36: options.bin has one row per parcels.bin row and the same <code>datasetVersion</code>; rows are sorted; no row has more than 1,023 options; no row holds two options of the same type and form where one has homes ≥ and stories ≤ the other's. V17 is rewritten on capacity by rule A. New V40: no Type V option above 6 stories and no Type III above 8. New V41: every <code>locationValue</code> is finite and above 0.</li>
     </ul>
     <ol>
       <li id="t7-s1"><input type="checkbox"> Write <code>pipeline/test/options-step.test.ts</code> on the mini fixture. options.bin decodes; V40 and V41 pass; the mini's largest lot keeps its 12-story option when the cap is 13. Write a codec test that decoding an <code>sfh-scenario/1</code> payload throws "unsupported major 1".</li>
@@ -359,9 +387,9 @@ it('picks the most homes under the most-homes rule', () =&gt; {
     <p><strong>Interfaces</strong></p>
     <ul>
       <li>Consumes: <code>expectations</code>, <code>choiceRow</code> (Task 4); the panel options (Task 7); the record targets (Task 5).</li>
-      <li>Produces: <code>fitChoiceSpread(records: { options: Option[]; locationValue: number; limit: number; stories: number }[], m: ChoiceModel, ht: HeightTimeModel): { choiceSpread: number; logLik: number; n: number; excludedOver: number }</code>.</li>
+      <li>Produces: <code>fitChoiceSpread(records: { options: Option[]; locationValue: number; limit: number; stories: number }[], prices: PriceStep, time: HeightTimeStep, upTo: number[]): { choiceSpread: number; logLik: number; n: number; excludedOver: number }</code>, fitted on the one shipped step.</li>
       <li>Produces: <code>affordableRule(t: RecordTargets['cohort']): { rule: 'most-homes' | 'market'; diff: number; se: number }</code>. The rule is 'most-homes' exactly when the affordable mean of built height ÷ limit minus the private mean is greater than 2 × the SE of the difference.</li>
-      <li>Produces: <code>calibration.choice</code>, <code>calibration.heightTime</code>, the refitted <code>calibration.initiation</code> with a <code>choiceMargin</code> term, and <code>calibration.market</code> recomputed. The report gains: <code>choiceSpread</code>, its n and log-likelihood; the margin's correlation with the market slope's cost share across the panel; the affordable decision with its numbers; <code>sizeOverEnvelope</code>.</li>
+      <li>Produces: <code>calibration.choice</code> with <code>prices</code> holding exactly one step (<code>from: calibration.asOf</code>, today's Controller values and the fitted <code>aboveTopCostRatio</code>), <code>calibration.heightTime</code> with one step on the same <code>from</code>, the refitted <code>calibration.initiation</code> with a <code>choiceMargin</code> term, and <code>calibration.market</code> recomputed. The report gains: <code>choiceSpread</code>, its n and log-likelihood; the margin's correlation with the market slope's cost share across the panel; the affordable decision with its numbers; <code>sizeOverEnvelope</code>.</li>
     </ul>
     <ol>
       <li id="t8-s1"><input type="checkbox"> Write <code>choice-fit.test.ts</code>. On 200 records drawn from a known <code>choiceSpread</code> = 0.3, <code>fitChoiceSpread</code> recovers it within 0.1. A record over its limit is excluded and counted. <code>affordableRule</code> gives 'market' for diff 0.05 with SE 0.04, and 'most-homes' for diff 0.12 with SE 0.04.</li>
@@ -376,7 +404,7 @@ it('picks the most homes under the most-homes rule', () =&gt; {
     <h2>Task 9: The run-time switch</h2>
     <p><strong>Files:</strong></p>
     <ul>
-      <li><code>src/lib/sim/world/input/build.ts</code>: <code>SimInput.options: OptionTable</code>; <code>Precompute</code> loses <code>sizeCum</code> and gains <code>expHomes</code>, <code>expStories</code>, <code>margin</code> (Float32Array) and <code>gains</code> (Uint8Array); <code>bucketOf</code>, <code>fillSizeRow</code> and <code>sizeCumAgainst</code> (lines 302-351) are removed; <code>checkFillLevels</code> (35-51) is removed.</li>
+      <li><code>src/lib/sim/world/input/build.ts</code>: <code>SimInput.options: OptionTable</code>; <code>Precompute</code> loses <code>sizeCum</code> and gains <code>byStep: { from: Day; expHomes: Float32Array; expStories: Float32Array; margin: Float32Array; gains: Uint8Array }[]</code>, one entry per cost step (the memo keyed by (lot, step)); cost-step <code>from</code> days join <code>segments.days</code>, and each segment's <code>log1mh</code> uses its step's features; <code>bucketOf</code>, <code>fillSizeRow</code> and <code>sizeCumAgainst</code> (lines 302-351) are removed; <code>checkFillLevels</code> (35-51) is removed.</li>
       <li><code>src/lib/data/scenario-codec.ts</code>: <code>featureValue</code> reads <code>choiceMargin</code>.</li>
       <li><code>envelope-row.ts</code>: <code>EnvelopeRow</code> = {stories, cap, hostable}.</li>
       <li><code>src/lib/sim/levers/{layers,resolve,view,recompute,apply}.ts</code>: <code>EnvelopeTable</code> loses <code>yield</code>; <code>netCapacity</code> applies rule A; <code>parcelsView</code> derives its features from <code>expectations</code>.</li>
@@ -388,7 +416,7 @@ it('picks the most homes under the most-homes rule', () =&gt; {
     <ul>
       <li>Consumes: everything from Task 4; <code>calibration.choice</code> and <code>heightTime</code> (Task 8).</li>
       <li>Produces world columns (<code>columns.ts</code>): <code>level</code> holds the option index (Uint8); new <code>btype: Uint8Array</code> (the type code, 255 for none) and <code>optCap: Uint16Array</code> (<code>NULL_CAP</code> for none); <code>yields</code> (stride F, <code>columns.ts:16-20,99</code>) is removed; <code>top</code> stays, as the most homes among the allowed options.</li>
-      <li>Produces: <code>heightMultiplier(ht: HeightTimeModel | undefined, stage: 'permitIssued' | 'construction', stories: number): number</code> in <code>stage.ts</code>. It is 1 for NaN stories, other stages or a missing model, and <code>enterStage</code> (<code>stage.ts:54-88</code>) multiplies the drawn <code>p.length[row]</code> by it.</li>
+      <li>Produces: <code>heightMultiplier(ht: HeightTimeModel | undefined, stage: 'permitIssued' | 'construction', stories: number, day: Day): number</code> in <code>stage.ts</code>, reading the step in force on <code>day</code> (the stage entry). It is 1 for NaN stories, other stages or a missing model, and <code>enterStage</code> (<code>stage.ts:54-88</code>) multiplies the drawn <code>p.length[row]</code> by it.</li>
       <li>Produces: <code>capacityOf(view): number</code>. The room box, <code>leverCapacity</code> and <code>runner.capacity()</code> all read it.</li>
     </ul>
     <ol>
@@ -403,6 +431,13 @@ it('starts the option the size draw picks and records its type and stories', () 
 it('rebuilds the choice row against 0 existing on a demolished lot', () =&gt; {
   expect(secondStartUnits(w, lot)).toBe(optionHomes(t, j, cap, 0));
 });
+it('changes the choice for starts after a second cost step only', () =&gt; {
+  // same input, plus a second price step from day D that cuts Type I costPerHome by 30%
+  const one = runMini({ months: 120 });
+  const two = runMini({ months: 120, prices: [step0, { from: D, value: cheaperTypeI }] });
+  expect(startsBefore(two, D)).toEqual(startsBefore(one, D)); // lot, day, option index, units
+  expect(startsFrom(two, D)).not.toEqual(startsFrom(one, D));
+});
 it('marks a lot whose cap is at or below existing homes as not hostable', () =&gt; {
   expect(view.parcels.hostable[lot]).toBe(0);
   expect(pre.hazard[lot]).toBe(0);
@@ -413,15 +448,17 @@ it('never lowers capacity when every cap rises', () =&gt; {
 });
 // src/lib/sim/world/stage.spec.ts
 it('lengthens construction by the band multiplier and leaves NaN stories at 1', () =&gt; {
-  expect(heightMultiplier(ht, 'construction', 30)).toBe(ht.construction[4]);
-  expect(heightMultiplier(ht, 'construction', NaN)).toBe(1);
+  expect(heightMultiplier(ht, 'construction', 30, asOf)).toBe(ht.steps[0].value.construction[4]);
+  expect(heightMultiplier(ht, 'construction', NaN, asOf)).toBe(1);
+  expect(heightMultiplier(htTwoSteps, 'construction', 30, D - 1)).toBe(htTwoSteps.steps[0].value.construction[4]);
+  expect(heightMultiplier(htTwoSteps, 'construction', 30, D)).toBe(htTwoSteps.steps[1].value.construction[4]);
 });
 it('revises within the same construction type', () =&gt; {
   expect(w.projects.btype[row]).toBe(typeBefore);
 });</code></pre>
       </li>
       <li id="t9-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/world src/lib/sim/levers</code>. Expected: FAIL.</li>
-      <li id="t9-s3"><input type="checkbox"> Implement the switch. At a start (<code>world.ts:356-418</code>): n = <code>allowedCount</code> at the view's envelope; build the row against <code>existing</code>; <code>u = drawOn(stream, P.SIZE, 0)</code>; k = <code>pickOption</code>; units = the clipped homes; stories and type come from the option. The lot is <code>LOT_DONE</code> when k = −1. The revision follows the ruling. <code>pipeline.ts:113</code>'s <code>yieldCap</code> uses the most-homes option.</li>
+      <li id="t9-s3"><input type="checkbox"> Implement the switch. At a start (<code>world.ts:356-418</code>): step = <code>stepAt(calibration.choice.prices, day).index</code>; n = <code>allowedCount</code> at the view's envelope; build the row for that step against <code>existing</code>; <code>u = drawOn(stream, P.SIZE, 0)</code>; k = <code>pickOption</code>; units = the clipped homes; stories and type come from the option. The lot is <code>LOT_DONE</code> when k = −1. The revision follows the ruling. <code>pipeline.ts:113</code>'s <code>yieldCap</code> uses the most-homes option.</li>
       <li id="t9-s4"><input type="checkbox"> Run the tests. Expected: PASS. Then delete any old-engine test that fails only because it runs the old engine (none should remain after the removal), regenerate the world golden by its documented command, and run <code>npm run check</code> and <code>npm run test:unit</code>. Expected: PASS, with no server stderr.</li>
       <li id="t9-s5"><input type="checkbox"> Commit through <code>-F</code>, the message explaining the golden change: <code>feat(world): start the developer's chosen building instead of a fill level</code>.</li>
     </ol>
@@ -440,11 +477,11 @@ it('revises within the same construction type', () =&gt; {
     <p><strong>Interfaces</strong></p>
     <ul>
       <li>Consumes: <code>optionPrototype</code> (Task 1); <code>choiceRow</code> and <code>mostHomes</code> (Task 4); the <code>btype</code> and <code>level</code> columns (Task 9).</li>
-      <li>Produces: <code>pricingOfRow(w: World, row: number, m: ChoiceModel): Prototype &amp; { id: PriceKey }</code>. It is <code>optionPrototype</code> when <code>btype</code> ≠ 255, and <code>prototypeFor(stories, units)</code> otherwise. The counter <code>finance.binned</code> (rows priced by the binning) appears in the score and in <code>cap-measure</code>'s output.</li>
+      <li>Produces: <code>pricingOfRow(w: World, row: number, m: ChoiceModel, day: Day): Prototype &amp; { id: PriceKey }</code>, priced on the step in force on <code>day</code> (the day the funding line prices the row). It is <code>optionPrototype</code> when <code>btype</code> ≠ 255, and <code>prototypeFor(stories, units)</code> otherwise. The counter <code>finance.binned</code> (rows priced by the binning) appears in the score and in <code>cap-measure</code>'s output.</li>
       <li>Produces: <code>topPrototype(view, lot)</code>, now the prototype of the lot's most likely option (the argmax of the choice row), so <code>parkingTypeOf</code> follows construction type: V→A podium, E surface, III and I below grade.</li>
     </ul>
     <ol>
-      <li id="t10-s1"><input type="checkbox"> Write the failing tests. In <code>clocks.spec.ts</code>, an affordable latent under 'most-homes' sizes to <code>mostHomes</code>, and under 'market' to the choice draw. In <code>serve.spec.ts</code>, a Type I start at 18 stories is priced with cost 857,700 + 5/11 × 61,000. In <code>parking.spec.ts</code>, a lot whose most likely option is Type III gets <code>belowGrade</code>. In <code>finance.spec.ts</code>, a recorded row with no type is priced by <code>prototypeFor</code> and counted in <code>binned</code>.</li>
+      <li id="t10-s1"><input type="checkbox"> Write the failing tests. In <code>clocks.spec.ts</code>, an affordable latent under 'most-homes' sizes to <code>mostHomes</code>, and under 'market' to the choice draw. In <code>serve.spec.ts</code>, a Type I start at 18 stories is priced with cost 857,700 + 5/11 × 61,000. In <code>parking.spec.ts</code>, a lot whose most likely option is Type III gets <code>belowGrade</code>. In <code>finance.spec.ts</code>, a recorded row with no type is priced by <code>prototypeFor</code> and counted in <code>binned</code>, and with a second price step from day D a Type I row priced on D − 1 reads step 0 and on D reads step 1.</li>
       <li id="t10-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/world/funding src/lib/sim/world/cars src/lib/sim/world/score</code>. Expected: FAIL.</li>
       <li id="t10-s3"><input type="checkbox"> Implement them.</li>
       <li id="t10-s4"><input type="checkbox"> Run them, then <code>npm run test:unit</code>. Expected: PASS. Once the dataset exists (Task 13), run <code>npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code> and record its last line in the PR (pipeline.md, "Changes on the funding paths").</li>
@@ -541,7 +578,7 @@ it('revises within the same construction type', () =&gt; {
           <li>Order (before money-limited): the money-limited plan re-measures on this dataset.</li>
         </ul>
       </li>
-      <li>Type names are used across tasks as defined: <code>Option</code>, <code>ChoiceModel</code>, <code>HeightTimeModel</code>, <code>OptionTable</code>, <code>PriceKey</code>, <code>choiceRow</code>, <code>pickOption</code>, <code>expectations</code>, <code>mostHomes</code>, <code>allowedCount</code>, <code>optionPrototype</code>, <code>pricingOfRow</code>, <code>heightMultiplier</code>.</li>
+      <li>Type names are used across tasks as defined: <code>Option</code>, <code>ChoiceModel</code>, <code>HeightTimeModel</code>, <code>OptionTable</code>, <code>PriceKey</code>, <code>choiceRow</code>, <code>pickOption</code>, <code>expectations</code>, <code>mostHomes</code>, <code>allowedCount</code>, <code>optionPrototype</code>, <code>pricingOfRow</code>, <code>heightMultiplier</code>, <code>DatedStep</code>, <code>stepAt</code>, <code>PriceStep</code>, <code>HeightTimeStep</code>, <code>ChoiceStep</code>, <code>pruneByCost</code>.</li>
       <li>Task 7 cannot pass <code>npm run check</code> alone, since the readers switch in Task 9. This is stated in Task 7, step 3: the two are reviewed as one diff if needed.</li>
     </ul>
   </section>
