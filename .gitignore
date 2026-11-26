@@ -1,6 +1,6 @@
 .claude/worktrees/
 node_modules/
-.superpowers/superconductor/*/scratch/
+.superpowers/*
 .svelte-kit/
 build/
 .wrangler/
@@ -19,4 +19,3 @@ pipeline/lidar-raster/.venv/
 pipeline/lidar-raster/**/__pycache__/
 pipeline/lidar-raster/.pytest_cache/
 pipeline/lidar-raster/**/*.egg-info/
-.superpowers/brainstorm/
