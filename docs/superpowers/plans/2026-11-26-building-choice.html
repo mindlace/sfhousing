@@ -543,25 +543,39 @@ it('revises within the same construction type', () =&gt; {
 
   <section id="sec-task-13">
     <h2>Task 13: Build the dataset, pass the record checks, re-derive the game, upload</h2>
-    <p><strong>Files:</strong> <code>src/lib/game/catalogue/ladder-years.ts</code> (written by reach-measure, currently <code>[2060, 2055, 2045, 2040]</code>, line 4), possibly <code>src/lib/game/catalogue/tuning.ts</code>, the docs that report measured results (<code>docs/dev/game.md</code>, <code>building-choice.md</code>, <code>map-perf.md</code>), and the e2e fixture.</p>
+    <p><strong>Files:</strong> <code>scripts/reach-check.ts</code> and <code>scripts/reach-check.spec.ts</code> (the gate), <code>CLAUDE.md</code>, <code>docs/dev/testing.md</code>, <code>docs/dev/pipeline.md</code>, <code>src/lib/game/catalogue/ladder-years.ts</code> (written by reach-measure, currently <code>[2060, 2055, 2045, 2040]</code>, line 4), possibly <code>src/lib/game/catalogue/tuning.ts</code>, the docs that report measured results (<code>docs/dev/game.md</code>, <code>building-choice.md</code>, <code>map-perf.md</code>), and the e2e fixture.</p>
     <ol>
       <li id="t13-s1"><input type="checkbox"> Run <code>git merge origin/main</code>, then <code>npm run pipeline -- version</code>, then <code>npm run pipeline -- build</code>. Every invariant must pass, without <code>--skip-tiles</code>. Record the option counts per lot (<code>options.per_lot.*</code>) in the ledger.</li>
       <li id="t13-s2"><input type="checkbox"> Run <code>npx tsx scripts/record-check.ts pipeline/out/&lt;v&gt;</code>. On a miss, allowed model changes (forms, <code>locationValue</code> smoothing, multipliers, coverage, a refit) go back through their own task's tests, then rebuild. A miss that remains after a change stops the work: report every line to the owner and upload nothing.</li>
       <li id="t13-s3"><input type="checkbox"> Run <code>npx tsx scripts/cap-measure.ts pipeline/out/&lt;v&gt;</code> and put the table in <code>building-choice.md</code>. A cap that builds fewer homes than a lower one is reported with the reason the records support, not fixed.</li>
       <li id="t13-s4"><input type="checkbox"> Run <code>npx tsx scripts/reach-measure.ts pipeline/out/&lt;v&gt; --write</code>, then <code>npx tsx scripts/tree-balance.ts pipeline/out/&lt;v&gt;</code>. Record the pacing against <code>tuning.ts</code>. Retune only what tree-balance reports out of its bounds, and document it in <code>game.md</code>.</li>
-      <li id="t13-s5"><input type="checkbox"> Run <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code>. If it exits 1 because current law misses the first deadline while the full tree reaches the last, stop and raise the open question below with both lines. Do not change <code>reachExit</code> (<code>scripts/reach-check.ts:96-98</code>) or the upload rule. If the full tree misses, stop too.</li>
-      <li id="t13-s6"><input type="checkbox"> Run <code>npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code> and record its last line. It is a report, not a gate.</li>
-      <li id="t13-s7"><input type="checkbox"> On a quiet machine: time <code>precomputeOf</code> on the new dataset as in Task 0 (pass: ≤ 1.5 × <code>baseline.precomputeMs</code>), then run <code>npm run bench:map</code> yourself (purchase-to-ready within its pass bar). Record both in <code>map-perf.md</code>. If the machine is busy, defer and say so.</li>
-      <li id="t13-s8"><input type="checkbox"> Once steps 2 and 5 pass, or the owner has ruled where either stopped, run <code>npm run pipeline -- upload &lt;v&gt;</code>, then <code>npm run pipeline -- verify &lt;v&gt; --origin &lt;staging-origin&gt;</code>.</li>
-      <li id="t13-s9"><input type="checkbox"> Commit the ladder, tuning and doc results through <code>-F</code>: <code>chore(game): re-derive the ladder and tuning on the building-choice dataset</code>.</li>
-      <li id="t13-s10"><input type="checkbox"> Run <code>npm run signoff</code>. If it fails because <code>origin/main</code> moved and changed <code>&lt;v&gt;</code>, go back to step 1. Then open the PR (body through <code>--body-file</code>, with no attribution), squash-merge it after signoff passes, and remove the worktree.</li>
+      <li id="t13-s5"><input type="checkbox"> Change the reach gate (owner ruling, 2026-11-26): <code>reach-check</code> gates only on the full tree reaching the last deadline.
+        <ul>
+          <li>In <code>scripts/reach-check.spec.ts</code>, write the failing cases first: <code>reachExit([missed('current'), reached('full')])</code> is 0, and the current-law line still reads "missed, N homes, M short"; <code>reachExit([reached('current'), missed('full')])</code> is 1. Run <code>npx vitest run --project server scripts/reach-check.spec.ts</code> and see them fail.</li>
+          <li>Change <code>reachExit</code> (<code>scripts/reach-check.ts:96-98</code>) to return 1 only when the full tree's answer is missed. Current law's line is still printed, as information. Update the usage and doc comment, then run the spec and see it pass.</li>
+          <li>Update the docs that state the old rule:
+            <ul>
+              <li><code>CLAUDE.md</code>: the reach-check row of the Commands table becomes "…exit 1 when the full tree misses the last deadline; current law's reach is printed as information". The Conventions bullet becomes "A dataset is uploaded only after <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> exits 0 (the full tree meets the last deadline; current law's reach is reported, not gated)".</li>
+              <li><code>docs/dev/game.md</code>, "The reach check": question 1 is reported, not gated, and the exit codes change to match.</li>
+              <li><code>docs/dev/testing.md</code>, "The reach check": "Exit 0 when the full tree meets the last deadline, 1 when it misses, 2 when it could not run".</li>
+              <li><code>docs/dev/pipeline.md:68</code>, step 3 of "Finishing a branch that changes the dataset".</li>
+            </ul>
+          </li>
+          <li>Commit: <code>git commit -m "feat(game): gate the reach check on the full tree only"</code>.</li>
+        </ul>
+      </li>
+      <li id="t13-s6"><input type="checkbox"> Run <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code>. It must exit 0. Record both lines, current law's included, in <code>game.md</code>. If the full tree misses the last deadline, stop and report to the owner: a tree that cannot win is the owner's call.</li>
+      <li id="t13-s7"><input type="checkbox"> Run <code>npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code> and record its last line. It is a report, not a gate.</li>
+      <li id="t13-s8"><input type="checkbox"> On a quiet machine: time <code>precomputeOf</code> on the new dataset as in Task 0 (pass: ≤ 1.5 × <code>baseline.precomputeMs</code>), then run <code>npm run bench:map</code> yourself (purchase-to-ready within its pass bar). Record both in <code>map-perf.md</code>. If the machine is busy, defer and say so.</li>
+      <li id="t13-s9"><input type="checkbox"> Once step 2 passes (or the owner has ruled on a remaining miss) and step 6 exits 0, run <code>npm run pipeline -- upload &lt;v&gt;</code>, then <code>npm run pipeline -- verify &lt;v&gt; --origin &lt;staging-origin&gt;</code>.</li>
+      <li id="t13-s10"><input type="checkbox"> Commit the ladder, tuning and doc results through <code>-F</code>: <code>chore(game): re-derive the ladder and tuning on the building-choice dataset</code>.</li>
+      <li id="t13-s11"><input type="checkbox"> Run <code>npm run signoff</code>. If it fails because <code>origin/main</code> moved and changed <code>&lt;v&gt;</code>, go back to step 1. Then open the PR (body through <code>--body-file</code>, with no attribution), squash-merge it after signoff passes, and remove the worktree.</li>
     </ol>
   </section>
 
   <section id="sec-open-questions">
     <h2>Open questions for the owner</h2>
     <ul>
-      <li><strong>The reach gate.</strong> <code>reach-check</code> exits 1 when current law misses the first deadline (<code>reachExit</code>, <code>scripts/reach-check.ts:96-98</code>), and the upload rule in CLAUDE.md requires that "current law meets the first deadline". This model may lower current law's early homes (Type III preferred at average values, longer high-rise builds). The money-limited plan raised the same question (its ruling R10). Recommendation: gate on the full tree reaching the last rung and report current law's line, as that plan's Task 9 does. The alternative, a first rung that moves with current law, changes the game's opening premise. This plan does not change the gate: Task 13 stops and asks.</li>
       <li><strong>The stage intervals.</strong> See Contradictions. Recommendation: confirm that the multipliers scale the model's own <code>permitIssued</code> and <code>construction</code> stages.</li>
       <li><strong>Value above 24 stories.</strong> The plan holds D's value per home (see Rulings). Recommendation: keep it until a per-record value source by height exists.</li>
     </ul>
