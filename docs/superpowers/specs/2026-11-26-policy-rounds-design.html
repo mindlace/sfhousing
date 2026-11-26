@@ -5,9 +5,9 @@
       tool at all times, and reveal policies a few per round.</p>
   </header>
 
-  <aside data-kind="note"><strong>Status</strong> Draft for the owner to edit. Two lookups are
-    still running (walking-distance sources for the reach maximum, and why a taller height limit
-    can reach the goal later). The places that wait on them are marked as questions.</aside>
+  <aside data-kind="note"><strong>Status</strong> Draft for the owner to edit. One investigation
+    is still running: why a taller height limit can reach the goal later
+    (<a href="#sec-height">Height</a>). Open choices are marked as questions.</aside>
 
   <section id="sec-intent">
     <h2>Intent</h2>
@@ -289,11 +289,34 @@
         <li><strong>Offering.</strong> When a round is offered its policies are added to the
           document, off, in force from today. This is not an undo step.</li>
       </ul>
-      <aside data-kind="question"><strong>Question</strong> The fixed height and reach of the four
-        transit rules. I want them to come from enacted law (SB 79's tiers by stop type) and not
-        from hand-picked steps. Waiting on the source lookup.</aside>
-      <aside data-kind="note"><strong>Note</strong> These are my proposals: the round table, what
-        "editable" covers, and the rule for adding and removing.</aside>
+      <table id="tbl-transit-fixed">
+        <caption>Proposed fixed values of the four transit rules</caption>
+        <thead>
+          <tr><th scope="col">Policy</th><th scope="col">Within 402 m</th><th scope="col">402 to 805 m</th><th scope="col">Source</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Taller near regional rail (BART, Caltrain)</th><td>75 ft</td><td>65 ft</td><td>SB 79 Tier 1</td></tr>
+          <tr><th scope="row">Taller near Muni Metro</th><td>65 ft</td><td>55 ft</td><td>SB 79 Tier 2</td></tr>
+          <tr><th scope="row">Taller near rapid bus</th><td>65 ft</td><td>55 ft</td><td>SB 79 Tier 2 (bus with dedicated lanes)</td></tr>
+          <tr><th scope="row">Taller near frequent bus</th><td>55 ft</td><td>none</td><td>No enacted source</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The heights are SB 79's default tiers (Gov. Code 65912.155 to .162; ABAG's summary,
+          Table 1). The builder converts feet to stories with the rule the app already uses for
+          its SB 79 default bands. SB 79's third band, within 200 ft of a station entrance, is
+          left out.</li>
+        <li>San Francisco adopted an alternative plan in May 2026, so SB 79's defaults bind no
+          parcel in the city. These policies are "what if the default tiers applied", and their
+          one-line descriptions say so.</li>
+        <li>SB 79 does not cover ordinary frequent bus. That rule goes beyond enacted law and its
+          values are hand-picked.</li>
+      </ul>
+      <aside data-kind="question"><strong>Question</strong> Is a hand-picked frequent bus rule
+        acceptable, or should the fourth zoning policy be something with a source?</aside>
+      <aside data-kind="note"><strong>Note</strong> These are my proposals: the round table, the
+        fixed values, what "editable" covers, and the rule for adding and removing. The plan
+        measures each round's effect with these values before anything else is built on them.</aside>
     </section>
 
     <section id="sec-reach">
@@ -301,9 +324,33 @@
       <p>The transit editor's maximum reach comes down from 3,219 m to a walking distance, and a
         new rule no longer starts at the maximum (P14). With a walking-distance maximum the four
         stop types stay different policies; at two miles any one of them covers the city.</p>
-      <aside data-kind="question"><strong>Question</strong> The maximum and the default, in
-        metres, and whether rail and bus differ. Waiting on the source lookup. A published policy
-        with a longer reach keeps its value and still runs.</aside>
+      <table id="tbl-walk">
+        <caption>What the sources say about walking to transit</caption>
+        <thead>
+          <tr><th scope="col">Source</th><th scope="col">Figure</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">SB 79 (2025), AB 2097 (2022)</th><td>Half a mile (805 m), straight line from the parcel</td></tr>
+          <tr><th scope="row">Agrawal, Schlossberg and Irvin 2008 (Bay Area and Portland rail)</th><td>Median walk 0.47 miles (about 760 m)</td></tr>
+          <tr><th scope="row">El-Geneidy et al. 2014 (Montreal)</th><td>85th percentile: about 524 m to bus, about 1,259 m to commuter rail</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><strong>Maximum: 1,200 m</strong>, one value for every stop type. It is the long tail
+          of measured walks to rail. The app measures in a straight line, as SB 79 does, so the
+          real walk is longer.</li>
+        <li><strong>Default for a new rule:</strong> SB 79's two bands, 402 m and 805 m, which the
+          open editor already uses. A new rule never starts at the maximum.</li>
+        <li><strong>Stored values are kept.</strong> A published policy or a saved game with a
+          longer reach keeps its value and keeps running. The editor shows the stored value and
+          clamps only when the player changes it, as it does today. Today a game would silently
+          drop such a policy from its forecast (<code>within</code> in
+          <code>limits.ts</code>); that must not happen.</li>
+      </ul>
+      <aside data-kind="question"><strong>Question</strong> 1,200 m, or the owner's 1,000 m? The
+        evidence for 1,200 is one survey's 85th percentile for rail; the law stops at 805 m. A
+        separate, shorter maximum for bus (about 800 m) fits the evidence better but one rule can
+        hold several stop types, so I propose a single value.</aside>
     </section>
 
     <section id="sec-height">
