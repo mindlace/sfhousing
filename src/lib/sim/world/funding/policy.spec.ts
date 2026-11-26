@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { lineKey } from '$lib/sim/scenario/funded';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
+import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
@@ -216,10 +216,11 @@ const grantOf = (id: string, pool: string, share: number, from: Day, minHomes = 
 /**
  * The five-lot queue city (each lot one 10-home level, initiation log-odds -12, so ordinary
  * starts are rare) whose base money offers nothing: the tiny stack's programmes open after the run.
+ * Its slope is `FAST_SLOPE`, so a fully funded bundle applies in its first month.
  */
 const tinyIn: SimInput = (() => {
   const q = tinyQueue({ logOdds: Array(5).fill(-12), units: [10, 10, 10, 10, 10] });
-  const stack = tinyStack({ asOf: q.asOf });
+  const stack = tinyStack({ asOf: q.asOf, slope: FAST_SLOPE });
   const never: Finance = {
     ...stack,
     programmes: stack.programmes.map((g) => ({ ...g, from: q.asOf + 100_000 }))
@@ -433,7 +434,8 @@ describe('rule 16 continued: ending the spent programme', () => {
     finance: tinyStack({
       asOf: tAsOf,
       city: [{ kind: 'once', day: tAsOf, dollars: Math.round(one * 1.5) }],
-      cityTo: monthLastDay(tAsOf, m - 1)
+      cityTo: monthLastDay(tAsOf, m - 1),
+      slope: FAST_SLOPE
     })
   };
   const s = staticsOf(tiny);

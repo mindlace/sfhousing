@@ -95,6 +95,13 @@ export interface TinyStackOpts {
 
 const TOTAL = 861525;
 
+/**
+ * A steep `slope` (test value) for a tiny queue at log-odds -12: a fully funded affordable
+ * bundle then starts at about logistic(10) a month (ordinary odds at full coverage), so its lots
+ * apply in their first month as good as surely, while no lot starts ordinarily.
+ */
+export const FAST_SLOPE = 50;
+
 export function tinyStack(o: TinyStackOpts): NonNullable<SimInput['finance']> {
   const ample = (): Inflow[] => [
     { kind: 'yearly', from: o.asOf, to: null, dollarsPerYear: 1_000_000_000_000 }

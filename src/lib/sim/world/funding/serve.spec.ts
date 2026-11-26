@@ -661,21 +661,24 @@ describe('rule 10 on the bench city', () => {
   const st = staticsOf(bench);
   const t = moneyTimeline(bench, doc);
 
-  it('synthCity bench funding set, seed 2: the award made on money returned in month 97 waits for month 98', () => {
-    const { world, events } = runFunded(st, t, 2, 98, { ledger: false });
+  it('synthCity bench funding set, seed 2: the award made on money returned in month 74 waits for month 75', () => {
+    const { world, events } = runFunded(st, t, 2, 75, { ledger: false });
     const awards = (m: number): number[] =>
       events
         .flatMap((e) => (e.kind === 'award' && e.month === m ? [world.projects.src[e.row]] : []))
         .sort((x, y) => x - y);
-    // In month 97 an award's chain exits in its award month and releases money to u-bench-fund
+    // In month 74 an award's chain exits in its award month and releases money to u-bench-fund
     // inside the scan (same-scan investigation). Lot 4116 needs that money (u-bench-fund held
-    // 714,701 after the scan, 1,292,288 of it returned during it; 4116 asks 646,144): it waits a
-    // month and is awarded on month 98's first day.
-    expect(awards(97)).toEqual([
-      4048, 19750, 28682, 31315, 34987, 41894, 44148, 50109, 87571, 115814, 127069, 131406
+    // 739,928 after the scan, 646,144 of it returned during it; 4116 asks 646,144): it waits a
+    // month and is awarded on month 75's first day.
+    expect(awards(74)).toEqual([
+      4048, 4689, 10447, 25393, 34568, 43504, 44211, 46818, 49094, 53980, 62418, 62734, 64654,
+      65454, 69174, 81369, 82431, 90765, 106017, 106491, 117035, 124018, 135114, 141113, 146135,
+      149655
     ]);
-    expect(awards(98)).toEqual([
-      4116, 13135, 16773, 21814, 25188, 31739, 62767, 69948, 117559, 126741, 141433
+    expect(awards(75)).toEqual([
+      1368, 4116, 7993, 14131, 23342, 27035, 33489, 38025, 51713, 55785, 66347, 80210, 89705,
+      106194, 114367, 133320, 133710, 140858, 142174, 146564, 148689
     ]);
   });
 });
@@ -711,7 +714,9 @@ const ROUTE_FIN: Finance = {
     }
   ],
   off: [],
-  slope: 3,
+  // A steep slope (test value): at full coverage the affordable odds pass within the three months
+  // on most lots (R2: the ordinary odds at full coverage, no longer certain).
+  slope: 50,
   terms: resolveTerms(MARKET_TERMS)
 };
 const ROUTE_INPUT = fundedMini(ROUTE_FIN);

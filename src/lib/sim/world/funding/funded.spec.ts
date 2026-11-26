@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { poolSeries } from '$lib/sim/scenario/finance-score';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { selectRows } from '$lib/sim/scenario/fixtures/select-rows';
-import { tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
+import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { monthsOf } from '$lib/sim/scenario/score';
 import { checkMoneyIdentities } from '$lib/sim/scenario/test/money-identities';
@@ -123,7 +123,9 @@ describe('rule 16 as amended: a spent pool is left out and the others award', ()
   const city: Inflow[] = [{ kind: 'once', day: asOf, dollars: Math.round(one * 1.5) }];
   const tiny: SimInput = {
     ...tinyQueue({ logOdds: Array(5).fill(-12), units }),
-    finance: tinyStack({ asOf, city })
+    // A steep slope (test value): the full bundle's finite odds pass in month 1 (R2), while the
+    // lots' own log-odds of -12 keep ordinary starts out.
+    finance: tinyStack({ asOf, city, slope: FAST_SLOPE })
   };
   const ts = staticsOf(tiny);
   const tt = oneMoneyTimeline(tiny, tiny.finance!);

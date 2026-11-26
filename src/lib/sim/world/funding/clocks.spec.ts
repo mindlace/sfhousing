@@ -71,7 +71,7 @@ describe('kindClock', () => {
     const horizon = 1_099_511_627_776; // past every day the clocks give
     let compared = 0;
     let applying = 0;
-    let certain = 0;
+    let levelOne = 0;
     for (let seed = 1; seed <= 5; seed++) {
       const run = runOf(input, seed, horizon, true);
       const sh = seedHash(seed);
@@ -84,6 +84,20 @@ describe('kindClock', () => {
           const [u, v] = kind === 'market' ? [d.uO, d.vO] : [d.uA, d.vA];
           kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, -1, null);
           const k = kindClock(statics, t, 1, sh, spell, kind);
+          // A bundle at level 1 starts at the finite ordinary odds at full coverage here, the
+          // old kernel's rate is -Infinity there (retired engine, ruling option C): the key,
+          // bundle and level still agree; T and day are compared below level 1 only.
+          expect({ keyDay: k.keyDay, bundle: k.bundle, level: k.level }).toEqual({
+            keyDay: out.keyDay,
+            bundle: out.bundle,
+            level: out.level
+          });
+          if (k.level === 1) {
+            levelOne++;
+            compared++;
+            if (k.day !== null) applying++;
+            continue;
+          }
           expect({
             T: k.T,
             day: k.day,
@@ -109,13 +123,12 @@ describe('kindClock', () => {
           expect(k.month).toBe(k.day === null ? 0 : monthOfDay(asOf, k.day));
           compared++;
           if (k.day !== null) applying++;
-          if (k.certain) certain++;
         }
       });
     }
     expect(compared).toBeGreaterThan(100);
     expect(applying).toBeGreaterThan(0);
-    expect(certain).toBeGreaterThan(0);
+    expect(levelOne).toBeGreaterThan(0);
   });
 
   it('a market clock with nothing shifting is the ordinary clock', () => {
@@ -167,20 +180,25 @@ describe('kindClock', () => {
     );
   });
 
-  it('a certain bundle applies on the first day of lot-month T', () => {
+  it('a bundle at level 1 has a finite rate and its own day in the month', () => {
     const input = fundedMini();
     const asOf = input.asOf;
     const t = oneMoneyTimeline(input, input.finance!);
     const statics = staticsOf(input);
-    let certain = 0;
+    let levelOne = 0;
+    let later = 0;
     eachSpell(input, 5, asOf, (spell, sh) => {
       const k = kindClock(statics, t, 1, sh, spell, 'affordable');
-      if (!k.certain) return;
-      expect(k.day).toBe(spell.r + 1 + Math.floor((k.T - 1) * MONTH_DAYS));
-      expect(k.level).toBe(1);
-      certain++;
+      if (k.day === null) return;
+      const v = drawOn(spell.stream, P.INIT_DAY_AFFORDABLE, 0);
+      expect(k.day).toBe(spell.r + 1 + Math.floor((k.T - 1 + v) * MONTH_DAYS));
+      if (k.level !== 1) return;
+      levelOne++;
+      // under a rate of -Infinity every one passed in its first offered lot-month
+      if (k.T > 1) later++;
     });
-    expect(certain).toBeGreaterThan(0);
+    expect(levelOne).toBeGreaterThan(0);
+    expect(later).toBeGreaterThan(0);
   });
 
   it('rule 5: a programme opening at month m does not make an earlier pass apply', () => {

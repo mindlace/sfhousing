@@ -53,8 +53,6 @@ export interface KindClock {
   bundle: number[];
   /** Coverage level of `bundle` (0 when empty). */
   level: number;
-  /** Lot-month T's bundle is certain (its rate is -Infinity). */
-  certain: boolean;
 }
 
 /** The attempt a free lot is on: its stream, the spell start of each kind, its existing homes. */
@@ -200,7 +198,6 @@ function segOn(
   if (bundle.length === 0) return { ord, rate: ref, ref, bundle, level: 0, size };
   const priced = fm.index.price(kind, bundle, size.protoId);
   const level = coverageLevel(priced.coverage);
-  if (priced.certain) return { ord, rate: -Infinity, ref, bundle, level, size };
   const x = log(1 - logistic(x0 + oddsShift(priced.grantEquivalent, kind, p, slope)));
   return { ord, rate: market ? Math.min(ord, x) : x, ref, bundle, level, size };
 }
@@ -301,16 +298,12 @@ export function kindClock(
       stories: 0,
       protoId: 'E',
       bundle: EMPTY,
-      level: 0,
-      certain: false
+      level: 0
     };
   }
   const j = segOf(bounds, T);
   const s = segs[j];
-  const certain = s.rate === -Infinity && s.bundle.length > 0;
-  let day: Day | null = null;
-  if (s.bundle.length > 0)
-    day = certain ? startOf(r, T) : r + 1 + Math.floor((T - 1 + v) * MONTH_DAYS);
+  const day: Day | null = s.bundle.length > 0 ? r + 1 + Math.floor((T - 1 + v) * MONTH_DAYS) : null;
   return {
     kind,
     T,
@@ -323,7 +316,6 @@ export function kindClock(
     stories: s.size ? s.size.stories : 0,
     protoId: s.size ? s.size.protoId : 'E',
     bundle: s.bundle,
-    level: s.level,
-    certain
+    level: s.level
   };
 }

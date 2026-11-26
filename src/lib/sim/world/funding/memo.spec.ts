@@ -46,10 +46,10 @@ const CHANGE = 120;
  * so many more lots start (counts about eight times larger). The live values predate it.
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': '67196777/280970',
-  'synthCity baseline 2': 'c0c5262a/281474',
-  'synthCity bench 1': '98b5a522/282466',
-  'synthCity bench 2': 'f64a7287/283185',
+  'synthCity baseline 1': 'ed887a96/59690',
+  'synthCity baseline 2': 'a51a14cb/61033',
+  'synthCity bench 1': '4eb1f5dc/61114',
+  'synthCity bench 2': '719ab2ae/62687',
   'live 1': 'b04ec705/6292',
   'live 2': 'dbb6c92c/6849',
   'live 3': 'c590436b/6133'
