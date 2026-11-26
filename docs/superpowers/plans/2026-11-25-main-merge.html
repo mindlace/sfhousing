@@ -1,0 +1,101 @@
+<article>
+  <header>
+    <h1>Main merge plan</h1>
+    <p>Implements the merge part of the main-merge spec: <code>origin/main</code> (cars, #149–#153) merged into the integration branch, conflicts resolved, the reach check given the car switch, the merged tree whole.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> a merge commit of <code>origin/main</code> (<code>be6467dc</code>) on this branch whose tree passes every check of the spec's "When the merge is done".</li>
+      <li><strong>Architecture:</strong> Task 1 is the merge commit itself (conflicts resolved by the spec's rules). Task 2 ports <code>main</code>'s car switch and fill timing from the deleted <code>scripts/level2-check.ts</code> onto <code>scripts/reach-check.ts</code> / <code>scripts/reach-measure.ts</code> and renames the command in documents. Task 3 runs the full checks on the merged tree and fixes what disagrees.</li>
+      <li><strong>Tech Stack:</strong> SvelteKit 2, Svelte 5, Vitest, Playwright, tsx scripts.</li>
+      <li><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-25-main-merge-design.html</code> (read it from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>), sections sec-design-cars, sec-design-score, sec-design-reach, sec-design-conflicts, sec-design-dataset, sec-design-merge-checks, sec-tests. The merge only: the retake (sec-design-retake) is not this plan's.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>Interface rows: produced none, needed none. Row E2 holds the chunk's fields as they are after the merge: <code>cars</code> is the car system's, <code>waiting</code> is E2's.</li>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>), and on <code>main</code> also <code>src/lib/sim/cars</code>, <code>src/lib/sim/scenario/rng.ts</code>, <code>src/lib/transit</code>. The dataset version stays <code>origin/main</code>'s.</li>
+      <li>Cars are the forecast, not a lever: no node, grant, limit, side goal, tally row or headline reads <code>cars</code>; no node is added.</li>
+      <li>WCAG 2.2 AA; page text short; the CSP is not widened; no runtime dependency added.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. No <code>setTimeout</code>/<code>setInterval</code> in a spec or test helper; no fixed waits or raised timeouts in e2e.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Conventional Commits, no Claude attribution. No push, no signoff, no dataset upload.</li>
+      <li>Every merge of another branch into this one is <code>git merge --no-ff --no-edit</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li>A refill after an edit with cars and money on gives the same view as a fresh open (<code>cars</code> and <code>waitingMoney</code>), pinned in Task 1's <code>host.edit.spec.ts</code>.</li>
+      <li>A world without a car system (<code>cars: 'off'</code>) still gives <code>waitingMoney</code>; a world with cars and money off still gives <code>cars</code>: each key by its own null rule (Task 1, <code>view.ts</code>).</li>
+      <li><code>--cars</code> with no value is refused with exit 2, like <code>--cars maybe</code> (Task 2).</li>
+      <li>A stale <code>level2-check</code> command name in a current doc (Task 2 / Task 3 sweep).</li>
+      <li>A <code>main</code> e2e assertion still true on the merged tree (freeway land unpaintable, the cars row, the cars layer) silently dropped instead of rewritten (Task 1).</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The merge commit</h2>
+    <ul>
+      <li>Files: the 17 conflicted files — <code>CLAUDE.md</code>, <code>docs/dev/{map-interfaces,pipeline,testing,world-score}.md</code>, <code>e2e/{fzp-sim,game-sim}.spec.ts</code>, <code>src/lib/about/AboutParts.svelte.spec.ts</code>, <code>src/lib/sim/timeline-client.host.spec.ts</code>, <code>src/lib/sim/world/host.edit.spec.ts</code>, <code>src/lib/sim/world/score/{chunk,series,types,view}.ts</code>, <code>src/lib/sim/world/score/chunk.spec.ts</code>; <code>scripts/level2-check.ts</code> and <code>scripts/level2-check.spec.ts</code> kept deleted.</li>
+      <li>Interfaces produced: <code>SeriesChunk = { from, rows, planEffect, money, tiers, cars, waiting? }</code>; <code>TimelineView</code> carries <code>cars: CarsView | null</code> (main's) and <code>waitingMoney</code> (E2's); <code>WorldSeries.created(cars)</code>, <code>stepped(month, cars?)</code>; extras <code>cars(from, through)</code> and <code>waiting(world, from, through)</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Start the merge
+        <pre><code data-lang="sh">git merge --no-ff origin/main</code></pre>
+        Expected: conflicts in the 17 files above and modify/delete on <code>scripts/level2-check.ts</code> and its spec.</li>
+      <li id="t1-s2"><input type="checkbox"> Keep <code>scripts/level2-check.ts</code> and <code>scripts/level2-check.spec.ts</code> deleted: <code>git rm scripts/level2-check.ts scripts/level2-check.spec.ts</code>. (Task 2 ports main's switch onto <code>reach-check</code>.)</li>
+      <li id="t1-s3"><input type="checkbox"> Resolve the score files by sec-design-score: <code>chunkOf</code> sets <code>cars</code> and <code>waiting</code>; <code>viewOf</code> joins each by its own null rule (main's throw on mixed cars stays; E2's waiting rule stays); <code>chunksBefore</code> trims both; <code>WorldSeries</code> keeps main's <code>created(cars)</code>/<code>stepped(month, cars?)</code> and both extras. The waiting count is still recorded at the end of the funding system's <code>shadow</code> hook.</li>
+      <li id="t1-s4"><input type="checkbox"> Resolve the specs: <code>chunk.spec.ts</code>'s chunk keys test lists <code>from</code>, <code>rows</code>, <code>planEffect</code>, <code>money</code>, <code>tiers</code>, <code>cars</code>, <code>waiting</code>; the <code>before</code> helpers of <code>host.edit.spec.ts</code> and <code>timeline-client.host.spec.ts</code> copy <code>cars</code> and <code>waiting</code>, each trimmed to the same months; <code>host.edit.spec.ts</code> asserts a refill with cars and money equals a fresh open, <code>cars</code> and <code>waitingMoney</code> included.</li>
+      <li id="t1-s5"><input type="checkbox"> Resolve the documents by sec-design-conflicts: both sides kept and made true; the package's wording wins on pages, steps, levels, bars and Remix; main's cars entries, car layer, car-zones pipeline step and the removal of the Pipeline workflow stand. <code>world-score.md</code> documents main's <code>cars</code> section and the package's "Homes waiting for money".</li>
+      <li id="t1-s6"><input type="checkbox"> Resolve <code>e2e/game-sim.spec.ts</code> and <code>e2e/fzp-sim.spec.ts</code>: the package's text wins; each main change asserting behaviour still true (freeway land unpaintable, the cars row, the cars layer) is kept, rewritten by closing's rules (address <code>/</code>, no header steps, the name "SF Housing", a new visitor for the opening, the open game for the simulation); main changes about levels, bars or the five-level game are dropped. Each kept and dropped hunk is listed in the report.</li>
+      <li id="t1-s7"><input type="checkbox"> Resolve <code>AboutParts.svelte.spec.ts</code>: asserts the package's game sections and terms and main's Cars section.</li>
+      <li id="t1-s8"><input type="checkbox"> No conflict markers remain; the touched unit specs pass:
+        <pre><code data-lang="sh">npx vitest run src/lib/sim/world src/lib/sim/timeline-client.host.spec.ts src/lib/about</code></pre></li>
+      <li id="t1-s9"><input type="checkbox"> <code>npm run check</code> reports 0 errors.</li>
+      <li id="t1-s10"><input type="checkbox"> Commit the merge (the merge commit, with the default merge message): <code>git commit --no-edit</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The car switch on the reach check</h2>
+    <ul>
+      <li>Files: <code>scripts/reach-measure.ts</code>, <code>scripts/reach-measure.spec.ts</code>, <code>scripts/reach-check.ts</code>, <code>scripts/reach-check.spec.ts</code>, <code>docs/dev/cars.md</code>, <code>docs/dev/testing.md</code>, <code>docs/dev/pipeline.md</code>, <code>CLAUDE.md</code>.</li>
+      <li>Interfaces produced: <code>export type CarsSwitch = 'on' | 'off'</code> (in <code>reach-measure.ts</code>); <code>openEngine(src, { warn?, timeoutMs?, cars?: CarsSwitch, createHost? })</code> passes <code>cars</code> (default <code>'on'</code>) to <code>createTimelineHost</code>; <code>Engine.fillMs: number</code>, wall-clock ms from <code>openTimeline</code> to the last month of the opening fill; <code>export function fillLine(fillMs: number, cars: CarsSwitch): string</code> in <code>reach-check.ts</code>; <code>parseCheckArgs</code> returns <code>{ src, amount?, cars }</code>.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Failing tests in <code>reach-measure.spec.ts</code>: <code>openEngine</code> passes <code>cars</code> to the host (a <code>createHost</code> seam records <code>deps.cars</code>: <code>'on'</code> by default, <code>'off'</code> when asked) and <code>engine.fillMs</code> is above 0. Stubs of <code>Engine</code> in the spec gain <code>fillMs</code>.</li>
+      <li id="t2-s2"><input type="checkbox"> Failing tests in <code>reach-check.spec.ts</code>: <code>parseCheckArgs</code> accepts <code>--cars off</code> and <code>--cars on</code> (default <code>'on'</code>); <code>--cars maybe</code> makes <code>main</code> return 2 with the one stderr line <code>reach-check: --cars must be on or off, got maybe</code> and nothing on stdout; <code>--cars</code> with no value is refused the same way (<code>got nothing</code>); <code>main</code> passes <code>cars</code> to <code>open</code>; the fifth stdout line is <code>fillLine(12_340, 'on') === 'Filled in 12.3 s (cars on)'</code> after the four unchanged lines; exits unchanged.</li>
+      <li id="t2-s3"><input type="checkbox"> Run them and see them fail: <code>npx vitest run scripts/reach-check.spec.ts scripts/reach-measure.spec.ts</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Implement: <code>--cars</code> as a value flag through <code>parseSourceArgs</code>; usage line <code>usage: npx tsx scripts/reach-check.ts &lt;datasetDir&gt; | --version &lt;v&gt; [--from &lt;origin&gt;] [--amount &lt;homes&gt;] [--cars on|off]</code> (also the file's header comment); <code>reach-measure</code> and <code>tree-balance</code> run with cars on and take no switch.</li>
+      <li id="t2-s5"><input type="checkbox"> Run them and see them pass.</li>
+      <li id="t2-s6"><input type="checkbox"> Documents: every current doc that names <code>level2-check</code> as a command names <code>reach-check</code>. <code>docs/dev/cars.md</code>: the off path is <code>reach-check --cars off</code>; the section "Level 2 with and without cars" is titled "Current law with and without cars"; a dated measurement keeps its figures and dataset. <code>CLAUDE.md</code>'s cars entry reads "current law with and without cars"; <code>docs/dev/testing.md</code>, <code>docs/dev/pipeline.md</code> as needed.</li>
+      <li id="t2-s7"><input type="checkbox"> Sweep: <code>git grep -n -E 'level2-check|readLevel2|level2Lines|level2Exit|runEmptyDocument' -- . ':!docs/superpowers/**' ':!.superpowers/**' ':!CHANGELOG.md'</code> finds nothing (use the Grep tool if <code>git grep</code> is not allowed).</li>
+      <li id="t2-s8"><input type="checkbox"> Commit: <code>git commit -m "feat(reach-check): the car switch and the fill line"</code></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The merged tree whole</h2>
+    <ul>
+      <li>Files: any file the suite shows disagreeing on the merged tree, each named in the report with the side it came from.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Dataset: <code>npx tsx scripts/dataset-version.ts --check</code> passes and the tree's version equals <code>origin/main</code>'s. A difference stops the task (BLOCKED, reported).</li>
+      <li id="t3-s2"><input type="checkbox"> <code>npm run check</code> (0 errors), <code>npm run lint</code>, <code>npm run build</code>, <code>npm run test:unit</code>, <code>npm run test:pipeline</code> pass.</li>
+      <li id="t3-s3"><input type="checkbox"> <code>npm run test:e2e</code> passes with no test passing only on retry (port 4173 checked with <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> first; wait, never kill). Changed e2e specs pass with <code>--repeat-each=5 --retries=0</code>.</li>
+      <li id="t3-s4"><input type="checkbox"> Closing's final sweep (closing spec sec-design-sweep, 2026-11-24) finds nothing outside its allowed places.</li>
+      <li id="t3-s5"><input type="checkbox"> <code>npx tsx scripts/reach-check.ts --version &lt;main's v&gt;</code> (cars on) exits 0; its five lines go in the report. A 2 with "no dataset" means main's dataset is not uploaded: stop, report <code>blocked: main's dataset &lt;v&gt; is not uploaded</code>. Exit 1: stop, report "blocked: the reach check misses".</li>
+      <li id="t3-s6"><input type="checkbox"> <code>npx chreode timing-check --head HEAD</code> is clean. Commit any fixes: <code>git commit -m "fix(main-merge): ..."</code>.</li>
+    </ol>
+  </section>
+</article>
