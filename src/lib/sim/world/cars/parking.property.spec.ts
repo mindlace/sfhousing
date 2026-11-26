@@ -8,7 +8,7 @@ import type { CarModel } from '$lib/sim/cars';
 import { PROTOTYPES } from '$lib/sim/finance';
 import { benchMarket } from '$lib/sim/scenario/fixtures/bench-finance';
 import { seedHash } from '$lib/sim/scenario/rng';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { planDueWith } from '../due';
@@ -286,7 +286,12 @@ describe('parking-only changes replan only their zones’ lots (funded bench cit
   // against the shortcut: every event and every ledger entry of a 480-month funded run, link on.
   const input = benchMoney(benchInput());
   const statics = staticsOf(input);
-  const timeline = oneMoneyTimeline(input, input.finance!);
+  // The federal pool at 300,000,000 a year: lines wait and starts spread over the run, so
+  // parking changes keep coming (rule 16 as amended awards on whatever pool can pay).
+  const timeline = oneMoneyTimeline(
+    input,
+    withFederalYearly(input.finance!, input.asOf, 300_000_000)
+  );
   const { data, model } = carsOf(input, { zones: 60, perMonth: 0.008 }, COSTS);
 
   /** The car system's view without `parkingOnly`: every parking change is a whole-city one. */

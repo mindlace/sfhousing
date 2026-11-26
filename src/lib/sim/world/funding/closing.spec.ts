@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayFromUtc } from '$lib/fzp/time';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
@@ -23,7 +23,7 @@ import {
   initFunding,
   reopenPool
 } from './columns';
-import { closeSpent, closedTimeline, lastArrivalOf } from './closing';
+import { closeSpent, closedTimeline, lastArrivalOf, spentAmong } from './closing';
 import { frameMoney } from './frame-money';
 import { availableOf } from './pools';
 import { serveLine } from './serve';
@@ -344,7 +344,13 @@ interface Closing {
   lastMonthWithRow(id: string, instr: 'loan' | 'guarantee'): number;
 }
 
-const MINI = fundedMini();
+/**
+ * The mini city with its federal pool at 20,000,000 a year: every pool of an affordable bundle
+ * runs short at times, so applications wait on the line (rule 16 as amended awards on whatever
+ * pool can pay, so a short CLOSE_POOL alone keeps no one waiting).
+ */
+const capped = (asOf: Day) => withFederalYearly(miniFinance(asOf), asOf, 20_000_000);
+const MINI = fundedMini(capped(asOf));
 
 function closing(
   doc: SimPolicy4,
@@ -460,11 +466,11 @@ function waitingRows(world: World): Record<string, unknown>[] {
 
 /** The baseline pool of the baseline case: one arrival of ONE_PROJECT in month 2. */
 const B_POOL = 'b-close';
-/** The months the switched-off comparison runs: m-bank closes later, in month 29. */
+/** The months the switched-off comparison runs: only the case's pool closes in them. */
 const CASE_MONTHS = 24;
 
 const baselineInput: SimInput = (() => {
-  const fin = miniFinance(asOf);
+  const fin = capped(asOf);
   return fundedMini({
     ...fin,
     pools: [
@@ -536,7 +542,7 @@ describe('closeSpent: a spent pool closes', () => {
     const { pools } = fundOf(r.world);
     const q = pools.id.indexOf(CLOSE_POOL);
     expect(commitsOn(r.ledger, CLOSE_POOL)).toBe(1); // enough for one project
-    // One closing of it (m-bank, spent in month 29, has its own row).
+    // One closing of it (any other pool's closing has its own row).
     const rows = Array.from(pools.shutRow.subarray(0, pools.shutN));
     expect(rows.filter((x) => x === q)).toHaveLength(1);
     const k = rows.indexOf(q);
@@ -566,7 +572,9 @@ describe('closeSpent: a spent pool closes', () => {
       docOf(
         closingPolicy(
           asOf,
-          [{ from: 1, to: null, inflows: [once(monthFirstDay(asOf, 2), ONE_PROJECT)] }],
+          // Twice ONE_PROJECT: lots apply one at a time (R2), and seed 1's first application with
+          // the extra instrument asks more than ONE_PROJECT.
+          [{ from: 1, to: null, inflows: [once(monthFirstDay(asOf, 2), 2 * ONE_PROJECT)] }],
           extra
         )
       ),
@@ -582,7 +590,7 @@ describe('closeSpent: a spent pool closes', () => {
   it('past its last arrival and asked by no one, or able to pay every ask, it stays open', () => {
     const unasked = closing(unaskedDoc, 120);
     const rich = closing(richDoc, 120);
-    // CLOSE_POOL has no shut row (m-bank, spent in month 29, has its own).
+    // CLOSE_POOL has no shut row.
     for (const r of [unasked, rich]) expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY);
     // Not vacuous. Unasked: applications waited after the last arrival (month 2), none on it.
     let waited = 0;
@@ -611,7 +619,7 @@ describe('closeSpent: a spent pool closes', () => {
       120
     );
     expect(r.waitingWith(60, CLOSE_GRANT)).toBeGreaterThan(0);
-    expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY); // m-bank's own closing aside
+    expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY);
   });
 
   it.each(['baseline', 'added'] as const)(
@@ -692,8 +700,9 @@ describe('closeSpent: a spent pool closes', () => {
 
   it('a pool with no programme on offer past its last arrival is no candidate: no line scan', () => {
     // CLOSE_POOL is asked by no one through month T (as `unaskedDoc`), then its policy ends: the
-    // pool stays in the frame, past its last arrival, with nothing offered. m-bank, the other pool
-    // that runs out, closes in month 29.
+    // pool stays in the frame, past its last arrival, with nothing offered. The mini money runs
+    // without its market loan, so m-bank, the other pool past its last arrival, offers nothing
+    // either (with the finite odds at full coverage it no longer runs out before T).
     const T = 36;
     const doc = docOf(
       withMinHomes(
@@ -721,9 +730,13 @@ describe('closeSpent: a spent pool closes', () => {
         }
       }
     };
-    const r = closing(doc, 120, { system });
+    const fin = capped(asOf);
+    const noLoan = fundedMini({
+      ...fin,
+      programmes: fin.programmes.filter((g) => g.id !== 'm-bank-loan')
+    });
+    const r = closing(doc, 120, { system, input: noLoan });
     expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY);
-    expect(r.closedAt('m-bank')).toBeLessThan(T);
     // Not vacuous: applications wait on the line after T, and closeSpent scanned it before.
     let waited = 0;
     for (let m = T + 1; m <= 120; m++) waited += r.waitingAt(m).length;
@@ -932,5 +945,24 @@ describe('reopenArrivals: a closed pool opens on its next arrival', () => {
     const before = structuredClone(w);
     expect(() => core.step(w, due, statics, stub, 1, { event() {} })).toThrow(RangeError);
     expect(structuredClone(w)).toEqual(before);
+  });
+});
+
+describe('spentAmong: a pool is spent only when no waiting ask fits', () => {
+  const money = new Map([[0, 100]]);
+  it('one ask fits: open', () => {
+    expect(spentAmong([new Map([[0, 150]]), new Map([[0, 80]])], money)).toEqual(new Set());
+  });
+  it('every ask is above: spent', () => {
+    expect(spentAmong([new Map([[0, 150]]), new Map([[0, 120]])], money)).toEqual(new Set([0]));
+  });
+  it('an exact fit holds it open', () => {
+    expect(spentAmong([new Map([[0, 150]]), new Map([[0, 100]])], money)).toEqual(new Set());
+  });
+  it('asked by no one: open', () => {
+    expect(spentAmong([new Map([[1, 5]])], money)).toEqual(new Set());
+  });
+  it('a zero ask does not count as asking', () => {
+    expect(spentAmong([new Map([[0, 0]]), new Map([[0, 120]])], money)).toEqual(new Set([0]));
   });
 });

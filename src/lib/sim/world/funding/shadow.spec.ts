@@ -1,7 +1,7 @@
 // world-funding Task 10: shadow starts and displaced homes (spec rule 20).
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import { lineKey } from '$lib/sim/scenario/funded';
 import { sizeCumAgainst } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
@@ -50,12 +50,16 @@ interface Case {
 }
 
 /**
- * The mini city with `miniFinance`, seeds 1 to 12, 20 years; and with the random finances of seeds
- * 31 to 40 (`randomFinance`), 40 years, where funded projects exit and their lots start again
- * before the ordinary start their award pre-empted.
+ * The mini city with `miniFinance`, seeds 1 to 12, 20 years; the same with the federal pool at
+ * 20,000,000 a year, 20 years, on seeds (57 to 176, picked from 1 to 300) where an award comes
+ * before an ordinary start later in its month (T3: rule 16 as amended awards at once while any
+ * pool can pay, so few such cases remain); and with the random finances of seeds 31 to 40 (`randomFinance`), 40 years, where
+ * funded projects exit and their lots start again before the ordinary start their award pre-empted.
  */
+const capped = oneMoneyTimeline(input, withFederalYearly(fin, asOf, 20_000_000));
 const CASES: Case[] = [
   ...Array.from({ length: 12 }, (_, i) => ({ seed: i + 1, t: timeline, through: 240 })),
+  ...[57, 79, 126, 153, 168, 176].map((seed) => ({ seed, t: capped, through: 240 })),
   ...Array.from({ length: 10 }, (_, i) => {
     const finance = randomFinance(31 + i);
     return { seed: 31 + i, t: oneMoneyTimeline({ ...input, finance }, finance), through: MONTHS };

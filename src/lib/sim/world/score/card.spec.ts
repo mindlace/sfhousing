@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { envelopeOf } from '$lib/data/scenario-codec';
 import type { Master } from '$lib/sim/scenario/simulate';
-import { chooseProject, projectCard, type CardCtx } from '$lib/sim/scenario/card';
+import { chooseProject, isVisible, projectCard, type CardCtx } from '$lib/sim/scenario/card';
 import type { Massing, SimInput } from '$lib/sim/scenario/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Effect, Policy } from '$lib/timeline/policy4';
@@ -343,6 +343,9 @@ describe('cardAt: funded fields from a funded world', () => {
   for (let r = 0; r < p.n; r++)
     if (p.origin[r] !== ORIGIN_MASTER && p.funded[r] === 1) fundedRows.push(r);
   const late = Number.MAX_SAFE_INTEGER;
+  // The funded rows the card shows at `late`: a partial award is not certain and may exit, and
+  // an exited project is no longer shown (rule 16 as amended makes such awards common).
+  const shownRows = fundedRows.filter((r) => isVisible(scheduleAt(world, statics, r, late)!, late));
 
   function cardOf(row: number) {
     const s = scheduleAt(world, statics, row, late)!;
@@ -350,18 +353,18 @@ describe('cardAt: funded fields from a funded world', () => {
   }
 
   it('funding.programmes are programme ids', () => {
-    expect(fundedRows.length).toBeGreaterThan(0);
-    for (const r of fundedRows) {
+    expect(shownRows.length).toBeGreaterThan(0);
+    for (const r of shownRows) {
       const want = p.programmes[r] === '' ? [] : p.programmes[r].split(',');
       expect(cardOf(r).funding?.programmes).toEqual(want);
     }
   });
 
   it('an affordable funded project carries kind affordable', () => {
-    const rows = fundedRows.filter((r) => p.kind[r] === 1);
+    const rows = shownRows.filter((r) => p.kind[r] === 1);
     expect(rows.length).toBeGreaterThan(0);
     for (const r of rows) expect(cardOf(r).kind).toBe('affordable');
-    for (const r of fundedRows.filter((x) => p.kind[x] === 0))
+    for (const r of shownRows.filter((x) => p.kind[x] === 0))
       expect(cardOf(r).kind).toBeUndefined();
   });
 
@@ -369,7 +372,8 @@ describe('cardAt: funded fields from a funded world', () => {
     // Rule 15: the schedule's field on `day`, which the card reads its project from.
     const shown = (row: number, day: Day) => {
       const s = scheduleAt(world, statics, row, day);
-      if (s === null) return null;
+      // not shown: the project exited (a partial award is not certain) before `day`
+      if (s === null || !isVisible(s, day)) return null;
       const card = cardAt(world, statics, frame, deps, s.parcelIds[0], day, s.projectId);
       expect(card.summary.project?.projectId).toBe(s.projectId);
       return s.funding!.displaced;
@@ -380,8 +384,11 @@ describe('cardAt: funded fields from a funded world', () => {
       expect(e.units).toBeGreaterThan(0);
       // Each funded row has at most one shadow, so one 'displaced' event.
       expect(events.filter((x) => x.kind === 'displaced' && x.row === e.row)).toHaveLength(1);
-      expect(shown(e.row, e.day)).toBe(e.units);
-      expect(shown(e.row, late)).toBe(e.units);
+      const atEvent = shown(e.row, e.day);
+      if (atEvent === null) continue;
+      expect(atEvent).toBe(e.units);
+      const atLate = shown(e.row, late);
+      if (atLate !== null) expect(atLate).toBe(e.units);
       const before = shown(e.row, e.day - 1);
       if (before === null) continue; // the row began on the event's day
       expect(before).toBe(0);

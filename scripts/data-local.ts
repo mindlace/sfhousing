@@ -41,21 +41,47 @@ export function isOptionalPath(manifest: Manifest, version: string, rel: string)
   return dataFiles(manifest, version).some((f) => f.optional && f.rel === rel);
 }
 
+const USAGE = 'usage: data-local.ts <version> [--from <origin>] [--out <dir>]';
+
+/** `<version> [--from <origin>] [--out <dir>]`, flags in either order; or the reason it is refused. */
+export function parseDataLocalArgs(
+  argv: string[]
+): { version: string; origin: string; out: string | null } | { error: string } {
+  let version: string | null = null;
+  let origin = 'https://sfhousing.mindlace.net';
+  let out: string | null = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--from' || a === '--out') {
+      const v = argv[i + 1];
+      if (v === undefined || v === '' || v.startsWith('--')) return { error: `${a} needs a value` };
+      if (a === '--from') origin = v;
+      else out = v;
+      i += 1;
+    } else if (a.startsWith('-')) {
+      return { error: `unknown flag ${a}` };
+    } else if (version !== null) {
+      return { error: `unexpected argument ${a}` };
+    } else version = a;
+  }
+  if (version === null || !DATASET_VERSION_RE.test(version)) return { error: USAGE };
+  return { version, origin, out };
+}
+
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  const fromIdx = args.indexOf('--from');
-  const origin = fromIdx >= 0 ? (args[fromIdx + 1] ?? '') : 'https://sfhousing.mindlace.net';
-  const version = args.filter((_, i) => fromIdx < 0 || (i !== fromIdx && i !== fromIdx + 1))[0];
-  if (!version || !DATASET_VERSION_RE.test(version) || !origin) {
-    console.error('usage: data-local.ts <version> [--from <origin>]');
+  const args = parseDataLocalArgs(process.argv.slice(2));
+  if ('error' in args) {
+    console.error(args.error);
     process.exit(1);
   }
+  const { version, origin, out } = args;
   const base = origin.replace(/\/$/, '');
   const mres = await fetch(`${base}/data/${version}/manifest.json`);
   if (!mres.ok) throw new Error(`manifest fetch failed: ${mres.status}`);
   const manifest = ManifestSchema.parse(await mres.json());
   const paths = collectDataPaths(manifest, version);
-  const dir = mkdtempSync(join(tmpdir(), 'sfhousing-data-'));
+  // With --out the files stay in that directory and are not put into local R2.
+  const dir = out ?? mkdtempSync(join(tmpdir(), 'sfhousing-data-'));
   const optional = new Set(
     dataFiles(manifest, version)
       .filter((f) => f.optional)
@@ -74,15 +100,19 @@ async function main(): Promise<void> {
       const file = join(dir, rel);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, Buffer.from(await res.arrayBuffer()));
-      putLocal(version, rel, file);
+      if (out === null) putLocal(version, rel, file);
       loaded++;
     }
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    if (out === null) rmSync(dir, { recursive: true, force: true });
   }
   if (skippedGlyphs > 0)
     console.log(`Skipped ${skippedGlyphs} glyph range(s) the source does not ship`);
-  console.log(`Loaded ${loaded} object(s) into local R2 under data/${version}/`);
+  console.log(
+    out === null
+      ? `Loaded ${loaded} object(s) into local R2 under data/${version}/`
+      : `Wrote ${loaded} file(s) into ${out}`
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

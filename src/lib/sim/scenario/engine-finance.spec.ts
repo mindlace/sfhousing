@@ -536,8 +536,10 @@ describe('queue cases on tinyQueue', () => {
 
   it('waiting applications are served by applied day first', () => {
     const X = asOf + 1500;
+    // every pool short before X (the federal and City money arrives on X), so the line waits
     const finance = tinyStack({
       asOf,
+      fed: [once(X, AMPLE)],
       city: [once(X, AMPLE)],
       off: [{ pool: 't-state', from: asOf, to: null }]
     });
@@ -577,7 +579,13 @@ describe('queue cases on tinyQueue', () => {
 
   it('a smaller later application is awarded past a head that does not fit', () => {
     const units = [40, 5, 40, 40, 40];
-    const finance = tinyStack({ asOf, city: [once(asOf, 1_600_000)] });
+    // every pool fits the 5-home application and none the 40-home ones
+    const finance = tinyStack({
+      asOf,
+      fed: [once(asOf, 2_400_000)],
+      state: [once(asOf, 700_000)],
+      city: [once(asOf, 1_600_000)]
+    });
     const input = withFinance(tinyQueue({ logOdds: Array(5).fill(20), units }), finance);
     for (const seed of seeds(5)) {
       const c = run(input, seed);
@@ -628,7 +636,11 @@ describe('queue cases on tinyQueue', () => {
 
   it('a waiting lot’s ordinary start removes it from the line with no commit', () => {
     const X = asOf + 3000;
-    const input = withFinance(tinyQueue(), tinyStack({ asOf, city: [once(X, AMPLE)] }));
+    // every pool short before X, so the line waits
+    const input = withFinance(
+      tinyQueue(),
+      tinyStack({ asOf, fed: [once(X, AMPLE)], state: [once(X, AMPLE)], city: [once(X, AMPLE)] })
+    );
     let cases = 0;
     for (const seed of seeds(40)) {
       const c = run(input, seed);
@@ -651,8 +663,10 @@ describe('queue cases on tinyQueue', () => {
   });
 
   it('a release on an exit before construction is re-served the same day', () => {
+    // the federal pool holds as many homes' money as the City pool, so both run short together
     const finance = tinyStack({
       asOf,
+      fed: [once(asOf, Math.round((6_000_000 * 443108) / 300027))],
       city: [once(asOf, 6_000_000)],
       off: [{ pool: 't-state', from: asOf, to: null }]
     });
@@ -680,7 +694,13 @@ describe('queue cases on tinyQueue', () => {
 
   it('a kept reservation lapses applications on its day, and no commit falls on or after it', () => {
     const d = asOf + 500;
-    const finance = tinyStack({ asOf, city: [once(asOf + 800, AMPLE)] });
+    // every pool short before asOf + 800, so the line waits
+    const finance = tinyStack({
+      asOf,
+      fed: [once(asOf + 800, AMPLE)],
+      state: [once(asOf + 800, AMPLE)],
+      city: [once(asOf + 800, AMPLE)]
+    });
     const input = withFinance(
       tinyQueue({ logOdds: [-12, -3, -3, -3, -3], reservedFrom: [d, 0, 0, 0, 0] }),
       finance

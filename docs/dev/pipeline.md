@@ -66,11 +66,16 @@ To tell whether a branch changes it, compare `npm run pipeline -- version` (prin
 1. `git merge origin/main`. The version hashes the merged code, so merge first.
 2. `npm run pipeline -- build` (about 4.5 minutes on a 15-core machine, measured 2026-11-14 with the building boxes). Every invariant must pass, without `--skip-tiles`.
 3. `npx tsx scripts/reach-check.ts pipeline/out/<v>` must exit 0: on this data current law meets the first deadline and the full tree meets the last. On exit 1 nothing is uploaded and the owner decides ([game.md](game.md), "The reach check").
+   3b. `npx tsx scripts/money-monotone.ts pipeline/out/<v>` runs beside reach-check, and its last line is recorded: whether any preset added to a set of funding presets costs it more than 5 homes on any reading ([testing.md](testing.md), "The money monotonicity check"). For now it is a report, not a gate: it exits 1 on today's model, and an exit 1 does not stop the upload ([finance-data.md](finance-data.md), "What current law builds against the check").
 4. `npm run pipeline -- upload <v>`. It refuses, with nothing uploaded, unless `out/<v>/report.json` shows every invariant passing and tiles built, every file the manifest names exists, and the current lock is the one that built `<v>` (its canonical sha256 is recorded in `report.json` as `lockSha256`; fixture versions skip this check because they archive nothing). It aborts if `data/<v>/manifest.json` already exists (V13).
 5. `npm run pipeline -- verify <v> --origin https://<staging-origin>`. Staging already serves any published `/data/<v>/`.
 6. `npm run signoff`. The `dataset` step passes now. If `origin/main` moved in the meantime, signoff's merge changes `<v>`, the step fails, and the loop goes back to step 2. In a multi-unit build only the closing unit runs signoff, after the upload.
 7. Open the PR and squash-merge it. Squashing does not change the tree, so `main` computes the same `<v>`, and staging deploys the code and its dataset together.
 8. Remove the worktree.
+
+### Changes on the funding paths
+
+A change under `src/lib/sim/finance/**`, `src/lib/sim/scenario/funding*.ts`, `src/lib/sim/scenario/funded.ts`, `src/lib/sim/world/funding/**`, `src/lib/sim-page/funding-presets.ts` or `pipeline/**/funding.json` runs `npx tsx scripts/money-monotone.ts --version <v>` by hand before signoff (it needs no local dataset when `<v>` is published) and records its last line in the PR. It is a report, not a signoff step, until the money-limited funding spec makes it that spec's acceptance gate.
 
 Old versions are never deleted, so saved plans keep loading.
 

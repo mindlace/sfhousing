@@ -1,18 +1,18 @@
-// The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): today's
-// `segValue` and `kindLatentInto` (`funded.ts:452-478, 772-871`) evaluated over policy frames
-// instead of finance segment days. Nothing is stored: a clock is recomputed from the spell.
+// The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): modelled on
+// the old engine's `segValue` and `kindLatentInto` (`funded.ts:452-478, 772-871`), evaluated over
+// policy frames instead of finance segment days; level 1 and coverage above 1 differ (see the
+// award-rule spec). Nothing is stored: a clock is recomputed from the spell.
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import {
   PROTOTYPES,
   costPerHome,
-  oddsShift,
   prototypeFor,
   uncoveredPerHome,
   type Prototype,
   type PrototypeId
 } from '$lib/sim/finance';
 import { NEVER_KEY_DAY } from '$lib/sim/scenario/funded';
-import { coverageLevel } from '$lib/sim/scenario/funding';
+import { cappedShift, coverageLevel } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, piecewiseMonth, sizeCumAgainst } from '$lib/sim/scenario/input';
 import { P, drawOn } from '$lib/sim/scenario/rng';
 import { exp, log } from '$lib/timelapse/math';
@@ -28,6 +28,18 @@ const F = FILL_LEVELS.length;
 const EMPTY: number[] = [];
 const PROTOTYPE = new Map<PrototypeId, Prototype>(PROTOTYPES.map((p) => [p.id, p]));
 const logistic = (x: number) => 1 / (1 + exp(-x));
+/** Above this log-odds `logSurvival` switches to the stable form (the boundary of the stable form). */
+export const STABLE_FROM = 15;
+/**
+ * `log(1 - logistic(x))`, the log-survival rate at log-odds `x`, finite for every finite `x`.
+ * Up to `STABLE_FROM` it is the form `rates.ts` uses for the ordinary rate, bit for bit, so the
+ * min-rate rule and the segment merge compare like with like; above it, where `1 - logistic(x)`
+ * loses its digits (and is 0 past about 37), it is `-softplus(x)` = `-(x + log(1 + exp(-x)))`.
+ * The two agree to about 1e-9 at the boundary.
+ */
+export function logSurvival(x: number): number {
+  return x <= STABLE_FROM ? log(1 - logistic(x)) : -(x + log(1 + exp(-x)));
+}
 /** The first day of lot-month T of a spell free since r. */
 const startOf = (r: Day, T: number): Day => r + 1 + Math.floor((T - 1) * MONTH_DAYS);
 
@@ -53,8 +65,6 @@ export interface KindClock {
   bundle: number[];
   /** Coverage level of `bundle` (0 when empty). */
   level: number;
-  /** Lot-month T's bundle is certain (its rate is -Infinity). */
-  certain: boolean;
 }
 
 /** The attempt a free lot is on: its stream, the spell start of each kind, its existing homes. */
@@ -195,13 +205,12 @@ function segOn(
       g.market -
       (slope * (uncoveredPerHome('affordable', p) - uncoveredPerHome('market', p))) /
         costPerHome('affordable', p);
-  const ref = market ? ord : log(1 - logistic(x0));
+  const ref = market ? ord : logSurvival(x0);
   const bundle = fm.bundleOf(kind, size.units);
   if (bundle.length === 0) return { ord, rate: ref, ref, bundle, level: 0, size };
   const priced = fm.index.price(kind, bundle, size.protoId);
   const level = coverageLevel(priced.coverage);
-  if (priced.certain) return { ord, rate: -Infinity, ref, bundle, level, size };
-  const x = log(1 - logistic(x0 + oddsShift(priced.grantEquivalent, kind, p, slope)));
+  const x = logSurvival(x0 + cappedShift(priced, kind, p, slope));
   return { ord, rate: market ? Math.min(ord, x) : x, ref, bundle, level, size };
 }
 
@@ -301,16 +310,12 @@ export function kindClock(
       stories: 0,
       protoId: 'E',
       bundle: EMPTY,
-      level: 0,
-      certain: false
+      level: 0
     };
   }
   const j = segOf(bounds, T);
   const s = segs[j];
-  const certain = s.rate === -Infinity && s.bundle.length > 0;
-  let day: Day | null = null;
-  if (s.bundle.length > 0)
-    day = certain ? startOf(r, T) : r + 1 + Math.floor((T - 1 + v) * MONTH_DAYS);
+  const day: Day | null = s.bundle.length > 0 ? r + 1 + Math.floor((T - 1 + v) * MONTH_DAYS) : null;
   return {
     kind,
     T,
@@ -323,7 +328,6 @@ export function kindClock(
     stories: s.size ? s.size.stories : 0,
     protoId: s.size ? s.size.protoId : 'E',
     bundle: s.bundle,
-    level: s.level,
-    certain
+    level: s.level
   };
 }

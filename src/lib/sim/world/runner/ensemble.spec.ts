@@ -55,10 +55,28 @@ function editedAt(from: number): PolicyTimeline {
 /** CLOSE_POOL's one arrival in month 2 (test value): spent, and the pool closed, before month 100. */
 const CLOSE_DOLLARS = 3_000_000;
 
-/** The default document plus one `fund` policy adding CLOSE_POOL, one arrival, and CLOSE_GRANT. */
+/**
+ * The default document plus one `fund` policy adding CLOSE_POOL, one arrival, and CLOSE_GRANT,
+ * with every baseline pool scaled to 0: CLOSE_POOL is then the only pool that can pay, so its
+ * applications wait on it and it closes (rule 16 as amended awards on whatever pool can pay).
+ */
 function closingPlan(): PolicyTimeline {
   const doc: SimPolicy4 = structuredClone(DEFAULT_POLICY4);
   const asOf = ctx.input.asOf;
+  const pools = timeline.frameAt(1).finance!.pools.map((p) => p.id);
+  doc.kinds.money.push({
+    id: 'baseline-off',
+    label: 'baseline off',
+    preset: null,
+    on: true,
+    where: { tag: 'baseline' },
+    spans: [
+      span(asOf, 1, null, {
+        tag: 'scales',
+        entries: pools.map((pool) => ({ pool, from: asOf, scale: 0 }))
+      })
+    ]
+  });
   doc.kinds.money.push(
     closingPolicy(asOf, [
       {

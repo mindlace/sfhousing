@@ -25,10 +25,11 @@ import { kindOf, servingMoney } from './serve';
  * System 5, end of the scan: closes each spent pool from `ctx.lastDay + 1` (spec sec-design-spent).
  * A pool of the frame is spent when it is open, the month begins after its last arrival, it has
  * no loan out and no guarantee reserve held, and some waiting application of a free lot whose
- * bundle draws on it asks it for more than serving's available money (the whole bundle's ask).
+ * bundle holds a programme of it asks it more than 0, and no such application asks it for
+ * serving's available money or less (the whole bundle's ask; one that fits holds the pool open).
  * A pool none of whose programmes the frame offers is never asked (`bundleIds` refuses a bundle
  * holding one), so it is no candidate. The candidates are found first, the cheap conditions
- * first; one pass over the line then finds those asked past their money, and they close in world
+ * first; one pass over the line then finds those no ask can pay, and they close in world
  * pool row order.
  */
 export function closeSpent(ctx: StepCtx): void {
@@ -72,41 +73,61 @@ function creditPools(pools: FundPools): Set<string> {
 }
 
 /**
- * The frame pools of `money` (frame pool index -> money) that some waiting row of a free lot asks,
- * for its whole bundle, more than their money; the row's bundle must hold a programme of the
- * pool. A bundle the frame no longer offers whole (`bundleIds` null) is skipped. One pass over the
- * line, the cheap checks first, each distinct bundle read once; it stops when every pool is found.
+ * The pools of `money` (frame pool index -> serving's available money) that are spent among
+ * `rows`, the waiting rows' asks (frame pool index -> dollars, for the whole bundle): a pool is
+ * spent when at least one row asks it more than 0 and every row that asks it more than 0 asks more
+ * than its money. One ask that fits (an exact fit included) holds the pool open.
+ */
+export function spentAmong(
+  rows: Iterable<ReadonlyMap<number, number>>,
+  money: ReadonlyMap<number, number>
+): Set<number> {
+  const asked = new Set<number>();
+  const fits = new Set<number>();
+  for (const row of rows) {
+    for (const [fq, dollars] of row) {
+      const have = money.get(fq);
+      if (have === undefined || !(dollars > 0)) continue;
+      asked.add(fq);
+      if (dollars <= have) fits.add(fq);
+    }
+  }
+  const spent = new Set<number>();
+  for (const fq of asked) if (!fits.has(fq)) spent.add(fq);
+  return spent;
+}
+
+/**
+ * The frame pools of `money` that no waiting row of a free lot asking them can pay (see
+ * `spentAmong`); a row's bundle must hold a programme of the pool. A bundle the frame no longer
+ * offers whole (`bundleIds` null) is skipped. One pass over the line, the cheap checks first, each
+ * distinct bundle read once.
  */
 function askedPast(ctx: StepCtx, fm: FrameMoney, money: Map<number, number>): Set<number> {
   const { line } = fundOf(ctx.world);
   const lots = ctx.world.lots;
   const progPool = fm.index.progPool;
-  const short = new Set<number>();
-  /** Whether frame pool `fq` is a candidate not yet found short. */
-  const pending = (fq: number): boolean => money.has(fq) && !short.has(fq);
   // Joined ids -> the bundle when it holds a programme of a pool of `money`, else null.
   const asking = new Map<string, number[] | null>();
-  for (let i = 0; i < line.n && short.size < money.size; i++) {
-    if (line.gone[i] === 1) continue;
-    const li = lotRow(lots, line.lot[i]);
-    if (li >= 0 && lots.state[li] !== LOT_FREE) continue;
-    const ids = line.bundle[i];
-    let bundle = asking.get(ids);
-    if (bundle === undefined) {
-      const b = fm.bundleIds(ids);
-      bundle = b !== null && b.some((g) => money.has(progPool[g])) ? b : null;
-      asking.set(ids, bundle);
-    }
-    if (bundle === null || !bundle.some((g) => pending(progPool[g]))) continue;
-    const units = line.units[i];
-    const protoId = prototypeFor(line.stories[i], units).id;
-    const asks = asksOf(fm.index, kindOf(line, i), bundle, protoId, units);
-    for (const g of bundle) {
-      const fq = progPool[g];
-      if (pending(fq) && (asks.get(fq) ?? 0) > money.get(fq)!) short.add(fq);
+  function* rows(): Generator<ReadonlyMap<number, number>> {
+    for (let i = 0; i < line.n; i++) {
+      if (line.gone[i] === 1) continue;
+      const li = lotRow(lots, line.lot[i]);
+      if (li >= 0 && lots.state[li] !== LOT_FREE) continue;
+      const ids = line.bundle[i];
+      let bundle = asking.get(ids);
+      if (bundle === undefined) {
+        const b = fm.bundleIds(ids);
+        bundle = b !== null && b.some((g) => money.has(progPool[g])) ? b : null;
+        asking.set(ids, bundle);
+      }
+      if (bundle === null) continue;
+      const units = line.units[i];
+      const protoId = prototypeFor(line.stories[i], units).id;
+      yield asksOf(fm.index, kindOf(line, i), bundle, protoId, units);
     }
   }
-  return short;
+  return spentAmong(rows(), money);
 }
 
 /**

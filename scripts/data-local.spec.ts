@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ManifestSchema } from '../src/lib/data/manifest';
 import { FONT_STACKS } from '../pipeline/config';
-import { collectDataPaths, isOptionalPath } from './data-local';
+import { collectDataPaths, isOptionalPath, parseDataLocalArgs } from './data-local';
 
 const fixture = JSON.parse(readFileSync('e2e/fixtures/data/fixture-0/manifest.json', 'utf8'));
 const chunk = (cellId: string) => ({
@@ -103,5 +103,35 @@ describe('isOptionalPath', () => {
     expect(isOptionalPath(m, 'fixture-0', 'fonts/NotoSans-Regular/0-255.pbf')).toBe(true);
     expect(isOptionalPath(m, 'fixture-0', 'fonts/NotoSans-Italic/65280-65535.pbf')).toBe(true);
     expect(isOptionalPath(m, 'fixture-0', 'neighborhoods.geojson')).toBe(false);
+  });
+});
+
+describe('parseDataLocalArgs', () => {
+  it('the version alone takes the default origin and no out', () => {
+    expect(parseDataLocalArgs(['2026-11-25-76c90397'])).toEqual({
+      version: '2026-11-25-76c90397',
+      origin: 'https://sfhousing.mindlace.net',
+      out: null
+    });
+  });
+
+  it('--out and --from in either order', () => {
+    const want = { version: 'fixture-0', origin: 'https://o', out: 'd' };
+    expect(parseDataLocalArgs(['fixture-0', '--out', 'd', '--from', 'https://o'])).toEqual(want);
+    expect(parseDataLocalArgs(['--from', 'https://o', '--out', 'd', 'fixture-0'])).toEqual(want);
+  });
+
+  it('refusals', () => {
+    for (const argv of [
+      ['fixture-0', '--out'],
+      ['fixture-0', '--out', '--from', 'https://o'],
+      ['fixture-0', '--from'],
+      ['fixture-0', '--bogus'],
+      ['fixture-0', 'fixture-1'],
+      ['not a version'],
+      []
+    ]) {
+      expect(parseDataLocalArgs(argv), argv.join(' ')).toHaveProperty('error');
+    }
   });
 });

@@ -1,12 +1,12 @@
 // world-funding Task 7: funded worlds end to end (spec rules 14, 15, 16, 21, "Tests that must
 // pass"): the ledger identities after every step on random finances, no money offered is no
-// money, a ledger changes nothing, the known limit, a cloned world, a permuted lot table, and
+// money, a ledger changes nothing, a spent pool left out, a cloned world, a permuted lot table, and
 // the plan world's calendar-month money series.
 import { describe, expect, it } from 'vitest';
 import { poolSeries } from '$lib/sim/scenario/finance-score';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { selectRows } from '$lib/sim/scenario/fixtures/select-rows';
-import { tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
+import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { monthsOf } from '$lib/sim/scenario/score';
 import { checkMoneyIdentities } from '$lib/sim/scenario/test/money-identities';
@@ -20,7 +20,7 @@ import { Recorder, runWorld } from '../test/run';
 import { frameOf, oneFrame } from '../test/timeline';
 import type { StepSink, World } from '../types';
 import { withFunding } from '../world';
-import { KIND_AFFORDABLE, fundOf } from './columns';
+import { fundOf } from './columns';
 import { createFundingSystem } from './system';
 import {
   fundedMini,
@@ -117,39 +117,42 @@ describe('rule 14: with and without a ledger, the same events', () => {
   });
 });
 
-describe('rule 16: the known limit — an application waits on a spent pool', () => {
+describe('rule 16 as amended: a spent pool is left out and the others award', () => {
   const units = [10, 10, 10, 10, 10];
   const one = 300027 * 10;
   const city: Inflow[] = [{ kind: 'once', day: asOf, dollars: Math.round(one * 1.5) }];
   const tiny: SimInput = {
     ...tinyQueue({ logOdds: Array(5).fill(-12), units }),
-    finance: tinyStack({ asOf, city })
+    // A steep slope (test value): the full bundle's finite odds pass in month 1 (R2), while the
+    // lots' own log-odds of -12 keep ordinary starts out.
+    finance: tinyStack({ asOf, city, slope: FAST_SLOPE })
   };
   const ts = staticsOf(tiny);
   const tt = oneMoneyTimeline(tiny, tiny.finance!);
 
   it.each(seeds(5))(
-    'seed %i: one award spends the City once inflow; the rest wait in line at month 480',
+    'seed %i: one award spends the City once inflow; the other four award on the federal and state shares',
     (seed) => {
-      // The wait on a spent pool is the older engine's; closing off keeps it (sec-design-option).
       const got = checked(ts, tt, seed, MONTHS, false);
       expect(got.steps).toBe(MONTHS);
-      expect(awards(got.events).length).toBe(1);
+      // the first month's awards, attempt 0 (a partial award can exit, and its lot apply again)
+      const all = awards(got.events);
+      const aw = all.filter((e) => e.month === 1);
+      expect(aw.length).toBe(5);
       const ins = got.ledger.filter((e) => e.kind === 'in' && e.pool === 't-city');
       expect(ins.length).toBe(1);
       const { line } = fundOf(got.world);
-      // Five lots applied for affordable money in month 1; one was awarded, four still wait.
-      expect(line.n).toBe(4);
-      const lots = new Set<number>();
-      for (let i = 0; i < line.n; i++) {
-        expect(line.kind[i]).toBe(KIND_AFFORDABLE);
-        expect(line.month[i]).toBe(1);
-        expect(line.gone[i]).toBe(0);
-        lots.add(line.lot[i]);
-      }
-      expect(lots.size).toBe(4);
-      // No ordinary start: the only project started is the funded one.
-      expect(got.events.filter((e) => e.kind === 'start').length).toBe(1);
+      expect(line.n).toBe(0);
+      // Every project started is a funded one: no ordinary start.
+      const starts = got.events.filter((e) => e.kind === 'start');
+      expect(starts.filter((e) => e.month === 1).length).toBe(5);
+      const awarded = new Set(all.map((e) => (e.kind === 'award' ? e.row : -1)));
+      expect(starts.every((e) => e.kind === 'start' && awarded.has(e.row))).toBe(true);
+      // One certain award on the whole bundle; four partial ones, not certain.
+      const certain = aw.map((e) => (e.kind === 'award' ? got.world.projects.certain[e.row] : -1));
+      expect(certain.filter((c) => c === 1).length).toBe(1);
+      expect(certain.filter((c) => c === 0).length).toBe(4);
+      expect(got.ledger.filter((e) => e.kind === 'commit' && e.pool === 't-city').length).toBe(1);
     }
   );
 });

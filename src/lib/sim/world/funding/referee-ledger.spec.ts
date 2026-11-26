@@ -1,9 +1,8 @@
-// The always-on half of the tolerance referee (signoff): the ledger identities E1 to E7 of the
-// finance-engine spec after every step, to month 480, on the bench city (`synthCity`) with its
-// baseline money and with the bench funding set, and on the e2e fixture city (fixture-0) with its
-// baseline funding. Nothing statistical and no comparison with today's engine: that is the full
-// 200-seed referee, `tolerance.referee.spec.ts`, which runs only with `SFH_WORLD_FUNDING_REFEREE=1`
-// (and `SFH_WORLD_LIVE` for the live case). See docs/dev/world-funding.md, Tolerance referee.
+// The ledger identities E1 to E7 of the finance-engine spec after every step, to month 480, on the
+// bench city (`synthCity`) with its baseline money and with the bench funding set, and on the e2e
+// fixture city (fixture-0) with its baseline funding. Nothing statistical and no comparison with
+// the old scenario engine: that comparison (`tolerance.referee.spec.ts`) was retired on
+// 2026-11-25 with the fallback award. See docs/dev/world-funding.md, Tolerance referee.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
