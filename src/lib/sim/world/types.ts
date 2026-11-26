@@ -1,6 +1,7 @@
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { Pathway, ProjectKind, Stage } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
+import type { CarColumns } from './cars/columns';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
 
@@ -137,6 +138,8 @@ export interface World {
   projects: ProjectColumns;
   line: LineColumns;
   pools: PoolColumns;
+  /** The car population (`world/cars`), present when a car system is plugged in. */
+  cars?: CarColumns;
 }
 
 /** What a step reports (S7). */
@@ -261,6 +264,27 @@ export interface FundingSystem {
   beforeStep?(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
   /** The timeline the world plans under; changes nothing. Absent: `timeline`. */
   timelineOf?(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
+}
+
+/**
+ * The hook the car system plugs into `world-core` beside funding (`withFunding(f, cars)`). It
+ * observes housing: nothing it does changes a start, an event or the due list.
+ */
+export interface CarSystem {
+  /** At the end of `createWorld`, after funding's `create`: sets `world.cars`. */
+  create(world: World, statics: Statics): void;
+  /**
+   * Every event a step sends, from every system (hook-started chains and `'displaced'`
+   * included), just after it is sent; it only buffers. Events of `createWorld` are not passed.
+   */
+  onEvent(world: World, statics: Statics, e: WorldEvent): void;
+  /** Between systems 3 and 4, every month, whether or not the frame has `finance`. */
+  step(ctx: StepCtx): void;
+  /**
+   * The timeline the world steps and plans under, before funding's view is laid over it; changes
+   * nothing.
+   */
+  timelineOf(world: World, statics: Statics, timeline: PolicyTimeline): PolicyTimeline;
 }
 
 export interface WorldOptions {

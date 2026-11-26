@@ -9,7 +9,16 @@ import { PROJECTS_JSON } from '$lib/fzp/fixtures/projects';
 import { QUALITY_HEADING, QUALITY_LOAD_FAILED, modelSections } from '$lib/fzp/provenance';
 import calibrationJson from '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import AboutAssumptions from './AboutAssumptions.svelte';
-import { ABOUT_ID, ASSUMPTIONS_FAILED, ASSUMPTIONS_SHOW, PART_HEADING } from './copy';
+import {
+  ABOUT_ID,
+  ASSUMPTIONS_FAILED,
+  ASSUMPTIONS_SHOW,
+  CARS_ABOUT,
+  CARS_DETAILS,
+  CARS_HEADING,
+  PART_HEADING
+} from './copy';
+import { CARS_SECTION_ID } from '$lib/fzp/provenance';
 
 const CAL_URL = '/data/fixture-0/scenarios/fzp/calibration.json';
 const PROJECTS_URL = '/data/fixture-0/scenarios/fzp/projects.json';
@@ -301,9 +310,11 @@ describe('AboutAssumptions live (the dialog)', () => {
       .element(page.getByRole('heading', { level: 3, name: PART_HEADING.assumptions }))
       .toBeVisible();
     expect(part().querySelector('details')).toBeNull();
-    expect([...part().querySelectorAll('h4')].map((h) => h.textContent?.trim())).toEqual(
-      expected()
-    );
+    // The Cars section first: the fixture calibration carries the car model.
+    expect([...part().querySelectorAll('h4')].map((h) => h.textContent?.trim())).toEqual([
+      CARS_HEADING,
+      ...expected()
+    ]);
     expect(fetchFn).not.toHaveBeenCalled();
     view.component.loadChecks();
     await expect
@@ -330,5 +341,54 @@ describe('AboutAssumptions live (the dialog)', () => {
       .poll(() => document.getElementById('src-quality')?.querySelectorAll('tbody tr').length)
       .toBe(3);
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the Cars section (car-ownership Task 12)', () => {
+  const carsManifest: ManifestSources = {
+    ...manifest,
+    scenarios: {
+      fzp: {
+        ...manifest.scenarios!.fzp,
+        cars: '/data/fixture-0/scenarios/fzp/cars.bin',
+        carZones: '/data/fixture-0/scenarios/fzp/car-zones.json'
+      }
+    }
+  };
+  const cars = () => page.getByRole('heading', { name: CARS_HEADING, exact: true });
+
+  it('on the page, with car data: the sentences and "Details" to the car model, nothing fetched', async () => {
+    const { fetchFn } = await setup({ manifest: carsManifest });
+    await expect.element(cars()).toBeVisible();
+    for (const line of CARS_ABOUT) await expect.element(page.getByText(line)).toBeVisible();
+    await expect
+      .element(page.getByRole('link', { name: CARS_DETAILS, exact: true }))
+      .toHaveAttribute('href', `/about#${CARS_SECTION_ID}`);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('without car data: no Cars section', async () => {
+    await setup();
+    await expect.element(summary()).toBeVisible();
+    expect(cars().query()).toBeNull();
+  });
+
+  it('live: shown exactly when the sections hold the car model', async () => {
+    const sections = modelSections(fixtureCalibration());
+    expect(sections.map((s) => s.id)).toContain(CARS_SECTION_ID);
+    const a = await render(AboutAssumptions, {
+      level: 3,
+      live: { sections, projectsUrl: null }
+    });
+    await expect.element(cars()).toBeVisible();
+    await a.unmount();
+    render(AboutAssumptions, {
+      level: 3,
+      live: { sections: sections.filter((s) => s.id !== CARS_SECTION_ID), projectsUrl: null }
+    });
+    await expect
+      .element(page.getByRole('heading', { name: PART_HEADING.assumptions }))
+      .toBeVisible();
+    expect(cars().query()).toBeNull();
   });
 });

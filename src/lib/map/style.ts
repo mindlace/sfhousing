@@ -8,7 +8,8 @@ import type {
 } from 'maplibre-gl';
 import type { Manifest } from '$lib/data/manifest';
 import type { StopClass } from '$lib/transit';
-import { TOKENS, TRANSIT_ACCESS_OPACITY } from './palette';
+import { CARS_BINS } from './cars-layer';
+import { CARS_OPACITY, TOKENS, TRANSIT_ACCESS_OPACITY } from './palette';
 import type { Theme } from './types';
 
 export const BUILDINGS_SOURCE = 'buildings';
@@ -19,6 +20,8 @@ export const OVERLAY_ANCHOR = 'overlay-anchor';
 export const TRANSIT_ACCESS_SOURCE = 'transit-access';
 export const TRANSIT_STOPS_SOURCE = 'transit-stops';
 export const TRANSIT_ACCESS_LAYER = 'transit-access';
+export const CARS_SOURCE = 'car-zones';
+export const CARS_LAYER = 'cars-per-household';
 export const TRANSIT_STOP_LAYERS = [
   'transit-stops-bus',
   'transit-stops-rail',
@@ -302,6 +305,26 @@ export function transitAccessLayer(theme: Theme): LayerSpecification {
   } as LayerSpecification;
 }
 
+/**
+ * Cars per household by block group (car-ownership Task 12): binned fill by `v`; a zone whose `v`
+ * is not a number (no households) draws nothing. Hidden until SimMap applies the view.
+ */
+export function carsLayer(theme: Theme): LayerSpecification {
+  const t = TOKENS[theme];
+  const step: unknown[] = ['step', ['get', 'v'], t['cars-1']];
+  CARS_BINS.forEach((edge, i) => step.push(edge, t[`cars-${(i + 2) as 2 | 3 | 4 | 5}`]));
+  return {
+    id: CARS_LAYER,
+    type: 'fill',
+    source: CARS_SOURCE,
+    layout: { visibility: 'none' },
+    paint: {
+      'fill-color': ['case', ['==', ['typeof', ['get', 'v']], 'number'], step, 'rgba(0,0,0,0)'],
+      'fill-opacity': CARS_OPACITY
+    }
+  } as unknown as LayerSpecification;
+}
+
 // Radius by log10(capacity): 100 riders/hr -> 2.5 px, ~30k -> 7 px at z11; x3 by z16.
 const STOP_R: ExpressionSpecification = ['interpolate', ['linear'], ['get', 'lc'], 2, 2.5, 4.5, 7];
 const STOP_LAYER: Record<
@@ -347,19 +370,21 @@ const emptyCollection = (): GeoJSONSourceSpecification => ({
 });
 
 /**
- * Stack: terrain and water, transit-access, transit stops, roads, existing-buildings, chunk
- * layers, labels, overlay-anchor. The transit sources and layers exist only when the manifest names a transit
- * network. The deck layers go beneath the labels at runtime: SimMap gives them `beforeId` =
- * `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
+ * Stack: terrain and water, transit-access, cars per household, transit stops, roads,
+ * existing-buildings, chunk layers, labels, overlay-anchor. The transit sources and layers exist
+ * only when the manifest names a transit network; the car zones' only when it names
+ * `scenarios.fzp.carZones`. The deck layers go beneath the labels at runtime: SimMap gives them
+ * `beforeId` = `firstSymbolLayerId(style)` (§4.4). No sprite is ever set: pois and icon layers are dropped.
  */
 export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification {
   const { base, labels } = protomapsLayers(theme, manifest.splitRoads === true);
   const transit = manifest.transit !== undefined;
-  // Stops sit above terrain, landuse and water but beneath the roads. Airport runways draw before
-  // water, so look for the first road after it (the tunnels).
+  const cars = manifest.scenarios?.fzp.carZones !== undefined;
+  // Stops and the cars fill sit above terrain, landuse and water but beneath the roads. Airport
+  // runways draw before water, so look for the first road after it (the tunnels).
   const water = base.findIndex((l) => l.id === 'water');
   const roads = base.findIndex((l, i) => i > water && l.id.startsWith('roads_'));
-  const split = transit && roads >= 0 ? roads : base.length;
+  const split = (transit || cars) && roads >= 0 ? roads : base.length;
   return {
     version: 8,
     glyphs: manifest.glyphs,
@@ -369,11 +394,14 @@ export function buildStyle(manifest: Manifest, theme: Theme): StyleSpecification
       [CHUNK_SOURCE]: emptyCollection(),
       ...(transit
         ? { [TRANSIT_ACCESS_SOURCE]: emptyCollection(), [TRANSIT_STOPS_SOURCE]: emptyCollection() }
-        : {})
+        : {}),
+      ...(cars ? { [CARS_SOURCE]: emptyCollection() } : {})
     },
     layers: [
       ...base.slice(0, split),
-      ...(transit ? [transitAccessLayer(theme), ...transitStopLayers(theme)] : []),
+      ...(transit ? [transitAccessLayer(theme)] : []),
+      ...(cars ? [carsLayer(theme)] : []),
+      ...(transit ? transitStopLayers(theme) : []),
       ...base.slice(split),
       existingBuildingsLayer(theme),
       ...chunkLayers(theme),

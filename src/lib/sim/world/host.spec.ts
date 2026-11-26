@@ -15,9 +15,8 @@ import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';
-import { createFundingSystem } from './funding';
 import { createTimelineHost } from './host';
-import { withFunding } from './index';
+import { carSnapshotOf } from './index';
 import { monthLastDay, monthOfDay } from './months';
 import { comparisonOf } from './policy/compare';
 import { compileTimeline, type CompileCtx } from './policy/compile';
@@ -49,8 +48,8 @@ vi.mock('./world', async (importOriginal) => {
   const m = await importOriginal<typeof import('./world')>();
   return {
     ...m,
-    withFunding(f: Parameters<typeof m.withFunding>[0]) {
-      const core = m.withFunding(f);
+    withFunding(...args: Parameters<typeof m.withFunding>) {
+      const core = m.withFunding(...args);
       return {
         ...core,
         step(w: World, ...rest: unknown[]) {
@@ -243,7 +242,8 @@ function plainLoop(
   months: number,
   lots: Parameters<typeof compileTimeline>[1] = {}
 ): Plain {
-  const { createWorld, step, planDue } = withFunding(createFundingSystem());
+  // the dataset's core: funding and the dataset's car system, as both ensembles step
+  const { createWorld, step, planDue } = ds.core;
   const ctx = ctxOf(months);
   const rhna = ds.loaded.projects.rhnaCompletedNet;
   const c = comparisonOf(doc);
@@ -266,11 +266,14 @@ function plainLoop(
     const ledgerSink = side === 0 ? (e: LedgerEvent) => own.push(e) : undefined;
     const w = createWorld(ds.statics, t, 1, { event: (e) => buf.push(e), ledger: ledgerSink });
     for (const e of buf) ws.add(e, w, ds.statics);
+    // the plan's series alone takes car snapshots, as the runner feeds it
+    const snap = () => (side === 0 ? carSnapshotOf(w) : null);
+    ws.created(snap());
     const due = planDue(w, ds.statics, t, 1, months);
     const sink = { event: (e: WorldEvent) => ws.add(e, w, ds.statics), ledger: ledgerSink };
     while (w.month < months) {
       step(w, due, ds.statics, t, 1, sink);
-      ws.stepped(w.month);
+      ws.stepped(w.month, snap());
     }
     if (side === 0) {
       world1 = w;
@@ -779,7 +782,7 @@ describe('the host', () => {
     boom.at = 1; // the plan's world steps first
     await h.run(() => h.errors().length > 0);
     expect(await h.idle()).toBe(true);
-    const { createWorld } = withFunding(createFundingSystem());
+    const { createWorld } = ds.core;
     const ctx = ctxOf(MONTHS);
     const c = compileTimeline(DEFAULT_POLICY4, {}, ctx, 'plan');
     expect(c.step(Infinity)).toBe(true);

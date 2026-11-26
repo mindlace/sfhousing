@@ -7,12 +7,14 @@ export const NO_LAND_USE = 'NONE';
  * Scenario eligibility (T11 flags bit 5; the T13 panel's `hostable_base`): the chunk record's
  * `eligible`, or, for a parcel with no land-use row, assessor units > 0 (T14
  * sd.landuse.none-with-units, coordinator ruling). `existingUnits` is the post-rule roll value:
- * the latest roll year's for T11, each roll year's own for the panel. OPENSPACE stays excluded
- * and the chunk record (and so the editor) is unchanged. A lot wholly in the water is never
+ * the latest roll year's for T11, each roll year's own for the panel. OPENSPACE stays excluded.
+ * A lot wholly in the water is never
  * eligible, whatever its roll says (it keeps its homes but takes no yield), and neither is a
  * road-like lot (`roadLike` set by 55_road_lots.sql: a street-shaped strip, never built on). Freeway land
  * (`freewayLand` true: a parcel of the curated catalog, `pipeline/lib/freeway-land.ts`)
- * is never eligible either: it is unbuildable while its freeway stands. T11 passes the flag; the
+ * is never eligible either: it is unbuildable while its freeway stands (`writeChunks` writes its
+ * chunk record ineligible too, so the editor refuses it; this reader still gets the unchanged
+ * `parcel_out.eligible`). T11 passes the flag; the
  * T13 panel does not (calibration describes the past market). Pure.
  */
 export function scenarioEligible(

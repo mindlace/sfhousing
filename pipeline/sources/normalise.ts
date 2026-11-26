@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Duck } from '../lib/duck';
 import { rawPath, type Lock } from '../lib/lock';
 import { DATASF, type DatasfId } from './datasf';
+import { loadCensus, normaliseCensus } from './census';
 import { normaliseLand, tilesParquet } from './land';
 import { normaliseSfbosExemptions } from './sfbos';
 
@@ -342,7 +343,10 @@ export async function normalise(
   return r.n;
 }
 
-/** CREATE TABLE src_* AS SELECT * FROM read_parquet(<normDir>/<id>.parquet). */
+/**
+ * CREATE TABLE src_* AS SELECT * FROM read_parquet(<normDir>/<id>.parquet), then the census and
+ * DMV tables whose parquet exists.
+ */
 export async function loadNormalised(db: Duck, normDir: string): Promise<void> {
   for (const id of SOURCE_IDS) {
     const file = path.join(normDir, `${id}.parquet`);
@@ -353,6 +357,7 @@ export async function loadNormalised(db: Duck, normDir: string): Promise<void> {
       );
     }
   }
+  await loadCensus(db, normDir);
 }
 
 /** Normalise every source of the lock into `<normDir>/<id>.parquet`; returns row counts by id. */
@@ -379,5 +384,8 @@ export async function normaliseAll(
     const out = path.join(normDir, `${id}.parquet`);
     rows[id] = await normalise(db, id, files, out, parquet, opts);
   }
+  // Census and DMV tables exist only when their lock entries do; their counts join the result
+  // under the table names (src_acs_bg, ...).
+  Object.assign(rows, await normaliseCensus(db, lock, rawDir, normDir, opts.byName));
   return rows;
 }

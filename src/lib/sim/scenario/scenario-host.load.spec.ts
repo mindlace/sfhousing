@@ -141,13 +141,25 @@ describe('validateInitRequest', () => {
 describe('scenarioUrls', () => {
   it('returns the three URLs when each is under /data/<v>/', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
+    expect(scenarioUrls(m)).toEqual({
+      ...URLS,
+      policy: null,
+      gross: null,
+      cars: null,
+      carZones: null
+    });
   });
 
   it('scenarioUrls ignores scenarios.fzp.frontage', () => {
     const m = makeScenarioHarness().manifest();
     expect(m.scenarios!.fzp.frontage).toBe(MINI_FRONTAGE_URL); // an older dataset names it
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
+    expect(scenarioUrls(m)).toEqual({
+      ...URLS,
+      policy: null,
+      gross: null,
+      cars: null,
+      carZones: null
+    });
   });
 
   it('is null without scenarios.fzp, or with a missing or outside URL', () => {
@@ -682,7 +694,13 @@ describe('scenario host: reroll before loading, supersession and dispose', () =>
 
 describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
   const POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;
-  const WITH_POLICY: ScenarioUrls = { ...URLS, policy: POLICY_URL, gross: null };
+  const WITH_POLICY: ScenarioUrls = {
+    ...URLS,
+    policy: POLICY_URL,
+    gross: null,
+    cars: null,
+    carZones: null
+  };
   const policyBin = () =>
     new Uint8Array(deflateRawSync(encodePolicyPayload(miniPolicy(miniCity()))));
 
@@ -718,7 +736,13 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
 
   it('scenarioUrls names the policy URL when the manifest has one, else null', () => {
     const m = makeScenarioHarness().manifest();
-    expect(scenarioUrls(m)).toEqual({ ...URLS, policy: null, gross: null });
+    expect(scenarioUrls(m)).toEqual({
+      ...URLS,
+      policy: null,
+      gross: null,
+      cars: null,
+      carZones: null
+    });
     const fzp = { ...m.scenarios!.fzp, policy: POLICY_URL };
     expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual(WITH_POLICY);
     // A session without levers never needs policy.bin, so a bad one leaves the other three usable.
@@ -727,7 +751,9 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
       expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({
         ...URLS,
         policy: null,
-        gross: null
+        gross: null,
+        cars: null,
+        carZones: null
       });
     }
   });
@@ -736,12 +762,20 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
     const m = makeScenarioHarness().manifest();
     const gross = `/data/${MINI_VERSION}/scenarios/fzp/gross.bin`;
     const fzp = { ...m.scenarios!.fzp, gross };
-    expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual({ ...URLS, policy: null, gross });
+    expect(scenarioUrls({ ...m, scenarios: { fzp } })).toEqual({
+      ...URLS,
+      policy: null,
+      gross,
+      cars: null,
+      carZones: null
+    });
     const bad = { ...fzp, gross: '/data/fixture-1/scenarios/fzp/gross.bin' };
     expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual({
       ...URLS,
       policy: null,
-      gross: null
+      gross: null,
+      cars: null,
+      carZones: null
     });
   });
 
@@ -766,9 +800,14 @@ describe('loadScenario: policy.bin (plan 2 Task 10)', () => {
 
   it('gives scenario-missing for opts.policy without scenarios.fzp.policy', async () => {
     const d = direct(files());
-    const r = await loadScenario(d.deps, { ...URLS, policy: null, gross: null }, () => false, {
-      policy: true
-    });
+    const r = await loadScenario(
+      d.deps,
+      { ...URLS, policy: null, gross: null, cars: null, carZones: null },
+      () => false,
+      {
+        policy: true
+      }
+    );
     expect(r).toEqual({
       code: 'scenario-missing',
       message: 'dataset has no policy.bin (scenarios.fzp.policy)'

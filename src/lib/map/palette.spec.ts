@@ -9,7 +9,8 @@ import {
   timelineTokenCss,
   type TokenName,
   compositeHex,
-  accessSwatch
+  accessSwatch,
+  carsSwatch
 } from './palette';
 import { TYPOLOGY_ORDER } from './types';
 
@@ -48,6 +49,21 @@ describe('palette (U4)', () => {
       );
       for (let i = 1; i < cs.length; i++) expect(cs[i]).toBeGreaterThan(cs[i - 1]);
     });
+    it(`${theme}: the cars ramp's contrast with land strictly increases, as drawn`, () => {
+      const c = ([1, 2, 3, 4, 5] as const).map((k) =>
+        contrast(carsSwatch(theme, k), TOKENS[theme].land)
+      );
+      for (let k = 1; k < c.length; k++) expect(c[k]).toBeGreaterThan(c[k - 1]);
+    });
+
+    it(`${theme}: the lowest cars step reads apart from no data (land), ≥ 1.3:1; each step ≥ 1.2× the last`, () => {
+      const c = ([1, 2, 3, 4, 5] as const).map((k) =>
+        contrast(carsSwatch(theme, k), TOKENS[theme].land)
+      );
+      expect(c[0]).toBeGreaterThanOrEqual(1.3);
+      for (let k = 1; k < c.length; k++) expect(c[k] / c[k - 1]).toBeGreaterThanOrEqual(1.2);
+    });
+
     it(`${theme}: stop classes step up in contrast with land (bus < rail < regional), ΔE2000 ≥ 8`, () => {
       const ids = ['transit-bus', 'transit-rail', 'transit-regional'] as const;
       const cs = ids.map((id) => contrast(TOKENS[theme][id], TOKENS[theme].land));
@@ -306,7 +322,8 @@ describe('tokenCss / timelineTokenCss (spec §4.6.1)', () => {
   it('tokenCss over every token and .sim-map reproduces the pinned DEFAULT_TOKENS_CSS body', () => {
     // The pin predates the `tl-halo-*` tokens, which SimMap's stylesheet also declares (in TOKENS
     // order); the pinned body covers every other token byte for byte.
-    const pinned = ALL.filter((n) => !n.startsWith('tl-halo-'));
+    // Nor the `cars-*` ramp (car-ownership Task 12), added after it.
+    const pinned = ALL.filter((n) => !n.startsWith('tl-halo-') && !n.startsWith('cars-'));
     expect(tokenCss('.sim-map', pinned)).toBe(DEFAULT_TOKENS_BODY);
   });
 

@@ -96,6 +96,31 @@ is a no-op in flight or once loaded, and retries after a failure) and returns a 
 resolves once the attempt has settled and is drawn; `AboutAssumptions` passes it through, calls it
 on each open of the page's disclosure, and the dialog calls it on each open.
 
+## Cars
+
+With car data, the assumptions open with a short Cars section (`CARS_HEADING`, one level under
+the part): the sentences of `CARS_ABOUT`, the last ending in the link `CARS_DETAILS` ("Details")
+to `/about#src-cars`, the car model's section in `ProvenanceBody` (`CARS_SECTION_ID`, built by
+`provenanceSections` when the calibration has `cars`: the choice model, moves and new homes, each
+parking figure's provenance, and a table of the model's figures). It shows on the page when the
+manifest names `scenarios.fzp.cars`, before the disclosure (the link opens it and lands, like any
+`src-` hash), and live when the run's sections hold `src-cars`. With `scenarios.fzp.cars`, Data
+and licences adds `carsNotice(sources)` (`credits.ts`) to its notices: the Census kinds the
+manifest's sources hold (public domain), the DMV check with the licence the manifest states, and a
+pointer to the assumptions for the parking figures' sources; nothing when the manifest holds
+neither.
+
+## Sources table
+
+Every lock entry is a manifest source (ruling P13), so `AboutData` renders `sourceRows(sources)`
+(`src/lib/about/credits.ts`): a family of two or more sources is one row where its first member
+was. The families: every `census-*` source ("U.S. Census Bureau (ACS, PUMS, decennial SF3,
+TIGER/Line, relationship files), 2000–2024": the kinds present, then the years the ids name),
+every `ca-dmv-*` source, and each GTFS operator (`gtfs-<op>` with its `gtfs-<op>-<year>`
+archives: the current feed's label, then the years; operators stay apart, as their licences
+differ). A family row links census.gov (else its first member's page), lists each licence once and
+shows the latest retrieval. Any other source, and a family of one, keeps its own row.
+
 ## `/attribution`
 
 A permanent redirect: `redirect(308, '/about#about-data')`, so old links (and the hashed

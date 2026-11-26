@@ -23,6 +23,7 @@ function stub(rows: MonthRow[]): WorldSeries {
   };
   return {
     add: nope,
+    created: nope,
     stepped: nope,
     data: nope,
     finalThrough: () => rows.length - 1,
@@ -53,9 +54,10 @@ describe('chunkOf', () => {
     }
   });
 
-  it('a chunk holds rows, the effect, money, tiers and waiting only', () => {
+  it('a chunk holds rows, the effect, money, tiers, cars and waiting only', () => {
     const plan = world([1]);
     expect(Object.keys(chunkOf(plan, plan, null, 0, 0)).sort()).toEqual([
+      'cars',
       'from',
       'money',
       'planEffect',

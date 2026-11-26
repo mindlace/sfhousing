@@ -128,6 +128,7 @@ function recordingStream(): MapStream & { events: number } {
 
 function ensemble(over: Partial<EnsembleOpts> = {}): Ensemble {
   return createEnsemble({
+    core: withFunding(createFundingSystem()),
     statics,
     timeline,
     months: MONTHS,

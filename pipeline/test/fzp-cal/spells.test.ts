@@ -272,17 +272,17 @@ describe('buildSpells', () => {
     ]);
   });
 
-  it('left-truncates a 2004 permit still in permitIssued at 2007-01-01', () => {
+  it('left-truncates a 2012 permit still in permitIssued at 2015-01-01', () => {
     const h = hist(
       'p1',
       'permitOnly',
-      { permitFiled: '2004-01-01', permitIssued: '2004-03-01' },
-      open('2010-01-01')
+      { permitFiled: '2012-01-01', permitIssued: '2012-03-01' },
+      open('2018-01-01')
     );
     const s = spellsOf(h);
     expect(s.map((x) => x.stage)).toEqual(['permitIssued']);
-    expect(s[0].a).toBe(d('2007-01-01') - d('2004-03-01'));
-    expect(s[0].x).toBe(d('2010-01-01') - d('2004-03-01'));
+    expect(s[0].a).toBe(d('2015-01-01') - d('2012-03-01'));
+    expect(s[0].x).toBe(d('2018-01-01') - d('2012-03-01'));
   });
 
   it('keeps a zero-duration spell as an advance', () => {
@@ -466,15 +466,15 @@ describe('gapImputeTally (DQ-4: counted over windowed histories)', () => {
 
 describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', () => {
   const done = (iso: string): ProjectHistory['end'] => ({ kind: 'complete', day: d(iso) });
-  const noFcd = (id: string, extra: Entered = {}, complete = '2012-05-01') =>
+  const noFcd = (id: string, extra: Entered = {}, complete = '2020-05-01') =>
     hist(
       id,
       'discretionary',
       {
-        filed: '2008-01-01',
-        entitled: '2008-06-01',
-        permitFiled: '2009-06-01',
-        permitIssued: '2010-03-01',
+        filed: '2013-01-01',
+        entitled: '2013-06-01',
+        permitFiled: '2014-06-01',
+        permitIssued: '2018-03-01',
         complete,
         ...extra
       },
@@ -494,33 +494,33 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
         projectId: 'nf',
         pathway: 'discretionary',
         stage: 'permitIssued',
-        complete: d('2012-05-01'),
-        enteredPermitIssued: d('2010-03-01')
+        complete: d('2020-05-01'),
+        enteredPermitIssued: d('2018-03-01')
       },
       {
         projectId: 'nf',
         pathway: 'discretionary',
         stage: 'construction',
-        complete: d('2012-05-01'),
-        enteredPermitIssued: d('2010-03-01')
+        complete: d('2020-05-01'),
+        enteredPermitIssued: d('2018-03-01')
       }
     ]);
   });
 
   it('treats a construction start on the completion day as no FCD', () => {
-    const r = normalise([noFcd('nf', { construction: '2012-05-01' })], AS_OF);
+    const r = normalise([noFcd('nf', { construction: '2020-05-01' })], AS_OF);
     expect(r.imputed.size).toBe(0);
     expect(r.norm[0].noFcd).toBe(true);
     const b = buildSpells(r.norm, AS_OF);
     expect(b.spells.map((s) => s.stage)).toEqual(['permitFiled']);
     expect(b.unobserved.map((u) => [u.stage, u.complete, u.enteredPermitIssued])).toEqual([
-      ['permitIssued', d('2012-05-01'), d('2010-03-01')],
-      ['construction', d('2012-05-01'), d('2010-03-01')]
+      ['permitIssued', d('2020-05-01'), d('2018-03-01')],
+      ['construction', d('2020-05-01'), d('2018-03-01')]
     ]);
   });
 
   it('leaves a completion with a real FCD unaffected', () => {
-    const r = normalise([noFcd('ok', { construction: '2010-09-01' })], AS_OF);
+    const r = normalise([noFcd('ok', { construction: '2018-09-01' })], AS_OF);
     expect(r.norm[0].noFcd).toBe(false);
     const b = buildSpells(r.norm, AS_OF);
     expect(b.spells.map((s) => [s.stage, s.outcome])).toEqual([
@@ -558,8 +558,8 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
     const h = hist(
       'nc',
       null,
-      { construction: '2012-05-01', complete: '2012-05-01' },
-      done('2012-05-01')
+      { construction: '2020-05-01', complete: '2020-05-01' },
+      done('2020-05-01')
     );
     const r = normalise([h], AS_OF);
     expect(r.norm[0].noFcd).toBe(true);
@@ -568,7 +568,7 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
     const b = buildSpells(r.norm, AS_OF);
     expect(b.spells).toEqual([]);
     expect(b.unobserved).toEqual([
-      { projectId: 'nc', pathway: null, stage: 'construction', complete: d('2012-05-01') }
+      { projectId: 'nc', pathway: null, stage: 'construction', complete: d('2020-05-01') }
     ]);
     expect(noFcdTally(r.norm, b.spells, b.unobserved)).toEqual({
       fired: 1,
@@ -576,7 +576,7 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
       sample: ['nc']
     });
     // a null-pathway history seen only at completion has no permit-side spell: not no-FCD
-    const only = hist('oc', null, { complete: '2012-05-01' }, done('2012-05-01'));
+    const only = hist('oc', null, { complete: '2020-05-01' }, done('2020-05-01'));
     expect(normalise([only], AS_OF).norm[0].noFcd).toBe(false);
   });
 
@@ -598,12 +598,12 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
     expect(buildSpells(r.norm, AS_OF).unobserved).toEqual([]);
   });
 
-  it('cuts unobserved advances at the pooled window: completion on or after 2007-01-01', () => {
+  it('cuts unobserved advances at the pooled window: completion on or after 2015-01-01', () => {
     const pre = hist(
       'pre',
       'permitOnly',
-      { permitFiled: '2003-01-01', permitIssued: '2004-01-01', complete: '2006-12-31' },
-      done('2006-12-31')
+      { permitFiled: '2011-01-01', permitIssued: '2012-01-01', complete: '2014-12-31' },
+      done('2014-12-31')
     );
     const b = buildSpells(normalise([pre], AS_OF).norm, AS_OF);
     expect(b.spells).toEqual([]);
@@ -611,21 +611,21 @@ describe('no-FCD completions (sc.stages.no-fcd-duration, partner ruling P1)', ()
   });
 
   it('noFcdTally: fired = windowed no-FCD completions, of = histories with a spell or one', () => {
-    // b-late's permitFiled spell ends before 2007: it contributes only unobserved advances
+    // b-late's permitFiled spell ends before 2015: it contributes only unobserved advances
     const late = hist(
       'b-late',
       'permitOnly',
-      { permitFiled: '2005-01-01', permitIssued: '2006-06-01', complete: '2008-01-01' },
-      done('2008-01-01')
+      { permitFiled: '2013-01-01', permitIssued: '2014-06-01', complete: '2016-01-01' },
+      done('2016-01-01')
     );
     const pre = hist(
       'pre',
       'permitOnly',
-      { permitFiled: '2003-01-01', permitIssued: '2004-01-01', complete: '2005-01-01' },
-      done('2005-01-01')
+      { permitFiled: '2011-01-01', permitIssued: '2012-01-01', complete: '2013-01-01' },
+      done('2013-01-01')
     );
     const r = normalise(
-      [noFcd('z-nf'), noFcd('a-ok', { construction: '2010-09-01' }), late, pre],
+      [noFcd('z-nf'), noFcd('a-ok', { construction: '2018-09-01' }), late, pre],
       AS_OF
     );
     const b = buildSpells(r.norm, AS_OF);

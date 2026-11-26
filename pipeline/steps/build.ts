@@ -23,7 +23,14 @@ import { QUALITY_REPORT_MD, createQualityTables, writeQualityReport } from '../l
 import { Report } from '../lib/report';
 import { loadRoadLotInputs, readRoadLots, ROAD_LOTS_JSON, roadLotProblems } from '../lib/road-lots';
 import { runSql } from '../lib/sql';
-import { GROSS_BIN, POLICY_BIN } from '../lib/scenario-files';
+import {
+  CARS_BIN,
+  CAR_ZONES_JSON,
+  GROSS_BIN,
+  PARCELS_BIN,
+  POLICY_BIN,
+  readParcelsBin
+} from '../lib/scenario-files';
 import { boxesCodeHash, codeTreeHash, computeDatasetVersion } from '../lib/version';
 import { asOfFromLock } from '../project-records/parse';
 import { LIDAR_LOCK, readLidarLock } from '../sources/lidar';
@@ -31,8 +38,10 @@ import { loadNormalised, normaliseAll } from '../sources/normalise';
 import { overtureReleaseProblem } from '../sources/overture';
 import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import { parseFixtureParkingFile, parseParkingFile } from '../enrichment/parking-schema';
 import { freewayLandSet, readFreewayLand } from '../lib/freeway-land';
 import { readFundingFile, writeCalibration } from './calibration';
+import { carsStep } from './cars';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
 import { writeGross } from './gross';
@@ -42,7 +51,7 @@ import { writeProjectRecords } from './projects';
 import { writeRenderBoxes } from './render-boxes';
 import { writeScenario } from './scenario';
 import { installFonts, writeBasemap, writeBuildingsTiles } from './tiles';
-import { transitTargetDate, writeTransit } from './transit';
+import { lockTransitYears, transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
   lockPath: string;
@@ -77,6 +86,19 @@ const MULTIPHASE = {
 const FUNDING = {
   live: join(REPO_ROOT, 'pipeline/enrichment/funding.json'),
   fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/funding.json')
+};
+/**
+ * Parking facts for the car model (cars-data.md): live, and the mini fixture's (an invented tier-4
+ * cost, read only by `parseFixtureParkingFile`; ruling P3).
+ */
+const PARKING = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/parking.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/parking.json')
+};
+/** SF AMI by year and household size (cars-data.md): live, and the mini fixture's. */
+const AMI = {
+  live: join(REPO_ROOT, 'pipeline/enrichment/ami.json'),
+  fixture: join(REPO_ROOT, 'pipeline/test/fixtures/mini/enrichment/ami.json')
 };
 /** Curated imagery verdicts (project-records spec §4.6, Ruling C3): live, and the mini fixture's. */
 const CONSTRUCTION_VERIFIED = {
@@ -155,8 +177,9 @@ function chunkCounts(chunks: ChunkOut[]): Record<string, number> {
  * step (scenarios/fzp/parcels.bin; the T13 panel and lineage into the derived cache), the gross
  * table (scenarios/fzp/gross.bin), the project
  * records (scenarios/fzp/projects.json; histories and permits.parquet into the derived cache),
- * the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived cache),
- * neighborhoods, transit, the policy step (scenarios/fzp/policy.bin), the T14 quality report
+ * neighborhoods, transit, the car step (scenarios/fzp/cars.bin and car-zones.json, with Census
+ * data), the calibration (scenarios/fzp/calibration.json; calibration-report.md into the derived
+ * cache), the policy step (scenarios/fzp/policy.bin), the T14 quality report
  * (quality-report.md into the derived cache), tiles,
  * basemap, fonts, manifest, invariants and report.json into `<outRoot>/<datasetVersion>/`.
  * Throws BuildError when a raw file does not match the lock.
@@ -231,10 +254,16 @@ export async function build(
       writeRenderBoxes({ db, files: boxesFilesOf(lock, opts.rawDir, byName), derivedDir })
     );
     const chunks = await report.time('chunks', () =>
-      writeChunks(db, outDir, datasetVersion, report)
+      writeChunks(db, outDir, datasetVersion, report, freewayLandSet(freewayLand))
     );
     const reencodeIdentical = await report.time('reencode', async () => {
-      await writeChunks(db, join(work, 'reencode'), datasetVersion, new Report());
+      await writeChunks(
+        db,
+        join(work, 'reencode'),
+        datasetVersion,
+        new Report(),
+        freewayLandSet(freewayLand)
+      );
       return sameFiles(join(outDir, 'parcels'), join(work, 'reencode', 'parcels'));
     });
     // Two dates, each from its own named sources (docs/dev/pipeline.md, Lock and datasetVersion);
@@ -249,7 +278,8 @@ export async function build(
     // into this object, and `writeQualityReport` and V30 read it. The project-records step writes
     // all its counts into it; the other counts join it below.
     const counts: Record<string, number> = {};
-    // The scenario and policy steps share the chunk records (same rows, same order).
+    // The scenario and policy steps share the chunk records (same rows, same order), except that
+    // the chunks write freeway-land catalog lots with `eligible` false and these keep parcel_out's.
     const records = await readParcelRecords(db);
     const scenario = await report.time('scenario', async () =>
       writeScenario({
@@ -295,6 +325,45 @@ export async function build(
       })
     );
     report.warnings.push(...projects.warnings);
+    // Neighbourhoods and transit come before the car step (it reads the network's access grid);
+    // transit needs neighborhoods.geojson for its clip.
+    const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
+    const transit = await report.time('transit', async () =>
+      writeTransit({
+        lock,
+        rawDir: opts.rawDir,
+        byName,
+        outDir,
+        targetDate: transitDate,
+        // The mini fixture's feeds carry only a few lines; assignment checks are live-only.
+        strict: !fixtureMode
+      })
+    );
+    // Car zones and the start households (docs/dev/pipeline.md, Car zones): after the scenario
+    // step (parcels.bin) and transit, before calibration. Without the Census entries it writes
+    // nothing and returns nulls.
+    const cars = await report.time('cars', () =>
+      carsStep(db, {
+        outDir,
+        lock,
+        transit: transit.network,
+        parcels: readParcelsBin(join(outDir, PARCELS_BIN)),
+        parkingPath: fixtureMode ? PARKING.fixture : PARKING.live,
+        parseParking: fixtureMode ? parseFixtureParkingFile : parseParkingFile,
+        amiPath: fixtureMode ? AMI.fixture : AMI.live,
+        // The back-cast (section 15): homes by month from the records, access by year.
+        histories: projects.histories,
+        transitYears: lockTransitYears({
+          lock,
+          rawDir: opts.rawDir,
+          byName,
+          outDir,
+          targetDate: transitDate,
+          network: transit.network
+        })
+      })
+    );
+    report.warnings.push(...cars.warnings);
     // Stage-calibration spec §4.3: after the scenario and projects steps (it reads parcels.bin,
     // projects.json, permits.parquet and scenario_panel), before the manifest. Its sc.* tallies
     // and calibration.* counts go into the same counts. A CalibrationError aborts the build.
@@ -311,22 +380,14 @@ export async function build(
         fundingPath,
         lock,
         rawDir: opts.rawDir,
-        byName
+        byName,
+        cars: cars.model,
+        carsReport: cars.report,
+        carsBackcast: cars.backcast
       })
     );
     report.warnings.push(...calibration.warnings);
-    const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
-    const transit = await report.time('transit', async () =>
-      writeTransit({
-        lock,
-        rawDir: opts.rawDir,
-        byName,
-        outDir,
-        targetDate: transitDate,
-        // The mini fixture's feeds carry only a few lines; assignment checks are live-only.
-        strict: !fixtureMode
-      })
-    );
+    // The transit warnings keep their place in the report, after the calibration's.
     report.warnings.push(...transit.warnings);
     // Sim data layers: after the scenario step (it reads parcels.bin, sc_zoning and sc_district)
     // and transit, before the quality report. Its T14 rules go into the same counts.
@@ -372,6 +433,7 @@ export async function build(
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
       gross: existsSync(join(outDir, GROSS_BIN)),
+      cars: existsSync(join(outDir, CARS_BIN)) && existsSync(join(outDir, CAR_ZONES_JSON)),
       warn: (w) => report.warnings.push(w)
     });
     const manifestBytes = writeManifest(outDir, manifest);
@@ -383,6 +445,7 @@ export async function build(
       ...report.counts,
       ...chunkCounts(chunks),
       ...transit.counts,
+      ...cars.counts,
       ...scenario.counts,
       ...gross.counts,
       ...policy.counts,

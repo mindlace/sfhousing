@@ -45,6 +45,7 @@ function splitRun(
       target.stepped(m);
       if (m === at) target = restored = createWorldSeries(s, saved!);
     },
+    created: (c) => target.created(c),
     finalThrough: () => target.finalThrough(),
     rows: (a, b) => target.rows(a, b),
     data: () => target.data()
@@ -121,9 +122,9 @@ describe('data and restore', () => {
   it('saved data of an older layout is rejected', () => {
     const s = testStatics(input, 24);
     const d = createWorldSeries(s).data();
-    expect(d.version).toBe(5);
+    expect(d.version).toBe(6);
     expect(createWorldSeries(s, structuredClone(d)).data()).toEqual(d);
-    for (const version of [1, 2, 3, 4]) {
+    for (const version of [1, 2, 3, 4, 5]) {
       const old = { ...d, version } as unknown as WorldSeriesData;
       expect(() => createWorldSeries(s, old)).toThrow(`saved series version ${version}`);
     }

@@ -928,9 +928,17 @@
   const systemTheme = useSystemTheme();
   /** The manifest the map renders (TimelineMode's own, which a Retry can replace). */
   let mapManifest = $state.raw<Manifest | null>(null);
-  const viewRows = $derived<readonly ViewRow[]>(
-    mapManifest?.transit ? ['transitStops', 'transitAccess', 'heightLimits'] : ['heightLimits']
-  );
+  /** The run carries car data (`Loaded.cars`), from TimelineMode's `oncars`. */
+  let runCars = $state(false);
+  /**
+   * Transit's rows with transit, cars per household with car zones and a run with car data, then
+   * the height limits.
+   */
+  const viewRows = $derived<readonly ViewRow[]>([
+    ...(mapManifest?.transit ? (['transitStops', 'transitAccess'] as const) : []),
+    ...(mapManifest?.scenarios?.fzp.carZones && runCars ? (['carsPerHousehold'] as const) : []),
+    'heightLimits'
+  ]);
 
   function setView(v: ViewPrefs): void {
     viewPrefs = v;
@@ -1446,6 +1454,7 @@
   onclient={onClient}
   onmapready={onMapReady}
   onmanifest={(m) => (mapManifest = m)}
+  oncars={(on) => (runCars = on)}
   oncalibration={onCalibration}
   onheights={(c) => {
     city = c;

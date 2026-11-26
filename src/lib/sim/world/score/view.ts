@@ -1,7 +1,15 @@
 import { debtService } from '$lib/sim/finance';
 import { displacedShare, perAddedHome, type Money } from '$lib/sim/scenario/finance-score';
 import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
-import type { MoneyRow, MoneyView, ScoreStatics, SeriesChunk, TimelineView } from './types';
+import type {
+  CarRow,
+  CarsView,
+  MoneyRow,
+  MoneyView,
+  ScoreStatics,
+  SeriesChunk,
+  TimelineView
+} from './types';
 
 /**
  * The plan world's money as of month `rows.length - 1` (rule 12): today's
@@ -93,6 +101,17 @@ function moneyViewOf(rows: MoneyRow[], statics: ScoreStatics): MoneyView {
   };
 }
 
+function carsViewOf(rows: CarRow[]): CarsView {
+  return {
+    households: rows.map((r) => r.households),
+    cars: rows.map((r) => r.cars),
+    carless: rows.map((r) => r.carless),
+    perHousehold: rows.map((r) => (r.households === 0 ? null : r.cars / r.households)),
+    spacesPerHome: rows.map((r) => r.spacesPerHome),
+    zones: rows.map((r) => r.zones)
+  };
+}
+
 /** Joins contiguous chunks into what the page reads. Throws on a gap, an overlap or a late start. */
 export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineView {
   const rows: TimelineView['rows'] = [];
@@ -100,6 +119,9 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
   const tiers: NonNullable<TimelineView['tiers']> = [];
   const money: MoneyRow[] = [];
   const waiting: number[] = [];
+  const carRows: CarRow[] = [];
+  let hasCars = chunks.length > 0;
+  let anyCars = false;
   let hasTiers = chunks.length > 0;
   let hasMoney = chunks.length > 0;
   let hasWaiting = chunks.length > 0;
@@ -117,7 +139,12 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
     else hasMoney = false;
     if (c.waiting) waiting.push(...c.waiting);
     else hasWaiting = false;
+    if (c.cars) {
+      carRows.push(...c.cars);
+      anyCars = true;
+    } else hasCars = false;
   }
+  if (anyCars && !hasCars) throw new Error('world-score: chunks mix cars and no cars');
   const { units, since, provenance } = statics.baseline;
   const tierSeries = hasTiers ? tiers : null;
   return {
@@ -131,6 +158,7 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
       statics.tierBaseline && tierSeries ? tierTargetsOf(statics.tierBaseline, tierSeries) : null,
     money: hasMoney && money.length > 0 ? moneyViewOf(money, statics) : null,
     tiers: tierSeries,
+    cars: hasCars ? carsViewOf(carRows) : null,
     waitingMoney: hasMoney && money.length > 0 && hasWaiting ? waiting : null,
     baseline: { completedNet: units, since, provenance },
     phasing: statics.phasing,
@@ -155,6 +183,7 @@ export function chunksBefore(chunks: SeriesChunk[], k: number): SeriesChunk[] {
       planEffect: c.planEffect.slice(0, n),
       money: c.money && c.money.slice(0, n),
       tiers: c.tiers && c.tiers.slice(0, n),
+      cars: c.cars && c.cars.slice(0, n),
       waiting: c.waiting ? c.waiting.slice(0, n) : null
     });
   }

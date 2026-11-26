@@ -35,6 +35,510 @@
     {
       "files": [
         {
+          "archiveKey": "sources/80be41f897dd31577e7d8df61eaee558e83f5f2aac5ebbc990d90765a7ce184a.csv",
+          "bytes": 7114,
+          "name": "ca-dmv-vehicles-zip.csv",
+          "sha256": "80be41f897dd31577e7d8df61eaee558e83f5f2aac5ebbc990d90765a7ce184a",
+          "url": "https://data.ca.gov/api/3/action/package_show?id=vehicle-fuel-type-count-by-zip-code"
+        }
+      ],
+      "homepage": "https://data.ca.gov/dataset/vehicle-fuel-type-count-by-zip-code",
+      "id": "ca-dmv-vehicles-zip",
+      "label": "California DMV vehicle fuel type counts by ZIP code (light duty, SF ZIPs)",
+      "license": "No restrictions on public use (California DMV, via data.ca.gov)",
+      "retrievedAt": "2026-11-25T06:21:30.707Z",
+      "rowCount": 469,
+      "upstreamVersion": "as-of 2019 to 2026, 8 files, package modified 2026-11-13T19:23:50.943358"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f6193f1712e75bce2478c56e27da9c9e559334c946327cd0d94123d626a0e827.csv",
+          "bytes": 1169817,
+          "name": "census-acs5-bg-2009.csv",
+          "sha256": "f6193f1712e75bce2478c56e27da9c9e559334c946327cd0d94123d626a0e827",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2009/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20095ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2009",
+      "label": "ACS 2005-2009 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:22.629Z",
+      "rowCount": 43463,
+      "upstreamVersion": "ACS 2005-2009 5-year, seq-based summary files, 2000 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/63967b3bf6e933405ea26bec2175771115adbb0777289d7f38fac27ab8e44ca1.csv",
+          "bytes": 1183623,
+          "name": "census-acs5-bg-2010.csv",
+          "sha256": "63967b3bf6e933405ea26bec2175771115adbb0777289d7f38fac27ab8e44ca1",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2010/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20105ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2010",
+      "label": "ACS 2006-2010 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:10:54.870Z",
+      "rowCount": 43954,
+      "upstreamVersion": "ACS 2006-2010 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/364cc5b09e2f414fd2c5ba1c68e8d9a7a7a4258ca790775b24244810af322ef1.csv",
+          "bytes": 1184072,
+          "name": "census-acs5-bg-2011.csv",
+          "sha256": "364cc5b09e2f414fd2c5ba1c68e8d9a7a7a4258ca790775b24244810af322ef1",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2011/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20115ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2011",
+      "label": "ACS 2007-2011 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:10:56.962Z",
+      "rowCount": 43969,
+      "upstreamVersion": "ACS 2007-2011 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/77359044e4a07e0fcc0b823d47953a912b59b3a194e99dfc376c659a017bfce0.csv",
+          "bytes": 1185202,
+          "name": "census-acs5-bg-2012.csv",
+          "sha256": "77359044e4a07e0fcc0b823d47953a912b59b3a194e99dfc376c659a017bfce0",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2012/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20125ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2012",
+      "label": "ACS 2008-2012 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:10:59.353Z",
+      "rowCount": 44005,
+      "upstreamVersion": "ACS 2008-2012 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/439b6835e43774e8bf373d968c145b7562164fb1e842703059340e85952b0a1a.csv",
+          "bytes": 1185376,
+          "name": "census-acs5-bg-2013.csv",
+          "sha256": "439b6835e43774e8bf373d968c145b7562164fb1e842703059340e85952b0a1a",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2013/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20135ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2013",
+      "label": "ACS 2009-2013 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:24.284Z",
+      "rowCount": 44005,
+      "upstreamVersion": "ACS 2009-2013 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d56f4175ed7f568f398239be798d98dd6f969615d4c4131ca85300fc96b3b445.csv",
+          "bytes": 1186367,
+          "name": "census-acs5-bg-2014.csv",
+          "sha256": "d56f4175ed7f568f398239be798d98dd6f969615d4c4131ca85300fc96b3b445",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2014/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20145ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2014",
+      "label": "ACS 2010-2014 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:48.879Z",
+      "rowCount": 44032,
+      "upstreamVersion": "ACS 2010-2014 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/bc5789560f46569b28b61bb52851a24cc93a418c03271b9b3ccd568c5d088520.csv",
+          "bytes": 1184787,
+          "name": "census-acs5-bg-2015.csv",
+          "sha256": "bc5789560f46569b28b61bb52851a24cc93a418c03271b9b3ccd568c5d088520",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2015/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20155ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2015",
+      "label": "ACS 2011-2015 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:51.422Z",
+      "rowCount": 43969,
+      "upstreamVersion": "ACS 2011-2015 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f5738fc43ed39bdfcfa7719263aaede4c4fff1242f127300af1129f54ab18b4a.csv",
+          "bytes": 1184832,
+          "name": "census-acs5-bg-2016.csv",
+          "sha256": "f5738fc43ed39bdfcfa7719263aaede4c4fff1242f127300af1129f54ab18b4a",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2016/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20165ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2016",
+      "label": "ACS 2012-2016 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:53.734Z",
+      "rowCount": 43962,
+      "upstreamVersion": "ACS 2012-2016 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/cef26eb431f6e600b774ee777399e2fe95c9fcfbc9a1423727444d8dbd6459e8.csv",
+          "bytes": 1185266,
+          "name": "census-acs5-bg-2017.csv",
+          "sha256": "cef26eb431f6e600b774ee777399e2fe95c9fcfbc9a1423727444d8dbd6459e8",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2017/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20175ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2017",
+      "label": "ACS 2013-2017 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:55.673Z",
+      "rowCount": 43973,
+      "upstreamVersion": "ACS 2013-2017 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/c5cdb28b38a97dbe3908b42b6168eb65ef0af25cdd43c2f4a9e71be96c45d01b.csv",
+          "bytes": 1185829,
+          "name": "census-acs5-bg-2018.csv",
+          "sha256": "c5cdb28b38a97dbe3908b42b6168eb65ef0af25cdd43c2f4a9e71be96c45d01b",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2018/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20185ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2018",
+      "label": "ACS 2014-2018 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T13:07:57.603Z",
+      "rowCount": 43993,
+      "upstreamVersion": "ACS 2014-2018 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/8233dd28be8812c870180e409e7318036d0a380ccf117c1a87cbde5b8bc3159b.csv",
+          "bytes": 1185252,
+          "name": "census-acs5-bg-2019.csv",
+          "sha256": "8233dd28be8812c870180e409e7318036d0a380ccf117c1a87cbde5b8bc3159b",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2019/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20195ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2019",
+      "label": "ACS 2015-2019 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:26.016Z",
+      "rowCount": 43971,
+      "upstreamVersion": "ACS 2015-2019 5-year, seq-based summary files, 2010 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/1a47b5cc1114382aa4d66d656cca432c438424963d0e182319afa17e3412f054.csv",
+          "bytes": 1381142,
+          "name": "census-acs5-bg-2020.csv",
+          "sha256": "1a47b5cc1114382aa4d66d656cca432c438424963d0e182319afa17e3412f054",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2020/data/5_year_seq_by_state/California/Tracts_Block_Groups_Only/g20205ca.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2020",
+      "label": "ACS 2016-2020 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:27.702Z",
+      "rowCount": 51390,
+      "upstreamVersion": "ACS 2016-2020 5-year, seq-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/9b5b9f73956abfe94fce2e305e62673dc31c5efe610eb794b493a5570e045482.csv",
+          "bytes": 1380448,
+          "name": "census-acs5-bg-2021.csv",
+          "sha256": "9b5b9f73956abfe94fce2e305e62673dc31c5efe610eb794b493a5570e045482",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2021/table-based-SF/data/5YRData/acsdt5y2021-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2021",
+      "label": "ACS 2017-2021 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:29.898Z",
+      "rowCount": 51377,
+      "upstreamVersion": "ACS 2017-2021 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/727b4fca8ad2829ed51ce8bec2cc570a9b84eaa14219e08c4e692cc39e1e0e74.csv",
+          "bytes": 1381050,
+          "name": "census-acs5-bg-2022.csv",
+          "sha256": "727b4fca8ad2829ed51ce8bec2cc570a9b84eaa14219e08c4e692cc39e1e0e74",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2022/table-based-SF/data/5YRData/acsdt5y2022-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2022",
+      "label": "ACS 2018-2022 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:34.533Z",
+      "rowCount": 51412,
+      "upstreamVersion": "ACS 2018-2022 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/65fb2b5acf02f03ab7b3a403c2dfdb5f94668181c24ebb7313e278216e35651e.csv",
+          "bytes": 1380970,
+          "name": "census-acs5-bg-2023.csv",
+          "sha256": "65fb2b5acf02f03ab7b3a403c2dfdb5f94668181c24ebb7313e278216e35651e",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2023/table-based-SF/data/5YRData/acsdt5y2023-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2023",
+      "label": "ACS 2019-2023 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:38.938Z",
+      "rowCount": 51421,
+      "upstreamVersion": "ACS 2019-2023 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/9346d1e78f958905a91f4b3eed6c451c7a83d96d769fa7f200840d357b7e7a6c.csv",
+          "bytes": 1379565,
+          "name": "census-acs5-bg-2024.csv",
+          "sha256": "9346d1e78f958905a91f4b3eed6c451c7a83d96d769fa7f200840d357b7e7a6c",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2024",
+      "label": "ACS 2020-2024 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:43.353Z",
+      "rowCount": 51385,
+      "upstreamVersion": "ACS 2020-2024 5-year, table-based summary files, 2020 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/faee07923f97f090e62d517ee2bdf77c854ca8c9bf5ec9865bce76c275f8446d.csv",
+          "bytes": 277582,
+          "name": "census-acs5-bg-moe-2024.csv",
+          "sha256": "faee07923f97f090e62d517ee2bdf77c854ca8c9bf5ec9865bce76c275f8446d",
+          "url": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b25044.dat"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-moe-2024",
+      "label": "ACS 2020-2024 5-year block-group margins of error (B25044)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T07:45:35.937Z",
+      "rowCount": 10215,
+      "upstreamVersion": "ACS 2020-2024 5-year, table-based summary files, margins of error (90%)"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2fd8349565b31534ee2005a839ba3ba6b29728a537eb000dceba89c3bb1a867b.csv",
+          "bytes": 3557,
+          "name": "census-puma-2010.csv",
+          "sha256": "2fd8349565b31534ee2005a839ba3ba6b29728a537eb000dceba89c3bb1a867b",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel/2010_Census_Tract_to_2010_PUMA.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-puma-2010",
+      "label": "Census 2010 tract to 2010 PUMA relationship",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:48:47.708Z",
+      "rowCount": 197,
+      "upstreamVersion": "Census 2010 tract to PUMA relationship file, SF tracts"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/3efbe56b1901468d445dcd85a6bc708968ebe36254b8b2011856a57008bf94cf.csv",
+          "bytes": 4403,
+          "name": "census-puma-2020.csv",
+          "sha256": "3efbe56b1901468d445dcd85a6bc708968ebe36254b8b2011856a57008bf94cf",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel2020/2020_Census_Tract_to_2020_PUMA.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-puma-2020",
+      "label": "Census 2020 tract to 2020 PUMA relationship",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:48:48.185Z",
+      "rowCount": 244,
+      "upstreamVersion": "Census 2020 tract to PUMA relationship file, SF tracts"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/ce826b3b38fad2bb3361cd31f489b32acdbae83e8d9940bb986649e5c2304b9c.csv",
+          "bytes": 799412,
+          "name": "census-pums5-2013.csv",
+          "sha256": "ce826b3b38fad2bb3361cd31f489b32acdbae83e8d9940bb986649e5c2304b9c",
+          "url": "https://www2.census.gov/programs-surveys/acs/data/pums/2013/5-Year/csv_hca.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/microdata.html",
+      "id": "census-pums5-2013",
+      "label": "ACS 2009-2013 5-year PUMS, San Francisco households",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:20:47.646Z",
+      "rowCount": 15901,
+      "upstreamVersion": "ACS 2009-2013 5-year PUMS, household file 2013/5-Year/csv_hca.zip with workers (ESR 1, 2, 4, 5) from csv_pca.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/b4af69a2055bdb13c1a9fa129ae9bd30287234e4c6faf573d3c0bb0a60f1f9b7.csv",
+          "bytes": 946532,
+          "name": "census-pums5-2024.csv",
+          "sha256": "b4af69a2055bdb13c1a9fa129ae9bd30287234e4c6faf573d3c0bb0a60f1f9b7",
+          "url": "https://www2.census.gov/programs-surveys/acs/data/pums/2024/5-Year/csv_hca.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/microdata.html",
+      "id": "census-pums5-2024",
+      "label": "ACS 2020-2024 5-year PUMS, San Francisco households",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:08.641Z",
+      "rowCount": 17071,
+      "upstreamVersion": "ACS 2020-2024 5-year PUMS, household file 2024/5-Year/csv_hca.zip with workers (ESR 1, 2, 4, 5) from csv_pca.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d598919e507b9f01fa9d1f9407d10760634062c85a8d4043ff1ed20b0f5bee51.csv",
+          "bytes": 206429,
+          "name": "census-sf3-2000-bg.csv",
+          "sha256": "d598919e507b9f01fa9d1f9407d10760634062c85a8d4043ff1ed20b0f5bee51",
+          "url": "https://www2.census.gov/census_2000/datasets/Summary_File_3/California/ca00058_uf3.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/data/datasets/2000/dec/summary-file-3.html",
+      "id": "census-sf3-2000-bg",
+      "label": "2000 Census SF3 H044 tenure by vehicles available, block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:27.653Z",
+      "rowCount": 8625,
+      "upstreamVersion": "2000 Census SF3 segment 58 (H044), 575 block groups"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/6e30699f73c2d2e528e804a2839e77bde6b8fbccd6b8193750c430e783980d76.zip",
+          "bytes": 190476,
+          "name": "census-tiger-bg-2000.zip",
+          "sha256": "6e30699f73c2d2e528e804a2839e77bde6b8fbccd6b8193750c430e783980d76",
+          "url": "https://www2.census.gov/geo/tiger/TIGER2010/BG/2000/tl_2010_06075_bg00.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2000",
+      "label": "TIGER/Line 2000 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:28.838Z",
+      "rowCount": 575,
+      "upstreamVersion": "TIGER/Line 2000 block groups, tl_2010_06075_bg00.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/00bdee172ca1f3ec3aaf154297e3bf37b6c45b5d0c8eeb95670a6cdba2a36882.zip",
+          "bytes": 199755,
+          "name": "census-tiger-bg-2010.zip",
+          "sha256": "00bdee172ca1f3ec3aaf154297e3bf37b6c45b5d0c8eeb95670a6cdba2a36882",
+          "url": "https://www2.census.gov/geo/tiger/TIGER2010/BG/2010/tl_2010_06075_bg10.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2010",
+      "label": "TIGER/Line 2010 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:28.864Z",
+      "rowCount": 581,
+      "upstreamVersion": "TIGER/Line 2010 block groups, tl_2010_06075_bg10.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/4f26c1828b2039ab7a9e9046b0ab65786c0882e1243f71e074246812312d615c.zip",
+          "bytes": 51862487,
+          "name": "census-tiger-bg-2020.zip",
+          "sha256": "4f26c1828b2039ab7a9e9046b0ab65786c0882e1243f71e074246812312d615c",
+          "url": "https://www2.census.gov/geo/tiger/TIGER2020/BG/tl_2020_06_bg.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2020",
+      "label": "TIGER/Line 2020 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:28.888Z",
+      "rowCount": 681,
+      "upstreamVersion": "TIGER/Line 2020 block groups, tl_2020_06_bg.zip"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/23a54e5249eea5e8db5e3bfa4ea24edd30d4ac2111ec0c7e3ac4003c0e596c27.csv",
+          "bytes": 22068,
+          "name": "census-xwalk-2000-2010.csv",
+          "sha256": "23a54e5249eea5e8db5e3bfa4ea24edd30d4ac2111ec0c7e3ac4003c0e596c27",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel/t00t10/TAB2000_TAB2010_ST_06_v2.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-xwalk-2000-2010",
+      "label": "Census 2000 to 2010 block-group relationship (land area)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:29.219Z",
+      "rowCount": 632,
+      "upstreamVersion": "Census 2000 to 2010 block relationship file, SF rows by from block group"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/a928009f29c69581f9d4f29ff5eb2e8d6e19f131d0323646e82fdc9ac76210c6.csv",
+          "bytes": 28685,
+          "name": "census-xwalk-2010-2020.csv",
+          "sha256": "a928009f29c69581f9d4f29ff5eb2e8d6e19f131d0323646e82fdc9ac76210c6",
+          "url": "https://www2.census.gov/geo/docs/maps-data/data/rel2020/blkgrp/tab20_blkgrp20_blkgrp10_st06.txt"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-xwalk-2010-2020",
+      "label": "Census 2010 to 2020 block-group relationship (land area)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-11-25T06:21:30.225Z",
+      "rowCount": 829,
+      "upstreamVersion": "Census 2010 to 2020 block-group relationship file, SF rows by from block group"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/b75d184012d4b2634b13c9f7ec89575a917b080e291005466b9d4eb9a3144299.csv",
           "bytes": 4133318,
           "name": "datasf-assessor-roll.page-000.csv",
@@ -1045,6 +1549,762 @@
       "retrievedAt": "2026-11-10T21:59:48.009Z",
       "rowCount": 2574,
       "upstreamVersion": "Tue, 03 Nov 2026 17:42:21 GMT"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/5bab5e4c29343d2a704d271b31d567d6bf62751d8956b5a6aaf12c9be1f1f462.zip",
+          "bytes": 221536,
+          "name": "gtfs-archive-bart-2008.zip",
+          "sha256": "5bab5e4c29343d2a704d271b31d567d6bf62751d8956b5a6aaf12c9be1f1f462",
+          "url": "https://web.archive.org/web/20080917141240id_/http://www.bart.gov/dev/schedules/20080627/google_transit.zip"
+        }
+      ],
+      "homepage": "https://web.archive.org",
+      "id": "gtfs-archive-bart-2008",
+      "label": "BART GTFS, 2008 (archived: Internet Archive Wayback Machine)",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: Internet Archive Wayback Machine)",
+      "retrievedAt": "2026-11-25T12:47:43.757Z",
+      "rowCount": 46,
+      "upstreamVersion": "20070101..20101231"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2fca217be98bc616de9d1ec95a269439786d9626aa15206fafe42248093af323.zip",
+          "bytes": 192573,
+          "name": "gtfs-archive-bart-2010.zip",
+          "sha256": "2fca217be98bc616de9d1ec95a269439786d9626aa15206fafe42248093af323",
+          "url": "https://web.archive.org/web/20100528002023id_/http://www.bart.gov/dev/schedules/google_transit.zip"
+        }
+      ],
+      "homepage": "https://web.archive.org",
+      "id": "gtfs-archive-bart-2010",
+      "label": "BART GTFS, 2010 (archived: Internet Archive Wayback Machine)",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: Internet Archive Wayback Machine)",
+      "retrievedAt": "2026-11-25T12:47:45.680Z",
+      "rowCount": 46,
+      "upstreamVersion": "20090914..20101231"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/12c89637c90851285a24bdb948c53688679c2b957cf218fc1e168c9492cdd24d.zip",
+          "bytes": 188749,
+          "name": "gtfs-archive-bart-2011.zip",
+          "sha256": "12c89637c90851285a24bdb948c53688679c2b957cf218fc1e168c9492cdd24d",
+          "url": "https://web.archive.org/web/20101213073722id_/http://bart.gov/dev/schedules/google_transit.zip"
+        }
+      ],
+      "homepage": "https://web.archive.org",
+      "id": "gtfs-archive-bart-2011",
+      "label": "BART GTFS, 2011 (archived: Internet Archive Wayback Machine)",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: Internet Archive Wayback Machine)",
+      "retrievedAt": "2026-11-25T12:47:45.968Z",
+      "rowCount": 46,
+      "upstreamVersion": "20100913..20111231"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/800be7fe3b2c91a3c34c4088390153956719be7c6f15472079787c483f33362e.zip",
+          "bytes": 191454,
+          "name": "gtfs-archive-bart-2012.zip",
+          "sha256": "800be7fe3b2c91a3c34c4088390153956719be7c6f15472079787c483f33362e",
+          "url": "https://web.archive.org/web/20120531023532id_/http://bart.gov/dev/schedules/google_transit.zip"
+        }
+      ],
+      "homepage": "https://web.archive.org",
+      "id": "gtfs-archive-bart-2012",
+      "label": "BART GTFS, 2012 (archived: Internet Archive Wayback Machine)",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: Internet Archive Wayback Machine)",
+      "retrievedAt": "2026-11-25T12:47:47.226Z",
+      "rowCount": 47,
+      "upstreamVersion": "20110219..20130101"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/7b8c586b479a3c603c57b02002f39b3eec7425e45ee69b1ad732dbd26a168b62.zip",
+          "bytes": 194258,
+          "name": "gtfs-archive-bart-2013.zip",
+          "sha256": "7b8c586b479a3c603c57b02002f39b3eec7425e45ee69b1ad732dbd26a168b62",
+          "url": "https://web.archive.org/web/20121028141534id_/http://bart.gov/dev/schedules/google_transit.zip"
+        }
+      ],
+      "homepage": "https://web.archive.org",
+      "id": "gtfs-archive-bart-2013",
+      "label": "BART GTFS, 2013 (archived: Internet Archive Wayback Machine)",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: Internet Archive Wayback Machine)",
+      "retrievedAt": "2026-11-25T12:47:49.138Z",
+      "rowCount": 47,
+      "upstreamVersion": "20120116..20140101"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/ecf6d0ba68747aef5fdff1a6b1d602c1fa509a03c60f835d69da3a0b8751a967.zip",
+          "bytes": 192939,
+          "name": "gtfs-archive-bart-2015.zip",
+          "sha256": "ecf6d0ba68747aef5fdff1a6b1d602c1fa509a03c60f835d69da3a0b8751a967",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20150120/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2015",
+      "label": "BART GTFS, 2015 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:49.929Z",
+      "rowCount": 47,
+      "upstreamVersion": "20131128..20160101"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/07e2122c9425bd87568182817a5c2469f768cbffb6e9d722e79e070bfad5ab25.zip",
+          "bytes": 343657,
+          "name": "gtfs-archive-bart-2016.zip",
+          "sha256": "07e2122c9425bd87568182817a5c2469f768cbffb6e9d722e79e070bfad5ab25",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20160310/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2016",
+      "label": "BART GTFS, 2016 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.031Z",
+      "rowCount": 47,
+      "upstreamVersion": "20131128..20170131"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/ded497614f93e1364988cfc1e08c2d78950e973b9c04ef720ef13c81f1420b1e.zip",
+          "bytes": 444571,
+          "name": "gtfs-archive-bart-2017.zip",
+          "sha256": "ded497614f93e1364988cfc1e08c2d78950e973b9c04ef720ef13c81f1420b1e",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20170330/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2017",
+      "label": "BART GTFS, 2017 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.180Z",
+      "rowCount": 48,
+      "upstreamVersion": "20170325..20180630"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2a5ec3f45efd2e49498eb6305ec1708612d942bd1dd7cd2ecae65b0e7b030ff3.zip",
+          "bytes": 380242,
+          "name": "gtfs-archive-bart-2018.zip",
+          "sha256": "2a5ec3f45efd2e49498eb6305ec1708612d942bd1dd7cd2ecae65b0e7b030ff3",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20180222/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2018",
+      "label": "BART GTFS, 2018 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.262Z",
+      "rowCount": 48,
+      "upstreamVersion": "20180212..20190701"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f4db4e3b31199e9e9c349038f70099383c5dac1e1075cf735c77f59a7acdef28.zip",
+          "bytes": 427758,
+          "name": "gtfs-archive-bart-2019.zip",
+          "sha256": "f4db4e3b31199e9e9c349038f70099383c5dac1e1075cf735c77f59a7acdef28",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20190123/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2019",
+      "label": "BART GTFS, 2019 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.324Z",
+      "rowCount": 48,
+      "upstreamVersion": "20190211..20200210"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/5cde76bb66480b992ef34f03054a522f49b9026c57bc034369fee634daa89677.zip",
+          "bytes": 1758094,
+          "name": "gtfs-archive-bart-2020.zip",
+          "sha256": "5cde76bb66480b992ef34f03054a522f49b9026c57bc034369fee634daa89677",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20200401/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2020",
+      "label": "BART GTFS, 2020 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.397Z",
+      "rowCount": 171,
+      "upstreamVersion": "20200328..20200430"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/fe96bf6be9f7bbfaa4e379d1bcf7a1cb6d9344ea49cb6bf347966446233e237b.zip",
+          "bytes": 2043452,
+          "name": "gtfs-archive-bart-2021.zip",
+          "sha256": "fe96bf6be9f7bbfaa4e379d1bcf7a1cb6d9344ea49cb6bf347966446233e237b",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20210315/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2021",
+      "label": "BART GTFS, 2021 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.484Z",
+      "rowCount": 164,
+      "upstreamVersion": "20210322..20210912"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/299657f348999eb00efa92cfe595b670238fbc83fe1005aac6167d3de1a8a512.zip",
+          "bytes": 901033,
+          "name": "gtfs-archive-bart-2022.zip",
+          "sha256": "299657f348999eb00efa92cfe595b670238fbc83fe1005aac6167d3de1a8a512",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20220212/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2022",
+      "label": "BART GTFS, 2022 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.632Z",
+      "rowCount": 180,
+      "upstreamVersion": "20220214..20220911"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/8b6aa5fc7c02a2b65efdc8991a222920ec90f0d4a04119c98f55655074ec2516.zip",
+          "bytes": 1151609,
+          "name": "gtfs-archive-bart-2023.zip",
+          "sha256": "8b6aa5fc7c02a2b65efdc8991a222920ec90f0d4a04119c98f55655074ec2516",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/bart/58/20230401/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-bart-2023",
+      "label": "BART GTFS, 2023 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "BART Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:50.710Z",
+      "rowCount": 186,
+      "upstreamVersion": "20230218..20230910"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/71fee7aea528fa229a5414189687332a3db4a853b4bf8da42096f15a2823bcb3.zip",
+          "bytes": 69317,
+          "name": "gtfs-archive-caltrain-2009.zip",
+          "sha256": "71fee7aea528fa229a5414189687332a3db4a853b4bf8da42096f15a2823bcb3",
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20090308_1937.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-caltrain-2009",
+      "label": "Caltrain GTFS, 2009 (archived: GTFS Data Exchange)",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:57.675Z",
+      "rowCount": 31,
+      "upstreamVersion": "20090101..20190302"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/6b7be4dcbd71f697b274345057a7bc8e669916ca31ae77820bcc3193cadfdde1.zip",
+          "bytes": 68168,
+          "name": "gtfs-archive-caltrain-2010.zip",
+          "sha256": "6b7be4dcbd71f697b274345057a7bc8e669916ca31ae77820bcc3193cadfdde1",
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20090724_0212.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-caltrain-2010",
+      "label": "Caltrain GTFS, 2010 (archived: GTFS Data Exchange)",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:57.777Z",
+      "rowCount": 31,
+      "upstreamVersion": "20090302..20190831"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/a53f4abe333b2f056478181243aa09db47788a74c810cf3fc8adac2ac66cae92.zip",
+          "bytes": 54141,
+          "name": "gtfs-archive-caltrain-2011.zip",
+          "sha256": "a53f4abe333b2f056478181243aa09db47788a74c810cf3fc8adac2ac66cae92",
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20110217_0333.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-caltrain-2011",
+      "label": "Caltrain GTFS, 2011 (archived: GTFS Data Exchange)",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:57.940Z",
+      "rowCount": 31,
+      "upstreamVersion": "20110101..20160101"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/23d43662a6ae8664695db6ea74587f3b221b80473644adeca7e3d8343391ad9a.zip",
+          "bytes": 55330,
+          "name": "gtfs-archive-caltrain-2012.zip",
+          "sha256": "23d43662a6ae8664695db6ea74587f3b221b80473644adeca7e3d8343391ad9a",
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20120113_0421.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-caltrain-2012",
+      "label": "Caltrain GTFS, 2012 (archived: GTFS Data Exchange)",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:58.055Z",
+      "rowCount": 31,
+      "upstreamVersion": "20110701..20160701"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/5043d5fd7def2210d14b1936203d6f0ddb7f57898567ebfafe5ed427819938ba.zip",
+          "bytes": 71105,
+          "name": "gtfs-archive-caltrain-2013.zip",
+          "sha256": "5043d5fd7def2210d14b1936203d6f0ddb7f57898567ebfafe5ed427819938ba",
+          "url": "https://gtfs.s3.amazonaws.com/caltrain_20120824_0333.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-caltrain-2013",
+      "label": "Caltrain GTFS, 2013 (archived: GTFS Data Exchange)",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:58.162Z",
+      "rowCount": 31,
+      "upstreamVersion": "20120701..20131001"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2137d9744aaa4bf6c7a84a352677e6f7b3655f6f2e158116894b9174912e6644.zip",
+          "bytes": 70354,
+          "name": "gtfs-archive-caltrain-2015.zip",
+          "sha256": "2137d9744aaa4bf6c7a84a352677e6f7b3655f6f2e158116894b9174912e6644",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20150127/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2015",
+      "label": "Caltrain GTFS, 2015 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:51.941Z",
+      "rowCount": 95,
+      "upstreamVersion": "20150118..20241005"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d6bc140460e26b5dc51fc5243e2b7e8137d80a318298f06f65cff7eb17c46df3.zip",
+          "bytes": 59876,
+          "name": "gtfs-archive-caltrain-2016.zip",
+          "sha256": "d6bc140460e26b5dc51fc5243e2b7e8137d80a318298f06f65cff7eb17c46df3",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20160401/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2016",
+      "label": "Caltrain GTFS, 2016 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:51.977Z",
+      "rowCount": 67,
+      "upstreamVersion": "20121001..20190401"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/e2394ecf429813cfbb7fe5a283d854cb25c008ecba590762adb6325cbd16a9e4.zip",
+          "bytes": 93731,
+          "name": "gtfs-archive-caltrain-2017.zip",
+          "sha256": "e2394ecf429813cfbb7fe5a283d854cb25c008ecba590762adb6325cbd16a9e4",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20170324/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2017",
+      "label": "Caltrain GTFS, 2017 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.021Z",
+      "rowCount": 64,
+      "upstreamVersion": "20170226..20190413"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d54438e21d4bb2c0590114f3b1f90013539d3ff7c03649a24ce96ad73db8d8cf.zip",
+          "bytes": 54874,
+          "name": "gtfs-archive-caltrain-2018.zip",
+          "sha256": "d54438e21d4bb2c0590114f3b1f90013539d3ff7c03649a24ce96ad73db8d8cf",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20180329/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2018",
+      "label": "Caltrain GTFS, 2018 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.066Z",
+      "rowCount": 64,
+      "upstreamVersion": "20171002..20191006"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/976bed852578f8b55a40605ba0ab607d3f87e1f099aa6b5f5fd9e2a257984f53.zip",
+          "bytes": 67635,
+          "name": "gtfs-archive-caltrain-2019.zip",
+          "sha256": "976bed852578f8b55a40605ba0ab607d3f87e1f099aa6b5f5fd9e2a257984f53",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20190131/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2019",
+      "label": "Caltrain GTFS, 2019 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.101Z",
+      "rowCount": 64,
+      "upstreamVersion": "20181001..20191006"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/78c4ab433b5b8f8884e28f392bee6b228f509081e6f0d9f693b6a7504324945f.zip",
+          "bytes": 465413,
+          "name": "gtfs-archive-caltrain-2020.zip",
+          "sha256": "78c4ab433b5b8f8884e28f392bee6b228f509081e6f0d9f693b6a7504324945f",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20200110/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2020",
+      "label": "Caltrain GTFS, 2020 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:50:01.045Z",
+      "rowCount": 66,
+      "upstreamVersion": "20190401..20210101"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/b5a8a7faba78d0dc49dfeec65f2f9e82d193bf6dbc5ddf1cf92f1d4913633589.zip",
+          "bytes": 164877,
+          "name": "gtfs-archive-caltrain-2021.zip",
+          "sha256": "b5a8a7faba78d0dc49dfeec65f2f9e82d193bf6dbc5ddf1cf92f1d4913633589",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20210322/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2021",
+      "label": "Caltrain GTFS, 2021 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.254Z",
+      "rowCount": 66,
+      "upstreamVersion": "20210322..20220301"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/4a92afe95b1a12ac2cc00950f691c85fb6647fe7c73a893f919374e860e35b6f.zip",
+          "bytes": 360427,
+          "name": "gtfs-archive-caltrain-2022.zip",
+          "sha256": "4a92afe95b1a12ac2cc00950f691c85fb6647fe7c73a893f919374e860e35b6f",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20220316/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2022",
+      "label": "Caltrain GTFS, 2022 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.297Z",
+      "rowCount": 95,
+      "upstreamVersion": "20220307..20221101"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/72b5193ce1043fbc7cac9022c567f94f76a4fa233ed45f2dad537e1ab9d8e075.zip",
+          "bytes": 293648,
+          "name": "gtfs-archive-caltrain-2023.zip",
+          "sha256": "72b5193ce1043fbc7cac9022c567f94f76a4fa233ed45f2dad537e1ab9d8e075",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20230325/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2023",
+      "label": "Caltrain GTFS, 2023 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.345Z",
+      "rowCount": 109,
+      "upstreamVersion": "20221219..20230514"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/0ce65511425b3ba79411bcd6ffe19b250d1e0047823fd10fd1d5a7f41d875116.zip",
+          "bytes": 310459,
+          "name": "gtfs-archive-caltrain-2024.zip",
+          "sha256": "0ce65511425b3ba79411bcd6ffe19b250d1e0047823fd10fd1d5a7f41d875116",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/caltrain/122/20231221/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-caltrain-2024",
+      "label": "Caltrain GTFS, 2024 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "Caltrain (PCJPB) Developer License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:52.401Z",
+      "rowCount": 106,
+      "upstreamVersion": "20230923..20240601"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/1b72621533a9f61a761da5cd01a3c83e37aa6a9118d5ab39786be00ae2e87211.zip",
+          "bytes": 7651156,
+          "name": "gtfs-archive-muni-2009.zip",
+          "sha256": "1b72621533a9f61a761da5cd01a3c83e37aa6a9118d5ab39786be00ae2e87211",
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20090401_0353.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-muni-2009",
+      "label": "SFMTA Muni GTFS, 2009 (archived: GTFS Data Exchange)",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:53.617Z",
+      "rowCount": 4389,
+      "upstreamVersion": "20090221..20090626"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/51627302291060b1be35c8bb7f1d8b1947c5d29ba1bb8928386f58e0d64beb91.zip",
+          "bytes": 10340791,
+          "name": "gtfs-archive-muni-2010.zip",
+          "sha256": "51627302291060b1be35c8bb7f1d8b1947c5d29ba1bb8928386f58e0d64beb91",
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20100204_0313.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-muni-2010",
+      "label": "SFMTA Muni GTFS, 2010 (archived: GTFS Data Exchange)",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:54.729Z",
+      "rowCount": 4424,
+      "upstreamVersion": "20091205..20100430"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d1328c5a918e455980c18036cd8692f85838ed6a178a2acb1b9856e9dab4bb52.zip",
+          "bytes": 8729211,
+          "name": "gtfs-archive-muni-2011.zip",
+          "sha256": "d1328c5a918e455980c18036cd8692f85838ed6a178a2acb1b9856e9dab4bb52",
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20110420_0243.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-muni-2011",
+      "label": "SFMTA Muni GTFS, 2011 (archived: GTFS Data Exchange)",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:55.928Z",
+      "rowCount": 4452,
+      "upstreamVersion": "20110122..20110610"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/b4a3b27a65684120b42a3c570ccbe7047a4f845efee82722d1592ec9e0aaa238.zip",
+          "bytes": 8341122,
+          "name": "gtfs-archive-muni-2012.zip",
+          "sha256": "b4a3b27a65684120b42a3c570ccbe7047a4f845efee82722d1592ec9e0aaa238",
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20120319_0412.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-muni-2012",
+      "label": "SFMTA Muni GTFS, 2012 (archived: GTFS Data Exchange)",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:56.365Z",
+      "rowCount": 3637,
+      "upstreamVersion": "20120303..20120608"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/ef30eb17ede141d45e0c7eeaa81015ec2d02279536f38070873bd0f1263f255f.zip",
+          "bytes": 20599202,
+          "name": "gtfs-archive-muni-2013.zip",
+          "sha256": "ef30eb17ede141d45e0c7eeaa81015ec2d02279536f38070873bd0f1263f255f",
+          "url": "https://gtfs.s3.amazonaws.com/san-francisco-municipal-transportation-agency_20130324_0307.zip"
+        }
+      ],
+      "homepage": "https://github.com/jehiah/gtfs-data-exchange",
+      "id": "gtfs-archive-muni-2013",
+      "label": "SFMTA Muni GTFS, 2013 (archived: GTFS Data Exchange)",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: GTFS Data Exchange)",
+      "retrievedAt": "2026-11-25T12:58:56.831Z",
+      "rowCount": 3631,
+      "upstreamVersion": "20130323..20130614"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f06b2f09f52fb599fe3cba608bc1a426f117a7620df0d0723546b68fef60e6b3.zip",
+          "bytes": 7793262,
+          "name": "gtfs-archive-muni-2015.zip",
+          "sha256": "f06b2f09f52fb599fe3cba608bc1a426f117a7620df0d0723546b68fef60e6b3",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20150225/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2015",
+      "label": "SFMTA Muni GTFS, 2015 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:40.629Z",
+      "rowCount": 4547,
+      "upstreamVersion": "20150131..20150424"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/787bf2f5b0043600d67097ca72c7aab0cb0d88264d6015a8c718b4511741fc26.zip",
+          "bytes": 8499045,
+          "name": "gtfs-archive-muni-2016.zip",
+          "sha256": "787bf2f5b0043600d67097ca72c7aab0cb0d88264d6015a8c718b4511741fc26",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20160307/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2016",
+      "label": "SFMTA Muni GTFS, 2016 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:40.967Z",
+      "rowCount": 4611,
+      "upstreamVersion": "20160213..20160422"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/d8eef8330a43e636afaeea665bf2266a12eda4f330d1f1d405a53988a051c7e0.zip",
+          "bytes": 8627458,
+          "name": "gtfs-archive-muni-2017.zip",
+          "sha256": "d8eef8330a43e636afaeea665bf2266a12eda4f330d1f1d405a53988a051c7e0",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20170221/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2017",
+      "label": "SFMTA Muni GTFS, 2017 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:41.505Z",
+      "rowCount": 4650,
+      "upstreamVersion": "20170225..20170414"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/89576ade2ad05a29e2ef38e23c62f293e2f096d28f7184300d3c278fc1c92cbf.zip",
+          "bytes": 9347256,
+          "name": "gtfs-archive-muni-2018.zip",
+          "sha256": "89576ade2ad05a29e2ef38e23c62f293e2f096d28f7184300d3c278fc1c92cbf",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20180527/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2018",
+      "label": "SFMTA Muni GTFS, 2018 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:41.748Z",
+      "rowCount": 3527,
+      "upstreamVersion": "20180224..20180615"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/c443acdc506bcc8b25cf3582287094a4c2faa4bd84c79fff35fc1396125cd74e.zip",
+          "bytes": 21218513,
+          "name": "gtfs-archive-muni-2019.zip",
+          "sha256": "c443acdc506bcc8b25cf3582287094a4c2faa4bd84c79fff35fc1396125cd74e",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20190401/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2019",
+      "label": "SFMTA Muni GTFS, 2019 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:42.187Z",
+      "rowCount": 3522,
+      "upstreamVersion": "20190401..20190614"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/9ed51e55fd2a1b3e65b247db8b1150576094d2ef7aaccbfddb9f5a695eda38f8.zip",
+          "bytes": 8051317,
+          "name": "gtfs-archive-muni-2020.zip",
+          "sha256": "9ed51e55fd2a1b3e65b247db8b1150576094d2ef7aaccbfddb9f5a695eda38f8",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20200328/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2020",
+      "label": "SFMTA Muni GTFS, 2020 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:42.666Z",
+      "rowCount": 3302,
+      "upstreamVersion": "20200330..20200529"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/217ac19136844303a9a11573b171c4d89af1350629bf18bb21ab23474f9874f6.zip",
+          "bytes": 16418568,
+          "name": "gtfs-archive-muni-2021.zip",
+          "sha256": "217ac19136844303a9a11573b171c4d89af1350629bf18bb21ab23474f9874f6",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20210317/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2021",
+      "label": "SFMTA Muni GTFS, 2021 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:43.071Z",
+      "rowCount": 2342,
+      "upstreamVersion": "20210306..20210514"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f5dcea94b563f0b97a75f89e2f6de234f5b0de90b7f922e07be12591cd182279.zip",
+          "bytes": 7158236,
+          "name": "gtfs-archive-muni-2022.zip",
+          "sha256": "f5dcea94b563f0b97a75f89e2f6de234f5b0de90b7f922e07be12591cd182279",
+          "url": "https://openmobilitydata-data.s3-us-west-1.amazonaws.com/public/feeds/sfmta/60/20220305/gtfs.zip"
+        }
+      ],
+      "homepage": "https://transitfeeds.com",
+      "id": "gtfs-archive-muni-2022",
+      "label": "SFMTA Muni GTFS, 2022 (archived: OpenMobilityData (TransitFeeds))",
+      "license": "SFMTA Transit Data License Agreement (archived copy of the agency's feed: OpenMobilityData (TransitFeeds))",
+      "retrievedAt": "2026-11-25T12:47:43.420Z",
+      "rowCount": 3143,
+      "upstreamVersion": "20220305..20220415"
     },
     {
       "files": [

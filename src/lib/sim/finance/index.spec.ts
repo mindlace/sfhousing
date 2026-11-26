@@ -28,6 +28,7 @@ const NAMES = [
   'fundBundle',
   'tierOf',
   'projectDollars',
+  'signedOddsShift',
   'AMI_TIER_BOUNDS',
   'tierOfAmi',
   'INCLUSIONARY',

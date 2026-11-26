@@ -159,6 +159,55 @@ throws (ids are stored joined with `','`). `StepCtx.displace(row, lot, day, unit
 `take`, nor `put` into a month already taken. A `certain` funded start advances through every
 stage on `sampleAdvance` lengths with no revisions (rule 15).
 
+## The car hook
+
+The subsystem as a whole: [cars.md](cars.md).
+
+`withFunding(f, cars)` also plugs in a `CarSystem` (`types.ts`; `world/cars/`, built by
+`createCarSystem(data, model)`; for a loaded dataset by `carSystemOf(loaded, { off })` in
+`world/cars/dataset.ts`, which the timeline host's `loadDataset` calls once per load). `createWorld` ends with `cars.create` (after `f.create`); `step`
+wraps `out` once at its top, so every event of systems 1 to 7 reaches `cars.onEvent` just after it
+is sent, and runs `cars.step` between systems 3 and 4 every month, funded or not. Both `step` and
+`planDue` lay `cars.timelineOf` over the base timeline first and funding's view over that, so a
+rebuilt plan reads what the world steps under (rule 20).
+
+**Parking into start odds** (`world/cars/parking.ts`, owner rulings R1 and R2). The spaces table
+is refreshed once in a refresh month (month 13, 25, …), at the first thing that reads it: a start
+in system 3 or the car step, so every start of the month reads one table. Each refresh compares a
+zone's predicted spaces per new market home with month 0's in whole steps of `SPACES_STEP` (0.01)
+and, where the step count moved, records an entry `(zone, month + 1, delta)` in `CarColumns.shift*`.
+`timelineOf` is then `parkingTimeline(base, …)`: from an entry's month on, the frame is the base
+frame with `parking`, a `ParkingShift` (`policy/frame.ts`), and an id of its own. A lot's shift is
+`lotShift`: `signedOddsShift(-delta × cost per space)` of the parking type of the prototype at the
+lot's top qualifying fill level, on the frame's slope (`finance.slope`, else
+`calibration.market.slope.perCostShare`). Entry months are frame changes: system 1 replans the
+changed zones' lots (`touched`; the union with the base's when both change in one month), and a
+funded month replans every lot as before. `ordinaryStart`, `eachFreeLot` and the funded market
+clock (`ord` and `x0`) read a parked frame lot by lot through `rateOf`; `skipBound` builds its
+arrays through `startRates(view, market, parking)` and drops them. Affordable odds and every price
+are unchanged. With `costPerSpace` null or `{ link: false }` there are no entries and `timelineOf`
+returns its argument: every event equals the run without cars (`cars.property.spec.ts`,
+`parking.property.spec.ts`).
+
+Memory: a parking state is per zone only (each zone's steps, the zones changed, a zones ×
+prototypes table per slope): O(zones × refreshes) per world, asserted in `parking.property.spec.ts`.
+Rates of a zone with a shift are memoised per (`view.pre`, market, zone key) over the zone's lots,
+shared across worlds, and cleared when the memo holds 8 times the city's lots. `skipBound` keeps
+only its two latest bounds per (timeline, statics): a funded world asks for one at every frame
+change (a parking-only change no longer triggers a whole-city replan: below). Funding's
+eligibility (`fundableAny` and the rowless memo's key, `funding/apply.ts` `fundingChanges`) skips changes that move neither the view nor the money, so a
+parking-only change does not refill the rowless memo. Live city (155k lots, 580 zones, baseline
+money, link on, 480 entries), one world at month 480: +14.7 MB with the link on against +19.0 MB
+off, 2.2 s against 0.7 s for plan and 480 steps (busy machine); before these bounds the link on
+held +64.1 MB and took 12 to 25 s.
+
+Speed: a month whose frame differs from the month before only in `parking`
+(`PolicyTimeline.parkingOnly`; funding's closing view keeps it when no pool opens or closes that
+month) replans only `touched(month)`, the changed zones' lots, even in a funded month, and calls no
+whole-city `skipBound`. Every other lot's clocks are unchanged. On the live build, `level2-check`'s
+fill (two funded worlds) takes 3.9-4.0 s with cars on, 3.5 s with the link off and 2.3 s without
+cars (`docs/dev/cars.md`, Measured cost); it was 8.7 s with cars on before.
+
 ## Tests
 
 All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.

@@ -6,13 +6,14 @@ import { TIER_FIELDS, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-sc
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
 import { waitingAt } from '../funding/columns';
-import { monthOfDay } from '../months';
+import { monthLastDay, monthOfDay } from '../months';
 import { scheduleAt } from '../read';
 import type { Statics } from '../statics';
 import * as core from '../types';
 import type { World, WorldEvent } from '../types';
 import { finalTable, horizonOf, tierTableFor } from './statics';
-import type { MonthRow, ScoreStatics, WorldSeries, WorldSeriesData } from './types';
+import type { CarSnapshot } from '../cars/columns';
+import type { CarRow, MonthRow, ScoreStatics, WorldSeries, WorldSeriesData } from './types';
 
 type Live = Exclude<Stage, 'complete'>;
 
@@ -52,7 +53,7 @@ const TIER_AM = TIER0 + TIER_FIELDS.indexOf('aboveModerate');
 /** Fields per month. */
 export const SERIES_FIELDS = TIER0 + TIER_FIELDS.length;
 /** `WorldSeriesData.version` of this layout. */
-const VERSION = 5;
+const VERSION = 6;
 
 /** No row state yet (no `'start'` seen). */
 const UNKNOWN = -2;
@@ -93,7 +94,10 @@ function emptyData(s: ScoreStatics): WorldSeriesData {
     disp: new Int32Array(0),
     done: new Int32Array(0),
     delta: new Int32Array(SERIES_FIELDS * n),
-    sum: new Int32Array(SERIES_FIELDS * n)
+    sum: new Int32Array(SERIES_FIELDS * n),
+    carRows: new Float64Array(0),
+    carZones: new Float32Array(0),
+    carZoneCount: 0
   };
 }
 
@@ -125,7 +129,9 @@ function copyData(from: WorldSeriesData): WorldSeriesData {
     disp: from.disp.slice(),
     done: from.done.slice(),
     delta: from.delta.slice(),
-    sum: from.sum.slice()
+    sum: from.sum.slice(),
+    carRows: from.carRows.slice(),
+    carZones: from.carZones.slice()
   };
 }
 
@@ -179,6 +185,8 @@ export interface Extras {
    * their tiers stay filed by their completion month's programme definitions.
    */
   unawarded(): number;
+  /** The cars of calendar months `from..through` (final months); null when none were fed. */
+  cars(from: number, through: number): CarRow[] | null;
 }
 
 const EXTRAS = new WeakMap<WorldSeries, Extras>();
@@ -188,6 +196,11 @@ export function extrasOf(series: WorldSeries): Extras {
   const x = EXTRAS.get(series);
   if (x === undefined) throw new Error('world-score: not a series of createWorldSeries');
   return x;
+}
+
+/** The cars of a series' calendar months `from..through`; null for a series without any. */
+export function carRowsOf(series: WorldSeries, from: number, through: number): CarRow[] | null {
+  return EXTRAS.get(series)?.cars(from, through) ?? null;
 }
 
 const describeEvent = (e: WorldEvent): string =>
@@ -232,6 +245,15 @@ function restored(s: ScoreStatics, from: WorldSeriesData): WorldSeriesData {
     throw new Error(`world-score: saved series version ${from.version}`);
   if (from.delta.length !== SERIES_FIELDS * (s.lastIndex + 1)) {
     throw new Error('world-score: saved series does not match these statics');
+  }
+  const cz = from.carZoneCount;
+  const rowsOk =
+    from.carRows.length === 0 ? cz === 0 : from.carRows.length === 4 * (s.lastIndex + 1);
+  if (
+    !rowsOk ||
+    from.carZones.length !== (from.carRows.length === 0 ? 0 : cz * (s.lastIndex + 1))
+  ) {
+    throw new Error('world-score: saved series cars do not match these statics');
   }
   return copyData(from);
 }
@@ -609,13 +631,42 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
     }
   }
 
+  /** Files a snapshot in the calendar month holding model month `m`'s last day (a later one overwrites). */
+  function fileCars(m: number, c: CarSnapshot): void {
+    const day = monthLastDay(asOf, m);
+    if (day > H) return;
+    const i = monthOf(day);
+    const Z = c.zones.length;
+    if (d.carRows.length === 0) {
+      d.carRows = new Float64Array(4 * (last + 1)).fill(NaN);
+      d.carZones = new Float32Array(Z * (last + 1)).fill(NaN);
+      d.carZoneCount = Z;
+    } else if (Z !== d.carZoneCount) {
+      throw new Error(`world-score: ${Z} car zones after ${d.carZoneCount}`);
+    }
+    d.carRows[4 * i] = c.households;
+    d.carRows[4 * i + 1] = c.cars;
+    d.carRows[4 * i + 2] = c.carless;
+    d.carRows[4 * i + 3] = c.spacesPerHome === null ? NaN : c.spacesPerHome;
+    d.carZones.set(c.zones, i * Z);
+  }
+
   const series: WorldSeries = {
     add,
-    stepped(month: number): void {
+    created(cars: CarSnapshot | null): void {
+      if (d.stepped !== 0) {
+        throw new Error(`world-score: created after month ${d.stepped}`);
+      }
+      // Model month 0's last day is the dataset date: its calendar month (a model month 1 ending
+      // there too overwrites it, as any later model month does).
+      if (cars) fileCars(0, cars);
+    },
+    stepped(month: number, cars?: CarSnapshot | null): void {
       if (month !== d.stepped + 1) {
         throw new Error(`world-score: stepped(${month}) after month ${d.stepped}`);
       }
       d.stepped = month;
+      if (cars) fileCars(month, cars);
       // An award comes in its start's step: a row still awaiting one is a feed bug, counted.
       for (let k = 0; k < awaiting.length; k++) {
         const row = awaiting[k];
@@ -675,7 +726,38 @@ export function createWorldSeries(s: ScoreStatics, from?: WorldSeriesData): Worl
       for (let i = from; i <= through; i++) out.push(waitingOf(world, table[i]));
       return out;
     },
-    unawarded: () => d.unawarded
+    unawarded: () => d.unawarded,
+    cars(from: number, through: number) {
+      if (d.carRows.length === 0) return null;
+      checkRange('cars', from, through);
+      const Z = d.carZoneCount;
+      // The last filled month at or before `from`: months no model month ended in carry it.
+      let at = from;
+      while (at >= 0 && Number.isNaN(d.carRows[4 * at])) at--;
+      const out: CarRow[] = [];
+      for (let i = from; i <= through; i++) {
+        if (!Number.isNaN(d.carRows[4 * i])) at = i;
+        if (at < 0) {
+          out.push({
+            households: 0,
+            cars: 0,
+            carless: 0,
+            spacesPerHome: null,
+            zones: null
+          });
+          continue;
+        }
+        const sp = d.carRows[4 * at + 3];
+        out.push({
+          households: d.carRows[4 * at],
+          cars: d.carRows[4 * at + 1],
+          carless: d.carRows[4 * at + 2],
+          spacesPerHome: Number.isNaN(sp) ? null : sp,
+          zones: d.carZones.slice(at * Z, (at + 1) * Z)
+        });
+      }
+      return out;
+    }
   });
   return series;
 }
