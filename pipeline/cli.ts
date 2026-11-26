@@ -11,6 +11,7 @@ import {
   type InvariantResult
 } from './steps/check';
 import { boxesReusing } from './steps/boxes-reuse';
+import { cacheImport } from './steps/cache-import';
 import { doctor, reportDoctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
@@ -149,6 +150,24 @@ const steps: Record<string, { help: string; run: Step }> = {
         freewayLand: readFreewayLandSet(FREEWAY_LAND_JSON[fixtureV ? 'fixture' : 'live'])
       });
       return printResults(results);
+    }
+  },
+  cache: {
+    help: "move an old pipeline/.cache's raw, ept and lidar-work into the shared cache and index its boxes artifact <dir> [--lock <path>]",
+    run: async (args) => {
+      const dir = args.positional[1];
+      if (args.positional[0] !== 'import' || !dir) {
+        console.error(
+          `usage: cache import <dir> [--lock <sources.lock.json>] (shared cache: ${sharedCache().root})`
+        );
+        return 2;
+      }
+      const lock = str(args.flags.lock);
+      const { code } = await cacheImport({
+        from: resolve(dir),
+        lockPath: lock ? resolve(lock) : undefined
+      });
+      return code;
     }
   },
   fixture: {
