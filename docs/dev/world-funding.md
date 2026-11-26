@@ -143,8 +143,10 @@ index (rebuilt from columns when stale), so a clone compacts in the same months.
 
 **Homes waiting** (`system.ts` `waitingHomes`, `recordWaiting`): last in the step, after the
 compaction, `recordWaiting(world, month)` stores the count in `line.waitHomes[month]`. The count
-walks the index's `byLot`: a lot counts once, by its larger `units`; a row marked `gone` and a row
-whose lot has a lot row not `LOT_FREE` (the lazy guard's test) are skipped. Months with no hook
+is one pass over the line's rows, without the index: a lot counts once, by its larger `units`; a
+row marked `gone` and a row whose lot has a lot row not `LOT_FREE` (the lazy guard's test) are
+skipped. Its per-lot scratch is module-level, grown by doubling and told apart between calls by a
+stamp, so a month allocates nothing; it is not part of any world. Months with no hook
 between two records take the last value; a month not after `waitThrough` throws. Both fields are
 plain, so a clone and a restore carry the record.
 
@@ -254,8 +256,9 @@ npx vitest --run --project perf src/lib/sim/world/funding/funded-month.perf.spec
 
 synthCity with its bench baseline money (`benchFunded('baseline')`), seeds 1 to 8 stepped untimed
 to month 120, then months 121 to 240 timed one `step` at a time per world (the whole step: core
-and funding). Bar: **mean at most 90 µs per world-month** (the 9 ms constraint is a sum over two
-worlds, the plan's and its twin's; the per-world-month bar is unchanged). It also prints each hook's share and the whole-city replan month, unasserted.
+and funding, with the waiting-homes record, which adds about 100 µs). Bar: **mean at most 250 µs per
+world-month** (the 9 ms constraint is a sum over two
+worlds, the plan's and its twin's; this bar is per world). It also prints each hook's share and the whole-city replan month, unasserted.
 
 Task 8 (synthCity, bench baseline money; hooks only, months 2 to 120, quiet, lock held), after
 grouped serving, the line index and the lazy guard: serve mean 9.1 to 13.0 µs, apply 3.9 to 9.6,
