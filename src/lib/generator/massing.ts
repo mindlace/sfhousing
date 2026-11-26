@@ -13,7 +13,8 @@ import {
   TOWER_INSET_M,
   TOWER_PLATE_MAX_M2,
   TOWER_PODIUM_STORIES,
-  TOWER_SEPARATION_M
+  TOWERS_PLATE_MAX_M2,
+  TOWERS_SEPARATION_M
 } from './constants';
 import {
   canonicalRing,
@@ -173,25 +174,30 @@ function massMidrise(_site: Site, F: PathsD, stories: number, draws: VarietyDraw
   ]);
 }
 
-/** Area of one tower plate on the site: at most `TOWER_PLATE_MAX_M2`. */
+/** Area of one tower's plate on the site: at most `TOWER_PLATE_MAX_M2`. */
 const plateArea = (site: Site) => Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
 
+/** Area of one plate of several towers on the site: at most `TOWERS_PLATE_MAX_M2`. */
+export const towersPlateArea = (site: Site) =>
+  Math.min(TOWERS_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
+
 /**
- * The plate grid: square plates of area `At`, `TOWER_SEPARATION_M` apart on the site's u/v axes,
- * the grid centred on F inset `TOWER_INSET_M`. A plate is kept only when it lies wholly inside.
+ * The plate grid of several towers: square plates of area `At`, `TOWERS_SEPARATION_M` apart on
+ * the site's u/v axes, the grid centred on F inset `TOWER_INSET_M`. A plate is kept only when it
+ * lies wholly inside.
  */
 function towerPlateGrid(site: Site, F: PathsD, At: number): PathsD {
   const { c, u, v } = site;
   const side = Math.sqrt(At);
-  const pitch = side + TOWER_SEPARATION_M;
+  const pitch = side + TOWERS_SEPARATION_M;
   const Fin = inset(F, TOWER_INSET_M);
   if (!Fin.length) return [];
   const pu = project(Fin, c, u);
   const pv = project(Fin, c, v);
-  const nu = Math.floor((pu.max - pu.min + TOWER_SEPARATION_M) / pitch);
-  const nv = Math.floor((pv.max - pv.min + TOWER_SEPARATION_M) / pitch);
-  const u0 = (pu.min + pu.max - (nu * pitch - TOWER_SEPARATION_M)) / 2;
-  const v0 = (pv.min + pv.max - (nv * pitch - TOWER_SEPARATION_M)) / 2;
+  const nu = Math.floor((pu.max - pu.min + TOWERS_SEPARATION_M) / pitch);
+  const nv = Math.floor((pv.max - pv.min + TOWERS_SEPARATION_M) / pitch);
+  const u0 = (pu.min + pu.max - (nu * pitch - TOWERS_SEPARATION_M)) / 2;
+  const v0 = (pv.min + pv.max - (nv * pitch - TOWERS_SEPARATION_M)) / 2;
   const plates: PathsD = [];
   for (let i = 0; i < nu; i++)
     for (let j = 0; j < nv; j++) {
@@ -204,13 +210,13 @@ function towerPlateGrid(site: Site, F: PathsD, At: number): PathsD {
 }
 
 /**
- * How many tower plates the site holds: the plate grid on the tower podium's footprint. Plate
- * size `TOWER_PLATE_MAX_M2` and spacing `TOWER_SEPARATION_M` are tier 4 (building-choice plan,
- * "Tower plates").
+ * How many towers the site holds: the plate grid on the tower podium's footprint, plates of
+ * `TOWERS_PLATE_MAX_M2` `TOWERS_SEPARATION_M` apart (tier 1, Planning Code; provenance.ts).
+ * Below 2 the tower form keeps the single-plate massing.
  */
 export function maxTowerPlates(site: Site): number {
   const F = baseFootprint(site, COVERAGE.tower * site.A);
-  return F.length ? towerPlateGrid(site, F, plateArea(site)).length : 0;
+  return F.length ? towerPlateGrid(site, F, towersPlateArea(site)).length : 0;
 }
 
 /**
@@ -228,7 +234,7 @@ function massTower(
   const { c, u, v } = site;
   const At = (opts?.coverageScale ?? 1) * plateArea(site);
   if (opts?.plates !== undefined && opts.plates > 1) {
-    const grid = towerPlateGrid(site, F, At);
+    const grid = towerPlateGrid(site, F, (opts?.coverageScale ?? 1) * towersPlateArea(site));
     if (grid.length < opts.plates) return null;
     return towerMassing(F, grid.slice(0, opts.plates), stories);
   }

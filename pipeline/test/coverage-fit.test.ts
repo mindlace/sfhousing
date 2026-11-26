@@ -19,7 +19,7 @@ describe('fitBlockCoverage', () => {
   beforeAll(async () => {
     db = await openDuck();
     const year = 2024;
-    // [blklot, mapblklot, roll rows as [stories, built]], footprint share (null: no footprint)
+    // [id (blklot and mapblklot), roll rows as [stories, built], footprint share (null: none)]
     const lots: [string, [number, number][], number | null][] = [
       ['0000001', [[20, 2010]], 0.5],
       ['0000002', [[13, 2005]], 0.8],

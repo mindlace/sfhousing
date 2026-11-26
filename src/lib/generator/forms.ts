@@ -8,7 +8,11 @@ export interface FormBuilding {
   units: number;
   /** Built stories: the stories asked, lowered to the lot's physical maximum. */
   stories: number;
-  /** Tower plates; 0 for any other form. A district sums its lots'. */
+  /**
+   * Tower plates; 0 for any other form. A district sums its lots'. A tower on a lot whose plate
+   * grid holds fewer than 2 (`maxTowerPlates`) is the single-plate massing and reports 1, so key
+   * on this, not on `maxTowerPlates`.
+   */
   plates: number;
   building: GeneratedBuilding;
 }
