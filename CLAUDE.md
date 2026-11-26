@@ -40,7 +40,7 @@ Fetch the file when working in the relevant area:
 - **Map-view interfaces for page and subsystem consumers (`--map-controls-br-*` CSS vars, the run view, the citywide feed (`CityDelta`), policy marks, bar modes)** — [docs/dev/map-interfaces.md](docs/dev/map-interfaces.md)
 - **Map performance (`npm run bench:map`: pan, timeline, simulation and run cases, the purchase-to-ready wait, pass bar, results, CI note)** — [docs/dev/map-perf.md](docs/dev/map-perf.md)
 - **`src/lib/fzp/`, the code the simulation shares (card and Details' pieces, lookups on the map, known gaps)** — [docs/dev/fzp-mode.md](docs/dev/fzp-mode.md)
-- **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, `setLevers` protocol)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
+- **Policy levers engine (`SimLevers`, resolution order, law switch, timer reach, the policy's path to the worker)** — [docs/dev/sim-levers.md](docs/dev/sim-levers.md)
 - **Map feed from a stepped world (`MapStream`, events to `TimelineUpdate`, rewind, snapshot, `restore`, the city feed)** — [docs/dev/map-stream.md](docs/dev/map-stream.md)
 - **Timeline UI on the simulation (the timeline, the ruler, the three zones and Play from, the policy document on the page, the worker messages as the page uses them, the session's stale and rejection rules, edits in place on an offer, known limits, measurements)** — [docs/dev/timeline-ui.md](docs/dev/timeline-ui.md)
 - **Simulation page (the page shell, schema 3 recipe the editors project, map overlays, autosave and the read-only view, the game on the page: its phases, the run and the workshop, request flow, dataset requirement)** — [docs/dev/sim-page.md](docs/dev/sim-page.md)

@@ -4,7 +4,7 @@ The engine's funded starts: a second possible start per lot and project kind, th
 waiting for money, the pools that pay them, the ledger of that money and the card fields that say
 what paid a project. This page covers `SimInput.finance`, `off`, the latents of an attempt, the
 line and its order, the award rule, re-pricing and lapse, the ledger protocol, `sampleAdvance` and
-`buildSimInput`'s table. The step engine that runs them is in [world-funding.md](world-funding.md). Design:
+`buildSimInput`'s table. The step engine runs on months: its line order, once-a-month serving, re-making and respelling are rules 9 to 19 in [world-funding.md](world-funding.md), which wins where the two differ. This page holds what both share: the award rule, the key's parts, lapse conditions, event amounts and the ledger identities. Design:
 `docs/superpowers/specs/2026-11-09-finance-engine-design.md`. The prices come from the finance model
 ([finance-model.md](finance-model.md)); the baseline pools and programmes from the dataset
 ([finance-data.md](finance-data.md)); the market shift from [market.md](market.md).
@@ -19,11 +19,7 @@ Code:
 | `src/lib/sim/world/input/market.ts`       | `marketLevel`                                                                                                                   |
 | `src/lib/sim/world/score/project-card.ts` | `projectCard` copies `kind` and `funding`                                                                                       |
 | `src/lib/timelapse/model.ts`              | `sampleAdvance`                                                                                                                 |
-| `src/lib/sim/world/funding/`              | the funding system: the line, serving, re-pricing, the ledger events                                                            |
-
-Where this page and the design differ, the code is described and the ruling that made it so is
-named (rulings R-P1, R-P6, R-5a, R-7a, R-11a and the conductor's order for a guarantee's release; see
-the end).
+| `src/lib/sim/world/funding/`              | the funding system: the line, serving, re-making, the ledger events                                                             |
 
 ## The latents of an attempt
 
@@ -47,8 +43,7 @@ one.
 **Segments.** For one attempt the months from its risk start `r` split into segments at the regime
 days, the market step days, every programme's `from` and `to + 1`, and every `off` entry's `from`
 and `to + 1`. A month falls under the segment of its first day, the rule the dated regimes use.
-Within a segment the view, the market step and the offered programmes are constant. The funded clocks (`world/funding/clocks.ts`) hold the days, the views, the steps and, per kind
-and segment, the offered programmes.
+Within a segment the view, the market step and the offered programmes are constant. The funded clocks (`world/funding/clocks.ts`) store nothing: each is recomputed from the spell, walking the segments of the policy frames the lot has lived through.
 
 **Rates per segment.** `z` is the lot's log-odds in the segment's view (`Precompute.logit`) and `m`
 the market step's:
@@ -88,7 +83,7 @@ spans of one pool mean their union).
 - A programme is **offered** on day d when it is active (`from ≤ d` and `to` null or `d ≤ to`) and
   its pool is not off on d. Only offered programmes enter a bundle. Switching a pool off never
   splits or renames a programme.
-- Off and on days are segment bounds and re-pricing days, like programme days.
+- Off and on days are segment bounds, like programme days.
 - An arrival on a day its pool is off is not received: no `in` event, `received` unchanged.
 - A pool's commitments run on while it is off: what is committed stays committed and is spent,
   repaid, released or lost as scheduled, and what is left stays unspent. Nothing new is committed
@@ -99,8 +94,7 @@ spans of one pool mean their union).
 The line holds the applications waiting for money, across all lots and both kinds. Applications
 compare, in this order (`lineKey` in `world/rules/funding.ts`):
 
-1. `applied`, the application day. It is kept across re-pricing, so a programme date does not
-   reshuffle the queue.
+1. The month applied: a month's applications join after every waiting row ([world-funding.md](world-funding.md), rule 9); `applied` orders nothing.
 2. `keyDay`, the first day of the month the lot's own draw for that kind gives at the lot's
    unshifted hazard (no bundle shift, not certain; for the market kind, the ordinary start's
    month). A month never reached, and any day after 2^28 (`NEVER_KEY_DAY`), compare equal, after
@@ -113,7 +107,7 @@ compare, in this order (`lineKey` in `world/rules/funding.ts`):
    memoised by the id array). Never a row index, so permuting rows changes nothing.
 4. The kind, `market` before `affordable`, for a lot with two applications on equal keys.
 
-`lineKey(keyDay, rank, kind)` packs 2 to 4 into one number below 2^53 (`keyDay` capped at 2^28
+`lineKey(keyDay, rank, kind)` packs the key's parts, 2 to 4, into one number below 2^53 (`keyDay` capped at 2^28
 times 2^20, plus rank × 2 plus the kind bit; the rank must be below 2^19).
 
 ## The award rule
@@ -160,9 +154,7 @@ Why each part:
   the dollars, the certainty and the stage rule. Pools outside S are not touched.
 
 Worked examples (the design's tier 1 baseline per-home figures: federal 443,108, state 118,390,
-City 300,027, over an uncovered cost of 861,525; the City's six pools folded into one for brevity;
-`engine-finance-stack.spec.ts`, "a short pool is made up by another only as far as its share
-allows"):
+City 300,027, over an uncovered cost of 861,525; the City's six pools folded into one for brevity):
 
 - **A bond stacked on the City tier.** Federal and state leave 300,027 for the City tier. An added
   `goBond` grant of share 0.5 asks 430,762.5, so the tier's grants (730,789.5) exceed what remains
@@ -192,25 +184,13 @@ fallback award is for: adding a programme on its own pool never turns an award i
 never lowers the awarded level (`funding.spec.ts`, "adding a programme never turns an award into
 a wait (property)", 500 random cases).
 Termination needs none of it: pools leave and never return. This is exact in real arithmetic; in
-floating point a difference of one ulp could move a rounded dollar. Serving is a single scan, so no
-award depends on monotonicity to the dollar.
+floating point a difference of one ulp could move a rounded dollar; the confirming `awardPasses` call decides each award.
 
 ## Serving
 
-The line is served in key order and each application is tested by the award rule against the money
-available at that moment. One that passes is awarded at once and its asks reduce the pools before
-the next is tested. One that fails is skipped and stays in line; a later, smaller application, or
-one whose bundle leans on other pools, may be awarded in the same pass. This is the design's "taking
-each project its pools can pay". A pass ends at the end of the line.
+The line is served once a month, in key order within the month's order: each application is tested by the award rule against the money available at that moment. One that passes is awarded and its asks reduce the pools before the next is tested. One that fails stays in line; a later, smaller application, or one whose bundle leans on other pools, may be awarded in the same scan. Serving is grouped by default: per award group the largest passing size H is found by bisection, which relies on the monotonicity above, and every member is confirmed with `awardPasses` at its own size. Money returned during a scan waits for the next month's scan ([world-funding.md](world-funding.md), rule 10).
 
-**When the line is served.** On each day of the loop with an inflow, a money event, a re-pricing or
-a new application, after those. A release on the day re-serves the line (ruling R-7a): money events
-of the day's awards are settled after each serving pass, and the line is served again while money
-returned (`released` or a loan's `repay` on any pool). The loop repeats until a pass awards
-nothing and no money returned.
-
-**Leaving the line**: awarded; the lot started by another route (its other kind's award, or its
-ordinary start); lapsed; or the horizon.
+**Leaving the line**: awarded; the lot started by another route (its other kind's award, or its ordinary start); lapsed; or the horizon.
 
 ### A short pool
 
@@ -227,56 +207,33 @@ More public money must never build fewer homes. `scripts/money-monotone.ts` runs
 
 The bundle of an application is the one active on the first day of its latent month. A switched-off
 span, or a programme `to`, that falls later in that month does not reach the application before
-the next re-pricing day, so for up to about a month a partly covered application can still draw on
+the next re-making, so for up to about a month a partly covered application can still draw on
 a source switched off, or a programme that ended, during that month. The bound is that month.
 Certain applications (fully covered) and the baseline as it stands are unaffected. The partner
 accepted this as an approximation; it is not to be "fixed" without a ruling. The Funding tab states
 it in its caveats (`MONTH_OFFER_CAVEAT`, `funding-copy.ts`).
 
-## Re-pricing in place, lapse, reservations, regimes
+## Re-making, lapse, reservations, regimes
 
-**Re-pricing days** are the days after `asOf`, up to the horizon, in the set of every programme's
-`from` and `to + 1`, every `off` entry's `from` and `to + 1`, and every regime day (market step days
-are not among them: a step changes no bundle and no size). On such a day D every waiting application
-is re-made under D's rules, once however many kinds of change fall on D: its view is the view in
-force on D, its size is the attempt's size draw in that view, its bundle B′ the programmes of its
-kind offered on D whose `minHomes` it meets. Unless it lapses it **keeps its place in line**
-(`applied` and `keyDay` unchanged) and B′ becomes its bundle. Without this, a programme added from
-2028 would never reach an application made on the first day; and a reset of the place would
-reshuffle the queue on every programme date.
+A policy change that alters a waiting application's money or view re-makes it in the month of the change, and a lapsed kind's spell starts again on the month's first day (rules 17 to 19, [world-funding.md](world-funding.md)). A market step changes no bundle and no size, so it re-makes nothing. A re-made application has its view of that month, its size the attempt's size draw in that view, and its bundle B' the programmes of its kind offered then whose `minHomes` it meets. Unless it lapses it **keeps its place in line** (`keyDay` unchanged) and B' becomes its bundle.
 
-**Lapse.** An application lapses on a re-pricing day when any of these holds:
+**Lapse.** An application lapses when any of these holds:
 
-1. its re-made bundle B′ is empty;
+1. its re-made bundle B' is empty;
 2. its lot has no size or no hazard in the view in force;
-3. `level(B′)` is below `level(B)`, B being its bundle just before D. Example: a certain application
-   whose `state` pool is switched off from D goes from level 1 to about 0.863 (the federal and City
-   shares, (443,108 + 300,027) ÷ 861,525) and lapses.
+3. `level(B')` is below `level(B)`, B being its bundle just before. Example: a certain application whose `state` pool is switched off goes from level 1 to about 0.863 (the federal and City shares, (443,108 + 300,027) / 861,525) and lapses.
 
-A level that stays within 1e-9 or rises keeps its place, even if dollars or programmes change (an
-added City bond on a certain baseline lowers what every City grant pays, pro rata, but the level
-stays 1). The comparison is with the bundle just before D, not the first one: an application whose
-offer rose on one re-pricing day and fell back on a later one lapses on the later one.
+A level that stays within 1e-9 or rises keeps its place, even if dollars or programmes change (an added City bond on a certain baseline lowers what every City grant pays, pro rata, but the level stays 1). The comparison is with the bundle just before the change, not the first one.
 
-**New spells.** A lapsed application leaves the line and that kind's latent is computed again as a
-new spell from D: months start on D (`r′ = D − 1`), on the same draws `u` and `v` (so no new
-purpose), with the rates from D on and a fresh `keyDay`. The result, if it applies, is a new
-application with its own `applied`; a lapse on D can give one on D itself when the month starting on
-D is certain, and it then joins the line behind every application with an earlier `applied`.
-`respell` is in `world/funding/policy.ts`.
+**New spells.** A lapsed application leaves the line and that kind's latent is computed again as a new spell from the month's first day, on the same draws `u` and `v` (so no new purpose), with the rates from then on and a fresh `keyDay`. `respell` is in `world/funding/policy.ts`.
 
-**Reservations** (`reservedFrom`). No application is made on or after the reservation day while it
-is kept, no award happens on or after it, and on that day every waiting application of the lot lapses
-for good (no new spell). An award before it voids the reservation unless the project exits before
-it, as an ordinary start does.
+**Reservations** (`reservedFrom`). No application is made on or after the reservation day while it is kept, no award happens on or after it, and on that day every waiting application of the lot lapses for good (no new spell). An award before it voids the reservation unless the project exits before it, as an ordinary start does.
 
-**Regimes.** The latents use each month's view; a waiting application is re-made on each regime day;
-a funded project runs on the view of its award day, which, by re-pricing, is the view its size was
-drawn in.
+**Regimes.** The latents use each month's view; a funded project runs on the view of its award day.
 
 ## The pool state, availability and the events
 
-`PoolState` (`world/rules/funding.ts`), whole dollars: `received`, `committed`, `spentGrant`, `outLoan`,
+The pool counters (`FundPools`, `world/funding/columns.ts`), whole dollars: `received`, `committed`, `spentGrant`, `outLoan`,
 `lostLoan`, `lostGuarantee`. A pool's availability, F9 (f) term for term, for every pool:
 
 `available = leverage × received − committed − spentGrant − outLoan − lostLoan − lostGuarantee`
@@ -309,19 +266,7 @@ programmes of the awarded set are in the ledger.
 **Inflows.** Each arrival of a pool on a day the pool is not off emits `in` with its dollars
 and `programme: null`, and adds to `received`. Zero-dollar arrivals emit nothing.
 
-**Order within a day:**
-
-1. `in` events, by pool in `finance.pools` order, then arrival order.
-2. Money events of already-awarded projects dated that day, by award order and, within one project,
-   `spend`, `repay`, then `loss` and a guarantee's exit `release`, then `release`, each by
-   programme in `finance.programmes` order. **A guarantee's release precedes its loss** (the
-   conductor's ruling, 2026-11-11): when a guarantee exits after construction began, `release H`
-   is emitted before `loss X`, so the pool's availability identity (E4) holds after every event,
-   including when the pool was fully held beforehand. Every other case keeps
-   spend, repay, loss, release.
-3. `commit` events of the day's awards, in award order, by programme in `finance.programmes` order.
-4. Steps 2 and 3 repeat while the day's awards create money events on the same day (a project
-   whose stages take 0 days), and a release re-serves the line (R-7a above).
+**Order of events.** Within a model month the world orders events by system, not by day ([world-score.md](world-score.md)). Within one project's events a guarantee's release precedes its loss (the conductor's ruling, 2026-11-11): when a guarantee exits after construction began, `release H` is emitted before `loss X`, so the pool's availability identity (E4) holds after every event, including when the pool was fully held beforehand. Every other case keeps spend, repay, loss, release; each by programme in `finance.programmes` order.
 
 ### The ledger identities and `finance-score`'s numbers
 
@@ -372,10 +317,8 @@ horizon, so the project stays open. It tests the mass condition and does not cal
 catch. `u` outside [0, 1) throws `RangeError('u must be in [0, 1), got <u>')`, checked first.
 
 A certain project's stage entered on day e is left on day
-`e + floor(x × sampleAdvance(t, drawOn(s, P.STAGE_TIME, STAGE_INDEX[stage])).days)`: `t` is the
-job's unscaled transition for its pathway and stage, `x` the job's timer scale for that stage
-(`job.scale`, 1 for a stage it does not name). The outcome is always `advance`, and `P.STAGE`, the
-kind draw, is not read. That is `scaledTransition` with the kind fixed to advance. So a certain
+`e + floor(x × sampleAdvance(t, u).days)` (`world/stage.ts`): `t` is the unscaled transition for the project's pathway and stage, `u` the project's stage-time draw, `x` its timer scale for that stage (1 for a stage it does not name). The outcome is always `advance`, and `P.STAGE`, the
+kind draw, is not read. That is the ordinary stage time with the kind fixed to advance. So a certain
 project spends the same days in a stage as an uncertain project with the same stream, pathway,
 stage and scale that advances, and a timer scales a certain project's stages as it scales any
 other's. `model-golden.json` does not carry `sampleAdvance`; a test ties it to `sampleTime`.

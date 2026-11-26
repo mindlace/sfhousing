@@ -32,7 +32,7 @@ Dated policies (schema 4) compile to these levers month by month: see [policy-ti
 - **Typed `terms`** are any of the five market terms, each bounded by `resolveTerms`' input range (the parser calls it with that key alone). A term an instrument needs but nothing sources is not a parse error: it is dropped on load, refused on publish, and guarded in `buildFinance`.
 - **`buildFinance(base, f, asOf)`**, called by `planOf`: no model returns undefined; empty levers return `base` itself; the id check against the baseline; resolved terms and the missing-term guard; scaling with `inflowArrivals` windows (a capped pool's inflows rebuilt per run, never before `asOf`); one `off` span per stretch of scale-0 entries; then baseline pools, added pools, programmes and spans in order.
 - **The twin and `bare()`.** `market` and `finance` pass through `applyPolicies` and `bare()`; both twins run the unscaled baseline on the sourced terms, so typed terms and scales reach the plan only.
-- **The worker.** A baseline-id failure in `leverStep` is a `bad-request` (`levers <path>: <message>`) on that revision's rev; the previous revision stays in force.
+- **The worker.** A baseline-id failure at the compile is a `bad-request` (`levers <path>: <message>`) on that revision's rev; the previous revision stays in force.
 
 ## Resolution order
 
@@ -72,7 +72,7 @@ The plan runs on the unscaled calibration: `applyLevers` passes timers to the en
 
 `rescaleTransition` is the display view: `lookupsOf` builds each cohort's chance and typical-months tables from its calibration rescaled by its own scale (`timersOp`), and the typical months, timeline and card read them. The engine never reads them. The display view agrees with the step engine within the month grid: the engine floors s·d on whole days, so a month boundary moves by at most s + 1 days.
 
-One measure is not monotone per month: `completedNet` subtracts a project's existing homes when it enters construction (`addNet`, `score.ts`). A faster stage brings the demolition forward with the completion, so between the plan's construction entry and the twin's, plan − twin is −existingUnits. Completions alone never fall behind, and the test allows a `completedNet` shortfall only up to the existing homes of the rows whose construction entry came earlier.
+One measure is not monotone per month: `completedNet` subtracts a project's existing homes when it enters construction (the net fold in `world/score/series.ts`). A faster stage brings the demolition forward with the completion, so between the plan's construction entry and the twin's, plan − twin is −existingUnits. Completions alone never fall behind, and the test allows a `completedNet` shortfall only up to the existing homes of the rows whose construction entry came earlier.
 
 ## Route shares and Local Program forcing
 
@@ -89,7 +89,7 @@ One measure is not monotone per month: `completedNet` subtracts a project's exis
 
 Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
 
-**References.** The existing `REFERENCES` (`score.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are all shown under `compare: 'preFzp'`. Under `compare: 'fzp'` only the `completedNet` ones are kept. RHNA targets come from `targetsOf`, unchanged.
+**References.** The existing `REFERENCES` (`world/score/targets.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are all shown under `compare: 'preFzp'`. Under `compare: 'fzp'` only the `completedNet` ones are kept. RHNA targets come from `targetsOf`, unchanged.
 
 ## Protocol
 
@@ -164,8 +164,7 @@ Brush (b), the largest, costs 86 ms of lookups on the table against 22,332 ms of
 `max(FZP, 4)` rule, brush (a) has 10 needs on this dataset.
 
 Cold loads on the same dataset, a production build (`npm run preview`, the dataset in local R2,
-no `.dev.vars` override), measured with
-`node scripts/profile-sim-load.mjs --origin http://localhost:4173 --runs 3` on an idle machine.
+no `.dev.vars` override), measured by a script (since removed) that drove the worker's old session protocol on an idle machine.
 "Ready" is the first `timeline` the worker posts at or after the last levers revision the page
 sent, in ms from navigation; median of 3 cold loads (each run in brackets):
 
