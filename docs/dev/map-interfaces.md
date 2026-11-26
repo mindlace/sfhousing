@@ -61,7 +61,7 @@ The same host rule moves MapLibre's bottom-left container (`.maplibregl-ctrl-bot
 - **Calls.** A call with the value in force does nothing. A call before the map exists stores the value and never throws, in any state.
 - **Events.** Each jump fires `movestart`, `move` and `moveend` once, with no `originalEvent` (so the credit does not collapse). A `moveend` reader sees the city at the lock and the remembered view at the unlock. `map.project` gives positions in the fitted camera.
 - **The root.** `[data-testid=map-root]` carries `data-run-view="on"` while locked, from mount, with or without a map; no attribute otherwise.
-- **Merged timeline.** While locked the timeline draws as one solid and one ghost layer over every cell (`timeline-solid-run`, `timeline-ghost-run`), never culled or picked; unlock returns the per-cell layers. Same picture, fewer draws.
+- **Merged timeline.** While locked the timeline draws as one solid and one ghost layer over every cell (`timeline-solid-run`, `timeline-ghost-run`), never culled or picked; unlock returns the per-cell layers.
 
 What shows at the fitted zoom (the run view changes what no layer draws):
 
