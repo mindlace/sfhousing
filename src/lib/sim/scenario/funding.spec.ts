@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../../generator/seed';
-import { PROTOTYPES, fundBundle, projectDollars, resolveTerms, uncoveredPerHome } from '../finance';
+import {
+  PROTOTYPES,
+  fundBundle,
+  oddsShift,
+  projectDollars,
+  resolveTerms,
+  uncoveredPerHome
+} from '../finance';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Calibration, Pool, PoolKind, Programme } from '$lib/timelapse/types';
 import { dayOf } from './dates';
@@ -12,6 +19,7 @@ import {
   awardPasses,
   awardSet,
   below,
+  cappedShift,
   checkFinance,
   coverageLevel,
   financeIndexOf,
@@ -649,6 +657,45 @@ describe('the award rule', () => {
     expect(leaveOut([2, 3], 'affordable', proto, u, cityShort, fz).set).toEqual([3]);
     expect(awardSet([2, 3], 'affordable', proto, u, cityShort, fz)).toBeNull();
     expect(awardPasses([2, 3], 'affordable', proto, u, cityShort, fz)).toBe(false);
+  });
+  it('cappedShift: coverage above 1 shifts as coverage 1', () => {
+    const f = financeIndexOf(loanStack());
+    const P = PROTOTYPES[0];
+    const priced = f.price('affordable', bundleOf(f), P.id);
+    expect(priced.coverage).toBeGreaterThan(1);
+    for (const slope of [1, 3]) {
+      const full = oddsShift(uncoveredPerHome('affordable', P), 'affordable', P, slope);
+      expect(cappedShift(priced, 'affordable', P, slope)).toBe(full);
+      expect(oddsShift(priced.grantEquivalent, 'affordable', P, slope)).toBeGreaterThan(full);
+    }
+  });
+  it('cappedShift: below coverage 1 it is oddsShift', () => {
+    const base = ample();
+    const pool = base.pools[2].id;
+    const market: Programme = {
+      ...base.programmes[2],
+      id: 't-market-loan',
+      pool,
+      reach: 'market',
+      instrument: { kind: 'loan', costShare: 0.3, rate: 0.02, requiredReturn: null },
+      tiers: null
+    };
+    const f = financeIndexOf({ ...base, programmes: [...base.programmes, market] });
+    let checked = 0;
+    for (const P of PROTOTYPES) {
+      const cases = [
+        ['affordable', [0, 1]],
+        ['market', [3]]
+      ] as const;
+      for (const [kind, set] of cases) {
+        const priced = f.price(kind, set, P.id);
+        expect(priced.coverage).toBeGreaterThan(0);
+        expect(priced.coverage).toBeLessThan(1);
+        expect(cappedShift(priced, kind, P, 3)).toBe(oddsShift(priced.grantEquivalent, kind, P, 3));
+        checked++;
+      }
+    }
+    expect(checked).toBe(2 * PROTOTYPES.length);
   });
   it('the price memo returns one result per set, and the affordable kind ignores the prototype', () => {
     const f = financeIndexOf(ample());

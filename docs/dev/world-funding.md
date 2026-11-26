@@ -70,7 +70,9 @@ writing**, or the index goes stale silently (a write without a bump is not detec
   `ordinaryStart` does (segments merged as `rates.ts` merges them). Recomputed on demand, never
   stored. A kind none of the frames it reads can fund has no clock (`fundableAny`): in each
   frame the kind is not offered, its chance is nil, or the lot's largest size is below the least
-  `minHomes` offered.
+  `minHomes` offered. Every segment's rate is finite: the bundle's shift is `cappedShift`
+  (coverage above 1 shifts as coverage 1), and a fully funded bundle has no `−Infinity` rate and
+  no first-day rule; its day is drawn in the lot-month like any other (funding award rule, R2).
 - **Spent spells** (rule 5): a total that passes in a lot-month whose bundle is empty spends the
   spell; planning again never makes it apply later. `appliedThrough`: a kind whose day falls in a
   month whose `apply` already ran is lost (it counts as 0), without hiding the other kind.

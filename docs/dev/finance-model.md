@@ -159,8 +159,10 @@ check, and every validator calls it. Values at full precision (no step, no round
 evidence, and carry no tier.
 
 **Coverage and certainty.** `coverage(g, kind, p)` = `g / U`; `oddsShift(g, kind, p, slope)` =
-`slope x g / C`; both unrounded and uncapped (test certainty first and do not use the shift of a
-certain project). Both throw `RangeError('grant-equivalent must be a finite number of 0 or more;
+`slope x g / C`; both unrounded and uncapped. The world engine passes `oddsShift` the
+grant-equivalent capped at the uncovered cost (`cappedShift` in `scenario/funding.ts`), so a
+certain project shifts as coverage 1 and starts at the ordinary odds at full coverage (the funding
+award rule, R2); `oddsShift` itself still does not cap. Both throw `RangeError('grant-equivalent must be a finite number of 0 or more;
 got <g>')` for a negative or non-finite `g`. `isCertain(c)` is `c >= 1 - CERTAIN_TOLERANCE` with
 `CERTAIN_TOLERANCE = 1e-9`: shares are stored as fractions, so a bundle that pays exactly the
 uncovered cost can sum to 0.9999999999999999. The tolerance is numerical (below a thousandth of a

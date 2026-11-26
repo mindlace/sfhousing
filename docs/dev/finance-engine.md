@@ -11,16 +11,16 @@ line and its order, the award rule, re-pricing and lapse, the ledger protocol, `
 
 Code, all in `src/lib/sim/scenario/` unless noted:
 
-| File                         | Holds                                                                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `funding.ts`                 | `inflowArrivals`, `PIPELINE_FUNDED`, `checkFinance`, `coverageLevel`, `below`, pool state, `FinanceIndex`, `awardSet` |
-| `funded.ts`                  | `fundedPass` (the three phases and the day loop), the latents of an attempt, re-pricing, the shortcuts                |
-| `line.ts`                    | the line: `scanLine` (the definition) and `groupedLine` (the implementation)                                          |
-| `money.ts`                   | `Treasury`: pool counters, inflows, the money events and the ledger                                                   |
-| `engine.ts`                  | the branch in `runEngine`, `Job.certain` in `stageStep`, `startSimulated`, `EngineOpts` (tests only)                  |
-| `input.ts`, `market.ts`      | `buildSimInput`, `Precompute.logit`, `parcelRankOf`; `marketLevel`                                                    |
-| `card.ts`                    | `projectCard` copies `kind` and `funding`                                                                             |
-| `src/lib/timelapse/model.ts` | `sampleAdvance`                                                                                                       |
+| File                         | Holds                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `funding.ts`                 | `inflowArrivals`, `PIPELINE_FUNDED`, `checkFinance`, `coverageLevel`, `cappedShift`, `below`, pool state, `FinanceIndex`, `awardSet` |
+| `funded.ts`                  | `fundedPass` (the three phases and the day loop), the latents of an attempt, re-pricing, the shortcuts                               |
+| `line.ts`                    | the line: `scanLine` (the definition) and `groupedLine` (the implementation)                                                         |
+| `money.ts`                   | `Treasury`: pool counters, inflows, the money events and the ledger                                                                  |
+| `engine.ts`                  | the branch in `runEngine`, `Job.certain` in `stageStep`, `startSimulated`, `EngineOpts` (tests only)                                 |
+| `input.ts`, `market.ts`      | `buildSimInput`, `Precompute.logit`, `parcelRankOf`; `marketLevel`                                                                   |
+| `card.ts`                    | `projectCard` copies `kind` and `funding`                                                                                            |
+| `src/lib/timelapse/model.ts` | `sampleAdvance`                                                                                                                      |
 
 Where this page and the design differ, the code is described and the ruling that made it so is
 named (rulings R-P1, R-P6, R-5a, R-7a, R-11a and the conductor's order for a guarantee's release; see
@@ -82,17 +82,25 @@ and segment, the offered programmes.
 the market step's:
 
 - Market kind: `z + m` (plus the frame's parking shift, `frame.parking`, in the world engine;
-  `world-core.md`, The car hook), plus `oddsShift` of the bundle when the bundle is not empty. The
+  `world-core.md`, The car hook), plus the bundle's shift when the bundle is not empty. The
   rate used is `min(ordinary rate, shifted rate)` (the min-rate rule, below).
 - Affordable kind: `z + m − slope × (uncoveredPerHome('affordable') − uncoveredPerHome('market')) ÷
-costPerHome('affordable')`, plus `oddsShift` of the bundle when the bundle is not empty.
-- A certain bundle gives rate `−Infinity` (hazard 1). A segment where the view has no size, or the
-  lot has no hazard, gives no start.
+costPerHome('affordable')`, plus the bundle's shift when the bundle is not empty.
+- The bundle's shift is `cappedShift` (`funding.ts`): `oddsShift` of the grant-equivalent
+  capped at the uncovered cost, so coverage above 1 shifts as coverage 1. Every rate is finite: a
+  fully funded bundle starts at the ordinary odds at full coverage, not at once (the funding award
+  rule, R2 and its clamp). A segment where the view has no size, or the lot has no hazard, gives no
+  start.
 
-`piecewiseMonth` turns the draw and the rates into the latent month `T`. A latent that falls in a
-**certain** month starts on that month's first day, so every certain application of a cohort is on
-one day and the line key, not a uniform, orders them. Any other latent starts on
-`r + 1 + floor((T − 1 + v) × MONTH_DAYS)`.
+`piecewiseMonth` turns the draw and the rates into the latent month `T`. Every latent starts on
+`r + 1 + floor((T − 1 + v) × MONTH_DAYS)`: there is no first-day rule, so fully funded
+applications spread over their month like any other.
+
+The world engine (`world/funding/clocks.ts`, what `/sim` runs) is the one described. The old
+scenario engine (`funded.ts`: `segValue`, `kindLatentInto`, the fused pass), which no longer runs in
+production, keeps the rule it was built with: a certain bundle's rate is `−Infinity` (hazard 1),
+its latent starts on the month's first day, and its shift is `oddsShift` uncapped. It was left
+unchanged when its comparisons with the world engine were retired (2026-11-25).
 
 **No application in a month without a bundle.** The month's bundle is the programmes of its kind
 that are active on its first day, whose pool is not off that day and whose `minHomes` the drawn size
@@ -538,14 +546,17 @@ homes 47,471, at least 50 homes 33,505, at least 100 homes 19,005. `simulateNet`
 was 9.1 to 10.5 ms in the design's measurement (budget 15 ms).
 
 **What the baseline adds** (`minHomes` 70 for every baseline programme, every affordable bundle
-certain): every candidate that can reach 70 homes in some view draws its size, and those at 70 or
-more apply on the first day (inferred 15,000 to 25,000 for the live baseline).
+certain): every candidate that can reach 70 homes in some view draws its size, and in the old
+engine those at 70 or more apply on the first day (inferred 15,000 to 25,000 for the live
+baseline). The world engine has no first-day rule: they apply at the ordinary odds at full
+coverage.
 
 **The shortcuts** (all exact, held by tests that compare runs with them on and off,
 `EngineOpts.noShortcuts`): a per-input eligible list (a lot whose largest level never meets any
 `minHomes` of a kind has no latent of that kind); a per-input bound on attempt 0's INIT draw for
 the market kind, and the same for the affordable draw, built as `skipAbove` from the lowest rate any
-bundle can give (`Infinity` where some bundle is certain), so a lot above both is passed over on one
+bundle can give (`Infinity` where some bundle is certain: the old engine's rule, which the world
+engine does not have), so a lot above both is passed over on one
 draw without a lot record (`fundedRunStats().passedOver`); canonical bundle arrays so the price
 memo and the line find a bundle by identity; one day's new applications sorted once by a 64-bit
 float composite key; the grouped line.
@@ -592,7 +603,8 @@ to load the engine, not data): two pools, three programmes, one of them certain.
   years, leverage 1;
 - pool `bench-fund`: `generalRevenue`, yearly 50,000,000 from `asOf`, leverage 1;
 - programme `bench-certain`: grant share 1, reach `market`, `minHomes` 25, on `bench-bond` (certain:
-  every lot of 25 homes or more applies on the first day, the heaviest case);
+  in the old engine every lot of 25 homes or more applies on the first day, the heaviest case; in
+  the world engine they start at the ordinary odds at full coverage);
 - programme `bench-loan`: loan `costShare` 0.6, rate 0.04, reach `market`, `minHomes` 0, on
   `bench-fund` (partial);
 - programme `bench-afford`: grant share 0.25, reach `affordable`, `minHomes` 0, on `bench-fund`.

@@ -5,14 +5,13 @@ import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenar
 import {
   PROTOTYPES,
   costPerHome,
-  oddsShift,
   prototypeFor,
   uncoveredPerHome,
   type Prototype,
   type PrototypeId
 } from '$lib/sim/finance';
 import { NEVER_KEY_DAY } from '$lib/sim/scenario/funded';
-import { coverageLevel } from '$lib/sim/scenario/funding';
+import { cappedShift, coverageLevel } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, piecewiseMonth, sizeCumAgainst } from '$lib/sim/scenario/input';
 import { P, drawOn } from '$lib/sim/scenario/rng';
 import { exp, log } from '$lib/timelapse/math';
@@ -198,7 +197,7 @@ function segOn(
   if (bundle.length === 0) return { ord, rate: ref, ref, bundle, level: 0, size };
   const priced = fm.index.price(kind, bundle, size.protoId);
   const level = coverageLevel(priced.coverage);
-  const x = log(1 - logistic(x0 + oddsShift(priced.grantEquivalent, kind, p, slope)));
+  const x = log(1 - logistic(x0 + cappedShift(priced, kind, p, slope)));
   return { ord, rate: market ? Math.min(ord, x) : x, ref, bundle, level, size };
 }
 

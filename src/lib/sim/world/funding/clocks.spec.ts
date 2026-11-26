@@ -1,6 +1,7 @@
 // world-funding Task 3: the market and affordable funded clocks (spec rules 2, 3, 4, 5, 7).
 import { describe, expect, it } from 'vitest';
 import { runOf } from '$lib/sim/scenario/engine';
+import { PROTOTYPES } from '$lib/sim/finance';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import {
   NEVER_KEY_DAY,
@@ -10,6 +11,7 @@ import {
   latentsWith,
   newKindOut
 } from '$lib/sim/scenario/funded';
+import { financeIndexOf } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, precomputeOf } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
@@ -199,6 +201,61 @@ describe('kindClock', () => {
     });
     expect(levelOne).toBeGreaterThan(0);
     expect(later).toBeGreaterThan(0);
+  });
+
+  it('a market loan above coverage 1 shifts as coverage 1 and never starts later than the ordinary clock', () => {
+    const asOf = fundedMini().asOf;
+    // The mini money's market loan raised to a cost share of 0.8 or 1, at no interest and a 1%
+    // required return: its bundle's coverage is above 1 for every prototype at either share.
+    const loanAt = (costShare: number): Finance => {
+      const fin = miniFinance(asOf);
+      return {
+        ...fin,
+        off: [],
+        programmes: fin.programmes.map((g) =>
+          g.id === 'm-bank-loan'
+            ? { ...g, instrument: { kind: 'loan', costShare, rate: 0, requiredReturn: 0.01 } }
+            : g
+        )
+      };
+    };
+    const [a, b] = [loanAt(0.8), loanAt(1)];
+    const fa = financeIndexOf(a);
+    const fb = financeIndexOf(b);
+    const market = a.programmes.flatMap((g, i) => (g.reach === 'market' ? [i] : []));
+    for (const p of PROTOTYPES) {
+      expect(fa.price('market', market, p.id).coverage).toBeGreaterThan(1);
+      expect(fb.price('market', market, p.id).coverage).toBeGreaterThan(
+        fa.price('market', market, p.id).coverage
+      );
+    }
+    const input = fundedMini(a);
+    const ta = oneMoneyTimeline(input, a);
+    const tb = oneMoneyTimeline(fundedMini(b), b);
+    const statics = staticsOf(input);
+    let applying = 0;
+    let later = 0;
+    let earlier = 0;
+    eachSpell(input, 5, asOf, (spell, sh) => {
+      const k = kindClock(statics, ta, 1, sh, spell, 'market');
+      // More coverage above 1 does not move the clock: the shift is that of coverage 1.
+      expect(kindClock(statics, tb, 1, sh, spell, 'market')).toEqual(k);
+      const os = ordinaryStart(statics, ta, 1, sh, spell.lot, asOf, 0);
+      if (k.day === null) return;
+      applying++;
+      expect(k.level).toBe(1);
+      // A finite rate: the day is drawn in the lot-month, and some pass after lot-month 1.
+      const vO = drawOn(spell.stream, P.INIT_DAY, 0);
+      expect(k.day).toBe(asOf + 1 + Math.floor((k.T - 1 + vO) * MONTH_DAYS));
+      if (k.T > 1) later++;
+      if (os !== null) {
+        expect(k.day).toBeLessThanOrEqual(os.day);
+        if (k.day < os.day) earlier++;
+      }
+    });
+    expect(applying).toBeGreaterThan(0);
+    expect(later).toBeGreaterThan(0);
+    expect(earlier).toBeGreaterThan(0);
   });
 
   it('rule 5: a programme opening at month m does not make an earlier pass apply', () => {

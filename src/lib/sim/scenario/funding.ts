@@ -10,9 +10,12 @@ import {
   fundBundle,
   isCertain,
   missingTerms,
+  oddsShift,
   projectDollars,
+  uncoveredPerHome,
   validateInstrument,
   type BundleFunding,
+  type Prototype,
   type PrototypeId
 } from '../finance';
 import { dayOf, isoOf } from './dates';
@@ -191,6 +194,21 @@ export function checkFinance(input: SimInput): void {
 /** The coverage level: coverage counted up to 1, with `isCertain`'s tolerance (spec, Terms). */
 export function coverageLevel(c: number): number {
   return isCertain(c) ? 1 : c;
+}
+
+/**
+ * The odds shift of a priced bundle, its grant-equivalent capped at the uncovered cost: coverage
+ * above 1 shifts as coverage 1, so a fully funded project starts at the ordinary odds at full
+ * coverage and more loan beyond it raises them no further (funding award rule, R2's rider).
+ * `oddsShift` itself does not cap.
+ */
+export function cappedShift(
+  priced: BundleFunding,
+  kind: ProjectKind,
+  p: Prototype,
+  slope: number
+): number {
+  return oddsShift(Math.min(priced.grantEquivalent, uncoveredPerHome(kind, p)), kind, p, slope);
 }
 
 /** x is below y when `x < y - CERTAIN_TOLERANCE`. */
