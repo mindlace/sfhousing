@@ -5,9 +5,8 @@
       tool at all times, and reveal policies a few per round.</p>
   </header>
 
-  <aside data-kind="note"><strong>Status</strong> Draft for the owner to edit. One investigation
-    is still running: why a taller height limit can reach the goal later
-    (<a href="#sec-height">Height</a>). Open choices are marked as questions.</aside>
+  <aside data-kind="note"><strong>Status</strong> Draft for the owner to edit. Open choices are
+    marked as questions.</aside>
 
   <section id="sec-intent">
     <h2>Intent</h2>
@@ -357,9 +356,25 @@
       <h3>Height</h3>
       <p>On the rail rule, 40 stories gives fewer homes by 2066 than 12 (92,259 against 94,074),
         and 20 stories reaches the goal later than 12. A height limit is a maximum, so a higher
-        one should never do worse (P15). The cause is being investigated. Its fix is a separate
-        change to the engine, with its own dataset check. Until then the fixed heights in
-        <a href="#tbl-rounds">the rounds</a> stay at or below 12 stories.</p>
+        one should never do worse (P15).</p>
+      <p>The cause, read from the code and not yet confirmed lot by lot: the engine builds to
+        the limit instead of choosing the best building at or below it.</p>
+      <ul>
+        <li>From 13 stories, a lot of 1,500 m² or more becomes a tower: a 5-story podium and a
+          slim floor plate. On a large lot a 13-story tower holds about half the homes of a
+          12-story midrise, and a tower only catches up near 40 stories
+          (<code>src/lib/generator/select.ts</code>, <code>massing.ts</code>).</li>
+        <li>The size draw uses a different table once the limit is above 12, one that favours
+          smaller fills (<code>size.byEnvelope</code> in the calibration).</li>
+        <li>The start odds read two features computed from the limit, through fitted bins that do
+          not rise steadily.</li>
+      </ul>
+      <p>The fix is a separate change to the engine: each lot takes the best building at or below
+        its limit, with a height check beside <code>scripts/money-monotone.ts</code>. It changes
+        the dataset version, so it gets its own design. This design does not wait for it: the
+        fixed heights in <a href="#tbl-transit-fixed">the transit rules</a> are all below 13
+        stories. A player who edits a rule above 12 stories will still meet the anomaly until
+        the fix lands.</p>
     </section>
 
     <section id="sec-screen">
