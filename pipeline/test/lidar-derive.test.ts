@@ -829,9 +829,10 @@ describe('deriveBoxes', () => {
 });
 
 describe('terraces for tall rises', () => {
-  // Setbacks are at least 1 m per side (ruling F5): the rough mask at taperRoughM marks one cell
-  // each side of a jump, and the opening loses a ring narrower than 1.25 m between two jumps. The
-  // first setback is 1 m (the 12 m ring is not a terrace); the others are 2 m.
+  // Setbacks between terrace tiers are 2 m (controller ruling): a ring under about 1.25 m between
+  // two jumps does not survive the rough mask at taperRoughM (one cell each side of a jump) plus
+  // the opening. The first setback is 1 m: the 12 m ring is never a terrace, so it has a jump on
+  // one side only.
   const cakeRing = rect(100, 200, 130, 220);
   const cake: SynthScene = {
     ground: flatGround,
@@ -922,6 +923,26 @@ describe('terraces for tall rises', () => {
       if (s.baseM <= baseTop) continue;
       expect(steps.some((p) => p.heightM === s.baseM && inside(s.shape, p.shape))).toBe(true);
     }
+  });
+
+  it('a slow taper splits once the merged loss passes taperMergeShare', () => {
+    // A 10 m podium and an 80 m tower that ramps from 60 to 75 m at 3 m/m along its west edge.
+    // The band is about 4.06, so each level in the ramp loses about 1.4 m of the 80 m width
+    // (under 2% of the level below) but over 5% of the tower in all.
+    const ring = rect(100, 200, 190, 220);
+    const fp = fpOf([[ring]]);
+    const s: SynthScene = {
+      ground: flatGround,
+      boxes: [
+        { ring, top: 10 },
+        { ring: rect(105, 202, 185, 218), top: (x) => Math.min(75, 60 + 3 * (x - 105)) }
+      ]
+    };
+    const { boxes, roof } = run(s, fp, { streets: new StreetIndex([]) });
+    expect(roof.sliced).toBe(true);
+    const steps = bySrc(boxes, 'step');
+    expect(steps.length).toBeGreaterThan(1);
+    for (let i = 1; i < steps.length; i++) expect(steps[i].baseM).toBe(steps[i - 1].heightM);
   });
 
   it("a sliced building's terraces win over a street front", () => {

@@ -677,7 +677,8 @@ interface Terrace {
  * grown back and shaped as steps are, and cut to the region of the level below they stand on (the
  * shape for the first level). A region is a terrace from its level to the next; one with nothing
  * on it ends at its cells' median. A region that is its parent's only child and keeps
- * taperMergeShare of the parent's area extends the parent's terrace instead.
+ * taperMergeShare of the area of the parent's terrace (where that terrace started) extends it
+ * instead.
  */
 function terraceStage(o: {
   h: Float64Array;
@@ -763,7 +764,9 @@ function terraceStage(o: {
     for (const r of prev) r.box!.heightM = clampH(r.nChild > 0 ? level : medianAt(h, r.cells));
     for (const r of cur) {
       const p = r.parent!;
-      if (p.box && p.nChild === 1 && r.area >= BOXES.taperMergeShare * p.area) r.box = p.box;
+      // Against the terrace being extended (its first region), not the level below: 2% losses
+      // would otherwise chain, and a smooth taper would collapse into one wide prism.
+      if (p.box && p.nChild === 1 && r.area >= BOXES.taperMergeShare * p.box.area) r.box = p.box;
       else {
         r.box = {
           shape: r.poly,
