@@ -1,8 +1,6 @@
 // The ledger identities E1 to E7 of the finance-engine spec after every step, to month 480, on the
 // bench city (`synthCity`) with its baseline money and with the bench funding set, and on the e2e
-// fixture city (fixture-0) with its baseline funding. Nothing statistical and no comparison with
-// the old scenario engine: that comparison (`tolerance.referee.spec.ts`) was retired on
-// 2026-11-25 with the fallback award. See docs/dev/world-funding.md, Tolerance referee.
+// fixture city (fixture-0) with its baseline funding. Nothing statistical.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';

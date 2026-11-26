@@ -8,16 +8,12 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { FetchLike } from '$lib/sim/chunks';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { SRC_PAINT } from '$lib/sim/levers/source';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
 import { scenarioUrls } from '$lib/sim/scenario/load';
-import { createScenarioHost } from '$lib/sim/scenario/scenario-host';
-import type { ScenarioResponse } from '$lib/sim/scenario/types';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY4, queriesOf4, type SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import { createTimelineHost } from './host';
-import { monthLastDay } from './months';
 import { span, timingSet } from './policy/test/fixtures';
 import { datasetFetch, fakeClock } from './runner/test/harness';
 
@@ -311,60 +307,6 @@ describe('timeline host: heights', () => {
     const late = h.askLids([0, 0, 0.001, 0.001]);
     h.host.dispose();
     expect(h.lidsOf(late)?.result).toMatchObject({ ok: false, reason: 'no-session' });
-  });
-
-  it("the default document's heights and lids equal the old host's with default levers", async () => {
-    const { bbox } = await firstChunk();
-    const asOf = await asOfOf();
-    // the old host, before any setLevers
-    const f = datasetFetch(FIXTURE);
-    const clock = fakeClock();
-    const old: ScenarioResponse[] = [];
-    const oldHost = createScenarioHost({
-      fetch: f.fetch,
-      fetchBytes: f.fetchBytes,
-      post: (m) => old.push(m),
-      setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
-      clearTimeout: (x) => clock.clearTimeout(x),
-      now: () => {
-        clock.tick(TICK_MS);
-        return clock.now();
-      },
-      retryDelaysMs: [],
-      bandRuns: 1,
-      warn: () => {}
-    });
-    oldHost.handle({
-      type: 'initScenario',
-      rev: 1,
-      manifest: f.manifest,
-      scenario: 'fzp',
-      seed: 1,
-      horizon: monthLastDay(asOf, MONTHS),
-      levers: structuredClone(DEFAULT_LEVERS)
-    });
-    oldHost.handle({ type: 'prefetch', bbox: allBbox(f.manifest) });
-    oldHost.handle({ type: 'heightLids', reqId: 1, bbox });
-    const oldLids = () =>
-      old.find(
-        (m): m is Extract<ScenarioResponse, { type: 'heightLids' }> => m.type === 'heightLids'
-      );
-    for (let k = 0; k < 20_000 && !oldLids(); k++)
-      if (!(await clock.runNext())) await new Promise((r) => setImmediate(r));
-    oldHost.dispose();
-    const oldHeights = old.filter((m) => m.type === 'heights');
-    expect(oldHeights).toHaveLength(1);
-    expect(oldLids()!.result.ok).toBe(true);
-
-    const h = makeHost();
-    h.open(DEFAULT_POLICY4);
-    h.prefetchAll();
-    await h.run(() => h.filled());
-    const id = h.askLids(bbox);
-    await h.run(() => h.lidsOf(id) !== undefined);
-    h.host.dispose();
-    expect(heightsOf(h)).toEqual(oldHeights);
-    expect(h.lidsOf(id)!.result).toEqual(oldLids()!.result);
   });
 
   it('a throw in a city build posts error timeline at the rev in use, stops filling and answers lids no-session', async () => {

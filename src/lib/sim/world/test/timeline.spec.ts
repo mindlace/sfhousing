@@ -6,7 +6,6 @@ import {
   changingAt,
   frameOf,
   limited,
-  oldInputOf,
   oneFrame,
   scaleProduct,
   touchedRows,
@@ -30,10 +29,6 @@ describe('world test support', () => {
         { ...IDENTITY, discretionary: { filed: 0.5 } }
       ).discretionary.filed
     ).toBe(0.25);
-    expect(oldInputOf(input).newProjects).toEqual({
-      calibration: input.calibration,
-      scale: IDENTITY
-    });
     const rows = Int32Array.of(...precomputeOf(input).candidates.slice(0, 3));
     expect(Array.from(touchedRows(input.parcels, upzoned(input, rows)))).toEqual(Array.from(rows));
   });

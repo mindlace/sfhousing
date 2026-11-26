@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
 import { parcelRankOf } from '../scenario/input';
-import { goldenInput } from '../scenario/simulate.golden.cases';
 import { staticsOf } from './statics';
+import { miniFzpInput } from './test/mini';
 
 it('builds Statics from the loaded input', () => {
-  const input = goldenInput();
+  const input = miniFzpInput();
   const s = staticsOf(input);
   expect(s.parcelId).toBe(input.parcels.id);
   expect(s.rank).toEqual(parcelRankOf(input.parcels.id));

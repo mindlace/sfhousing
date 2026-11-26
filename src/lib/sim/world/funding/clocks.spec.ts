@@ -1,16 +1,8 @@
 // world-funding Task 3: the market and affordable funded clocks (spec rules 2, 3, 4, 5, 7).
 import { describe, expect, it } from 'vitest';
-import { runOf } from '$lib/sim/scenario/engine';
 import { PROTOTYPES } from '$lib/sim/finance';
+import { NEVER_KEY_DAY } from '$lib/sim/scenario/funded';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import {
-  NEVER_KEY_DAY,
-  drawsOf,
-  financePreOf,
-  kindLatentInto,
-  latentsWith,
-  newKindOut
-} from '$lib/sim/scenario/funded';
 import { financeIndexOf } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, precomputeOf } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
@@ -18,11 +10,11 @@ import type { SimInput } from '$lib/sim/scenario/types';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { ProjectKind } from '$lib/timelapse/types';
-import { monthFirstDay, monthOfDay } from '../months';
+import { monthFirstDay } from '../months';
 import { lotEntity, ordinaryStart } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { changingAt, frameOf, limited } from '../test/timeline';
-import { STABLE_FROM, kindClock, logSurvival, sizeIn, type Spell } from './clocks';
+import { STABLE_FROM, kindClock, logSurvival, type Spell } from './clocks';
 import { financeFrameOf, fundedMini, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -52,88 +44,6 @@ function eachSpell(
 }
 
 describe('kindClock', () => {
-  it.each([
-    ['without a market', 0],
-    ['with a market step at asOf', 0.35]
-  ])('on one frame equals the old kernel for every lot, attempt 0 (%s)', (_name, logOdds) => {
-    const base = fundedMini();
-    const asOf = base.asOf;
-    const fin: Finance = { ...miniFinance(asOf), off: [] };
-    const input: SimInput = {
-      ...fundedMini(fin),
-      ...(logOdds !== 0 ? { market: [{ from: asOf, logOdds }] } : {})
-    };
-    const fp = financePreOf(input);
-    expect(fp.days).toEqual([]); // no finance segment days: one frame is the whole old grid
-    const t = oneMoneyTimeline(input, fin);
-    expect(t.changes()).toEqual([]);
-    expect(t.frameAt(1).market).toBe(logOdds);
-    const statics = staticsOf(input);
-    const pre = precomputeOf(input);
-    const out = newKindOut();
-    const horizon = 1_099_511_627_776; // past every day the clocks give
-    let compared = 0;
-    let applying = 0;
-    let levelOne = 0;
-    for (let seed = 1; seed <= 5; seed++) {
-      const run = runOf(input, seed, horizon, true);
-      const sh = seedHash(seed);
-      pre.candidates.forEach((i, c) => {
-        const e = input.parcels.existingUnits[i];
-        const d = drawsOf(streamOf(sh, pre.entity[c], 0));
-        const lat = latentsWith(run, fp, i, asOf, e, d);
-        const spell = spellOf(statics, sh, i, asOf, e);
-        for (const kind of KINDS) {
-          const [u, v] = kind === 'market' ? [d.uO, d.vO] : [d.uA, d.vA];
-          kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, -1, null);
-          const k = kindClock(statics, t, 1, sh, spell, kind);
-          // A bundle at level 1 starts at the finite ordinary odds at full coverage here, the
-          // old kernel's rate is -Infinity there (retired engine, ruling option C): the key,
-          // bundle and level still agree; T and day are compared below level 1 only.
-          expect({ keyDay: k.keyDay, bundle: k.bundle, level: k.level }).toEqual({
-            keyDay: out.keyDay,
-            bundle: out.bundle,
-            level: out.level
-          });
-          if (k.level === 1) {
-            levelOne++;
-            compared++;
-            if (k.day !== null) applying++;
-            continue;
-          }
-          expect({
-            T: k.T,
-            day: k.day,
-            keyDay: k.keyDay,
-            bundle: k.bundle,
-            level: k.level
-          }).toEqual({
-            T: out.T,
-            day: out.day,
-            keyDay: out.keyDay,
-            bundle: out.bundle,
-            level: out.level
-          });
-          if (k.T !== 0) {
-            expect([k.f, k.units, k.stories, k.protoId]).toEqual([
-              out.f,
-              out.units,
-              out.stories,
-              out.protoId
-            ]);
-            expect(k.viewMonth).toBe(1);
-          }
-          expect(k.month).toBe(k.day === null ? 0 : monthOfDay(asOf, k.day));
-          compared++;
-          if (k.day !== null) applying++;
-        }
-      });
-    }
-    expect(compared).toBeGreaterThan(100);
-    expect(applying).toBeGreaterThan(0);
-    expect(levelOne).toBeGreaterThan(0);
-  });
-
   it('a market clock with nothing shifting is the ordinary clock', () => {
     const base = fundedMini();
     const asOf = base.asOf;
@@ -384,29 +294,5 @@ describe('logSurvival', () => {
       prev = r;
     }
     expect(Math.abs(logSurvival(STABLE_FROM + 1e-9) - plain(STABLE_FROM))).toBeLessThan(1e-8);
-  });
-});
-
-describe('sizeIn', () => {
-  it('draws the size as the old kernel does, against own and other existing homes', () => {
-    const input = fundedMini();
-    const asOf = input.asOf;
-    const fp = financePreOf(input);
-    const statics = staticsOf(input);
-    const pre = precomputeOf(input);
-    const t = oneMoneyTimeline(input, input.finance!);
-    const f1 = t.frameAt(1);
-    const run = runOf(input, 1, asOf + 365 * 30, true);
-    let sized = 0;
-    pre.candidates.forEach((i, c) => {
-      const d = drawsOf(streamOf(run.sh, pre.entity[c], 0));
-      for (const e of [input.parcels.existingUnits[i], 0]) {
-        const want = latentsWith(run, fp, i, asOf, e, d).size[0];
-        const got = sizeIn(statics, f1.view, f1.calibration, i, e, d.uS);
-        expect(got === null ? null : { ...got }).toEqual(want === null ? null : { ...want });
-        if (got !== null) sized++;
-      }
-    });
-    expect(sized).toBeGreaterThan(0);
   });
 });

@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { HORIZON } from '$lib/fzp/time';
-import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { monthOfDay } from './months';
 import { rowStaticsOf } from './pipeline';
 import { staticsOf } from './statics';
 import { benchInput } from './test/cities.node';
-import { Recorder, SEEDS, horizonMonth, readAll, runWorld } from './test/run';
-import { frameOf, oneFrame, oldInputOf, viewOf } from './test/timeline';
+import { Recorder, SEEDS, horizonMonth, runWorld } from './test/run';
+import { frameOf, oneFrame, viewOf } from './test/timeline';
 
 /** The bench city with one entitled master whose phase 2 is planned before phase 1's gap ends. */
 function outOfOrder(): SimInput {
@@ -41,17 +39,12 @@ describe('phases', () => {
   };
 
   it.each(SEEDS)('seed %i: phases file in day order when a plan date comes first', (seed) => {
-    const { w, filed } = runOf(seed);
+    const { filed } = runOf(seed);
     expect(filed.length).toBe(input.projects[0].phases!.length);
     for (let i = 1; i < filed.length; i++) {
       expect(filed[i].day).toBeGreaterThanOrEqual(filed[i - 1].day);
     }
     for (const e of filed) expect(monthOfDay(input.asOf, e.day)).toBe(e.month);
-    const old = simulateDetailed(oldInputOf(input), seed, HORIZON);
-    expect(readAll(w, statics, HORIZON)).toEqual({
-      schedules: old.schedules,
-      masters: old.masters
-    });
   });
 
   it('some seed files a later phase first', () => {
