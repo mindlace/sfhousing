@@ -52,6 +52,47 @@ height-time step, over all its options whatever the cap: `breakEvenValue`, the l
 (costPerHome + carryPerHome) ÷ valuePerHome; `meanOptionHomes`; and `meanOptionCost`, the
 mean cost per home without carrying. An empty row gives `Infinity`, 0 and 0.
 
+## The choice rule (`src/lib/sim/choice/choose.ts`)
+
+For an option on a lot, with its homes after the unit cap (`optionHomes`, `capScenarioYield`'s
+rule) and its `costPerHome`, `valuePerHome` and `carryPerHome` at the cost step:
+
+```
+residualLandValue(o, v) = homes × (v × valuePerHome − costPerHome − carryPerHome)
+choiceValue(lot)        = max(locationValue, breakEvenValue)
+share(o)                ∝ exp(residualLandValue(o, choiceValue) ÷ (choiceSpread × meanOptionHomes × meanOptionCost))
+margin(lot)             = max over gaining options of residualLandValue(o, choiceValue) ÷ (meanOptionHomes × meanOptionCost)
+```
+
+`breakEvenValue`, `meanOptionHomes` and `meanOptionCost` are `lotConstants`, taken over all
+the lot's options whatever the cap, so a higher cap never moves `choiceValue` and never changes
+the odds between options already allowed. `meanOptionCost` is the mean `costPerHome` without
+carrying: it only makes `choiceSpread` unitless, and the spec names it apart from
+`carryPerHome`. A lot below break-even is treated as at it (a developer who starts knows
+something the model does not), so there the option that pays best per dollar wins; above it the
+margin times homes decides. The row maximum is subtracted before `exp`, so the row stays finite
+at any `locationValue` and size, and as `choiceSpread` goes to 0 the rule becomes the argmax.
+
+- `choiceCtxOf(t, m, ht)` is memoised per table and models. Its steps start on `from`, the
+  union of the price and height-time series' `from` days; `step(i)` resolves each series at
+  `from[i]` on its own through `stepAt` and holds `price` (`costPerHome`, `valuePerHome`,
+  `carryPerHome` per option, 3 × total) and the three lot constants. It is built on first use.
+  `choiceStepAt(ctx, day)` is the step in force on a day. With one shipped step each, there is
+  one step.
+- `allowedCount(t, lot, stories)`: the options a story cap allows, the row's prefix.
+- `choiceRow(ctx, step, lot, n, cap, existing, rule, out)` fills `out[0..n)` with cumulative
+  probabilities over the first n options. An option gaining no home over `existing` has
+  probability 0; the last gaining option and every one after it are exactly 1. It returns false,
+  with the row 0, when none gains. `'market'` is the share above; `'most-homes'` (rule A, the
+  affordable rule when the cohort check calls for it) puts 1 on the first gaining option with the
+  most homes.
+- `pickOption(cum, n, u)`: the first k with `u < cum[k]`, or -1. The world draws `u` from the
+  lot's size stream (`drawOn(stream, P.SIZE, 0)`).
+- `expectations(ctx, step, lot, n, cap, existing)`: the expected homes after the cap and stories
+  under the market row, and `margin`; all 0, with `gains: false`, when no option gains.
+- `mostHomes(t, lot, n, cap, existing)`: the most-homes option's index in the row, or -1.
+  Capacity is `max(0, homes − existing)` of that option.
+
 ## Parameters and their tiers
 
 Tiers: 0 per-record, 1 official aggregate, 2 inference, 3 literature, 4 invented. Costs, values,
