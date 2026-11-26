@@ -63,6 +63,7 @@ Fetch the file when working in the relevant area:
 - **Ensemble runner (the simulation's timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **The game (the page and its phases, the game's state, units, the tree, tuning, grants, limits and the runnable document, the ladder and side goals, a run, drops, the ring and sound, the screens and header parts, the store, saved games and storage, the open game, publishing, the e2e seams and journeys, the reach check)** — [docs/dev/game.md](docs/dev/game.md)
 - **Game save (`/api/game`, the `game_save` table, the browser's save sync, the account offer)** — [docs/dev/game-save.md](docs/dev/game-save.md)
+- **Building choice (the option set per lot, pruning by type, form and cost series, the parameters' tiers, the `sfh-options/1` codec)** — [docs/dev/building-choice.md](docs/dev/building-choice.md)
 - **Design, specs and plans** — `docs/superpowers/design/`, `docs/superpowers/specs/`, `docs/superpowers/plans/`
 
 Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link them from this list.

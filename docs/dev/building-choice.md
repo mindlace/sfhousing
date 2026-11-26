@@ -1,0 +1,103 @@
+# Building choice
+
+A lot no longer has one building per height. The pipeline lists the buildings the lot could hold,
+each a construction type, a form, a story count and the homes the generator masses for it, and a
+developer's choice picks one at run time from those the cap allows. This page covers the option
+set, the pruning the dataset bakes, the tiers of the choice's parameters and the `sfh-options/1`
+codec. Design: `docs/superpowers/specs/2026-11-26-building-choice-design.html`; plan:
+`docs/superpowers/plans/2026-11-26-building-choice.html`.
+
+## The option set (`src/lib/sim/choice/options.ts`)
+
+`candidatesOf(rec, seed)` (`seed = fnv1a32(rec.id)`) gives every option of a lot, unpruned and
+uncapped: for each type, each of its forms (`TYPE_FORMS`) at each story count of the type's range
+(`TYPE_STORIES`), up to the lot's physical maximum (`physicalMaxStories`; 80 for a district),
+the building `generateForm` masses. A form that does not fit, gains no home, or comes back lower
+than the stories asked gives no option there, so each (type, form, stories) appears once. The
+list is sorted by (stories, type code, form code). It is the input to capacity and `hostable`,
+which pruning never changes.
+
+| Type | Forms                 | Stories                                  |
+| ---- | --------------------- | ---------------------------------------- |
+| V    | plex, walkup, podium  | 1 to 6                                   |
+| III  | podium, midrise       | 4 to 8                                   |
+| I    | midrise, block, tower | 1 to the physical maximum; tower from 13 |
+
+`block` is the midrise massing at `BLOCK_COVERAGE` to any height; `tower` is a podium with
+as many plates as the lot holds (`plates` counts them; 1 for a single tower). Types II and IV are
+not modelled. A district masses every lot at the same type, form and stories and sums them, so a
+district row has one option per (type, form, stories), not each lot's own set.
+
+## Pruning
+
+`pruneOptions(options)` is what the dataset bakes. It drops an option only when another option of
+the same type, the same form and the same cost series has homes ≥ and stories ≤ its own; of two
+equal options the lower index survives, and the order is kept. The cost series
+(`costSeriesOf`) is `E` for Type V under 25 homes and the type otherwise, so the survivor is
+always priced on the same dated step series as the option it drops and is allowed at every cap
+that allows it: no price step can change the drop. Pruning never compares cost or value across
+types or forms, and it keeps the most-homes option at every cap. It still removes the tower
+cliff: a taller option of the same type and form with fewer homes always goes.
+
+Two helpers exist for the report only and never shape a baked row:
+
+- `eCrossings(options)`: how many more options would go if the 25-home line were ignored
+  (`options.e_crossings`).
+- `pruneByCost(options, prices, time, upTo)`: the cost-based pruning the spec first proposed
+  (stories ≤, homes ≥, cost per home with carrying ≤, value per home ≥ and construction months ≤,
+  at one price step), to report how much the rows grow without it. Quadratic in the row.
+
+`lotConstants(options, prices, time, upTo)` gives a lot's constants at one price and
+height-time step, over all its options whatever the cap: `breakEvenValue`, the least
+(costPerHome + carryPerHome) ÷ valuePerHome; `meanOptionHomes`; and `meanOptionCost`, the
+mean cost per home without carrying. An empty row gives `Infinity`, 0 and 0.
+
+## Parameters and their tiers
+
+Tiers: 0 per-record, 1 official aggregate, 2 inference, 3 literature, 4 invented. Costs, values,
+durations, `choiceSpread` and `locationValue` are data (`calibration.json`, `options.bin`),
+not constants read at run time; the Controller's figures stay sourced in
+`src/lib/sim/finance/prototypes.ts`.
+
+| Parameter                                  | Value                                                                                                                                                                    | Source                                                                                                                                                                                       | Tier                        |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Type V stories                             | 1 to 6                                                                                                                                                                   | DBI permits of 10 or more homes issued 2005 on: Type V maximum 6, p95 5 (n = 213); IBC 2021 Table 504.4                                                                                      | 0 (limit), 3 (code)         |
+| Type III stories                           | 4 to 8                                                                                                                                                                   | DBI: Type III maximum 8, p95 7 (n = 77)                                                                                                                                                      | 0                           |
+| Type I stories                             | 1 to the physical maximum                                                                                                                                                | DBI: every building of 13 stories or more is Type I (n = 105); Type I also at 5 to 12 (267 of 427)                                                                                           | 0                           |
+| Type I tower                               | 13 and above                                                                                                                                                             | as Type I                                                                                                                                                                                    | 0                           |
+| Cost per home, Type V                      | 729,700 (A, 5 stories, 45 homes); 929,700 under 25 homes (E)                                                                                                             | Controller, Triennial Review of Economic Feasibility 2026 (`PROTOTYPES`)                                                                                                                     | 1                           |
+| Cost per home, Type III                    | 736,700 (B, 8 stories)                                                                                                                                                   | Controller 2026                                                                                                                                                                              | 1                           |
+| Cost per home, Type I at 13 and 24 stories | 857,700 (C), 918,700 (D)                                                                                                                                                 | Controller 2026                                                                                                                                                                              | 1                           |
+| Cost per home, Type I below 13 stories     | C's value                                                                                                                                                                | same construction type as C; cross-check Terner Center, The Hard Costs of Construction (2020), Table 3                                                                                       | 2 (3 for the cross-check)   |
+| Cost per home, Type I, 13 to 24 stories    | linear from C to D                                                                                                                                                       | interpolation                                                                                                                                                                                | 2                           |
+| Cost per home, Type I above 24 stories     | D × `aboveTopCostRatio`, the ratio of median permit valuation per home above 24 stories to 13 to 24, fitted in the pipeline                                              | DBI permit valuation (only the ratio is used)                                                                                                                                                | 2, weak: flagged            |
+| Value per home                             | cost − shortfall: A 552,700; B 584,700; C 651,700; D 626,700; E 576,700; interpolated by stories as cost                                                                 | Controller 2026 residual land value (`shortfallPerHome`)                                                                                                                                     | 1                           |
+| `locationValue` per lot                    | assessed value per home of residential buildings completed 2015 on, smoothed by area, ÷ the citywide figure                                                              | Assessor roll (wv5m-vpq2)                                                                                                                                                                    | 0 data, 2 index             |
+| Construction time by height band           | per stage interval, refitted; raw pull, first construction document to completion: 26.2 (≤ 4 stories), 29.3 (5 to 7), 28.6 (8 to 12), 27.4 (13 to 20), 34.7 (21+) months | DBI permits (n = 705, censored); the pipeline refits with `completed_date`                                                                                                                   | 0                           |
+| Carrying cost of time                      | `constructionRate` 0.085 on `AVERAGE_DRAWN` 0.55 of cost, for the months beyond the anchor's own band                                                                    | `MARKET_TERMS` (`terms.ts`); `AVERAGE_DRAWN` is the partner's assumption R11                                                                                                                 | as sourced there (R11 is 4) |
+| `choiceSpread`                             | fitted                                                                                                                                                                   | DBI and Planning records: built stories ÷ `baseStoriesAtFiling`                                                                                                                              | 2                           |
+| Block coverage above 12 stories            | `BLOCK_COVERAGE` 0.92                                                                                                                                                    | median footprint ÷ lot of the 32 lots with a 13 to 80 story building built 2005 to 2016: DataSF footprints (ynuv-fyni, 2016 LiDAR) over the roll (wv5m-vpq2), `pipeline/lib/coverage-fit.ts` | 0                           |
+| Several towers: plate size                 | `TOWERS_PLATE_MAX_M2` 12,000 gross ft² (1,114.8 m²)                                                                                                                      | Planning Code Sec. 270(h)(3)(A)(i)                                                                                                                                                           | 1                           |
+| Several towers: spacing                    | `TOWERS_SEPARATION_M` 115 ft (35.05 m)                                                                                                                                   | Planning Code Sec. 132.4(d)(3)(A), Central SoMa (Ord. 296-18); Rincon Hill Area Plan Policy 3.4                                                                                              | 1                           |
+| Single tower plate and spacing             | `TOWER_PLATE_MAX_M2` 900, `TOWER_SEPARATION_M` 6                                                                                                                         | existing generator constants                                                                                                                                                                 | 4: invented                 |
+
+The spec's table gave 0.75 (tier 4) for block coverage and the single-tower constants for several
+towers; Task 2 fitted the coverage and sourced the several-tower constants, as the spec asked.
+
+## The codec (`src/lib/data/option-table.ts`, `sfh-options/1`)
+
+`optionTableOf(datasetVersion, rows)` packs one row per scenario row, each `{ options,
+locationValue }`, into flat columns: `offset` (count + 1), per option `type` and `form`
+(codes into `BUILDING_TYPES` and `BUILDING_FORMS`), `stories`, `plates` and `homes`
+(`Uint16Array`), and per row `locationValue` (`Float32Array`). It throws a RangeError for a
+row of more than `OPTIONS_MAX_PER_LOT` (1,023) options, homes above 65,535, stories or plates
+above 255, or a row whose stories fall; the run time reads a row's allowed options as the prefix
+up to the cap.
+
+Wire format (deflate-raw): ASCII `SFHO`, u8 version (1), u8 length and the ASCII
+`datasetVersion`, u32le row count, then per row u16le n, f32le `locationValue` and n options
+of (u8 type, u8 form, u8 stories, u8 plates, LEB128 homes). `decodeOptionPayload` throws
+`options: truncated …` on a short payload and rejects bad magic, versions, codes, row lengths,
+story order and trailing bytes. `readOptionTable(body)` inflates and decodes;
+`optionTableProblem(t, parcels)` names a table from another build (row count or
+`datasetVersion`).
