@@ -44,6 +44,15 @@ export async function boxesReusing(
   return withKeyLock(
     lockFileFor(indexDir, key),
     async () => {
+      // The locks may have changed while waiting: a key from before the wait is stale.
+      const nowKey = boxesKey(
+        boxesInputsOf(
+          readLock(o.lockPath),
+          readLidarLock(o.lidarLockPath),
+          await boxesCodeHash(o.repoRoot)
+        )
+      );
+      if (nowKey !== key) return run(cmd);
       if (!force) {
         const entry = await reusableEntry(indexDir, key, o.rawDir, o.byName);
         if (entry) {

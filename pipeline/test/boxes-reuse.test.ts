@@ -11,7 +11,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { boxesKey, readBoxesIndex } from '../lib/boxes-index';
+import { boxesKey, lockFileFor, readBoxesIndex } from '../lib/boxes-index';
+import { withKeyLock } from '../lib/key-lock';
 import { BOXES_FILES, BOXES_ID, boxesInputsOf } from '../lib/lidar/artifact';
 import { canonicalJson, readLock, writeLock, type LockEntry } from '../lib/lock';
 import { boxesCodeHash } from '../lib/version';
@@ -210,6 +211,37 @@ describe('boxesReusing', () => {
     expect(f.state.calls).toBe(1);
     expect(out2.some((l) => l.startsWith('boxes: waiting for pid'))).toBe(true);
     expect(out2.some((l) => l.startsWith('boxes: reused'))).toBe(true);
+  });
+
+  it('a lock that changes while waiting is not reused', async () => {
+    const s = setup();
+    const oldKey = boxesKey(await inputsOf(s));
+    // A record exists under the old key, so only the recomputed key keeps the second from reusing it.
+    await boxesReusing(opts(s, []), fake(s).run);
+    s.strip();
+    const f = fake(s);
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    // Another process holds the old key's lock, then the lock file changes under the waiter.
+    const holder = withKeyLock(lockFileFor(s.indexDir, oldKey), () => gate);
+    const code = await boxesReusing(
+      opts(s, [], {
+        lockDeps: {
+          sleep: async () => {
+            const l = readLock(s.lockPath);
+            l.sources.find((x) => x.id === 'datasf-parcels')!.files[0].sha256 = 'a'.repeat(64);
+            writeLock(s.lockPath, l);
+            open();
+            await holder;
+          },
+          isAlive: () => true
+        }
+      }),
+      f.run
+    );
+    expect(code).toBe(0);
+    expect(f.state.calls).toBe(1);
+    expect(readBoxesIndex(s.indexDir, oldKey)).not.toBeNull();
   });
 
   it('with the real derivation, a rerun is byte-identical', async () => {
