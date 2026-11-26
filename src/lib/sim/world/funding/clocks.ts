@@ -1,6 +1,7 @@
-// The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): today's
-// `segValue` and `kindLatentInto` (`funded.ts:452-478, 772-871`) evaluated over policy frames
-// instead of finance segment days. Nothing is stored: a clock is recomputed from the spell.
+// The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): modelled on
+// the old engine's `segValue` and `kindLatentInto` (`funded.ts:452-478, 772-871`), evaluated over
+// policy frames instead of finance segment days; level 1 and coverage above 1 differ (see the
+// award-rule spec). Nothing is stored: a clock is recomputed from the spell.
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
 import {
   PROTOTYPES,
@@ -27,7 +28,7 @@ const F = FILL_LEVELS.length;
 const EMPTY: number[] = [];
 const PROTOTYPE = new Map<PrototypeId, Prototype>(PROTOTYPES.map((p) => [p.id, p]));
 const logistic = (x: number) => 1 / (1 + exp(-x));
-/** Above this log-odds `logSurvival` switches to the stable form (test value of the boundary). */
+/** Above this log-odds `logSurvival` switches to the stable form (the boundary of the stable form). */
 export const STABLE_FROM = 15;
 /**
  * `log(1 - logistic(x))`, the log-survival rate at log-odds `x`, finite for every finite `x`.

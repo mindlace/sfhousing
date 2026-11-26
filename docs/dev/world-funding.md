@@ -452,5 +452,6 @@ T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench 
 - **A month's first-day bundle**: the offer is read on the first day of the month (S5 `offered`);
   today's engine reads each day.
 - **Replan cost**: every free lot's `planLot` runs in a frame-change month (see Cost).
-- **Spent pools**: the step engine closes a spent pool (see Pool closing); today's engine keeps
-  an application waiting on it.
+- **Spent pools**: both engines serve an application from the pools that still fit it under the
+  fallback award and close a pool only when no waiting application fits it (see Pool closing); the
+  step engine does so by month, today's engine by day.

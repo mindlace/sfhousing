@@ -48,14 +48,15 @@ src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a change
   yields for exact queue cases; `tinyStack()`, a baseline-shaped affordable stack with an optional
   bond and optional federal inflows). Under the fallback award (rule 16 as amended, 2026-11-25) an
   application waits only when every pool of its bundle is short, so a test about the waiting line
-  makes every pool short (empty, late or capped federal and state money), not one.
+  makes every pool short (empty, late or capped federal and state money), not one. All values are
+  test values, not data. `test/finance-harness.ts` checks the ledger identities after every event
+  (`checkLedger`) and collects a run (`runCollect`).
 - **Old-engine comparisons retired.** The tolerance referee (`tolerance.referee.spec.ts`) and
   `score/money.spec.ts`'s "rule 12 against today's engine" compared the world engine with the old
   scenario engine. They were retired on 2026-11-25 by the owner's decision: the old engine no
   longer runs in production, and under the fallback award the two engines differ by construction
   (monthly against daily serving and re-application; [world-funding.md](world-funding.md),
-  Tolerance referee). The old engine's own tests and goldens stay. All values are test values, not data. `test/finance-harness.ts` checks the ledger
-  identities after every event (`checkLedger`) and collects a run (`runCollect`).
+  Tolerance referee). The old engine's own tests and goldens stay.
 - **Bench cases.** `scenario.bench.spec.ts`, run by `npm run test:perf` on an idle machine:
   `simulateNet` with the bench baseline and with `benchFunding()`, the host's 101 band pairs and
   longest macrotask, a fixture check of the first-day applications and awards, and a reported case

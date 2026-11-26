@@ -421,7 +421,7 @@ export function awardSet(
   return { set, priced, asks: asksOf(f, kind, set, protoId, units) };
 }
 
-/** `awardPasses` scratch, by pool: the summed ask, and a short pool's mark (all 0 between calls). */
+/** `awardPasses` scratch, by pool: the summed ask, and a short pool's mark (0 between calls). */
 let passAsk = new Float64Array(16);
 let passShort = new Uint8Array(16);
 /** The kept subsets of a bundle array, by the bit mask of kept positions (bundles never mutate). */
@@ -444,9 +444,10 @@ function subsetOf(bundle: readonly number[], mask: number): number[] {
 
 /**
  * Exactly `awardSet(...) !== null` (the kept set is not empty and its level is above 0), without
- * building the award: the serving probe of the grouped line's bisection. Each round sums a pool's ask over the set in the order `asksOf` does (so the
- * sums are the same doubles), and the left-out sets are memoised by the bundle array and the kept
- * positions, so a call allocates nothing once its sets are known.
+ * building the award: the serving probe of the grouped line's bisection. Each round sums a pool's
+ * ask over the set in the order `asksOf` does (so the sums are the same doubles), and the
+ * left-out sets are memoised by the bundle array and the kept positions, so a call allocates
+ * nothing once its sets are known.
  */
 export function awardPasses(
   bundle: readonly number[],
