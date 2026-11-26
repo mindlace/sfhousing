@@ -2,6 +2,7 @@
 // rows, on the same days, in the same order, with the same ledger and the same world as the direct
 // scan (`serveLine(ctx, { grouped: false })`), and asks the award rule fewer times.
 import { describe, expect, it, vi } from 'vitest';
+import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
@@ -160,7 +161,9 @@ describe('the line index', () => {
 describe('8a on the bench city (synthCity, bench baseline money)', () => {
   const bench = benchMoney(benchInput());
   const bs = staticsOf(bench);
-  const bt = oneMoneyTimeline(bench, bench.finance!);
+  // The federal pool at 300,000,000 a year: every pool of a bundle runs short, so the opening
+  // wave waits on the line (rule 16 as amended awards on whatever pool can pay).
+  const bt = oneMoneyTimeline(bench, withFederalYearly(bench.finance!, bench.asOf, 300_000_000));
   const M = 12;
 
   it.each(seeds(3))('seed %i, 12 months: same events, ledger and world; fewer probes', (seed) => {

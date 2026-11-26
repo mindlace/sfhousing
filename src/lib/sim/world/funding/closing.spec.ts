@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayFromUtc } from '$lib/fzp/time';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
@@ -344,7 +344,13 @@ interface Closing {
   lastMonthWithRow(id: string, instr: 'loan' | 'guarantee'): number;
 }
 
-const MINI = fundedMini();
+/**
+ * The mini city with its federal pool at 20,000,000 a year: every pool of an affordable bundle
+ * runs short at times, so applications wait on the line (rule 16 as amended awards on whatever
+ * pool can pay, so a short CLOSE_POOL alone keeps no one waiting).
+ */
+const capped = (asOf: Day) => withFederalYearly(miniFinance(asOf), asOf, 20_000_000);
+const MINI = fundedMini(capped(asOf));
 
 function closing(
   doc: SimPolicy4,
@@ -464,7 +470,7 @@ const B_POOL = 'b-close';
 const CASE_MONTHS = 24;
 
 const baselineInput: SimInput = (() => {
-  const fin = miniFinance(asOf);
+  const fin = capped(asOf);
   return fundedMini({
     ...fin,
     pools: [

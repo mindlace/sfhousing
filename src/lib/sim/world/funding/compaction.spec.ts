@@ -13,6 +13,7 @@ import { leaveLine } from './apply';
 import { KIND_AFFORDABLE, addLineRow, fundOf, initFunding, type FundLine } from './columns';
 import { COMPACT_MIN, compact, isWaiting } from './line-index';
 import { createFundingSystem } from './system';
+import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import { benchMoney, oneMoneyTimeline, type MonthEvent } from './test/fixtures';
 
 /** A funded line of `n` rows, row i on lot i. */
@@ -62,7 +63,12 @@ describe('amortized compaction', () => {
 describe('amortized compaction on the bench city (synthCity, bench baseline money)', () => {
   const bench = benchMoney(benchInput());
   const statics = staticsOf(bench);
-  const timeline = oneMoneyTimeline(bench, bench.finance!);
+  // The federal pool at 300,000,000 a year: every pool of a bundle runs short, so a long line
+  // waits (rule 16 as amended awards on whatever pool can pay).
+  const timeline = oneMoneyTimeline(
+    bench,
+    withFederalYearly(bench.finance!, bench.asOf, 300_000_000)
+  );
   const core = withFunding(createFundingSystem());
   const SPLIT = 250;
   const LAST = 300;

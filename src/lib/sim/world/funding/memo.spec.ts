@@ -41,13 +41,15 @@ const CHANGE = 120;
  * federal pool started to receive its yearly arrival (finite funding, 2026-11-22): its eleven `in`
  * events are the only change; every other event and ledger event hashes as before. They were
  * re-recorded again when `LEGACY_UNCAPPED_DOLLARS` became ten trillion: only those `in` amounts
- * moved (the counts are unchanged).
+ * moved (the counts are unchanged). The synthCity values were re-recorded on 2026-11-25 for the
+ * fallback award (rule 16 as amended): an application short on one pool is awarded on the others,
+ * so many more lots start (counts about eight times larger). The live values predate it.
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': '6674530e/35633',
-  'synthCity baseline 2': 'c527e2fa/36043',
-  'synthCity bench 1': 'ebec5fa4/36465',
-  'synthCity bench 2': '1bcb9c67/36955',
+  'synthCity baseline 1': '67196777/280970',
+  'synthCity baseline 2': 'c0c5262a/281474',
+  'synthCity bench 1': '98b5a522/282466',
+  'synthCity bench 2': 'f64a7287/283185',
   'live 1': 'b04ec705/6292',
   'live 2': 'dbb6c92c/6849',
   'live 3': 'c590436b/6133'
