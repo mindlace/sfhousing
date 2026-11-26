@@ -8,7 +8,7 @@ import {
 } from '$lib/sim/scenario/fixtures/bench-finance';
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';

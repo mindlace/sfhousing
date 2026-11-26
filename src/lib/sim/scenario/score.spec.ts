@@ -1,43 +1,30 @@
 // The time-aware score (T8, spec §4.3 and §4.5, §6 `score.spec.ts`, AC 5–6): hand-built
 // Schedules and Masters with known days give exact per-month deltas for every series; the mini
-// fixture gives the phasing table, the split identity and demolished-once.
+// fixture gives the phasing table.
 import { describe, expect, it } from 'vitest';
-import { M1_TARGETS, RHNA_TIER_TARGETS } from '$lib/scoreboard';
-import { parseCalibration } from '$lib/timelapse/model';
+import { M1_TARGETS } from '$lib/scoreboard';
 import { parseProjectsFile } from '$lib/timelapse/projects';
-import {
-  PATHWAYS,
-  STAGE_ORDER,
-  type Calibration,
-  type Stage,
-  type Transition
-} from '$lib/timelapse/types';
+import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import { dayOf, isoOf } from './dates';
-import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniCity } from './fixtures/mini-parcels';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
   MINI_PROJECTS,
   miniProjectsJson
 } from './fixtures/mini-projects';
-import { buildSimInput } from './input';
 import {
   REFERENCES,
   RHNA_DEADLINE,
-  assembleScore,
   monthIndexer,
   monthsOf,
-  netOf,
   phasingOf,
-  planEffectOf,
-  shownSeries,
   targetsOf,
   tierTargetsOf
 } from './score';
 import { tierBaselineOf } from './finance-score';
-import { simulateDetailed, type Master } from './simulate';
-import type { Schedule, SimInput, TimelineScore } from './types';
+import { shownSeries } from '$lib/sim/world/score/test/oracles';
+import type { Master } from '$lib/sim/world/read';
+import type { Schedule, TimelineScore } from './types';
 
 const T0 = { veryLow: 0, low: 0, moderate: 0, aboveModerate: 0, unrecorded: 0 };
 const AS_OF = MINI_AS_OF; // 2026-10-16
@@ -451,32 +438,6 @@ describe('score: multi-phase masters (§4.5 master bucket)', () => {
   });
 });
 
-describe('score: netOf and planEffect (§4.5)', () => {
-  it('netOf copies the three net series', () => {
-    const shown = shownOf([P1, S1, S2]);
-    const net = netOf(shown);
-    expect(net.completedNet).toBeInstanceOf(Int32Array);
-    expect(Array.from(net.completedNet)).toEqual(column(shown, 'completedNet'));
-    expect(Array.from(net.completedNetNew)).toEqual(column(shown, 'completedNetNew'));
-    expect(Array.from(net.entitledNew)).toEqual(column(shown, 'entitledNew'));
-  });
-
-  it('planEffect is the FZP run minus its twin, both cumulative net units', () => {
-    const fzp = netOf(shownOf([P1, S1, S2]));
-    const twin = netOf(
-      shownOf([
-        P1,
-        sched({ ...S1, revisions: [rev(d(2027, 1, 3), 12), rev(d(2027, 6, 30), 10)] }),
-        sched({ ...S2, revisions: [rev(d(2026, 10, 20), 6)] })
-      ])
-    );
-    const pe = planEffectOf(fzp, twin);
-    expect(pe.map((r) => r.entitledNew)).toEqual(steps([[8, 22 - 8]]));
-    expect(pe.map((r) => r.completedNetNew)).toEqual(steps([[290, 10 - 6]]));
-    expect(Object.keys(pe[0])).toEqual(['entitledNew', 'completedNetNew']);
-  });
-});
-
 describe('score: targets, references, assembly (§4.5)', () => {
   it('fractions are (baseline + completedNet) / units, uncapped, deadline 2031-01-31', () => {
     expect(RHNA_DEADLINE).toBe(d(2031, 1, 31));
@@ -574,121 +535,20 @@ describe('score: targets, references, assembly (§4.5)', () => {
       expect(text).not.toContain('KQED');
     }
   });
-
-  it('assembleScore passes months, series and bands through and derives targets', () => {
-    const shown = shownOf([P1]);
-    const baseline = miniProjects().rhnaCompletedNet;
-    const phasing = phasingOf(miniProjects().projects, AS_OF);
-    const band = MONTHS.map(() => ({ p10: 1, p50: 2, p90: 3 }));
-    const score = assembleScore({
-      months: MONTHS,
-      shown,
-      planEffect: [],
-      planEffectBand: [],
-      band,
-      baseline,
-      phasing
-    });
-    expect(score).toEqual({
-      months: MONTHS,
-      shown,
-      planEffect: [],
-      planEffectBand: [],
-      band,
-      baseline: {
-        completedNet: 1234,
-        since: d(2022, 6, 30),
-        provenance: baseline.provenance
-      },
-      phasing,
-      targets: targetsOf(1234, shown),
-      references: REFERENCES
-    });
-    const one = { id: 'x', label: 'X', units: 10, source: { label: 'L', url: 'https://x.org' } };
-    const custom = assembleScore({
-      months: MONTHS,
-      shown,
-      planEffect: [],
-      planEffectBand: [],
-      band,
-      baseline,
-      phasing,
-      targets: [one]
-    });
-    expect(custom.targets).toEqual(targetsOf(1234, shown, [one]));
-  });
 });
 
 // ---- mini fixture ----
 
-const miniCalibration = (): Calibration =>
-  parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const miniProjects = () => parseProjectsFile(miniProjectsJson(), { onInvalid() {} });
-const miniInput = (cal: Calibration = miniCalibration()): SimInput =>
-  buildSimInput({ parcels: miniCity().parcels, projects: miniProjects(), calibration: cal });
-
-describe('score: tiers in the assembled score (finance-score spec 6 test 12)', () => {
-  const shown = shownOf([P1, S2]);
+describe('score: tier targets and baseline (finance-score spec 6 test 12)', () => {
   const byTier = { veryLow: 100, low: 200, moderate: 300, aboveModerate: 634, unrecorded: 7 };
   const base = miniProjects().rhnaCompletedNet;
   const rhna = { ...base, units: 1241, byTier };
-  const completed = shown.map((r) => ({
-    veryLow: 1,
-    low: 2,
-    moderate: 3,
-    aboveModerate: r.completedNet - 11,
-    unrecorded: 5
-  }));
-  const parts = () => ({
-    months: MONTHS,
-    shown,
-    planEffect: [],
-    planEffectBand: [],
-    band: MONTHS.map(() => ({ p10: 1, p50: 2, p90: 3 })),
-    baseline: rhna,
-    phasing: phasingOf(miniProjects().projects, AS_OF)
-  });
-
-  it('adds four tier targets in RHNA_TIER_TARGETS order', () => {
-    const score = assembleScore({ ...parts(), tiers: { completed, baseline: byTier } });
-    const tiers = score.tiers!;
-    expect(tiers.completed).toBe(completed);
-    expect(tiers.baseline).toBe(byTier);
-    expect(tiers.targets.map((t) => t.target.id)).toEqual(RHNA_TIER_TARGETS.map((t) => t.id));
-    expect(tiers.targets).toHaveLength(4);
-    for (const x of tiers.targets) {
-      expect(x.deadline).toBe(d(2031, 1, 31));
-      const t = x.target.tier!;
-      expect(x.fraction).toEqual(completed.map((c) => (byTier[t] + c[t]) / x.target.units));
-    }
-  });
-
-  it('weights to the total less the unrecorded homes', () => {
-    const score = assembleScore({ ...parts(), tiers: { completed, baseline: byTier } });
-    const total = score.targets[0];
-    for (const i of [0, 100, 290, N - 1]) {
-      const weighted = score.tiers!.targets.reduce(
-        (sum, x) => sum + x.fraction[i] * x.target.units,
-        0
-      );
-      expect(Math.abs(weighted - (82069 * total.fraction[i] - 12))).toBeLessThan(1e-6);
-    }
-  });
 
   it('tierTargetsOf is uncapped and a negative aboveModerate gives a negative fraction', () => {
     const t = tierTargetsOf(T0, [{ ...T0, aboveModerate: -7 }]);
     expect(t[3].fraction).toEqual([-7 / 35471]);
     expect(t[0].fraction).toEqual([0]);
-  });
-
-  it('has no tiers or money key unless passed, and money passes through', () => {
-    const none = assembleScore(parts());
-    expect('tiers' in none).toBe(false);
-    expect('money' in none).toBe(false);
-    const withTiers = assembleScore({ ...parts(), tiers: { completed, baseline: byTier } });
-    expect('money' in withTiers).toBe(false);
-    const money = { pools: [] } as unknown as NonNullable<TimelineScore['money']>;
-    expect(assembleScore({ ...parts(), money }).money).toBe(money);
   });
 
   it('tierBaselineOf: all zeros without byTier, the object with it', () => {
@@ -725,126 +585,5 @@ describe('score: phasing (§4.5, seed-independent)', () => {
     expect(phasing.unenriched.map((u) => u.projectId)).toEqual([unphased.id, scoreOnly.id].sort());
     expect(phasing.phasesScheduled).toBe(1);
     expect(phasing.phasesEstimated).toBe(5);
-  });
-
-  it('is identical for seeds 1 and 2 and agrees with the run’s masters', () => {
-    const inp = miniInput();
-    const phasing = phasingOf(inp.projects, inp.asOf);
-    for (const seed of [1, 2]) {
-      const run = simulateDetailed(inp, seed, H);
-      expect(run.masters).toHaveLength(phasing.enrichedMasters);
-      expect(run.masters.reduce((a, m) => a + m.phaseUnits.length, 0)).toBe(
-        phasing.phasesScheduled + phasing.phasesEstimated
-      );
-      expect(phasingOf(inp.projects, inp.asOf)).toEqual(phasing);
-    }
-  });
-});
-
-describe('score: mini runs', () => {
-  it('completedNet = completedNetPipeline + completedNetNew at every month', () => {
-    const inp = miniInput();
-    let moved = 0;
-    for (const seed of [1, 2, 3, 4, 5]) {
-      const shown = shownSeries(simulateDetailed(inp, seed, H), AS_OF, H, MONTHS);
-      for (const r of shown)
-        expect(r.completedNet).toBe(r.completedNetPipeline + r.completedNetNew);
-      if (shown[N - 1].completedNetPipeline !== 0 && shown[N - 1].completedNetNew !== 0) moved++;
-    }
-    expect(moved).toBeGreaterThan(0);
-  });
-
-  it('counts every phased master’s units once: master bucket plus its phases', () => {
-    const inp = miniInput();
-    for (const seed of [1, 2, 3]) {
-      const run = simulateDetailed(inp, seed, H);
-      for (const m of run.masters) {
-        const phases = run.schedules.filter((s) => s.phase?.masterId === m.masterId);
-        const bucket = shownSeries({ schedules: [], masters: [m] }, AS_OF, H, MONTHS);
-        const total = m.phaseUnits.reduce((a, u) => a + u, 0);
-        for (const [i, r] of bucket.entries()) {
-          // units still in the master's bucket = the phases not yet filed (or all, until exit)
-          const T = i + 1 < N ? MONTHS[i + 1] : H + 1;
-          const left =
-            m.end.kind === 'exit' && m.end.day < T
-              ? 0
-              : m.phaseUnits.reduce(
-                  (a, u, j) => a + (m.phaseFiled[j] !== null && m.phaseFiled[j]! < T ? 0 : u),
-                  0
-                );
-          expect(LIVE.reduce((a, s) => a + r.inProgress[s], 0)).toBe(left);
-          expect(r.exitedUnits).toBe(m.end.kind === 'exit' && m.end.day < T ? total : 0);
-        }
-        expect(phases.map((s) => s.phase!.index)).toEqual(
-          m.phaseFiled.flatMap((f, j) => (f === null ? [] : [j + 1]))
-        );
-      }
-    }
-  });
-});
-
-describe('score: demolished once (§4.4.6, Task 5 rig)', () => {
-  const PROV = miniCalibration().transitions.discretionary.filed!.provenance;
-  const MONTH_ONE: Transition = {
-    months: 1,
-    advance: [1],
-    exit: {},
-    tail: { advance: 0.5, exit: {} },
-    provenance: PROV,
-    tailProvenance: PROV
-  };
-  const EXIT_AT_BUILD: Transition = {
-    months: 1,
-    advance: [0],
-    exit: { cancelled: [1] },
-    tail: { advance: 0.01, exit: { cancelled: 0.99 } },
-    provenance: PROV,
-    tailProvenance: PROV
-  };
-  const RAISED = '0026T011'; // existing raised from 2 to 5
-
-  function demolishInput(): SimInput {
-    const cal = miniCalibration();
-    for (const p of PATHWAYS) {
-      for (const s of Object.keys(cal.transitions[p]) as Live[]) {
-        cal.transitions[p][s] = structuredClone(s === 'construction' ? EXIT_AT_BUILD : MONTH_ONE);
-      }
-    }
-    cal.revision.at = [];
-    cal.initiation = { ...cal.initiation, intercept: 0, terms: [] };
-    const parcels = miniCity().parcels;
-    parcels.existingUnits[parcels.index.get(RAISED)!] = 5;
-    return buildSimInput({ parcels, projects: miniProjects(), calibration: cal });
-  }
-
-  it('subtracts each parcel’s existing units once, however many projects demolish it', () => {
-    const inp = demolishInput();
-    const p = inp.parcels;
-    let repeated = 0;
-    for (const seed of [1, 2, 3, 4, 5]) {
-      const run = simulateDetailed(inp, seed, H);
-      const shown = shownSeries(run, AS_OF, H, MONTHS);
-      // Nothing completes (construction always exits), so completedNetNew is −(demolitions).
-      const held = new Set(
-        run.schedules
-          .filter((s) => s.origin === 'pipeline' && s.entered.construction !== undefined)
-          .flatMap((s) => s.parcelIds)
-      );
-      const demolished = new Map<string, number>();
-      for (const s of run.schedules) {
-        if (s.origin !== 'simulated' || s.entered.construction === undefined) continue;
-        const id = s.parcelIds[0];
-        demolished.set(id, (demolished.get(id) ?? 0) + 1);
-      }
-      let expected = 0;
-      for (const [id, n] of demolished) {
-        if (held.has(id)) continue;
-        const ex = p.existingUnits[p.index.get(id)!];
-        expected -= ex;
-        if (n > 1 && ex > 0) repeated++;
-      }
-      expect(shown[N - 1].completedNetNew).toBe(expected);
-    }
-    expect(repeated).toBeGreaterThan(10);
   });
 });

@@ -93,7 +93,7 @@ export type SimInput = {
   // initiated in (size row, yields, envelope, Local Program) and its initiation hazard is
   // piecewise over the views; in-flight rows keep `parcels` above. Days strictly ascending and
   // every day > asOf; each view must have the same rows, ids and existingUnits as `parcels`
-  // (the caller's contract; `runEngine` throws a RangeError only on a different row count or id
+  // (the caller's contract; the world throws a RangeError only on a different row count or id
   // array length). Absent or [] = none.
   regimes?: { day: Day; parcels: ScenarioParcels }[];
   // Per T11 row, the day the parcel is reserved from (a later conversion's start), 0 = none. A
@@ -112,7 +112,6 @@ export type SimInput = {
     terms: ResolvedTerms;
   };
 };
-export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 
 export type Massing = GeneratedBuilding | { footprint: [lng: number, lat: number][] }; // timelapse-render's packTimedCell input entry
 export type ProjectCard = {

@@ -153,7 +153,7 @@ export function createMoneyTrack(
         return fin.programmes[i];
       });
 
-      // As `Treasury` builds them (`scenario/money.ts`), over this month's days only.
+      // The engine's treasury built them, over this month's days only.
       const lo = m === 1 ? asOf : first;
       const arrivals: FinanceFrame['arrivals'] = [];
       fin.pools.forEach((p, q) => {

@@ -11,8 +11,7 @@ import {
   type Prototype,
   type PrototypeId
 } from '$lib/sim/finance';
-import { NEVER_KEY_DAY } from '$lib/sim/scenario/funded';
-import { cappedShift, coverageLevel } from '$lib/sim/scenario/funding';
+import { NEVER_KEY_DAY, cappedShift, coverageLevel } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, piecewiseMonth, sizeCumAgainst } from '$lib/sim/scenario/input';
 import { P, drawOn } from '$lib/sim/scenario/rng';
 import { exp, log } from '$lib/timelapse/math';

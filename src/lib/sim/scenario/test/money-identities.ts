@@ -8,7 +8,7 @@ import { expect } from 'vitest';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool } from '$lib/timelapse/types';
 import type { Money } from '../finance-score';
-import type { LedgerEvent } from '../money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { monthIndexer } from '../score';
 import type { SimInput } from '../types';
 

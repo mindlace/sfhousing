@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';
 import { scenarioUrls } from '$lib/sim/scenario/load';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
 import { createFundingSystem } from '../funding';
 import { fundOf } from '../funding/columns';

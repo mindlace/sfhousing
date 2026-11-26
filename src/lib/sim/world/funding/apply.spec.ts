@@ -1,6 +1,6 @@
 // world-funding Task 4: the funding system, `planLot` and applications (spec rules 5, 6, 8, 9).
 import { describe, expect, it } from 'vitest';
-import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funded';
+import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funding';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';

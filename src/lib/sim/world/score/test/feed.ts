@@ -1,6 +1,6 @@
 // Test support: feeding one world's events to a `WorldSeries` in each order the runner may use.
 // Browser-safe.
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { createFundingSystem } from '../../funding';
 import { createWorld, planDue, step, withFunding } from '../../index';

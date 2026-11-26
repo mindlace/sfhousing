@@ -12,7 +12,7 @@ import type { Day } from '$lib/timelapse/time';
 import type { Instrument, Pool, Programme } from '$lib/timelapse/types';
 import { dayOf } from '../dates';
 import { inflowArrivals } from '../funding';
-import type { LedgerEvent } from '../money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { monthsOf } from '../score';
 import type { SimInput } from '../types';
 import { TEST_TERMS } from './finance-score-cases';

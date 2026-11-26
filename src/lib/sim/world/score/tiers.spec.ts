@@ -2,7 +2,8 @@
 // `tierSeries` files them, each funded project split by the programme definitions in force in the
 // month of its award (design 3.4).
 import { beforeAll, describe, expect, it } from 'vitest';
-import { tierContext, tierSeries, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
+import { tierContext, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
+import { tierSeries } from './test/oracles';
 import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
 import type { Schedule, SimInput } from '$lib/sim/scenario/types';
 import type { TierUnits } from '$lib/timelapse/types';

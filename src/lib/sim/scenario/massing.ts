@@ -202,8 +202,3 @@ export function massingFor(schedule: Schedule, k: number, ctx: MassingCtx): Mass
   if (b === null) return fallback();
   return { ...b, source: schedule.origin === 'simulated' ? 'scenario' : 'pipeline' };
 }
-
-/** `massingFor` for every revision, index-aligned with `schedule.revisions`. */
-export function massingsFor(schedule: Schedule, ctx: MassingCtx): Massing[] {
-  return schedule.revisions.map((_, k) => massingFor(schedule, k, ctx));
-}

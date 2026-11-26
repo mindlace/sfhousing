@@ -1,9 +1,17 @@
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import type { Pathway, ProjectKind, Stage } from '$lib/timelapse/types';
+import type { Dollars, Pathway, ProjectKind, Stage } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
 import type { CarColumns } from './cars/columns';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
 import type { Statics } from './statics';
+
+/** F10: one event per programme of a project, in day order; `programme` is null on `in`. */
+export type LedgerEvent = {
+  day: Day;
+  pool: string;
+  programme: string | null;
+  kind: 'in' | 'commit' | 'release' | 'spend' | 'repay' | 'loss';
+  dollars: Dollars;
+};
 
 /** The code constants of the columns (spec S1). */
 export const NO_DAY = -0x80000000;

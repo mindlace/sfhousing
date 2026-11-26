@@ -3,7 +3,7 @@
 // whenever it holds one. The rule reads only the line's own columns, so a cloned world (cold
 // caches) compacts in the same months as the original and the worlds stay equal.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { emptyWorld } from '../columns';
 import { staticsOf } from '../statics';
 import { benchInput } from '../test/cities.node';

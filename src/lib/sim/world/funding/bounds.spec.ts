@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { prototypeFor } from '$lib/sim/finance';
 import { dayOf } from '$lib/sim/scenario/dates';
 import { asksOf, inflowArrivals } from '$lib/sim/scenario/funding';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { LEGACY_UNCAPPED_DOLLARS, parseCalibration } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';

@@ -7,7 +7,7 @@ import { poolSeries } from '$lib/sim/scenario/finance-score';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { selectRows } from '$lib/sim/scenario/fixtures/select-rows';
 import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { monthsOf } from '$lib/sim/scenario/score';
 import { checkMoneyIdentities } from '$lib/sim/scenario/test/money-identities';
 import type { SimInput } from '$lib/sim/scenario/types';

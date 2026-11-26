@@ -1,7 +1,7 @@
 // The T6 ProjectCard and the day-based project choice (spec §4.9, §6 `card.spec.ts`, AC 10).
 import { describe, expect, it, vi } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
-import { generate, generateForUnits, massedUnits, massingApproximate } from '$lib/generator';
+import { massedUnits, massingApproximate } from '$lib/generator';
 import type { GeneratedBuilding } from '$lib/generator';
 import { cardStatus } from '$lib/fzp/card';
 import { chanceTable, parseCalibration } from '$lib/timelapse/model';
@@ -10,7 +10,6 @@ import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
 import { lookupsOf } from '../levers/apply';
 import type { StageScale } from '../levers/timers';
-import { createLru } from '../lru';
 import {
   blockLot,
   chooseProject,
@@ -24,15 +23,9 @@ import { dayOf } from './dates';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCalibrationWithRoutes, miniFinance, withFederalYearly } from './fixtures/mini-finance';
 import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
-import {
-  MINI_AS_OF,
-  MINI_HORIZON,
-  MINI_PROJECTS,
-  miniProjectsJson
-} from './fixtures/mini-projects';
+import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput } from './input';
-import { massingFor, type MassingCtx } from './massing';
-import { simulateDetailed, type Master } from './simulate';
+import type { Master } from '$lib/sim/world/read';
 import type { Massing, Schedule, SimInput } from './types';
 
 const AS_OF = MINI_AS_OF;
@@ -1007,75 +1000,6 @@ describe('projectCard: sources and quality', () => {
   });
 });
 
-describe('projectCard on a real run', () => {
-  const run = simulateDetailed(input, 7, MINI_HORIZON);
-  const masters = new Map(run.masters.map((m) => [m.masterId, m]));
-  const records = new Map(city.records);
-  const massingCtx: MassingCtx = {
-    input,
-    records: (id) => records.get(id),
-    memo: createLru(1000),
-    gen: generate,
-    genForUnits: generateForUnits,
-    logOnce() {}
-  };
-  const { ctx } = mkCtx({
-    masters,
-    building: (s, k) => massingFor(s, k, massingCtx)
-  });
-  const find = (pred: (s: Schedule) => boolean) => run.schedules.find(pred)!;
-
-  it('a simulated project: Block/Lot label, no sources or quality, no stories tier', () => {
-    const s = find((x) => x.origin === 'simulated');
-    expect(s).toBeDefined();
-    const day = s.revisions[0].day;
-    const c = projectCard(s, day, ctx);
-    expect(c.label).toMatch(/^Block \w{4,5}, Lot \w+$/);
-    expect([c.sources, c.quality, c.storiesTier]).toEqual([[], [], null]);
-    expect(c.stories).toBe(s.revisions[0].stories);
-    expect(['matched', 'approximate']).toContain(c.massing);
-    expect(c.existingUnits).toBe(s.existingUnits);
-    expect(c.stages.every((x) => !x.actual)).toBe(true);
-  });
-
-  it('an entitled master phase: the master entitlement comes first, then the phase', () => {
-    const s = find((x) => x.phase?.masterId === P.entitled3 && x.phase.index === 2);
-    expect(s).toBeDefined();
-    const c = projectCard(s, s.entered.permitFiled! + 1, ctx);
-    expect(c.label).toBe('Mini Shipyard');
-    expect(c.stages.slice(0, 2)).toEqual([
-      { stage: 'filed', day: d(2009, 3, 2), actual: true },
-      { stage: 'entitled', day: d(2012, 6, 15), actual: true }
-    ]);
-    expect(c.stages[2]).toEqual({
-      stage: 'permitFiled',
-      day: s.entered.permitFiled!,
-      actual: false
-    });
-    expect(c.phase).toEqual(s.phase);
-    expect(c.existingUnits).toBe(s.existingUnits);
-    expect(c.storiesTier === 4 || c.storiesTier === null).toBe(true);
-  });
-
-  it('a phase of a master entitled by the asOf fallback shows that entitlement as not actual', () => {
-    const inp: SimInput = { ...input, projects: structuredClone(input.projects) };
-    const row = inp.projects.find((p) => p.id === P.entitled3)!;
-    delete row.history.entitled; // stage entitled without a day: E falls back
-    const r = simulateDetailed(inp, 7, MINI_HORIZON);
-    const ms = new Map(r.masters.map((m) => [m.masterId, m]));
-    const s = r.schedules.find((x) => x.phase?.masterId === P.entitled3)!;
-    const { ctx: c2 } = mkCtx({
-      input: inp,
-      rows: new Map(inp.projects.map((p) => [p.id, p])),
-      masters: ms
-    });
-    const card = projectCard(s, s.entered.permitFiled!, c2);
-    const ent = card.stages.find((x) => x.stage === 'entitled')!;
-    expect(ent.day).toBe(ms.get(P.entitled3)!.entered.entitled);
-    expect(ent.actual).toBe(false);
-  });
-});
-
 describe('projectCard: kind and funding (finance-engine spec 4.12, section 6 test 9)', () => {
   const fin: SimInput = {
     ...input,
@@ -1084,45 +1008,6 @@ describe('projectCard: kind and funding (finance-engine spec 4.12, section 6 tes
     // starts happen too
     finance: withFederalYearly(miniFinance(AS_OF), AS_OF, 20_000_000)
   };
-  // seed 4: both certain affordable and partly covered market funded starts
-  const run = simulateDetailed(fin, 4, MINI_HORIZON);
-  const { ctx } = mkCtx({
-    input: fin,
-    masters: new Map(run.masters.map((m) => [m.masterId, m]))
-  });
-  const cardOf = (s: Schedule) => projectCard(s, s.revisions[0].day, ctx);
-
-  it('a certain affordable funded schedule: kind affordable, its programmes, certain', () => {
-    const s = run.schedules.find((x) => x.kind === 'affordable' && x.funding?.certain === true);
-    expect(s).toBeDefined();
-    const c = cardOf(s!);
-    expect(c.kind).toBe('affordable');
-    expect(c.funding).toEqual({ programmes: s!.funding!.programmes, certain: true });
-    expect(c.funding!.programmes).not.toBe(s!.funding!.programmes);
-  });
-
-  it('a partly covered market funded schedule: no kind, certain false', () => {
-    const s = run.schedules.find((x) => x.funding !== undefined && x.kind === undefined);
-    expect(s).toBeDefined();
-    expect(s!.funding!.certain).toBe(false);
-    const c = cardOf(s!);
-    expect('kind' in c).toBe(false);
-    expect(c.funding).toEqual({ programmes: s!.funding!.programmes, certain: false });
-  });
-
-  it('an ordinary start and every pipeline card have neither field', () => {
-    const ordinary = run.schedules.filter((x) => x.origin === 'simulated' && !x.funding);
-    const pipeline = run.schedules.filter((x) => x.origin === 'pipeline');
-    expect(ordinary.length).toBeGreaterThan(0);
-    expect(pipeline.length).toBeGreaterThan(0);
-    for (const s of [...ordinary, ...pipeline]) {
-      const day = s.revisions[0]?.day ?? firstDay(s);
-      const c = projectCard(s, day, ctx);
-      expect('kind' in c).toBe(false);
-      expect('funding' in c).toBe(false);
-    }
-  });
-
   it('copies certain from the schedule whatever ctx.input.finance holds', () => {
     const s = sched({
       projectId: 'sim:3512008:0',

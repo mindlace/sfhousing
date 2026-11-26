@@ -3,12 +3,12 @@
  * docs/superpowers/specs/2026-11-09-finance-score-design.md). Pure; worker-safe.
  *
  * Tiers first (spec 4.1): `tierContext` builds a run's `TierCtx` once per loaded input, and
- * `tiersOf` splits one schedule's final units by income tier; `tierSeries` (spec 4.2) sums them
- * by month with the month rules of `addNet`.
+ * `tiersOf` splits one schedule's final units by income tier.
  *
  * Money (spec 4.4-4.8): `poolSeries` turns the engine's ledger into each pool's monthly series;
- * `moneyOf` adds the funded and displaced homes, the public money spent, the repayment owed and
- * the legal-limit statements.
+ * `addedBorrowing` states the borrowing a policy adds, for the legal-limit statements. The folds
+ * over a run's schedules (`tierSeries`, `moneyOf`) are test oracles in
+ * `world/score/test/oracles.ts`.
  */
 import { RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -27,10 +27,8 @@ import {
   ASSUMED_TENURE,
   DISPLACEMENT_RANGE,
   INCLUSIONARY,
-  debtService,
   fundBundle,
   inclusionaryUnits,
-  limitStatements,
   prototypeFor,
   type Borrowing,
   type BundleItem
@@ -38,10 +36,10 @@ import {
 import { isoOf } from './dates';
 import { PIPELINE_FUNDED, inflowArrivals } from './funding';
 import { monthIndexer } from './score';
-import type { LedgerEvent } from './money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { Schedule, SimInput, TimelineScore } from './types';
 
-export type { LedgerEvent } from './money';
+export type { LedgerEvent } from '$lib/sim/world/types';
 
 /** `TimelineScore.money` (F14). */
 export type Money = NonNullable<TimelineScore['money']>;
@@ -228,49 +226,6 @@ export function tiersOf(sc: Schedule, ctx: TierCtx): TierUnits {
   }
   const unrecorded = Math.min(ctx.affordable.get(sc.projectId) ?? 0, u);
   return { veryLow: 0, low: 0, moderate: 0, aboveModerate: u - unrecorded, unrecorded };
-}
-
-/**
- * The cumulative homes by income tier at the end of each month (spec 4.2), with exactly the month
- * rules of `addNet` (`score.ts`): at a construction start after `asOf`, `-existingUnits` from
- * `aboveModerate`; at completion, `tiersOf(sc, ctx)`. Both at `idx(day)`, no clamp. The five
- * fields of month `i` sum to `shownSeries(...)[i].completedNet`.
- */
-export function tierSeries(
-  schedules: Schedule[],
-  ctx: TierCtx,
-  asOf: Day,
-  horizon: Day,
-  months: Day[]
-): TierUnits[] {
-  const n = months.length;
-  const idx = monthIndexer(months, horizon);
-  const delta = TIER_FIELDS.map(() => new Int32Array(n));
-  const AM = TIER_FIELDS.indexOf('aboveModerate');
-  for (const sc of schedules) {
-    const c = sc.entered.construction;
-    if (c !== undefined && c > asOf) delta[AM][idx(c)] -= sc.existingUnits;
-    if (sc.end.kind === 'complete') {
-      const t = tiersOf(sc, ctx);
-      const i = idx(sc.end.day);
-      TIER_FIELDS.forEach((f, k) => {
-        delta[k][i] += t[f];
-      });
-    }
-  }
-  const run = TIER_FIELDS.map(() => 0);
-  const out: TierUnits[] = [];
-  for (let i = 0; i < n; i++) {
-    for (let k = 0; k < run.length; k++) run[k] += delta[k][i];
-    out.push({
-      veryLow: run[0],
-      low: run[1],
-      moderate: run[2],
-      aboveModerate: run[3],
-      unrecorded: run[4]
-    });
-  }
-  return out;
 }
 
 /** `rhnaCompletedNet.byTier` as given; all zeros when a projects file has none (spec 4.3). */
@@ -484,55 +439,6 @@ export function addedBorrowing(
     if (principal > 0) out.push({ pool: pool.id, kind: pool.kind, principal, debt: pool.debt });
   }
   return out;
-}
-
-/**
- * A funded project's homes and the public money, per month (spec 4.4-4.8). `fundedHomes` and
- * `displacedHomes` count a schedule with `funding` that completed (never keyed on `origin`) at its
- * completion month; `publicSpent` is `spent + lostCredit` summed over every pool (never `lost`,
- * which holds a grant's loss again); `owed` has each debt pool's principal (its last `received`)
- * and the total of level payments on it; `limits` come from `addedBorrowing`.
- */
-export function moneyOf(p: {
-  ledger: LedgerEvent[];
-  schedules: Schedule[];
-  finance: NonNullable<SimInput['finance']>;
-  baseline: readonly Pool[];
-  asOf: Day;
-  horizon: Day;
-  months: Day[];
-}): Money {
-  const n = p.months.length;
-  const pools = poolSeries(p.ledger, p.finance, p.months, p.horizon);
-  const idx = monthIndexer(p.months, p.horizon);
-  const funded = new Array<number>(n).fill(0);
-  const displaced = new Array<number>(n).fill(0);
-  for (const sc of p.schedules) {
-    if (sc.funding === undefined || sc.end.kind !== 'complete') continue;
-    const i = idx(sc.end.day);
-    funded[i] += sc.revisions[sc.revisions.length - 1].units - sc.existingUnits;
-    displaced[i] += sc.funding.displaced;
-  }
-  for (let i = 1; i < n; i++) {
-    funded[i] += funded[i - 1];
-    displaced[i] += displaced[i - 1];
-  }
-  const publicSpent = Array.from({ length: n }, (_, i) =>
-    pools.reduce((a, q) => a + q.spent[i] + q.lostCredit[i], 0)
-  );
-  const owed: Money['owed'] = [];
-  p.finance.pools.forEach((pool, q) => {
-    if (pool.debt === null) return;
-    const principal = pools[q].received[n - 1];
-    owed.push({
-      pool: pool.id,
-      principal,
-      repayment: debtService(principal, pool.debt).total,
-      nominal: true
-    });
-  });
-  const limits = limitStatements(addedBorrowing(p.finance, p.baseline, p.asOf, p.horizon));
-  return { pools, fundedHomes: funded, displacedHomes: displaced, publicSpent, owed, limits };
 }
 
 /** The pool kinds that are the City's (F5): `state` and `federal` are not. */

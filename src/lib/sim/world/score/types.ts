@@ -1,6 +1,6 @@
 import type { ParcelId } from '$lib/data/parcel';
 import type { limitStatements } from '$lib/sim/finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { Massing, Schedule, TargetProgressAt, TimelineScore } from '$lib/sim/scenario/types';
 import type { ProjectsFile, QualityRuleRef } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';

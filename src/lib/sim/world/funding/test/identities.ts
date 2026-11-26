@@ -3,7 +3,7 @@
 // engine, and the world's pool columns against the ledger. Every failure is collected, then
 // asserted at once.
 import { expect } from 'vitest';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { FinanceFrame } from '../../policy/frame';
 import type { World } from '../../types';
 import { fundOf } from '../columns';

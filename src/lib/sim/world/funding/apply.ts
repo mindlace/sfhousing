@@ -1,8 +1,7 @@
 // Planning and making applications (spec rules 5, 6, 8, 9): which model month a free lot applies
 // in, the rows it adds to the funding line, re-making a row under a new frame (rules 17, 18) and
 // its leaving the line.
-import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funded';
-import { below, coverageLevel } from '$lib/sim/scenario/funding';
+import { NEVER_KEY_DAY, below, coverageLevel, lineKey } from '$lib/sim/scenario/funding';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ProjectKind } from '$lib/timelapse/types';

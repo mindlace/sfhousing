@@ -3,7 +3,7 @@
 // own event happens, with today's kinds, amounts, counters and within-event order.
 import { projectDollars } from '$lib/sim/finance';
 import type { Award } from '$lib/sim/scenario/funding';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Pool } from '$lib/timelapse/types';
 import { NO_DAY, type StepCtx, type WorldEvent } from '../types';

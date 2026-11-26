@@ -1,9 +1,9 @@
 // finance-score: homes by income tier (spec 4.1-4.3; section 6 tests 1-13) and the per-pool money
 // series (spec 4.4; test 16).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ASSUMED_TENURE, INCLUSIONARY, fundBundle, projectDollars, prototypeFor } from '../finance';
+import { ASSUMED_TENURE, INCLUSIONARY, fundBundle, prototypeFor } from '../finance';
 import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
-import { tinyQueue, tinyStack } from './fixtures/tiny-queue';
+import { tinyStack } from './fixtures/tiny-queue';
 import {
   AFFORDABLE_CASES as A,
   CITY_DEBT,
@@ -24,7 +24,6 @@ import {
   schedule,
   type MoneyCase
 } from './fixtures/finance-score-cases';
-import { checkLedger } from './test/finance-harness';
 import { checkMoneyIdentities } from './test/money-identities';
 import type { Pool, TierUnits } from '$lib/timelapse/types';
 import { dayOf } from './dates';
@@ -37,7 +36,6 @@ import {
   allocatePhases,
   cityOf,
   displacedShare,
-  moneyOf,
   owedAt,
   perAddedHome,
   poolSeries,
@@ -45,15 +43,10 @@ import {
   splitByShares,
   tierBaselineLabel,
   tierContext,
-  tierSeries,
   tiersOf
 } from './finance-score';
-import { monthIndexer, monthsOf, shownSeries } from './score';
-import { runEngine } from './engine';
-import { simulate } from './simulate';
-import { GOLDEN_HORIZON } from './simulate.golden.cases';
-import { financeGoldenInput } from './simulate.finance.golden.cases';
-import type { LedgerEvent } from './money';
+import { monthIndexer, monthsOf } from './score';
+import { moneyOf, shownSeries, tierSeries } from '$lib/sim/world/score/test/oracles';
 import type { Schedule, SimInput } from './types';
 
 vi.mock('../finance', async (orig) => {
@@ -145,44 +138,6 @@ describe('tiersOf, funded affordable (spec 6 tests 3-5)', () => {
     const r = tiersOf(affordable(['a', 'tiny'], 50), caseCtx());
     expect(sum(r)).toBe(50);
     expect(r.moderate).toBeLessThanOrEqual(1);
-  });
-});
-
-describe('the re-pricing matches the award (spec 6 test 6)', () => {
-  it('prices funding.programmes again to funding.granted within a dollar per item', () => {
-    const input: SimInput = {
-      ...tinyQueue({ logOdds: [0, 0, 0, 0, 0] }),
-      finance: tinyStack({
-        asOf: MINI_AS_OF,
-        bond: {
-          share: 0.5,
-          from: MINI_AS_OF,
-          inflows: [{ kind: 'once', day: MINI_AS_OF, dollars: 1e12 }]
-        }
-      })
-    };
-    const ctx = tierContext(input);
-    let n = 0;
-    let twoCity = 0;
-    for (let seed = 1; seed <= 5; seed++) {
-      for (const s of simulate(input, seed, MINI_HORIZON)) {
-        if (s.kind !== 'affordable' || !s.funding) continue;
-        n++;
-        const ids = s.funding.programmes;
-        if (ids.includes('t-city') && ids.includes('t-bond-grant')) twoCity++;
-        const r0 = s.revisions[0];
-        const b = fundBundle(
-          ids.map((id) => ctx.programmes.get(id)!.item),
-          'affordable',
-          prototypeFor(r0.stories ?? 0, r0.units),
-          input.finance!.terms
-        );
-        const granted = b.items.reduce((t, it) => t + projectDollars(it.granted, r0.units), 0);
-        expect(Math.abs(granted - s.funding.granted)).toBeLessThanOrEqual(b.items.length);
-      }
-    }
-    expect(n).toBeGreaterThan(0);
-    expect(twoCity).toBeGreaterThan(0);
   });
 });
 
@@ -396,11 +351,9 @@ function entry(c: MoneyCase, s: Partial<Series>): Money['pools'][number] {
 const series = (c: MoneyCase) => poolSeries(c.ledger, c.finance, MONEY_MONTHS, MONEY_HORIZON);
 
 describe('poolSeries (spec 6 test 16)', () => {
-  it('has 12 months on the hand ledgers, and every hand ledger is a valid engine ledger', () => {
+  it('has 12 months on the hand ledgers, and every hand ledger meets the money identities', () => {
     expect(MONEY_MONTHS).toHaveLength(12);
     for (const c of Object.values(MC)) {
-      const inHorizon = c.ledger.filter((e) => e.day <= MONEY_HORIZON);
-      checkLedger(inHorizon, c.finance);
       checkMoneyIdentities({ pools: series(c) }, c.finance.pools, {
         events: c.ledger,
         finance: c.finance,
@@ -812,48 +765,6 @@ describe('addedBorrowing and limits (spec 6 test 21)', () => {
   it('ignores a generalRevenue pool even when it grows', () => {
     const g = { ...GENERAL_REVENUE, inflows: [yearly(AS, null, 90_000_000)] };
     expect(out([CITY_DEBT, g])).toEqual([]);
-  });
-});
-
-describe('moneyOf on the finance golden input plus u-bond', () => {
-  it('has the same limits in seeds 1 and 2 (they come from the inflows, not the run)', () => {
-    const base = financeGoldenInput();
-    const baseline = base.finance!.pools;
-    const ubond: Pool = {
-      ...U_BOND,
-      inflows: [{ kind: 'once', day: base.asOf + 365, dollars: 300_000_000 }]
-    };
-    const input: SimInput = { ...base, finance: { ...base.finance!, pools: [...baseline, ubond] } };
-    const want = limitStatements([
-      {
-        pool: 'u-bond',
-        kind: 'goBond',
-        principal: 300_000_000,
-        debt: { rate: 0.06, termYears: 20 }
-      }
-    ]);
-    for (const seed of [1, 2]) {
-      const schedules: Schedule[] = [];
-      const ledger: LedgerEvent[] = [];
-      runEngine(input, seed, GOLDEN_HORIZON, {
-        schedule: (s) => schedules.push(s),
-        master() {},
-        ledger: (e) => ledger.push(e)
-      });
-      const months = monthsOf(input.asOf, GOLDEN_HORIZON);
-      const m = moneyOf({
-        ledger,
-        schedules,
-        finance: input.finance!,
-        baseline,
-        asOf: input.asOf,
-        horizon: GOLDEN_HORIZON,
-        months
-      });
-      expect(m.limits).toEqual(want);
-      expect(m.pools).toHaveLength(input.finance!.pools.length);
-      expect(m.fundedHomes).toHaveLength(months.length);
-    }
   });
 });
 

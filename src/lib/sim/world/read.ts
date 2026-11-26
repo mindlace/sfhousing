@@ -1,9 +1,15 @@
 // Readers (spec S8, rule 22): a world's rows as today's `Schedule` and `Master`, as seen by a
 // reader standing on `day` (nothing dated after it).
-import type { Master } from '$lib/sim/scenario/simulate';
 import type { Schedule } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
-import { EXIT_ORDER, PATHWAYS, STAGE_ORDER, type Stage } from '$lib/timelapse/types';
+import {
+  EXIT_ORDER,
+  PATHWAYS,
+  STAGE_ORDER,
+  type ExitReason,
+  type Pathway,
+  type Stage
+} from '$lib/timelapse/types';
 import { displacedOf, revisionsOf } from './columns';
 import type { Statics } from './statics';
 import {
@@ -18,6 +24,13 @@ import {
   ORIGIN_SIM,
   type World
 } from './types';
+
+// prettier-ignore
+export interface Master { // a multi-phase row with `phases`; never drawn, never a Schedule
+  masterId: string; pathway: Pathway; entered: Partial<Record<Stage, Day>> /* Planning-side only */;
+  end: { kind: 'entitled'; day: Day } | { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day } | { kind: 'open' };
+  phaseUnits: number[]; phaseFiled: (Day | null)[] /* permitFiled day of each phase, null = not by horizon */;
+}
 
 const S = STAGE_ORDER.length;
 const PERMIT_FILED = STAGE_ORDER.indexOf('permitFiled');

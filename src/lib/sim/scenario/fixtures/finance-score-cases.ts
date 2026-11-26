@@ -16,7 +16,7 @@ import type {
 } from '$lib/timelapse/types';
 import type { BundleItem } from '../../finance';
 import type { TierCtx } from '../finance-score';
-import type { LedgerEvent } from '../money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { monthsOf } from '../score';
 import { MINI_AS_OF } from './mini-projects';
 import type { Schedule, SimInput } from '../types';

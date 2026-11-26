@@ -3,7 +3,7 @@
 // scan (`serveLine(ctx, { grouped: false })`), and asks the award rule fewer times.
 import { describe, expect, it, vi } from 'vitest';
 import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
 import { benchInput } from '../test/cities.node';

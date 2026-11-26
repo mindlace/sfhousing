@@ -3,23 +3,26 @@
  * finance input check (spec 4.2). Pure.
  */
 import type { Day } from '$lib/timelapse/time';
-import type { Inflow, Pool, PoolKind, ProjectKind, Provenance } from '$lib/timelapse/types';
+import type { Inflow, PoolKind, ProjectKind, Provenance } from '$lib/timelapse/types';
 import {
   CERTAIN_TOLERANCE,
   PROTOTYPES,
   fundBundle,
   isCertain,
-  missingTerms,
   oddsShift,
   projectDollars,
   uncoveredPerHome,
-  validateInstrument,
   type BundleFunding,
   type Prototype,
   type PrototypeId
 } from '../finance';
-import { dayOf, isoOf } from './dates';
+import { dayOf } from './dates';
 import type { SimInput } from './types';
+
+/** `keyDay` of a latent that never starts, and the bound every later day compares equal to. */
+export const NEVER_KEY_DAY = 268_435_456; // 2^28
+const RANK_LIMIT = 524_288; // 2^19
+const KEY_DAY_SCALE = 1_048_576; // 2^20
 
 const MS_PER_DAY = 86400000;
 
@@ -63,134 +66,6 @@ export const PIPELINE_FUNDED: Provenance = {
 
 type Finance = NonNullable<SimInput['finance']>;
 
-/** Finance objects whose pools, programmes, off, slope and terms passed the checks. */
-const checkedFinance = new WeakSet<Finance>();
-
-const isWhole = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
-
-function checkFinanceShape(f: Finance): void {
-  if (!(typeof f.slope === 'number' && Number.isFinite(f.slope) && f.slope >= 0)) {
-    throw new RangeError(`finance.slope must be a finite number of 0 or more; got ${f.slope}`);
-  }
-  const poolIds = new Set<string>();
-  f.pools.forEach((p, i) => {
-    if (poolIds.has(p.id)) throw new RangeError(`finance.pools[${i}].id ${p.id} is repeated`);
-    poolIds.add(p.id);
-  });
-  const progIds = new Set<string>();
-  f.programmes.forEach((g, i) => {
-    if (progIds.has(g.id)) throw new RangeError(`finance.programmes[${i}].id ${g.id} is repeated`);
-    progIds.add(g.id);
-  });
-  f.programmes.forEach((g, i) => {
-    if (!poolIds.has(g.pool)) {
-      throw new RangeError(`finance.programmes[${i}].pool ${g.pool} names no pool`);
-    }
-  });
-  f.pools.forEach((p, i) => {
-    if (!(typeof p.leverage === 'number' && Number.isFinite(p.leverage) && p.leverage > 0)) {
-      throw new RangeError(
-        `finance.pools[${i}] (${p.id}): leverage must be a finite number above 0; got ${p.leverage}`
-      );
-    }
-  });
-  f.pools.forEach((p, i) => {
-    p.inflows.forEach((fl, j) => {
-      const dollars = fl.kind === 'once' ? fl.dollars : fl.dollarsPerYear;
-      const at = `finance.pools[${i}].inflows[${j}]`;
-      if (!(isWhole(dollars) && dollars >= 0)) {
-        throw new RangeError(`${at}: dollars must be a whole number of 0 or more`);
-      }
-      if (fl.kind === 'yearly' && fl.to !== null && fl.to < fl.from) {
-        throw new RangeError(`${at}: to is before from`);
-      }
-    });
-  });
-  f.programmes.forEach((g, i) => {
-    if (g.to !== null && g.to < g.from) {
-      throw new RangeError(
-        `finance.programmes[${i}] (${g.id}): to ${isoOf(g.to)} is before from ${isoOf(g.from)}`
-      );
-    }
-  });
-  f.pools.forEach((p, i) => {
-    const at = `finance.pools[${i}] (${p.id}): `;
-    const borrows = p.kind === 'goBond' || p.kind === 'cop';
-    if (borrows && p.debt === null)
-      throw new RangeError(`${at}debt is required for a goBond or cop pool`);
-    if (!borrows) {
-      if (p.debt !== null) throw new RangeError(`${at}debt must be null for a ${p.kind} pool`);
-      return;
-    }
-    const { rate, termYears } = p.debt!;
-    if (!(typeof rate === 'number' && rate > 0 && rate <= 0.25)) {
-      throw new RangeError(`${at}debt.rate must be above 0 and at most 0.25; got ${rate}`);
-    }
-    if (!(isWhole(termYears) && termYears >= 1 && termYears <= 40)) {
-      throw new RangeError(
-        `${at}debt.termYears must be a whole number from 1 to 40; got ${termYears}`
-      );
-    }
-  });
-  f.programmes.forEach((g, i) => {
-    if (!(isWhole(g.minHomes) && g.minHomes >= 0 && g.minHomes <= 10000)) {
-      throw new RangeError(
-        `finance.programmes[${i}] (${g.id}): minHomes must be a whole number from 0 to 10000`
-      );
-    }
-  });
-  f.programmes.forEach((g, i) => {
-    const msg = validateInstrument(g.instrument);
-    if (msg !== null) throw new RangeError(`finance.programmes[${i}] (${g.id}): ${msg}`);
-  });
-  f.programmes.forEach((g, i) => {
-    const key = missingTerms(g.instrument, f.terms)[0];
-    if (key !== undefined) {
-      throw new RangeError(
-        `finance.programmes[${i}] (${g.id}): ${g.instrument.kind} needs ${key}, which is not sourced`
-      );
-    }
-  });
-  const loss = f.terms.lossOnExit;
-  if (!(typeof loss === 'number' && loss >= 0 && loss <= 1)) {
-    throw new RangeError(`finance.terms.lossOnExit must be between 0 and 1; got ${loss}`);
-  }
-  f.off.forEach((o, i) => {
-    if (!poolIds.has(o.pool))
-      throw new RangeError(`finance.off[${i}].pool ${o.pool} names no pool`);
-  });
-  f.off.forEach((o, i) => {
-    if (o.to !== null && o.to < o.from) {
-      throw new RangeError(
-        `finance.off[${i}] (${o.pool}): to ${isoOf(o.to)} is before from ${isoOf(o.from)}`
-      );
-    }
-  });
-}
-
-/**
- * Throws a RangeError on bad `finance` (spec 4.2), first failing check first. The checks on the
- * finance object are memoised by its identity; the routes check reads the calibration and runs
- * on every call.
- */
-export function checkFinance(input: SimInput): void {
-  const f = input.finance;
-  if (!f) return;
-  if (!checkedFinance.has(f)) {
-    checkFinanceShape(f);
-    checkedFinance.add(f);
-  }
-  const cal = input.newProjects?.calibration ?? input.calibration;
-  if (!cal.affordableRoutes) {
-    const g = f.programmes.find((p) => p.reach === 'affordable');
-    if (g) {
-      throw new RangeError(
-        `finance: the calibration has no affordableRoutes, but programme ${g.id} reaches affordable projects`
-      );
-    }
-  }
-}
-
 /** The coverage level: coverage counted up to 1, with `isCertain`'s tolerance (spec, Terms). */
 export function coverageLevel(c: number): number {
   return isCertain(c) ? 1 : c;
@@ -214,39 +89,6 @@ export function cappedShift(
 /** x is below y when `x < y - CERTAIN_TOLERANCE`. */
 export function below(x: number, y: number): boolean {
   return x < y - CERTAIN_TOLERANCE;
-}
-
-/** A pool's counters, in whole dollars (spec 4.7). */
-export interface PoolState {
-  received: number;
-  committed: number;
-  spentGrant: number;
-  outLoan: number;
-  lostLoan: number;
-  lostGuarantee: number;
-}
-
-export function newPoolState(): PoolState {
-  return {
-    received: 0,
-    committed: 0,
-    spentGrant: 0,
-    outLoan: 0,
-    lostLoan: 0,
-    lostGuarantee: 0
-  };
-}
-
-/** Money a pool can still commit, from what it has received (spec 4.7). */
-export function available(pool: Pool, s: PoolState): number {
-  return (
-    pool.leverage * s.received -
-    s.committed -
-    s.spentGrant -
-    s.outLoan -
-    s.lostLoan -
-    s.lostGuarantee
-  );
 }
 
 export interface FinanceIndex {
@@ -503,4 +345,14 @@ export function awardPasses(
   }
   // the kept set, whole or partial, is awarded when its level is above 0
   return coverageLevel(f.price(kind, set, protoId).coverage) > 0;
+}
+
+/**
+ * The line key after `applied` (spec 4.4, rule (d)): `keyDay` (days after 2^28 equal), then the
+ * parcel rank, then `market` before `affordable`. Exact in a double: below 2^49.
+ */
+export function lineKey(keyDay: Day, rank: number, kind: ProjectKind): number {
+  if (rank >= RANK_LIMIT) throw new RangeError(`lineKey: rank ${rank} is not below 2^19`);
+  const bit = kind === 'affordable' ? 1 : 0;
+  return Math.min(keyDay, NEVER_KEY_DAY) * KEY_DAY_SCALE + rank * 2 + bit;
 }

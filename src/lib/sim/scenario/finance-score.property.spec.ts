@@ -12,22 +12,12 @@ import {
   pipeline,
   schedule
 } from './fixtures/finance-score-cases';
-import {
-  TIER_FIELDS,
-  poolSeries,
-  tierContext,
-  tierSeries,
-  tiersOf,
-  type TierCtx
-} from './finance-score';
+import { TIER_FIELDS, poolSeries, tiersOf, type TierCtx } from './finance-score';
 import { ledgerModel } from './fixtures/ledger-model';
-import { checkLedger } from './test/finance-harness';
 import { checkMoneyIdentities } from './test/money-identities';
 import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
-import { monthsOf, shownSeries } from './score';
-import { simulateDetailed } from './simulate';
-import { financeGoldenInput } from './simulate.finance.golden.cases';
-import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
+import { monthsOf } from './score';
+import { shownSeries, tierSeries } from '$lib/sim/world/score/test/oracles';
 import type { Schedule } from './types';
 
 const unitsArb = fc.integer({ min: 0, max: 2000 });
@@ -133,22 +123,6 @@ describe('tiersOf sums to the final units (spec 6 test 9)', () => {
 });
 
 describe('tierSeries sums to completedNet (spec 6 test 11)', () => {
-  it('holds on the golden inputs, seeds 1-5', () => {
-    for (const input of [goldenInput(), financeGoldenInput()]) {
-      const months = monthsOf(input.asOf, GOLDEN_HORIZON);
-      const ctx = tierContext(input);
-      for (const seed of [1, 2, 3, 4, 5]) {
-        const run = simulateDetailed(input, seed, GOLDEN_HORIZON);
-        const tiers = tierSeries(run.schedules, ctx, input.asOf, GOLDEN_HORIZON, months);
-        const shown = shownSeries(run, input.asOf, GOLDEN_HORIZON, months);
-        const ok = tiers.every(
-          (t, i) => TIER_FIELDS.reduce((a, f) => a + t[f], 0) === shown[i].completedNet
-        );
-        expect(ok).toBe(true);
-      }
-    }
-  });
-
   const months = monthsOf(MINI_AS_OF, MINI_HORIZON);
   const dayArb = fc.integer({ min: MINI_AS_OF - 200, max: MINI_HORIZON - 1 });
   const schedArb: fc.Arbitrary<Schedule> = fc
@@ -207,7 +181,6 @@ describe('ledger identities I1-I5 (spec 6 test 17)', () => {
     const seen = { guaranteeLoss: 0, grantLoss: 0, loanLoss: 0, commitWhileOff: 0, bank: 0 };
     for (let seed = 1; seed <= 500; seed++) {
       const c = ledgerModel(seed);
-      checkLedger(c.ledger, c.finance);
       const pools = poolSeries(c.ledger, c.finance, c.months, c.horizon);
       checkMoneyIdentities({ pools }, c.finance.pools, {
         events: c.ledger,

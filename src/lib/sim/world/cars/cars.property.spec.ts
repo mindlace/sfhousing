@@ -3,7 +3,7 @@
 // rebuilt plan gives what a carried one does (rule 20). Mini and bench cities, seeds 1 to 5.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { createFundingSystem } from '../funding/system';
 import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';

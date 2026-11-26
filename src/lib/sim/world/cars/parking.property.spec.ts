@@ -9,7 +9,7 @@ import { PROTOTYPES } from '$lib/sim/finance';
 import { benchMarket } from '$lib/sim/scenario/fixtures/bench-finance';
 import { seedHash } from '$lib/sim/scenario/rng';
 import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { planDueWith } from '../due';
 import { createFundingSystem } from '../funding/system';

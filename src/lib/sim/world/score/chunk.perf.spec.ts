@@ -8,7 +8,7 @@
 // run once and its events fed to two series (the scoring work is that of one pair).
 // `SFH_PERF_QUIET=1` marks a run made while holding the measurement lock.
 import { describe, expect, it } from 'vitest';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { SimInput } from '$lib/sim/scenario/types';
 import { benchFunded } from '../funding/test/cities.node';
 import { oneMoneyTimeline, runFunded } from '../funding/test/fixtures';

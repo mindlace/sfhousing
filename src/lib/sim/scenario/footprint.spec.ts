@@ -13,21 +13,19 @@ import type { Calibration } from '$lib/timelapse/types';
 import { createLru } from '../lru';
 import { miniCity, MINI_SAME_CELL_PAIR } from './fixtures/mini-parcels';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { MINI_AS_OF, MINI_HORIZON, miniProjectsJson } from './fixtures/mini-projects';
+import { MINI_AS_OF, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput } from './input';
 import {
   cellAnchorParcel,
   footprintOf,
   footprintParcel,
   massingFor,
-  massingsFor,
   districtOptsFor,
   pipeKey,
   simKey,
   type MassingCtx
 } from './massing';
-import { simulate } from './simulate';
-import type { Schedule, SimInput } from './types';
+import type { Massing, Schedule, SimInput } from './types';
 
 const city = miniCity();
 const input: SimInput = buildSimInput({
@@ -36,6 +34,10 @@ const input: SimInput = buildSimInput({
   calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration
 });
 const NO_CAP = 0xffff;
+
+/** `massingFor` for every revision, index-aligned with `schedule.revisions`. */
+const massingsFor = (schedule: Schedule, ctx: MassingCtx): Massing[] =>
+  schedule.revisions.map((_, k) => massingFor(schedule, k, ctx));
 
 const rec = (id: ParcelId): ParcelRecord => {
   const r = city.records.get(id);
@@ -338,23 +340,6 @@ describe('massingFor: multi-phase rows', () => {
     const s = master();
     expect(massingsFor(s, ctx)).toEqual(s.revisions.map(() => footprintOf(BIG)));
   });
-
-  it('phases are massed with generateForUnits on their own parcels and project id', () => {
-    const phased = simulate(input, 3, MINI_HORIZON).filter((s) => s.phase !== null);
-    expect(phased.length).toBeGreaterThan(0);
-    const { ctx, genForUnits } = makeCtx();
-    for (const s of phased) {
-      const m = massingFor(s, 0, ctx);
-      const call = genForUnits.mock.calls.at(-1)!;
-      const own = [...s.parcelIds].sort().map(rec);
-      expect(call[0]).toEqual(own);
-      expect(call[1]).toBe(s.revisions[0].units);
-      expect(call[2]).toBe(s.revisions[0].stories ?? MAX_STORIES);
-      expect(call[3]).toBe(fnv1a32(s.projectId));
-      if ('parts' in m) expect(m.source).toBe('pipeline');
-    }
-    expect(genForUnits).toHaveBeenCalledTimes(phased.length);
-  });
 });
 
 describe('failures, logging and packing', () => {
@@ -463,33 +448,6 @@ describe('failures, logging and packing', () => {
 });
 
 describe('simulated massing on the scenario record (IA-8)', () => {
-  it('uncapped revision-0 buildings hold the drawn yield, from the T11 record', () => {
-    const parcels = input.parcels;
-    let checked = 0;
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
-      const sims = simulate(input, seed, MINI_HORIZON).filter((s) => s.origin === 'simulated');
-      const { ctx, gen } = makeCtx();
-      for (const s of sims) {
-        const i = parcels.index.get(s.parcelIds[0])!;
-        if (parcels.baseCap[i] !== NO_CAP) continue;
-        const m = massingFor(s, 0, ctx);
-        expect('parts' in m).toBe(true);
-        if (!('parts' in m)) continue;
-        expect(m.units).toBe(s.revisions[0].units);
-        // The building never exceeds the drawn level's stories; it can fall short when the
-        // typology's volume saturates (see the all-levels test below).
-        expect(m.stories).toBeLessThanOrEqual(s.revisions[0].stories!);
-        expect(m.source).toBe('scenario');
-        checked++;
-      }
-      for (const call of gen.mock.calls) {
-        const i = parcels.index.get(call[0].id)!;
-        expect(call[0].existingUnits).toBe(parcels.existingUnits[i]);
-      }
-    }
-    expect(checked).toBeGreaterThan(0);
-  });
-
   it('every uncapped parcel at every fill level holds exactly yield[f] units', () => {
     const parcels = input.parcels;
     const { ctx } = makeCtx();

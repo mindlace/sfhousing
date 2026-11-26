@@ -42,7 +42,7 @@ import { decodeTransit } from '../src/lib/data/transit-codec';
 import { loadScenario, scenarioUrls, type Loaded } from '../src/lib/sim/scenario/load';
 import { massingFor } from '../src/lib/sim/scenario/massing';
 import { precomputeOf } from '../src/lib/sim/scenario/input';
-import type { LedgerEvent } from '../src/lib/sim/scenario/money';
+import type { LedgerEvent } from '../src/lib/sim/world/types';
 import type { SimInput } from '../src/lib/sim/scenario/types';
 import { customQuery, queryKey, type CustomBrush } from '../src/lib/sim-page/policy';
 import {

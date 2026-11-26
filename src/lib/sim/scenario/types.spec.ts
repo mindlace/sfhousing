@@ -86,7 +86,6 @@ type RowSimInput = {
     terms: ResolvedTerms;
   };
 };
-type RowSimulate = (input: RowSimInput, seed: number, horizon: Day) => RowSchedule[];
 
 // T6
 type RowProjectCard = {
@@ -176,12 +175,10 @@ type RowTargetProgressAt = { target: Target; deadline: Day; fraction: number[] }
 const rowsMatch: Assert<
   Equals<Scenario.Schedule, RowSchedule> extends true
     ? Equals<Scenario.SimInput, RowSimInput> extends true
-      ? Equals<Scenario.Simulate, RowSimulate> extends true
-        ? Equals<Scenario.ProjectCard, RowProjectCard> extends true
-          ? Equals<Scenario.Massing, RowMassing> extends true
-            ? Equals<Scenario.TimelineScore, RowTimelineScore> extends true
-              ? Equals<Scenario.TargetProgressAt, RowTargetProgressAt>
-              : false
+      ? Equals<Scenario.ProjectCard, RowProjectCard> extends true
+        ? Equals<Scenario.Massing, RowMassing> extends true
+          ? Equals<Scenario.TimelineScore, RowTimelineScore> extends true
+            ? Equals<Scenario.TargetProgressAt, RowTargetProgressAt>
             : false
           : false
         : false

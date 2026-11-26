@@ -4,8 +4,9 @@
 // the plan world's alone.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import { displacedShare, moneyOf, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import { displacedShare, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
+import { moneyOf } from './test/oracles';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { monthIndexer, monthsOf } from '$lib/sim/scenario/score';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';

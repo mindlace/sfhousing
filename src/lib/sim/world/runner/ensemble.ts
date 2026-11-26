@@ -10,7 +10,7 @@
 //
 // The world core (`withFunding(funding, cars)`) is the dataset's (`Dataset.core`): the car system
 // is built per dataset load, so the core is too.
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import * as carsModule from '../cars/columns';
 import type { CarSnapshot } from '../cars/columns';
 import type { MapStream } from '../map-stream';

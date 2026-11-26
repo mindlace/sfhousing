@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
 import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import { lineKey } from '$lib/sim/scenario/funded';
+import { lineKey } from '$lib/sim/scenario/funding';
 import { sizeCumAgainst } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';

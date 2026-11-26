@@ -10,11 +10,11 @@ import {
   addedBorrowing,
   cityOf,
   displacedShare,
-  moneyOf,
   perAddedHome
 } from '$lib/sim/scenario/finance-score';
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { monthsOf } from '$lib/sim/scenario/score';
+import { moneyOf } from './test/oracles';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Effect, Policy } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
