@@ -11,6 +11,7 @@ import {
   typicalMonths
 } from './model';
 import type { CarModel } from '../sim/cars/types';
+import type { ChoiceModel, HeightTimeModel } from '../sim/choice/types';
 import type { Day } from './time';
 import {
   EXIT_ORDER,
@@ -94,6 +95,8 @@ interface RowCalibration {
     };
   };
   cars?: CarModel;
+  choice?: ChoiceModel;
+  heightTime?: HeightTimeModel;
 }
 
 // T4a

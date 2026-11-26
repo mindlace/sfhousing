@@ -5,6 +5,7 @@
 import type { ParcelId } from '../data/parcel';
 import type { Day } from './time';
 import type { CarModel } from '../sim/cars/types';
+import type { ChoiceModel, HeightTimeModel } from '../sim/choice/types';
 
 export type { Day } from './time';
 
@@ -105,6 +106,10 @@ export interface Calibration {
   };
   /** The car-ownership model (`src/lib/sim/cars`); absent means no car model. */
   cars?: CarModel;
+  /** The developer's choice among building options (`src/lib/sim/choice`); optional until written. */
+  choice?: ChoiceModel;
+  /** Construction-time multipliers and months by height band; optional until written. */
+  heightTime?: HeightTimeModel;
 }
 
 // T4a: initiation.
