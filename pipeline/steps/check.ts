@@ -983,9 +983,10 @@ export function checkCars(
  * V37 render boxes (docs/dev/building-boxes.md), from the counts. Without the artifact (no
  * `boxes.missing_buildings`, which the render-boxes step always writes) OK with `no boxes
  * artifact`. Otherwise it passes iff `boxes.outside_footprint` and `boxes.missing_buildings` are 0,
- * `boxes.step.over_cap` (buildings with more steps than their own cap: 4, or 32 once sliced) is 0 and, unless tiles were skipped,
- * `tiles.buildings.drops_z14plus` is 0 (measured). The detail summarises src counts, the fallback
- * share of buildings and the fit share of registration clusters, after any problems.
+ * `boxes.step.over_cap` (buildings with more steps than their own cap: 4, or 32 once sliced) is 0
+ * and, unless tiles were skipped, `tiles.buildings.drops_z14plus` is 0 (measured). The detail
+ * summarises src counts, the fallback share of buildings and the fit share of registration
+ * clusters, after any problems.
  */
 export function checkV37(c: Record<string, number>, tilesSkipped: boolean): InvariantResult {
   if (c['boxes.missing_buildings'] === undefined)

@@ -119,6 +119,41 @@ describe('deriveBuildingBoxes', () => {
     expect(roofOf('bbay').fallback).toBe('no_lidar');
     expect(boxesOf('bbay')).toEqual([]);
 
+    // bpier is Salesforce in small: its skillion part is disputed by the LiDAR and rejected, and the
+    // tapering tower is sliced into stacked terraces (heights are above the 12 m base).
+    const pier = boxesOf('bpier');
+    expect(roofOf('bpier')).toMatchObject({
+      parts_checked: 1,
+      parts_disputed: 1,
+      parts_rejected: true,
+      sliced: true,
+      step_cap: 32,
+      n_parts: 1,
+      fallback: null
+    });
+    expect(pier.some((b) => b.src === 'part')).toBe(false);
+    const steps = pier.filter((b) => b.src === 'step');
+    expect(steps).toHaveLength(4);
+    [24, 36, 48, 60].forEach((h, i) => {
+      expect(near(steps[i].height_m, h, 0.3)).toBe(true);
+      expect(near(steps[i].base_m, h - 12, 0.3)).toBe(true);
+    });
+    const areas = await db.all<{ k: number; a: number; x0: number; x1: number }>(`
+      SELECT k, ST_Area(g) AS a, ST_XMin(g) AS x0, ST_XMax(g) AS x1 FROM (
+        SELECT x.k, coalesce(ST_GeomFromWKB(x.geom), b.geom) AS g
+        FROM bx_boxes x JOIN buildings b USING (bid) WHERE x.bid = 'bpier') ORDER BY k`);
+    // Each terrace is the tier and everything above it, set back 2 m per side from the one below.
+    expect(areas.map((a) => near(a.a, [160, 129, 97, 65, 33][a.k], 3))).toEqual(
+      Array(5).fill(true)
+    );
+    for (let k = 2; k < 5; k++) {
+      expect(near(areas[k].x0 - areas[k - 1].x0, 2, 0.2)).toBe(true);
+      expect(near(areas[k - 1].x1 - areas[k].x1, 2, 0.2)).toBe(true);
+    }
+    const pierBase = pier.filter((b) => b.src === 'base');
+    expect(pierBase).toHaveLength(1);
+    expect(near(pierBase[0].height_m, 12, 0.2)).toBe(true);
+
     // b10: p10 covers x[95,100]; the LiDAR derives the uncovered x[100,105] with its 26 m step.
     const [fx0, fx1] = await footprintX('b10');
     const mid = (fx0 + fx1) / 2;
@@ -154,7 +189,9 @@ describe('deriveBuildingBoxes', () => {
       parts_disputed: 0,
       parts_rejected: false
     });
-    for (const r of snap.roofs.filter((x) => x.bid !== 'b14' && x.bid !== 'b10'))
+    for (const r of snap.roofs.filter(
+      (x) => x.bid !== 'b14' && x.bid !== 'b10' && x.bid !== 'bpier'
+    ))
       expect([r.bid, r.parts_checked, r.parts_disputed, r.parts_rejected]).toEqual([
         r.bid,
         0,
@@ -194,7 +231,8 @@ describe('deriveBuildingBoxes', () => {
     const boxes = await readBoxes();
     expect(roofs).toHaveLength(12);
     for (const r of roofs) {
-      if (r.bid === 'b14') expect(r.fallback).toBeNull();
+      // b14 and bpier are covered by their parts, which need no LiDAR (unchecked, drawn as given).
+      if (r.bid === 'b14' || r.bid === 'bpier') expect(r.fallback).toBeNull();
       else expect([r.bid, r.fallback]).toEqual([r.bid, 'no_lidar']);
       expect(r.shift_source).toBeNull();
     }
@@ -266,6 +304,11 @@ describe('recorded inputs', () => {
       expect(p.sources[id]).toBe(h === '' ? '-' : h.slice(0, 12));
     expect(entryHash(undefined)).toBe('');
     expect(() => parseBoxesUpstreamVersion(v.replace('boxes/2', 'boxes/1'))).toThrow('not boxes/2');
+    // A lock recording a boxes/1 artifact is stale and names the command that rebuilds it.
+    const old = withEntry(lock, j);
+    const e = old.sources.find((x) => x.id === BOXES_ID)!;
+    e.upstreamVersion = e.upstreamVersion.replace('boxes/2', 'boxes/1');
+    expect(boxesLockProblem(old)).toContain('npm run pipeline -- boxes');
   });
 });
 
@@ -336,6 +379,8 @@ describe('buildingBoxes', () => {
     expect(r.boxes.some((b) => b.src === 'part')).toBe(false);
     expect(r.boxes.some((b) => b.src === 'base')).toBe(true);
     expect(r.roof.sliced).toBe(true);
+    expect(r.roof.fallback).toBeNull();
+    expect(r.boxes.length).toBeGreaterThan(0);
     expect(r.nParts).toBe(1);
     expect(r.dropped).toBe(0);
   });

@@ -1238,8 +1238,8 @@ describe('V37 render boxes', () => {
   const without = (c: Record<string, number>) =>
     Object.fromEntries(Object.entries(c).filter(([k]) => !/^(boxes|render)\./.test(k)));
   const patched = (patch: Record<string, number>) => ({ ...counts, ...patch });
-  // The fixture's src counts (README "Building boxes"); fallback 4 of 12, fit 9 of 11 clusters.
-  const FIXTURE_DETAIL = 'src box/base/front/step/part 4/7/1/1/9; fallback 33.3%; reg fit 81.8%';
+  // The fixture's src counts (README "Building boxes"); fallback 3 of 12, fit 9 of 11 clusters.
+  const FIXTURE_DETAIL = 'src box/base/front/step/part 3/8/1/5/9; fallback 25.0%; reg fit 81.8%';
 
   it('V37 is OK without an artifact', async () => {
     const ok = { id: 'V37', ok: true, detail: 'no boxes artifact' };
