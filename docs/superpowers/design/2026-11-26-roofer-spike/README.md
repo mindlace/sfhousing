@@ -17,7 +17,7 @@ Question: does TU Delft's [roofer](https://github.com/3DBAG/roofer) (the 3DBAG e
   - **DSM fit**: the highest class-1 point per 0.5 m cell inside the footprint, at least 1 m above roofer's ground. Each cell is cast down onto the model, and we report RMSE and the share within 1 m.
   - **Triangles**: ours are counted as `fill-extrusion` draws them (top + walls). Roofer's are its full LoD2.2 solid.
   - **glb bytes**: plain trimesh export, float32, no quantisation or compression.
-- Scripts are run in order: `prep.py` → `run_roofer.sh` → `topfilter.py` → `compare.py` → `zoom.py` → `summarize.py` → `cost.py`. Numbers are in `results.json` and `cost.json`.
+- Scripts are run in order: `prep.py` → `run_roofer.sh` → `topfilter.py` → `compare.py` → `zoom.py` → `profile.py` → `summarize.py` → `cost.py`. Numbers are in `results.json` and `cost.json`.
 
 ## Results
 
@@ -41,10 +41,13 @@ The detached houses are random pitched, isolated ones (nearest footprint over 2 
 - **Rowhouses** (`fig/zoom_rowhouse.png`, `fig/rowhouse_top.png`): better. Each house gets its own pitched or stepped roof, and rear stepping shows. False fronts come out as separate wall planes when the points support them, but not as cleanly as our `front` strips. Some tiny facets and slivers appear between houses. One house is skipped (unusable points).
 - **Downtown podiums and towers** (`fig/downtown_top.png`, `fig/zoom_downtown.png`): mixed. Rooftop mechanical and setbacks are richer and the DSM fit is better (2.6 m against 4.5 m). But tall buildings get **spiky vertical slivers**: facade points from the oblique scan sit inside the footprint, and points from a neighbouring tower also reach into it. The top filter reduces this but does not remove it. On the map these would read worse than our clean boxes.
 - **Salesforce Tower** (`fig/zoom_salesforce_raw.png`, `fig/salesforce.png`): a different failure from ours.
-  - Ours draws a false 203 m shaft plus a 326 m core from Overture's parts, which is wrong.
-  - Raw roofer gives a full-height prism with a stepped, jagged crown that roughly follows the taper above ~200 m. It is closer to the real silhouette but ugly. RMSE is still 22 m (roofer's own `rmse_lod22`).
-  - With `_top` (`fig/zoom_salesforce.png`) the result is a clean prism plus crown, but the taper is lost.
-  - Neither is good. A tower like this needs a hand-made or curated model, or corrected parts.
+  - **The taper, measured** (`fig/salesforce_profile.png`): side elevations at one scale, plus plan area by height. For the LiDAR, plan area is the convex hull of the facade ring in each 4 m band. For a model, it is the cells whose top reaches that height.
+    - **The LiDAR**: plan area is ~2,650 m² up to ~130 m. It then narrows smoothly: 2,480 m² at 200 m, 2,180 at 250, 1,850 at 280, 1,480 at 300 and 1,040 at 320.
+    - **Ours**: 2,650 m² to 203.5 m, then a step down to ~640 m² up to 326 m. This is Overture's 8 `skillion` parts (height 326, roof_height 245), each drawn at mid-roof. Mean |area − LiDAR| is 544 m² over the whole height and 852 m² above 130 m.
+    - **roofer, all points**: a full prism to ~250 m, then a taper from 250 to 325 m that follows the LiDAR well (ragged crown; roofer's own `rmse_lod22` is 22 m). It misses the gentle 130–250 m narrowing: the facade there is near-vertical, so the 2.5D top surface stays at the shoulder. Error is 183 m² over the whole height and 262 m² above 130 m, **a third of ours**.
+    - **roofer, top-filtered** (`fig/zoom_salesforce.png`): a prism to ~290 m and only a crown. Error is 234 and 352 m².
+  - **Verdict on the taper:** LiDAR-only reconstruction does better than our parts-at-mid-roof rendering. roofer gets the upper third of the taper; nothing gets the gentle lower part. In principle a 2.5D model can show a taper: seen from above, the tapered facade is a sloped "roof" ring. But roofer's plane fitting rounds the subtle part to vertical walls.
+  - **The better fix is parts-driven.** The 8 skillion parts already encode the shape, sloping from 245 m at the outside to 326 m. Drawing each skillion as its true sloped surface (a mesh), or as `partTiers` inset tiers in `fill-extrusion` (add `skillion` to `partTierShapes`, with the tiers following the slope), would beat both. It costs nothing in LiDAR and needs no new renderer for the tiered version. Fixing `parts.ts` is cheaper and more faithful than adopting roofer for this building.
 - **Sutro Tower** (`fig/sutro.png`): **fails as expected**. roofer flags `is_glass_roof`, forces LoD1.1, and extrudes the whole footprint triangle as a solid 127 m block. Our Overture parts (legs, decks, masts) are far better. Keep parts for lattices.
 
 ### Runtime and failures
@@ -86,7 +89,7 @@ Measured per m² of footprint in three area bins (<300, 300–1500, >1500 m²; s
 
 ## Recommendation
 
-1. Do **not** adopt roofer as a drop-in replacement now. Its gains are real for ordinary buildings (~92% of buildings are under 300 m²). But it is worse for glass towers (spikes) and lattices (Sutro), it gives no fix for Salesforce, and it needs a new mesh rendering path. That rendering path is the expensive and risky part, not roofer.
+1. Do **not** adopt roofer as a drop-in replacement now. Its gains are real for ordinary buildings (~92% of buildings are under 300 m²). But it is worse for glass towers (spikes) and lattices (Sutro). For Salesforce it beats today's rendering (a third of the plan-area error) but still misses the lower taper, and drawing Overture's skillion parts properly is the cheaper fix. And it needs a new mesh rendering path. That rendering path is the expensive and risky part, not roofer.
 2. If pitched roofs matter to the product, the next spike should be **rendering, not reconstruction**: a MapLibre custom layer drawing roofer LoD2.2 for one z15 tile of houses, with the parcel-hide texture and `bench:map` numbers. Pipeline adoption is cheap after that.
 3. The pipeline shape, if adopted:
    - roofer runs after `fetch --lidar`, on registered footprints, with the top filter and a vegetation mask taken from our raster (`vegFracMin`).
@@ -95,5 +98,5 @@ Measured per m² of footprint in three area bins (<300, 300–1500, >1500 m²; s
 
 ## Files
 
-- Committed: `scripts/` (`common.py`, `prep.py`, `run_roofer.sh`, `topfilter.py`, `compare.py`, `zoom.py`, `summarize.py`, `cost.py`), `fig/*.png`, `results.json`, `cost.json`.
+- Committed: `scripts/` (`common.py`, `prep.py`, `run_roofer.sh`, `topfilter.py`, `compare.py`, `zoom.py`, `profile.py`, `summarize.py`, `cost.py`), `fig/*.png`, `results.json`, `cost.json`.
 - Not committed (scratchpad; large or regenerable): `…/scratchpad/work/<set>/{pc/*.laz, footprints.gpkg, out/*.city.jsonl, roofer.glb, ours.glb, compare.json, roofer.log}`, and the roofer binary in `…/scratchpad/roofer-dl/`. The scratchpad is `/private/tmp/claude-501/-Users-mindlace-Projects-sfhousing/4a870fac-1a89-4e85-ac67-87da80271fe0/scratchpad`.
