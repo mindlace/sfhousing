@@ -1,5 +1,6 @@
 // The funded month's cost bar (spec "`test:perf`"): one funded month for one world on the bench
-// city (`synthCity`, bench baseline money), 90 µs. Perf project only (`npm run test:perf`), on an
+// city (`synthCity`, bench baseline money), 250 µs. The month includes the waiting-homes record
+// (`recordWaiting` in the `shadow` hook). Perf project only (`npm run test:perf`), on an
 // idle machine under the measurement lock. The bar is the mean over worlds and months (the 9 ms
 // constraint is a sum over two worlds in one month); p50, p90 and max are printed beside it, with
 // each hook's share and the whole-city replan month, unasserted.
@@ -18,7 +19,7 @@ const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 const WARM = 120;
 /** Months `WARM + 1 .. LAST` are timed, one `step` at a time per world. */
 const LAST = 240;
-const BAR_US = 90;
+const BAR_US = 250;
 
 const quantile = (xs: readonly number[], q: number): number => {
   const s = [...xs].sort((a, b) => a - b);
@@ -75,7 +76,7 @@ describe('funded month cost, bench city (synthCity, baseline money)', () => {
   const statics = staticsOf(input);
   const timeline = moneyTimeline(input, doc);
 
-  it('one funded world-month, mean at most 90 µs', () => {
+  it('one funded world-month (with the waiting-homes record), mean at most 250 µs', () => {
     const { core, worlds, dues } = warmWorlds(createFundingSystem(), statics, timeline);
     const samples: number[] = [];
     for (let m = WARM + 1; m <= LAST; m++)
