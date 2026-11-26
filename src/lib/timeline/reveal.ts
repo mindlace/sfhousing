@@ -16,6 +16,11 @@ export interface Reveal {
   /** The furthest day the playhead has reached under the current rules; asOf on opening. */
   reached: Day;
   /**
+   * Where the seen range starts: asOf on opening, the day of the last reset, lowered as the
+   * playhead goes back. Months a reset jumped over lie before it and are not seen.
+   */
+  from: Day;
+  /**
    * An edit's first changed month is being looked for: the view the person saw when the first
    * unsettled edit was made, and the next month to compare. Null otherwise.
    */
@@ -24,19 +29,25 @@ export interface Reveal {
   playFrom: number | null;
 }
 
-/** { reached: asOf, finding: null, playFrom: null }: everything ahead is unseen. */
+/** { reached: asOf, from: asOf, finding: null, playFrom: null }: everything ahead is unseen. */
 export function revealOpen(asOf: Day): Reveal {
-  return { reached: asOf, finding: null, playFrom: null };
+  return { reached: asOf, from: asOf, finding: null, playFrom: null };
+}
+
+/** A policy change reset the playhead to `day`: the seen range restarts there (P16). */
+export function resetReveal(_r: Reveal, day: Day): Reveal {
+  return { reached: day, from: day, finding: null, playFrom: null };
 }
 
 /**
- * The playhead is at `day`: reached = max(reached, day); an offered playFrom goes. Returns `r`
- * itself when nothing changes.
+ * The playhead is at `day`: reached = max(reached, day), from = min(from, day); an offered
+ * playFrom goes. Returns `r` itself when nothing changes.
  */
 export function moved(r: Reveal, day: Day): Reveal {
   const reached = Math.max(r.reached, day);
-  if (reached === r.reached && r.playFrom === null) return r;
-  return { ...r, reached, playFrom: null };
+  const from = Math.min(r.from, day);
+  if (reached === r.reached && from === r.from && r.playFrom === null) return r;
+  return { ...r, reached, from, playFrom: null };
 }
 
 /**
@@ -74,6 +85,7 @@ export function scanned(
   const limit = Math.min(now.view.filledThrough, beforeThrough, m);
   const found = (k: number): Reveal => ({
     reached: Math.max(at.day, months[k]),
+    from: r.from,
     finding: null,
     playFrom: at.playing ? null : k
   });
