@@ -1,4 +1,4 @@
-// The lot under a point: pure geometry for the scenario host's `lotAt` request. Worker-safe.
+// The lot under a point: pure geometry for the timeline host's `lotAt` request. Worker-safe.
 import type { ParcelId } from '$lib/data/parcel';
 
 /** Even-odd test of `p` (lng, lat) against a lot's rings (lng, lat); a hole is a second ring. */

@@ -1,5 +1,5 @@
 // Pools, arrivals and money events (spec rules 12-16). Arrivals come only from the frame's
-// `finance.arrivals`; an award's later money events (`money.ts:97-163`) are made when the project's
+// `finance.arrivals`; an award's later money events are made when the project's
 // own event happens, with today's kinds, amounts, counters and within-event order.
 import { projectDollars } from '$lib/sim/finance';
 import type { Award } from '$lib/sim/world/rules/funding';
@@ -24,7 +24,7 @@ const S = STAGE_ORDER.length;
 const CONSTRUCTION = STAGE_ORDER.indexOf('construction');
 
 type Later = 'spend' | 'repay' | 'loss' | 'release';
-/** Within-event order of a project's events (`money.ts:25-30`). */
+/** Within-event order of a project's events. */
 const ORDER: Record<Later, number> = { spend: 0, repay: 1, loss: 2, release: 3 };
 const INSTR = ['grant', 'loan', 'guarantee'] as const;
 
@@ -138,7 +138,7 @@ export function commitAward(
 }
 
 /**
- * One money event of a project, before it is applied (`money.ts:33-42`). Its pool and programme
+ * One money event of a project, before it is applied. Its pool and programme
  * ids are read when it is made: an `'end'` drops the row's money rows before the ledger is written.
  */
 interface Made {
@@ -229,7 +229,7 @@ export function moneyOnEvent(ctx: StepCtx, e: WorldEvent): void {
   }
 }
 
-/** One event's counter updates, as `settle` makes them (`money.ts:177-196`). */
+/** One event's counter updates, as `settle` makes them. */
 function book(
   ctx: StepCtx,
   fm: FrameMoney,

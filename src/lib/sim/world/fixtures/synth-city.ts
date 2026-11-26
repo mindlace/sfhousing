@@ -2,7 +2,7 @@
 // parcels on plan-model's 420 × 358 grid in 16 × 16 cells), its T11 columns, 2,000 synthetic
 // pipeline projects across every stage (multi-parcel rows and 5 phased masters among them), and
 // a bench calibration tuned to about 8,000 initiations by 2050. Node-only (the `parcels.bin`
-// deflate); used by scenario.bench.spec.ts.
+// deflate); used by scripts/measure-policy-compile.ts.
 //
 // Fixture values only (tier 4, made up for the bench): not data. The yields are a simple
 // floor-area rule, not the generator's: the bench measures cost, and the card's matched /

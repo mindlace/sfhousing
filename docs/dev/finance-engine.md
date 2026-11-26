@@ -3,8 +3,8 @@
 The engine's funded starts: a second possible start per lot and project kind, the line of applications
 waiting for money, the pools that pay them, the ledger of that money and the card fields that say
 what paid a project. This page covers `SimInput.finance`, `off`, the latents of an attempt, the
-line and its order, the award rule, re-pricing and lapse, the ledger protocol, `sampleAdvance` and
-`buildSimInput`'s table. The step engine runs on months: its line order, once-a-month serving, re-making and respelling are rules 9 to 19 in [world-funding.md](world-funding.md), which wins where the two differ. This page holds what both share: the award rule, the key's parts, lapse conditions, event amounts and the ledger identities. Design:
+line and its order, the award rule, re-pricing and lapse, `sampleAdvance` and
+`buildSimInput`'s table. The step engine runs on months: its line order, once-a-month serving, re-making and respelling are rules 9 to 19 in [world-funding.md](world-funding.md), which holds them. This page states the rules the world follows: the award rule, the key's parts, lapse conditions, event amounts and the ledger identities. Design:
 `docs/superpowers/specs/2026-11-09-finance-engine-design.md`. The prices come from the finance model
 ([finance-model.md](finance-model.md)); the baseline pools and programmes from the dataset
 ([finance-data.md](finance-data.md)); the market shift from [market.md](market.md).
@@ -417,7 +417,7 @@ order among pools.
 ## Tests and fixtures
 
 See [testing.md](testing.md) for the commands. The award rule and its monotonicity are in
-`src/lib/sim/world/rules/funding.spec.ts` (arrivals, validation, levels, `isOff`, `available`); the
+`src/lib/sim/world/rules/funding.spec.ts` (`inflowArrivals`, `PIPELINE_FUNDED`, coverage levels, `isOff` and `isOffered`, `cappedShift`); the
 funded step is in `world/funding/` (`funded.spec.ts`, the golden `funded.golden.test.ts`, and the
 specs for serving, re-pricing and closing); `score/project-card.spec.ts` covers the card.
 

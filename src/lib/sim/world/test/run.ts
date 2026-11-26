@@ -1,5 +1,5 @@
 // Test support: running a world to a month, recording its events, and reading every row as
-// today's engine lists them. Browser-safe.
+// the world lists them. Browser-safe.
 import { HORIZON } from '$lib/fzp/time';
 import type { Master } from '$lib/sim/world/read';
 import type { Schedule } from '$lib/sim/world/input/types';

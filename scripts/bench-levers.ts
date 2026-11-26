@@ -1,7 +1,7 @@
 // `npx tsx scripts/bench-levers.ts <datasetDir>` (sim-page plan Task 11): resolve three citywide
 // brushes on a built dataset read from disk, each as a zoning rule (max(FZP, N), uncapped where it
 // raises), then time the touched-lot yield recompute, the way
-// the scenario host runs it (resolveEnvelopes -> allNeeds -> createYieldRecompute -> fillNeeds ->
+// the timeline host runs it (resolveEnvelopes -> allNeeds -> createYieldRecompute -> fillNeeds ->
 // applyLevers). Not part of the bundle; prints a Markdown table.
 import { readFileSync, statSync } from 'node:fs';
 import { cpus, totalmem } from 'node:os';
