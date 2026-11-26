@@ -144,6 +144,7 @@
       <ul>
         <li>The rows add up: commits that touch both sets take both. <code>083fb7ae</code> touches <code>src/lib/sim/world/funding/</code>, so its pass takes the first row again; the run bench and the map budgets stand.</li>
         <li>A retake starts from all eleven side-goal ids: a goal an earlier retake left out of <code>SIDE_TUNING</code> gets its entry back at its starting values and is tuned again, and the left-out rule decides afresh on the dataset of record.</li>
+        <li>A retake that a later pass is admitted to supersede before it finishes is finished as it stands: <code>tree-balance</code> exits 0 with the goals the retake before it left out still left out, and nothing is re-decided for them. <code>docs/dev/game.md</code> then names each such goal as carried from the earlier dataset, with that dataset's highest value, floor and deadline as recorded there, says it is not decided on this version, and names the pass whose retake decides it. That pass's retake starts from all eleven ids.</li>
         <li>The results of a later retake replace the earlier ones in <code>docs/dev/map-perf.md</code> and <code>docs/dev/game.md</code>, which name the dataset and the <code>main</code> commit they were taken on.</li>
       </ul>
     </section>
