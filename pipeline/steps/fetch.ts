@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tempSibling } from '../lib/atomic';
 import { openDuck } from '../lib/duck';
 import { nodeHttp, type Http } from '../lib/http';
 import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } from '../lib/lock';
@@ -91,7 +92,7 @@ export async function restoreRaw(
         present++;
         continue;
       }
-      const part = `${dest}.part`;
+      const part = tempSibling(dest);
       try {
         if (!(await r2.get(f.archiveKey, part))) {
           throw new Error(`${entry.id}: archive ${f.archiveKey} not found in R2`);
