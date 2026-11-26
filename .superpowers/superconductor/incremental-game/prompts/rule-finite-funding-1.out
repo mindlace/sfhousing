@@ -1,9 +1,0 @@
-I ruled on finite-funding-1 and committed the spec changes as `a552b3a5`. Only finite-funding is affected, as a clarification; no interface row changed. I skipped the optional Jev citation check and judged the claims from the question and the spec.
-
-- **(a) Impact fees:** the bound is now "remaining", $45,158,744, citing MOHCD's FY2024-25 Annual Report, Table 2, p. 21. The spec says any primary that states the balance sets this bound, so the "no end" fallback is gone. Spending and collections after 30 June 2025 are not counted. The pool gets $34.8 million on the dataset date and $10,358,744 a year later. The first-year check stays 780 implied against 980 observed. This sits between two variants in the earlier reach measurement, so current law should still reach the goal (ruling D1). reach-check confirms it on the built dataset.
-- **(b) PASS:** left out. City debt stays $260,310,000. The bond method now names row [2] as not counted: it lends to preserve existing buildings and adds no new homes.
-- **(c) Measures passed but not certified:** no change in this build. The Housing Trust Fund wording now says the 2026 extension "was not certified when this was read". Certification gets picked up by the yearly update of `funding.json`, which no unit in this build makes.
-
-I also set Our City, Our Home's citation page to p. 44, matching the builder's read. I removed the stale "impact-fee block" handback wording from the spec and the finite-funding row of the build graph.
-
-/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/finite-funding-1.md

@@ -1,8 +1,0 @@
-I checked every row of the build graph against the specs on disk, and they all still match, so I didn't rewrite any rows. The only commit since the last graph is the conductor-8 ruling (0ea5c910). It changes wording in the design doc and affects no unit or interface row. Because the file was unchanged, `git commit` had nothing to commit and no new commit was made. The sha below is the current HEAD.
-
-Build graph @ 0ea5c910
-
-Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
-Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
-Longest chain: contracts -> finite-funding -> pool-closing -> funding-measures -> closing
-Longest chain: remove-lesscars -> finite-funding -> pool-closing -> funding-measures -> closing

@@ -1,9 +1,0 @@
-The ruling is written and committed. I took option 1: when the store rebuilds from the `sfhousing:save:*` keys after an invalid index, a value becomes an entry only if it parses and its `id` matches its key's suffix. Any other value goes aside under a `sfhousing:save:corrupt:` key, the same way step 5 handles a save whose id differs from its index entry. Each key holds one save, so the rebuilt ids are always distinct and the duplicate case can't come up.
-
-- **Spec change:** step 4 of `sec-design-store-construct` in `docs/superpowers/specs/2026-11-22-game-core-design.html` now states this rule.
-- **Contract:** unchanged.
-- **game-core:** clarification only. Its approach stands, and the blocked rebuild case in task 5 can go ahead.
-
-I skipped the optional Jev citation check and checked the question's claims against the spec text on disk myself.
-
-/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/game-core-3.md

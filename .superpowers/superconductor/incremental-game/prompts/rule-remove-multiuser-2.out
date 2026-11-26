@@ -1,7 +1,0 @@
-I ruled for the lower-cased address, which is what remove-multiuser already committed. No task needs redoing.
-
-The spec now says `mintTestPseudonym` stores `<userId>@` plus `PSEUDONYMOUS_EMAIL_DOMAIN` lower-cased, the way Better-Auth stores every email. That makes the test account match a real anonymous one. I changed only `docs/superpowers/specs/2026-11-22-remove-multiuser-design.html`, in two places: the e2e seams section and the line in its test list. No interface row changes, so the contract is untouched.
-
-I took the claim that Better-Auth lower-cases emails from the operator's report and didn't open the Better-Auth source. I also skipped the optional Jev citation check. The package commit is `d9ff075b`.
-
-Ruling file: `/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/remove-multiuser-2.md`

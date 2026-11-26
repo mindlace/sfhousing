@@ -1,0 +1,608 @@
+<article>
+  <header>
+    <h1>Building choice implementation plan</h1>
+    <p>Each lot lists the buildings it could hold at or below its cap, a developer's choice picks one, and San Francisco's own records check the picks.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <p><strong>Goal:</strong> Replace the five fill levels and the size buckets with a per-lot set of real building options (construction type, form, stories, homes), chosen at run time by residual land value with a fitted spread. Then pass the record checks on a new dataset.</p>
+    <p><strong>Architecture:</strong> The pipeline bakes, per lot, a pruned option row (<code>options.bin</code>, replacing <code>gross.bin</code>) and the lot constants <code>locationValue</code>, <code>breakEvenValue</code>, <code>meanOptionHomes</code> and <code>meanOptionCost</code>. Cost, value, duration and <code>choiceSpread</code> go in <code>calibration.json</code>. At run time a view is only stories and a cap per lot. The allowed options are a prefix of the lot's row. A new pure module, <code>src/lib/sim/choice/</code>, turns them into the choice row, the expected homes and stories, the margin feature and the capacity. The world's start, revisions, durations, finance, parking and massing read the chosen option.</p>
+    <p><strong>Tech stack:</strong> TypeScript, SvelteKit 2 worker code, DuckDB pipeline, Vitest (server, client, pipeline, perf projects), Playwright.</p>
+    <p><strong>Spec:</strong> <a href="../specs/2026-11-26-building-choice-design.html">docs/superpowers/specs/2026-11-26-building-choice-design.html</a> (approved 2026-11-26). Evidence: the taller-caps report and recon (scratchpad <code>taller/REPORT.md</code>, <code>taller/RECON.md</code>, <code>taller/dl/permits.json</code>) and the builder check, whose answers are the spec's "Call:" lines.</p>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>World engine only. Old scenario-engine readers are not ported. Tests that fail only because they run the old engine (<code>simulate.golden</code> among them) are deleted (spec, Non-goals Call).</li>
+      <li>Realism over monotonicity. "A higher cap never builds fewer homes" is not a goal. Never tune a choice, parameter or tolerance toward homes rising with the cap. The homes-by-cap measurement is a report and never a gate. The record checks are the acceptance test.</li>
+      <li>A record check that still misses after model changes stops the work for the owner before upload (spec, Acceptance Call). Allowed model changes: forms, <code>locationValue</code> smoothing, multipliers, coverage, refits. Not allowed: fitting cost or duration to the model's own output.</li>
+      <li>Every parameter carries a <code>Provenance</code> with its tier: 0 per-record, 1 official aggregate, 2 inference, 3 literature, 4 invented. Tier-4 values say "invented" in <code>label</code>.</li>
+      <li>One future. The choice draw is <code>drawOn(stream, P.SIZE, 0)</code> on the lot's existing stream (<code>src/lib/sim/world/world.ts:374</code>). No new random streams and no bands.</li>
+      <li>Costs, values, durations, <code>choiceSpread</code> and <code>locationValue</code> are data inputs (<code>calibration.json</code>, <code>options.bin</code>), not code constants read at run time. The Controller's values stay sourced in <code>src/lib/sim/finance/prototypes.ts:72-78</code>, and the pipeline copies them into <code>calibration.choice</code>.</li>
+      <li>Cost per home (Controller 2026): A 729,700 (5 st, 45 homes); B 736,700 (8 st); C 857,700 (13 st); D 918,700 (24 st); E 929,700 (under 25 homes). Value per home = cost − shortfall: A 552,700; B 584,700; C 651,700; D 626,700; E 576,700.</li>
+      <li>Type story ranges: V 1 to 6; III 4 to 8; I 1 to the physical maximum; the I tower form 13 and above. Types II and IV are not modelled.</li>
+      <li>Carrying cost: <code>constructionRate</code> 0.085 on <code>AVERAGE_DRAWN</code> 0.55 of cost (<code>src/lib/sim/finance/terms.ts:49,157</code>).</li>
+      <li>Affordable cost per home 954,127 (<code>AFFORDABLE.costPerHome</code>, <code>prototypes.ts:120-131</code>).</li>
+      <li>Record-check tolerances: 2 standard errors of the record statistic at its own n. Binomial SE = √(p(1−p)/n). Median SE ≈ 1.25 × IQR ÷ (1.35 √n). Built height ÷ limit: mean within ±0.10. Check buckets need n ≥ 30.</li>
+      <li>Performance: <code>precomputeOf</code> on the live dataset stays within 1.5 times its pre-branch time. <code>bench:map</code>'s purchase-to-ready wait stays within its pass bar (<code>docs/dev/map-perf.md</code>). Both are measured on a quiet machine only.</li>
+      <li>Dataset: the version changes. Finishing follows <code>docs/dev/pipeline.md</code> "Finishing a branch that changes the dataset" (lines 59-74).</li>
+      <li>Shell: never compound <code>cd … &amp;&amp; cmd</code>. Never kill port 4173: it belongs to whichever session started preview, so wait for it. Run everything in the foreground.</li>
+      <li>Commits: Conventional Commits. No Claude or AI attribution anywhere. Multi-line messages are written to a temp file and committed with <code>git commit -F &lt;file&gt;</code>, then the file is deleted. No heredocs.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Style: 2 spaces, single quotes, no trailing commas, 100 columns.</li>
+      <li>A new module the pipeline imports from <code>src/</code> goes on the code-hash list <code>PATHS</code> (<code>pipeline/lib/version.ts:41-53</code>), with <code>pipeline/test/version-paths.test.ts</code> updated to match.</li>
+      <li>Signoff only through <code>npm run signoff</code>. chreode fails on server stderr (<code>policeStderr</code>), on timing crutches and on retried flakes. Do not <code>git push</code> before it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A lot where no allowed option gains a home</strong> (cap at or below existing homes, a density cap that clips every option, envelope 0). Expected: not hostable, capacity 0, hazard 0, no start, and no NaN or Infinity in any column. Pinned in Task 4 (<code>choiceRow</code> returns false) and Task 9 (the view marks the lot not hostable).</li>
+      <li><strong>Extreme <code>residualLandValue ÷ (choiceSpread meanOptionHomes meanOptionCost)</code></strong>: <code>choiceSpread</code> near 0, a lot with <code>locationValue = 30</code>, homes in the thousands. Expected: the softmax subtracts the row maximum, so <code>choiceSpread</code> → 0 gives the argmax and no exponent overflows. Pinned in Task 4.</li>
+      <li><strong>A cap above the lot's physical maximum, or a cap raised step by step</strong>. Expected: the allowed set only grows. <code>choiceValue</code>, <code>meanOptionHomes</code> and <code>meanOptionCost</code> do not move. The odds between options that were already allowed are unchanged. Capacity never falls. Pinned in Task 4 (property test) and Task 9 (<code>netCapacity</code>).</li>
+      <li><strong>A second start on a lot demolished earlier in the run</strong> (existing counted as 0). Expected: the choice row is rebuilt against 0 existing, as <code>sizeCumAgainst</code> does today (<code>src/lib/sim/scenario/input.ts:346-351</code>). Pinned in Task 9.</li>
+      <li><strong>Recorded and in-flight projects with no type and possibly no stories</strong> (<code>revStories</code> NaN). Expected: duration multiplier 1, finance priced by <code>prototypeFor</code>'s binning (counted and reported), and the card and massing as today. Pinned in Tasks 9, 10 and 11.</li>
+    </ol>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <p>Paths are post-removal: the scenario-engine removal (<code>worktree-remove-scenario-engine</code>, 49e64c1c) moves <code>src/lib/sim/scenario/input.ts</code> to <code>src/lib/sim/world/input/build.ts</code>, <code>massing.ts</code> to <code>src/lib/sim/world/massing.ts</code>, <code>card.ts</code> to <code>src/lib/sim/world/score/project-card.ts</code> and <code>finance-score.ts</code> to <code>src/lib/sim/world/score/finance.ts</code>. It deletes <code>funded.ts</code>, whose funded sizing now lives in <code>src/lib/sim/world/funding/clocks.ts</code>. Line numbers cited below are from <code>c3f2d2a0</code>. The moved files keep them to within a few lines.</p>
+    <table id="tbl-files">
+      <caption>Files created or changed, by responsibility</caption>
+      <thead><tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/sim/choice/types.ts</code> (new)</th><td>Types, forms, <code>Option</code>, <code>ChoiceModel</code>, <code>HeightTimeModel</code></td><td>1</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/choice/pricing.ts</code> (new)</th><td>Cost, value and carrying cost per home by option; the option's finance prototype</td><td>1</td></tr>
+        <tr><th scope="row"><code>src/lib/generator/forms.ts</code> (new), <code>massing.ts</code>, <code>district.ts</code>, <code>constants.ts</code></th><td>Mass a lot at a given form and story count: full-coverage block above 12, towers with several plates</td><td>2</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/choice/options.ts</code> (new)</th><td>Candidates per (type, stories), pruning, lot constants <code>breakEvenValue</code>, <code>meanOptionHomes</code>, <code>meanOptionCost</code></td><td>3</td></tr>
+        <tr><th scope="row"><code>src/lib/data/option-table.ts</code> (new; replaces <code>gross-table.ts</code>)</th><td><code>sfh-options/1</code> codec</td><td>3</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/choice/choose.ts</code> (new)</th><td>Allowed prefix, choice row, expectations, margin, capacity, most-homes option</td><td>4</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/fzp-cal/height-time.ts</code>, <code>pipeline/lib/building-records.ts</code> (new); <code>pipeline/sources/datasf.ts</code></th><td>Construction type from permits, height-band multipliers, the cost ratio above 24 stories, record targets</td><td>5</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/location-value.ts</code>, <code>pipeline/sql/86_location_value.sql</code> (new)</th><td><code>locationValue</code> per lot from the assessor roll</td><td>6</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/options.ts</code>, <code>options-worker.ts</code> (new; replace <code>gross.ts</code>, <code>gross-worker.ts</code>); <code>scenario.ts</code>, <code>policy.ts</code>, <code>check.ts</code>, <code>check-gross.ts</code>, <code>build.ts</code>, <code>manifest.ts</code></th><td>Bake <code>options.bin</code>; codecs without yield columns; invariants</td><td>7</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/fzp-cal/choice-fit.ts</code> (new; replaces <code>size.ts</code>); <code>initiation.ts</code>, <code>panel.ts</code>, <code>calibrate.ts</code></th><td><code>choiceSpread</code>, the affordable rule, the start-odds refit with the margin feature</td><td>8</td></tr>
+        <tr><th scope="row"><code>src/lib/data/scenario-codec.ts</code>, <code>envelope-row.ts</code>, <code>policy-codec.ts</code>; <code>src/lib/sim/levers/*</code>; <code>src/lib/sim/world/{input/build,world,stage,columns,pipeline,types}.ts</code>; <code>world/policy/*</code>; <code>src/lib/paint/headline.ts</code></th><td>The run-time switch</td><td>9</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/*</code>, <code>world/score/finance.ts</code>, <code>world/cars/parking.ts</code>, <code>src/lib/sim/finance/prototypes.ts</code></th><td>Price by option; funded sizing; affordable rule A; parking type</td><td>10</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/massing.ts</code>, <code>world/score/project-card.ts</code>, the paint preview, <code>runner/{lookups,dataset,warm}.ts</code></th><td>Draw the chosen building</td><td>11</td></tr>
+        <tr><th scope="row"><code>scripts/record-check.ts</code>, <code>scripts/cap-measure.ts</code> (new)</th><td>Acceptance and the report</td><td>12</td></tr>
+        <tr><th scope="row"><code>docs/dev/building-choice.md</code> (new) and the docs each task names</th><td>Docs, in the task that changes the behaviour</td><td>3, 4, 5 to 12</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-rulings">
+    <h2>Rulings made in this plan</h2>
+    <p>The spec leaves these to the builder. The plan needs them now, so each is marked as a builder's call with its reason. A builder may change one only by stating the evidence in the task's commit.</p>
+    <ul>
+      <li><strong>Base (builder's call).</strong> Build on the scenario-engine removal. If it has merged, branch from <code>origin/main</code>. If not, branch from <code>worktree-remove-scenario-engine</code> (49e64c1c) and rebase onto main when it merges. Reason: the spec ports nothing of the old engine, and building on it avoids keeping it compiling.</li>
+      <li><strong>K and encoding (builder's call).</strong> Rows have variable width (CSR offsets, as <code>gross-table.ts:29-37</code>), sorted by stories, then type, then form, with a u16 count per row (<code>OPTIONS_MAX_PER_LOT = 1023</code>). Reason: under cost-independent pruning (spec, Pruning, amended 2026-11-26) one option survives per (type, form, stories) at most, so a row holds up to a few hundred. A fixed width would cost several times the memory of today's 5-wide rows.</li>
+      <li><strong>One candidate per (type, form, stories) (amended 2026-11-26).</strong> Forms are not collapsed, since pruning may compare only options of the same type and form, priced by the same cost series. Several towers use the most plates that fit (fewer plates have fewer homes at the same type, form and stories, so they are always pruned).</li>
+      <li><strong>Districts (builder's call).</strong> A district parcel has one option row. Each option sums its district lots, each massed at the same type and stories. Reason: the world runs one project per parcel row (<code>world.ts:392-420</code>).</li>
+      <li><strong>Choice row computed lazily, memo keyed by (lot, step) (builder's call).</strong> <code>precomputeOf</code> memoises, per cost step and lot, the expected homes, the expected stories, the margin and a gain flag. The cumulative row is built in O(K) into a scratch buffer when a start draws, for the step in force at its month. Reason: memory, since <code>sizeCum</code>-sized arrays per view grow with K. The numbers are identical either way.</li>
+      <li><strong>Dated step series (spec, Costs as dated steps, amended 2026-11-26).</strong> <code>costPerHome</code> (by type), <code>valuePerHome</code>, <code>carryPerHome</code> and the stage-time multipliers live in <code>{ from, value }</code> step lists shaped like <code>SimInput.market</code>. Exactly one step ships for each, <code>from</code> = <code>calibration.asOf</code>. A start, a stage entry and a funding price read the step in force on their day through <code>stepAt</code>. <code>breakEvenValue</code>, <code>meanOptionHomes</code> and <code>meanOptionCost</code> are per (lot, step), computed at run time, not baked. Cost-step days join <code>Precompute.segments.days</code> as later market days do (<code>input.ts:474-497</code>), so start odds also read the step in force.</li>
+      <li><strong>Value above 24 stories (builder's call).</strong> D's value per home, not scaled. Only cost takes the fitted permit-valuation ratio. Reason: no record supports value per home rising with height. Scaling it by a cost ratio would invent that.</li>
+      <li><strong>Carrying cost <code>carryPerHome</code> (builder's call).</strong> <code>carryPerHome = costPerHome × 0.085 × 0.55 × max(0, constructionMonths(option) − constructionMonths(anchor)) ÷ 12</code>. <code>constructionMonths</code> is the construction-stage median months of the option's height band. The anchor is the prototype or prototypes its cost is read from (the stories-weighted mean where it interpolates). Reason: this is the spec's "months beyond the prototype's own band" with the band defined.</li>
+      <li><strong>Height bands (builder's call).</strong> Edges ≤ 4, 5 to 7, 8 to 12, 13 to 20 and 21 and above, as in the raw pull. A band with fewer than <code>cal.sizeMinN</code> completed spells merges into its lower neighbour. Reason: these match the evidence table, and the merge rule is the size model's.</li>
+      <li><strong>Stage intervals (builder's call; see Contradictions).</strong> The multipliers scale the model's own stages: <code>permitIssued</code> (issued to first construction document) and <code>construction</code> (first construction document to completion, <code>pipeline/project-records/stages.ts:159-168</code>). Each is fitted on that stage's spells and checked on the same interval. A multiplier is the band's median completed spell ÷ the pooled median. It applies to every row with known stories, recorded or simulated.</li>
+      <li><strong>Location-value smoothing (builder's call).</strong> For each residential building first assessed after completion in 2015 or later: (land + improvement) ÷ units on its first roll after <code>year_property_built</code>, divided by that roll year's citywide median. <code>locationValue</code> for an Analysis Neighborhood is the median of those indices, shrunk to 1 by n ÷ (n + 10). The 10 is tier 4, flagged. Every lot takes its neighbourhood's <code>locationValue</code>. Reason: the neighbourhoods are already a pipeline source (<code>datasf.ts:69-76</code>), and shrinkage handles thin areas without a cliff.</li>
+      <li><strong>Choice-spread fit (builder's call).</strong> Maximum likelihood of each 2015-on history's recorded stories, given its lot's options at its base limit and its <code>locationValue</code>. A history over its limit is excluded and counted in <code>sizeOverEnvelope</code>. The search is golden-section on log <code>choiceSpread</code> in [1e-3, 1e2]. Reason: it uses every record and does not aim at the acceptance moments, which stay an independent test.</li>
+      <li><strong>Margin feature (builder's call).</strong> <code>choiceMargin</code> = <code>max over allowed options of residualLandValue(option, choiceValue) ÷ (meanOptionHomes × meanOptionCost)</code>. It is unitless, so its bins hold across lot sizes.</li>
+      <li><strong>Revisions (builder's call).</strong> Keep the ratio draw (<code>stage.ts:134</code>), so units = clamp(round(ratio × units), existing + 1, the most homes among the allowed options of the same type). The option becomes the same-type option with the fewest homes that holds them, and stories follow that option. Reason: the records' revision ratios are unit counts, and an entitled building keeps its construction type.</li>
+      <li><strong>Tower plates (builder's call).</strong> As many plates of at most <code>TOWER_PLATE_MAX_M2</code> 900 at <code>TOWER_SEPARATION_M</code> 6 as fit inside the podium inset. Both stay tier 4 unless a Planning Code tower-spacing rule can be cited.</li>
+      <li><strong>Full-coverage coverage (builder's call).</strong> The fit from LiDAR footprints is a one-off pipeline measurement whose value is committed into <code>constants.ts</code> with tier-0 provenance, as the <code>PHYS_*</code> constants were (<code>constants.ts:104-133</code>). If the fit fails, use 0.75 at tier 4, flagged.</li>
+      <li><strong>Card copy (builder's call).</strong> The card does not name the construction type. Reason: the terse-copy rule. It shows stories and homes as today.</li>
+    </ul>
+  </section>
+
+  <section id="sec-contradictions">
+    <h2>Spec and code contradictions found</h2>
+    <ul>
+      <li>The spec's stage Call reads "permit stage … first construction document to issued; construction stage … issued to completion". In the records, issued comes before the first construction document (permits.json: issued 2024-08-19, first construction document 2025-10-27). The model's stages are issued → first construction document (<code>permitIssued</code>) and first construction document → complete (<code>construction</code>) (<code>stages.ts:159-168</code>). The plan follows the Call's principle (fit each stage on its own interval, check on the same one) on the model's real intervals. The check table's raw issued-to-completion medians (28.4 … 40.1) then compare against <code>permitIssued</code> plus construction, summed per project. The owner should confirm this.</li>
+      <li>The amended Pruning section says options of the same type and form "have the same <code>costPerHome</code>, <code>valuePerHome</code> and <code>carryPerHome</code> step series". That is not exact for Type V: under 25 homes it prices as E, not A. A drop across that line (a 24-home option dropped for a 30-home one at fewer stories) can still change the cheapest per-home price. Ruling (coordinator, 2026-11-26): pruning compares only options priced by the same cost series, so an option never prunes another across the Type V 25-home line (series E against A). <code>options.e_crossings</code> (Task 7) reports how many prunes that rule prevents.</li>
+      <li>The spec's Baked section says "a fixed-width row of K", while K and the encoding are left to the builder. The plan uses variable width (see Rulings).</li>
+      <li>The spec cites <code>src/lib/sim/scenario/{input,funded,massing,card,finance-score}.ts</code>. After the removal these are moved or deleted (see File Structure).</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-0">
+    <h2>Task 0: Worktree and baseline</h2>
+    <p><strong>Files:</strong> none changed. <strong>Interfaces:</strong> produces the branch <code>feat/building-choice</code> and the baseline numbers later tasks compare against.</p>
+    <ol>
+      <li id="t0-s1"><input type="checkbox"> Create the worktree with the harness worktree tool under <code>.claude/worktrees/building-choice</code>, branch <code>feat/building-choice</code>, based as the Base ruling says. Confirm that <code>src/lib/sim/scenario/simulate.ts</code> is absent.</li>
+      <li id="t0-s2"><input type="checkbox"> Run <code>npm install</code>, then <code>npm run pipeline -- fetch --restore</code>, then <code>npm run pipeline -- version</code>, and record the version.</li>
+      <li id="t0-s3"><input type="checkbox"> On a quiet machine, time <code>precomputeOf</code> on the current dataset. Use a script under the scratchpad that loads the dataset with the runner's loader (<code>src/lib/sim/world/runner/dataset.ts</code>), calls <code>precomputeOf</code> 5 times on fresh inputs and prints the median ms. Record it in the ledger as <code>baseline.precomputeMs</code>. If the machine is busy, defer this step and note it.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Construction types and pricing</h2>
+    <p><strong>Files:</strong> create <code>src/lib/sim/choice/types.ts</code>, <code>src/lib/sim/choice/pricing.ts</code>, <code>src/lib/sim/choice/pricing.spec.ts</code>. Modify <code>src/lib/timelapse/types.ts:73-108</code> (Calibration gains <code>choice</code> and <code>heightTime</code>), <code>pipeline/lib/version.ts:41-53</code> (add <code>src/lib/sim/choice</code>) and <code>pipeline/test/version-paths.test.ts</code>.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Produces: <code>type BuildingType = 'V' | 'III' | 'I'</code>; <code>BUILDING_TYPES = ['V', 'III', 'I'] as const</code> (codes 0, 1, 2); <code>type BuildingForm = 'plex' | 'walkup' | 'podium' | 'midrise' | 'block' | 'tower'</code>; <code>BUILDING_FORMS</code> (codes 0 to 5); <code>TYPE_STORIES: Record&lt;BuildingType, readonly [number, number]&gt;</code> = V [1, 6], III [4, 8], I [1, 80]; <code>TOWER_MIN_STORIES = 13</code>; <code>TYPE_FORMS: Record&lt;BuildingType, readonly BuildingForm[]&gt;</code> = V plex, walkup, podium; III podium, midrise; I midrise, block, tower.</li>
+      <li>Produces: <code>interface Option { type: BuildingType; form: BuildingForm; stories: number; homes: number; plates: number }</code>.</li>
+      <li>Produces: <code>interface DatedStep&lt;T&gt; { from: Day; value: T }</code>; <code>stepAt&lt;T&gt;(series: readonly DatedStep&lt;T&gt;[], day: Day): { index: number; value: T }</code>, the last step with <code>from ≤ day</code>, or step 0 before the first. It throws on an empty series or unsorted <code>from</code>.</li>
+      <li>Produces: <code>interface PriceStep { anchors: Record&lt;PrototypeId, { stories: number; homes: number; costPerHome: Dollars; valuePerHome: Dollars }&gt;; aboveTopCostRatio: number; carrying: { rate: number; drawn: number } }</code>.</li>
+      <li>Produces: <code>interface ChoiceModel { prices: DatedStep&lt;PriceStep&gt;[]; choiceSpread: number; affordableRule: 'most-homes' | 'market'; provenance: Record&lt;'anchors' | 'aboveTopCostRatio' | 'carrying' | 'choiceSpread' | 'affordableRule' | 'locationValue', Provenance&gt; }</code>.</li>
+      <li>Produces: <code>interface HeightTimeStep { permitIssued: number[]; construction: number[]; constructionMonths: number[] }</code> and <code>interface HeightTimeModel { upTo: number[]; steps: DatedStep&lt;HeightTimeStep&gt;[]; provenance: Provenance }</code>. <code>upTo</code> holds the band edges in stories, with 999 for "any", fixed across steps. Each step gives the multipliers and the construction-stage median months per band.</li>
+      <li>Produces in <code>pricing.ts</code> (every function takes one resolved step, never a series): <code>costPerHome(o: Pick&lt;Option, 'type' | 'stories' | 'homes'&gt;, prices: PriceStep): Dollars</code>; <code>valuePerHome(o, prices): Dollars</code>; <code>carryPerHome(o, prices, time: HeightTimeStep, upTo: number[]): Dollars</code>; <code>bandOf(ht: HeightTimeModel, stories: number): number</code>; <code>type PriceKey = PrototypeId | &#96;I&#36;{number}&#96;</code> (a template-literal type: 'I' followed by the story count); <code>optionPrototype(o, prices: PriceStep): Prototype &amp; { id: PriceKey }</code>, which returns PROTOTYPES' own object for A, B, C, D and E and a frozen synthetic prototype, keyed by stories, for Type I where it interpolates or extrapolates.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write <code>pricing.spec.ts</code> with a fixture <code>ChoiceModel</code> built from <code>PROTOTYPES</code> and <code>aboveTopCostRatio</code> 1.39 (≈ 502k ÷ 361k):
+        <pre><code data-lang="ts">it('prices Type V as A, and as E under 25 homes', () =&gt; {
+  expect(costPerHome({ type: 'V', stories: 5, homes: 45 }, m)).toBe(729_700);
+  expect(costPerHome({ type: 'V', stories: 3, homes: 24 }, m)).toBe(929_700);
+  expect(valuePerHome({ type: 'V', stories: 5, homes: 45 }, m)).toBe(552_700);
+});
+it('prices Type III as B and Type I below 13 as C', () =&gt; {
+  expect(costPerHome({ type: 'III', stories: 7, homes: 80 }, m)).toBe(736_700);
+  expect(costPerHome({ type: 'I', stories: 9, homes: 80 }, m)).toBe(857_700);
+  expect(valuePerHome({ type: 'I', stories: 9, homes: 80 }, m)).toBe(651_700);
+});
+it('interpolates Type I from C at 13 to D at 24', () =&gt; {
+  expect(costPerHome({ type: 'I', stories: 13, homes: 300 }, m)).toBe(857_700);
+  expect(costPerHome({ type: 'I', stories: 24, homes: 300 }, m)).toBe(918_700);
+  expect(costPerHome({ type: 'I', stories: 18, homes: 300 }, m)).toBeCloseTo(857_700 + (5 / 11) * 61_000, 6);
+  expect(valuePerHome({ type: 'I', stories: 18, homes: 300 }, m)).toBeCloseTo(651_700 - (5 / 11) * 25_000, 6);
+});
+it('scales cost, not value, above 24 stories', () =&gt; {
+  expect(costPerHome({ type: 'I', stories: 40, homes: 500 }, m)).toBeCloseTo(918_700 * 1.39, 6);
+  expect(valuePerHome({ type: 'I', stories: 40, homes: 500 }, m)).toBe(626_700);
+});
+it('charges carrying cost only beyond the anchor band', () =&gt; {
+  expect(carryPerHome({ type: 'III', stories: 8, homes: 130 }, m, ht)).toBe(0);
+  // ht: construction months 26.2, 29.3, 28.6, 27.4, 34.7 by band; the 18-story interpolation
+  // reads C (band 13-20) and D (band 21+), so a 22-story option in band 21+ carries beyond C's share
+  expect(carryPerHome({ type: 'I', stories: 22, homes: 300 }, m, ht)).toBeGreaterThan(0);
+});
+it('keys Type I prices by stories and reuses PROTOTYPES for anchors', () =&gt; {
+  expect(optionPrototype({ type: 'V', stories: 5, homes: 45 }, m)).toBe(PROTOTYPES[0]);
+  expect(optionPrototype({ type: 'I', stories: 18, homes: 300 }, m).id).toBe('I18');
+});
+// m and ht in the cases above are single resolved steps (PriceStep, HeightTimeStep)
+it('reads the step in force on a day', () =&gt; {
+  const series = [{ from: 100, value: 'a' }, { from: 200, value: 'b' }];
+  expect(stepAt(series, 50)).toEqual({ index: 0, value: 'a' });
+  expect(stepAt(series, 199).index).toBe(0);
+  expect(stepAt(series, 200)).toEqual({ index: 1, value: 'b' });
+  expect(() =&gt; stepAt([], 0)).toThrow();
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/choice/pricing.spec.ts</code>. Expected: FAIL, module not found.</li>
+      <li id="t1-s3"><input type="checkbox"> Implement <code>types.ts</code> and <code>pricing.ts</code> with the signatures above. All dollar inputs come from the resolved <code>PriceStep</code>, so nothing reads <code>PROTOTYPES</code> except <code>optionPrototype</code>'s identity reuse. Add <code>choice?: ChoiceModel</code> and <code>heightTime?: HeightTimeModel</code> to <code>Calibration</code>. They are optional until Task 8 writes them. Add <code>src/lib/sim/choice</code> to <code>PATHS</code> and to the version-paths test.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the spec and <code>npm run test:pipeline -- pipeline/test/version-paths.test.ts</code>. Expected: PASS.</li>
+      <li id="t1-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(choice): construction types and pricing by option"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Generator forms</h2>
+    <p><strong>Files:</strong> create <code>src/lib/generator/forms.ts</code> and <code>forms.spec.ts</code>. Modify <code>massing.ts:137-205</code> (midrise above 12 stories as <code>block</code>; tower with <code>plates</code>), <code>district.ts:91-150</code> (uniform stories and form for every district lot), <code>constants.ts:15-25</code> (<code>BLOCK_COVERAGE</code> with provenance) and <code>golden.spec.ts</code> (regenerate). Create <code>pipeline/lib/coverage-fit.ts</code> and <code>pipeline/test/coverage-fit.test.ts</code>.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>BuildingForm</code> from Task 1.</li>
+      <li>Produces: <code>generateForm(rec: ParcelRecord, form: BuildingForm, stories: number, seed: number): { units: number; stories: number; plates: number; building: GeneratedBuilding } | null</code>. It returns null when the form does not fit the lot or gains no home. It never builds above <code>physicalMaxStories</code> (<code>physical.ts:50-66</code>). The existing <code>generate()</code> (<code>generate.ts:205-224</code>) and <code>selectTypology</code> stay as they are, for recorded projects.</li>
+      <li>Produces: <code>BLOCK_COVERAGE</code> (tier 0 if fitted, else 0.75 at tier 4) and <code>maxTowerPlates(site): number</code>.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Measure the block coverage. Write <code>coverage-fit.ts</code>, a DuckDB query with its test, over <code>buildings</code> joined to the roll. Take buildings with <code>number_of_stories</code> ≥ 13 and <code>year_property_built</code> ≥ 2005, and compute the median of footprint area ÷ lot area, with n. Run it once on the full cache. If n ≥ 10, commit the value as <code>BLOCK_COVERAGE</code> with a tier-0 comment naming ynuv-fyni and the roll. Otherwise use 0.75 at tier 4, flagged. Record n and the value in the ledger.</li>
+      <li id="t2-s2"><input type="checkbox"> Write <code>forms.spec.ts</code> on a synthetic 120 × 130 m rectangle (the size of lot 2455001):
+        <pre><code data-lang="ts">it('keeps full coverage above 12 stories as a block', () =&gt; {
+  const b12 = generateForm(rec, 'midrise', 12, seed)!;
+  const b13 = generateForm(rec, 'block', 13, seed)!;
+  expect(b13.units).toBeGreaterThan(b12.units);
+});
+it('places several tower plates on a large lot', () =&gt; {
+  const t = generateForm(rec, 'tower', 20, seed)!;
+  expect(t.plates).toBeGreaterThan(1);
+});
+it('returns null for a form the lot cannot hold', () =&gt; {
+  expect(generateForm(smallRec, 'tower', 20, seed)).toBeNull();
+});
+it('never exceeds the physical maximum', () =&gt; {
+  expect(generateForm(rec, 'block', 80, seed)!.stories).toBeLessThanOrEqual(physicalMaxStories(site));
+});</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/generator/forms.spec.ts</code>. Expected: FAIL.</li>
+      <li id="t2-s4"><input type="checkbox"> Implement <code>generateForm</code> through <code>generateDetailed</code> with a new <code>GenerateInternal.form</code> override, so the composition, roof and unit code is shared. For districts, route through <code>generateDistrict</code> with every lot at <code>stories</code> and <code>form</code>, and sum the lots.</li>
+      <li id="t2-s5"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/generator</code>. Expected: PASS, except the golden. Regenerate the generator golden by its documented command and review the diff: the only changes should be massing above 12 stories.</li>
+      <li id="t2-s6"><input type="checkbox"> Commit, with a multi-line message through <code>-F</code> that explains the golden change: <code>feat(generator): mass a lot at a chosen form, with full-coverage blocks and several towers</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Option rows, pruning and the options codec</h2>
+    <p><strong>Files:</strong> create <code>src/lib/sim/choice/options.ts</code>, <code>options.spec.ts</code>, <code>src/lib/data/option-table.ts</code>, <code>option-table.test.ts</code> and <code>docs/dev/building-choice.md</code> (the option set and the pruning). Add the doc's entry to <code>CLAUDE.md</code>'s scoped docs.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>generateForm</code> (Task 2); <code>Option</code> and <code>TYPE_FORMS</code> (Task 1). No pricing: nothing baked here depends on cost.</li>
+      <li>Produces: <code>candidatesOf(rec: ParcelRecord, seed: number): Option[]</code>. It gives one option per (type, form, stories) that the form fits, unpruned and uncapped, sorted by (stories, type code, form code). This is the input to <code>hostable</code> and capacity, which pruning never changes.</li>
+      <li>Produces: <code>pruneOptions(options: readonly Option[]): Option[]</code>, cost-independent only (spec, Pruning, amended 2026-11-26). It drops an option only when another option of the same type, the same form and the same cost series (<code>costSeriesOf(option)</code>: 'E' for Type V under 25 homes, otherwise the type) has homes ≥ and stories ≤ the option's. Of two equal options it keeps the lower index. It takes no prices, so no cost step can change it.</li>
+      <li>Produces: <code>costSeriesOf(o: Option): 'V' | 'E' | 'III' | 'I'</code> and <code>eCrossings(options: readonly Option[]): number</code>, the prunes that would happen if the 25-home line were ignored (reported in Task 7).</li>
+      <li>Produces, for the report only: <code>pruneByCost(options, prices: PriceStep, time: HeightTimeStep, upTo: number[]): Option[]</code>, the cost-based pruning the spec first proposed. Task 7 uses it only to report the growth of option counts, never to bake.</li>
+      <li>Produces: <code>lotConstants(opts: readonly Option[], prices: PriceStep, time: HeightTimeStep, upTo: number[]): { breakEvenValue: number; meanOptionHomes: number; meanOptionCost: number }</code>, called per (lot, step) at run time (Task 4). <code>breakEvenValue = min over all options of (costPerHome + carryPerHome) ÷ valuePerHome</code>. <code>meanOptionHomes</code> and <code>meanOptionCost</code> are means over all options. An empty row gives <code>{ breakEvenValue: Infinity, meanOptionHomes: 0, meanOptionCost: 0 }</code>.</li>
+      <li>Produces <code>option-table.ts</code>: <code>interface OptionTable { format: 'sfh-options/1'; datasetVersion: string; count: number; offset: Uint32Array; type: Uint8Array; form: Uint8Array; stories: Uint8Array; plates: Uint8Array; homes: Uint16Array; locationValue: Float32Array }</code>; <code>optionTableOf(datasetVersion, rows: readonly { options: Option[]; locationValue: number }[]): OptionTable</code>; <code>encodeOptionPayload</code>, <code>decodeOptionPayload</code>, <code>readOptionTable(body)</code> (deflate-raw, as <code>readGrossTable</code>, <code>gross-table.ts:202-229</code>); <code>optionTableProblem(t, p: ScenarioParcels): string | null</code>; <code>OPTIONS_MAX_PER_LOT = 1023</code>.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write <code>options.spec.ts</code>:
+        <pre><code data-lang="ts">it('drops a taller option of the same type and form with fewer homes', () =&gt; {
+  const c = [opt('I', 'block', 12, 1663), opt('I', 'block', 13, 797)];
+  expect(pruneOptions(c).map((o) =&gt; o.stories)).toEqual([12]);
+});
+it('never drops an option because of cost', () =&gt; {
+  // Type III (B prices) at 5 stories and 24 homes beats a 20-home Type V (E prices) at 5 stories on
+  // cost, value, homes and stories, but different types are never compared
+  const c = [opt('III', 'podium', 5, 24), opt('V', 'walkup', 5, 20)];
+  expect(pruneOptions(c)).toHaveLength(2);
+  // a different form of the same type with fewer homes stays too
+  expect(pruneOptions([opt('I', 'block', 13, 300), opt('I', 'tower', 13, 200)])).toHaveLength(2);
+  // and cost-based pruning would have dropped one of them, which only the report sees
+  expect(pruneByCost(c, prices, time, upTo).length).toBeLessThan(2);
+});
+it('never prunes across the Type V 25-home line', () =&gt; {
+  // same type and form, fewer stories and more homes, but E-priced against A-priced: both survive
+  const c = [opt('V', 'walkup', 4, 30), opt('V', 'walkup', 5, 24)];
+  expect(pruneOptions(c)).toHaveLength(2);
+  expect(costSeriesOf(c[0])).toBe('V');
+  expect(costSeriesOf(c[1])).toBe('E');
+  expect(eCrossings(c)).toBe(1);
+});
+it('never builds Type V above 6 or Type III above 8', () =&gt; {
+  for (const o of candidatesOf(bigRec, seed)) {
+    if (o.type === 'V') expect(o.stories).toBeLessThanOrEqual(6);
+    if (o.type === 'III') expect(o.stories).toBeLessThanOrEqual(8);
+  }
+});
+it('keeps the most-homes option at every cap', () =&gt; {
+  const c = candidatesOf(bigRec, seed);
+  const p = pruneOptions(c);
+  for (let s = 1; s &lt;= 80; s++) expect(maxHomes(p, s)).toBe(maxHomes(c, s));
+});
+it('takes breakEvenValue over all options, as a cap-free constant of the lot and step', () =&gt; {
+  const k = lotConstants(p, prices, time, upTo);
+  expect(k.breakEvenValue).toBeCloseTo(Math.min(...p.map((o) =&gt; (cost(o) + carry(o)) / value(o))), 9);
+});</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Write <code>option-table.test.ts</code>: an encode and decode round trip of three rows (one empty, one with 300 options, one with <code>locationValue</code> 2.5). Assert that decoding a truncated payload throws <code>options: truncated</code>, that a row of 1,024 options throws a RangeError, and that a homes value above 65,535 throws.</li>
+      <li id="t3-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/choice/options.spec.ts src/lib/data/option-table.test.ts</code>. Expected: FAIL.</li>
+      <li id="t3-s4"><input type="checkbox"> Implement them. The wire format is <code>SFHO</code>, a u8 version, the <code>datasetVersion</code> string, a u32 count, then per row a u16 n, one f32 <code>locationValue</code>, and n × <code>(u8 type, u8 form, u8 stories, u8 plates, LEB128 homes)</code>.</li>
+      <li id="t3-s5"><input type="checkbox"> Run both. Expected: PASS. Write <code>docs/dev/building-choice.md</code>: the option set, the pruning, the tiers table copied from the spec with each value's source, and the codec.</li>
+      <li id="t3-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(choice): option rows, pruning and the sfh-options codec"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The choice rule</h2>
+    <p><strong>Files:</strong> create <code>src/lib/sim/choice/choose.ts</code>, <code>choose.spec.ts</code> and <code>choose.property.spec.ts</code>. Extend <code>docs/dev/building-choice.md</code> with the rule.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>OptionTable</code>, <code>lotConstants</code> (Task 3); pricing and <code>stepAt</code> (Task 1).</li>
+      <li>Produces: <code>allowedCount(t: OptionTable, lot: number, stories: number): number</code>, the length of the prefix with stories ≤ <code>stories</code>.</li>
+      <li>Produces: <code>optionHomes(t, j: number, cap: number | null, existing: number): number</code>, which is <code>capScenarioYield</code>'s rule (<code>scenario-yield.ts:10-14</code>) on option j's homes.</li>
+      <li>Produces: <code>interface ChoiceCtx { t: OptionTable; m: ChoiceModel; ht: HeightTimeModel; step(index: number): ChoiceStep }</code> and <code>interface ChoiceStep { price: Float64Array; breakEvenValue: Float32Array; meanOptionHomes: Float32Array; meanOptionCost: Float32Array }</code>. For cost step <code>index</code>, <code>price</code> holds the <code>(costPerHome, valuePerHome, carryPerHome)</code> of every global option j (3 × total), and the three lot arrays hold <code>lotConstants</code> per lot. Each step is built once on first use and memoised in the context (<code>choiceCtxOf(t, m, ht)</code>, memoised per table and model). The price step and the height-time step share indices: both series ship one step, and Task 8 writes them with the same <code>from</code> days.</li>
+      <li>Produces: <code>choiceRow(ctx, step: number, lot, n: number, cap: number | null, existing: number, rule: 'market' | 'most-homes', out: Float32Array): boolean</code>. It fills <code>out[0..n)</code> with cumulative probabilities over the first n options. An option gaining no home (clipped <code>homes ≤ existing</code>) has probability 0, and the last gaining one and everything after it are exactly 1. It returns false when none gains, leaving the row 0. 'market' is the softmax of <code>residualLandValue(option, choiceValue) ÷ (choiceSpread × meanOptionHomes × meanOptionCost)</code> with the row maximum subtracted. 'most-homes' puts 1 on the first gaining option with the most clipped homes.</li>
+      <li>Produces: <code>pickOption(cum: Float32Array, n: number, u: number): number</code>, the first k with u &lt; cum[k], or -1.</li>
+      <li>Produces: <code>expectations(ctx, step, lot, n, cap, existing): { homes: number; stories: number; margin: number; gains: boolean }</code>. These are the expected clipped homes and stories under the market row, and <code>margin</code> = <code>max over gaining options of residualLandValue(option, choiceValue) ÷ (meanOptionHomes × meanOptionCost)</code>.</li>
+      <li>Produces: <code>mostHomes(t, lot, n, cap, existing): number</code>, the option index or -1. Capacity (rule A) is <code>max(0, homes − existing)</code> of that option.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write <code>choose.spec.ts</code>:
+        <pre><code data-lang="ts">it('becomes the argmax as choiceSpread goes to 0', () =&gt; {
+  const out = new Float32Array(8);
+  choiceRow(ctxChoiceSpread(1e-9), 0, lot, 3, null, 0, 'market', out);
+  expect(pickOption(out, 3, 0.5)).toBe(bestRlvIndex);
+});
+it('stays finite at locationValue 30 and thousands of homes', () =&gt; {
+  const out = new Float32Array(8);
+  expect(choiceRow(ctxLocationValue(30), 0, bigLot, 5, null, 0, 'market', out)).toBe(true);
+  for (let k = 0; k &lt; 5; k++) expect(Number.isFinite(out[k])).toBe(true);
+  expect(out[4]).toBe(1);
+});
+it('returns false and leaves zeros when no option gains a home', () =&gt; {
+  const out = new Float32Array(8);
+  expect(choiceRow(ctx, 0, lot, 3, 10, 12, 'market', out)).toBe(false);
+  expect([...out.slice(0, 3)]).toEqual([0, 0, 0]);
+});
+it('treats a lot below break-even as at break-even', () =&gt; {
+  // locationValue 0.6 &lt; breakEvenValue: the best-per-dollar option (Type III at average values) is most likely
+  expect(argmaxProb(ctxLocationValue(0.6), lot)).toBe(typeIIIIndex);
+});
+it('picks the most homes under the most-homes rule', () =&gt; {
+  const out = new Float32Array(8);
+  choiceRow(ctx, 0, lot, 3, null, 0, 'most-homes', out);
+  expect(pickOption(out, 3, 0)).toBe(mostHomes(ctx.t, lot, 3, null, 0));
+});
+it('reads each cost step on its own', () =&gt; {
+  // ctxTwoSteps: step 1 cuts Type I costPerHome by 30%
+  const a = new Float32Array(8);
+  const b = new Float32Array(8);
+  choiceRow(ctxTwoSteps, 0, lot, 5, null, 0, 'market', a);
+  choiceRow(ctxTwoSteps, 1, lot, 5, null, 0, 'market', b);
+  expect([...b.slice(0, 5)]).not.toEqual([...a.slice(0, 5)]);
+  expect(ctxTwoSteps.step(1).breakEvenValue[lot]).toBeLessThan(ctxTwoSteps.step(0).breakEvenValue[lot]);
+});</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Write <code>choose.property.spec.ts</code> (fast-check, 200 runs over random option rows, <code>locationValue</code> and caps). Raising <code>n</code> never changes the ratio <code>share(i) ÷ share(j)</code> for i, j &lt; n. It never lowers <code>mostHomes</code>' homes. The row is non-decreasing and ends at 1 when it gains.</li>
+      <li id="t4-s3"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/choice</code>. Expected: FAIL.</li>
+      <li id="t4-s4"><input type="checkbox"> Implement them. <code>choiceValue = max(locationValue, breakEvenValue)</code> per lot, with <code>breakEvenValue</code> from the step's arrays.</li>
+      <li id="t4-s5"><input type="checkbox"> Run them. Expected: PASS. Document the rule, <code>choiceValue</code> and the margin in <code>building-choice.md</code>.</li>
+      <li id="t4-s6"><input type="checkbox"> Commit: <code>git commit -m "feat(choice): the developer's choice row, expectations and capacity"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Permit records: construction type, height time, cost ratio and record targets</h2>
+    <p><strong>Files:</strong> modify <code>pipeline/sources/datasf.ts:77-98</code> (add <code>proposed_construction_type</code> to both permit selects) and the permit parse (<code>pipeline/project-records/parse.ts:~266</code>, a <code>constructionType</code> field). Create <code>pipeline/lib/fzp-cal/height-time.ts</code>, <code>pipeline/lib/building-records.ts</code>, <code>pipeline/test/height-time.test.ts</code> and <code>pipeline/test/building-records.test.ts</code>. Update <code>docs/dev/pipeline.md</code> (the new column) and <code>docs/dev/building-choice.md</code> (the fits).</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>NormHistory</code> and the spells (<code>pipeline/lib/fzp-cal/types.ts</code>, <code>spells.ts</code>); <code>HeightTimeModel</code> (Task 1).</li>
+      <li>Produces: <code>fitHeightTime(spells, histories, cal: CalProfile, window, asOf: Day): { model: HeightTimeModel; filedToIssued: { upTo: number; median: number; n: number }[] }</code>. Bands are ≤ 4, 7, 12, 20 and 999, merged when thin. <code>model.steps</code> has exactly one step, <code>from: asOf</code>. The filed-to-issued medians are reported only.</li>
+      <li>Produces: <code>aboveTopCostRatio(permits: PermitRow[]): { ratio: number; n: [number, number]; provenance: Provenance }</code>. It is the median valuation per home of permits for 10 or more homes issued 2015 on above 24 stories, ÷ that at 13 to 24. Tier 2, flagged weak. If either n &lt; 10, the ratio is 1 and the provenance says so.</li>
+      <li>Produces: <code>recordTargets(histories, permits, parcels): RecordTargets</code>, written to <code>pipeline/.cache/derived/&lt;v&gt;/record-targets.json</code> and never uploaded. Per check in the spec's Acceptance table it holds the statistic, n, the SE and the tolerance. It also holds the affordable-against-private cohort means and their SE of difference.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write <code>height-time.test.ts</code> on hand-built spells: a band with n &lt; <code>sizeMinN</code> merges into the band below; multipliers equal the band median ÷ the pooled median; the provenance tier is 0 for the data. Write <code>building-records.test.ts</code>: <code>recordTargets</code> on 40 hand-built histories gives the binomial SE √(p(1−p)/n) and the median SE 1.25 × IQR ÷ (1.35 √n); the Type I share at 8 to 12 stories on 128 of 142 gives 0.901; <code>aboveTopCostRatio</code> on a fixture cut from the raw pull gives about 1.39.</li>
+      <li id="t5-s2"><input type="checkbox"> Run <code>npm run test:pipeline -- pipeline/test/height-time.test.ts pipeline/test/building-records.test.ts</code>. Expected: FAIL.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement them. Add the select column and parse it, and extend the mini fixture's permit rows with the column (<code>pipeline/test/fixtures/mini/make-fixture.ts</code>).</li>
+      <li id="t5-s4"><input type="checkbox"> Run the two tests. Expected: PASS. Then run <code>npm run pipeline -- fetch</code> for the two permit sources only (the lock changes, and so does the version), and commit <code>pipeline/sources.lock.json</code>.</li>
+      <li id="t5-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): construction type, height-band stage time and record targets from permits"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: <code>locationValue</code> per lot</h2>
+    <p><strong>Files:</strong> create <code>pipeline/lib/location-value.ts</code>, <code>pipeline/sql/86_location_value.sql</code> (numbered after <code>81_scenario_features.sql</code>) and <code>pipeline/test/location-value.test.ts</code>. Update <code>docs/dev/building-choice.md</code>.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: the roll (<code>datasf-assessor-roll</code>, <code>datasf.ts:173-184</code>: <code>assessed_land_value</code>, <code>assessed_improvement_value</code>, <code>number_of_units</code>, <code>year_property_built</code>) and the Analysis Neighborhoods.</li>
+      <li>Produces: <code>locationValueByLot(db: Duck): Promise&lt;{ locationValue: Map&lt;string, number&gt;; byNeighborhood: { nhood: string; n: number; raw: number; shrunk: number }[]; provenance: Provenance }&gt;</code>. Provenance: tier 0 for the data, tier 2 for the index, and tier 4 flagged for the shrinkage constant 10. Counts go in the report as <code>locationValue.buildings</code>, <code>locationValue.neighborhoods</code> and <code>locationValue.thin</code>.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write <code>location-value.test.ts</code> on an in-memory DuckDB with three neighbourhoods: one with 30 buildings at twice the citywide median gives <code>locationValue = (2 × 30 + 10) ÷ 40</code>; one with no building gives 1; one building built in 2012 is excluded.</li>
+      <li id="t6-s2"><input type="checkbox"> Run <code>npm run test:pipeline -- pipeline/test/location-value.test.ts</code>. Expected: FAIL.</li>
+      <li id="t6-s3"><input type="checkbox"> Implement the SQL and the wrapper (see the <code>locationValue</code>-smoothing ruling).</li>
+      <li id="t6-s4"><input type="checkbox"> Run it. Expected: PASS.</li>
+      <li id="t6-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(pipeline): location value index from the assessor roll"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: The options step and codecs without fill levels</h2>
+    <p><strong>Files:</strong> create <code>pipeline/steps/options.ts</code> and <code>options-worker.ts</code>, and delete <code>gross.ts</code>, <code>gross-worker.ts</code> and <code>src/lib/data/gross-table.ts</code>. Modify <code>pipeline/steps/build.ts:284-394</code> (order: scenario, projects, options, transit, cars, calibration, policy), <code>scenario.ts:130-200</code> (the panel stores candidate rows per memo key, not <code>base_yield</code>), <code>scenario-codec.ts</code> (<code>sfh-scenario/2</code>: drop <code>fillLevels</code>, <code>yield</code> and <code>baseYield</code>; add <code>fzpCap: Uint16Array</code>), <code>policy-codec.ts</code> (drop <code>sb79Yield</code>), <code>check.ts</code> (V17), <code>check-gross.ts</code> (becomes <code>check-options.ts</code>, V36), <code>manifest.ts</code> (<code>scenarios.fzp.options</code> replaces <code>scenarios.fzp.gross</code>), <code>pipeline/lib/{current-law,sb79}.ts</code> and the mini fixture's goldens. Docs: <code>docs/dev/pipeline.md</code> (Where things land: options.bin in place of gross.bin, the step and its counts) and <code>docs/dev/data-serving.md</code> if it names gross.bin.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>candidatesOf</code>, <code>pruneOptions</code>, <code>lotConstants</code> and the codec (Task 3); <code>fitHeightTime</code> and <code>aboveTopCostRatio</code> (Task 5); <code>locationValueByLot</code> (Task 6).</li>
+      <li>Produces: <code>scenarios/fzp/options.bin</code> and the report counts <code>options.rows</code>, <code>options.values</code>, <code>options.per_lot.p50</code>, <code>p90</code>, <code>p99</code> and <code>max</code>, <code>options.clamped</code> and <code>options.district_rows</code>. It also reports <code>options.e_crossings</code> (<code>eCrossings</code>: prunes the same-series rule prevented across the Type V 25-home line) and the growth against cost-based pruning (spec, Pruning Call): <code>options.per_lot_cost_pruned.p50</code>, <code>p90</code>, <code>p99</code> and <code>max</code> from <code>pruneByCost</code> on the shipped step, and <code>options.growth</code> (total options ÷ the cost-pruned total). Nothing cost-based is written to <code>options.bin</code>.</li>
+      <li>Produces: <code>hostable</code> in parcels.bin = eligible, envelope ≥ 1 and some candidate with stories ≤ envelope gaining after the FZP cap. It is computed from candidates, since pruning keeps the most-homes option.</li>
+      <li>Produces, for Task 8: the panel's candidate rows per (lot, roll-year inputs) key in a build-internal file <code>pipeline/.cache/derived/&lt;v&gt;/panel-options.bin</code>, in the same codec.</li>
+      <li>Invariants. V36: options.bin has one row per parcels.bin row and the same <code>datasetVersion</code>; rows are sorted; no row has more than 1,023 options; no row holds two options of the same type, form and cost series where one has homes ≥ and stories ≤ the other's. V17 is rewritten on capacity by rule A. New V40: no Type V option above 6 stories and no Type III above 8. New V41: every <code>locationValue</code> is finite and above 0.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write <code>pipeline/test/options-step.test.ts</code> on the mini fixture. options.bin decodes; V40 and V41 pass; the mini's largest lot keeps its 12-story option when the cap is 13. Write a codec test that decoding an <code>sfh-scenario/1</code> payload throws "unsupported major 1".</li>
+      <li id="t7-s2"><input type="checkbox"> Run <code>npm run test:pipeline -- pipeline/test/options-step.test.ts</code>. Expected: FAIL.</li>
+      <li id="t7-s3"><input type="checkbox"> Implement the step, with workers as <code>gross.ts</code> runs them (<code>availableParallelism() − 1</code>, terminating the rest when one fails), and remove the yield columns. While the run-time code still reads <code>yield</code>, <code>npm run check</code> fails. Commit only pipeline and data code that type-checks on its own. Task 9 switches the readers. If <code>check</code> cannot pass between the two tasks, they land together and the reviewer gates them as one diff.</li>
+      <li id="t7-s4"><input type="checkbox"> Run <code>npm run pipeline -- fixture --update-golden</code> and review the diff. <code>gross.decoded.json</code> is replaced by <code>options.decoded.json</code>, and <code>parcels.decoded.json</code> loses its yield arrays. Then run <code>npm run test:pipeline</code>. Expected: PASS.</li>
+      <li id="t7-s5"><input type="checkbox"> Commit through <code>-F</code>, a multi-line message listing the format changes: <code>feat(pipeline): bake option rows in place of the gross table</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Calibration refit: <code>choiceSpread</code>, the affordable rule and start odds</h2>
+    <p><strong>Files:</strong> create <code>pipeline/lib/fzp-cal/choice-fit.ts</code> and <code>pipeline/test/choice-fit.test.ts</code>, and delete <code>size.ts</code> with its test. Modify <code>initiation.ts</code> and <code>panel.ts</code> (the features from the choice: <code>potentialRatio</code> = expected homes ÷ max(existing, 1), <code>storiesGap</code> = expected stories − existing stories, and the new <code>choiceMargin</code>), <code>calibrate.ts</code> (writes <code>choice</code> and <code>heightTime</code>, drops <code>size</code>, keeps <code>sizeOverEnvelope</code> as a reported count), <code>invariants.ts</code> (V25 to V27 for the new keys), <code>report.ts</code> (new sections), <code>src/lib/timelapse/types.ts:112-121</code> (<code>FeatureId</code> gains <code>'choiceMargin'</code>) and <code>pipeline/lib/fzp-cal/market.ts</code> (recomputed from the refit, unchanged code). Docs: <code>docs/dev/market.md</code> (recomputed market), <code>docs/dev/building-choice.md</code> (<code>choiceSpread</code>, the affordable decision, the margin's overlap with the slope).</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>expectations</code>, <code>choiceRow</code> (Task 4); the panel options (Task 7); the record targets (Task 5).</li>
+      <li>Produces: <code>fitChoiceSpread(records: { options: Option[]; locationValue: number; limit: number; stories: number }[], prices: PriceStep, time: HeightTimeStep, upTo: number[]): { choiceSpread: number; logLik: number; n: number; excludedOver: number }</code>, fitted on the one shipped step.</li>
+      <li>Produces: <code>affordableRule(t: RecordTargets['cohort']): { rule: 'most-homes' | 'market'; diff: number; se: number }</code>. The rule is 'most-homes' exactly when the affordable mean of built height ÷ limit minus the private mean is greater than 2 × the SE of the difference.</li>
+      <li>Produces: <code>calibration.choice</code> with <code>prices</code> holding exactly one step (<code>from: calibration.asOf</code>, today's Controller values and the fitted <code>aboveTopCostRatio</code>), <code>calibration.heightTime</code> with one step on the same <code>from</code>, the refitted <code>calibration.initiation</code> with a <code>choiceMargin</code> term, and <code>calibration.market</code> recomputed. The report gains: <code>choiceSpread</code>, its n and log-likelihood; the margin's correlation with the market slope's cost share across the panel; the affordable decision with its numbers; <code>sizeOverEnvelope</code>.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> Write <code>choice-fit.test.ts</code>. On 200 records drawn from a known <code>choiceSpread</code> = 0.3, <code>fitChoiceSpread</code> recovers it within 0.1. A record over its limit is excluded and counted. <code>affordableRule</code> gives 'market' for diff 0.05 with SE 0.04, and 'most-homes' for diff 0.12 with SE 0.04.</li>
+      <li id="t8-s2"><input type="checkbox"> Run <code>npm run test:pipeline -- pipeline/test/choice-fit.test.ts</code>. Expected: FAIL.</li>
+      <li id="t8-s3"><input type="checkbox"> Implement them, and wire the features through the shared <code>expectations</code>, so the panel and run time use the same code (spec, Start odds refit).</li>
+      <li id="t8-s4"><input type="checkbox"> Run <code>npm run pipeline -- fixture --update-golden</code> and review <code>calibration.json</code> and <code>calibration-report.md</code>: the size section is gone, and the choice and height-time sections are present. Then run <code>npm run test:pipeline</code>. Expected: PASS.</li>
+      <li id="t8-s5"><input type="checkbox"> Commit through <code>-F</code>: <code>feat(calibration): fit the choice spread, height-band stage time and start odds on option rows</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: The run-time switch</h2>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li><code>src/lib/sim/world/input/build.ts</code>: <code>SimInput.options: OptionTable</code>; <code>Precompute</code> loses <code>sizeCum</code> and gains <code>byStep: { from: Day; expHomes: Float32Array; expStories: Float32Array; margin: Float32Array; gains: Uint8Array }[]</code>, one entry per cost step (the memo keyed by (lot, step)); cost-step <code>from</code> days join <code>segments.days</code>, and each segment's <code>log1mh</code> uses its step's features; <code>bucketOf</code>, <code>fillSizeRow</code> and <code>sizeCumAgainst</code> (lines 302-351) are removed; <code>checkFillLevels</code> (35-51) is removed.</li>
+      <li><code>src/lib/data/scenario-codec.ts</code>: <code>featureValue</code> reads <code>choiceMargin</code>.</li>
+      <li><code>envelope-row.ts</code>: <code>EnvelopeRow</code> = {stories, cap, hostable}.</li>
+      <li><code>src/lib/sim/levers/{layers,resolve,view,recompute,apply}.ts</code>: <code>EnvelopeTable</code> loses <code>yield</code>; <code>netCapacity</code> applies rule A; <code>parcelsView</code> derives its features from <code>expectations</code>.</li>
+      <li><code>src/lib/sim/world/{world,stage,columns,pipeline,types}.ts</code>; <code>world/policy/{zoning-view,limits,compile}.ts</code>; <code>world/runner/{runner,dataset}.ts</code> (load options.bin); <code>src/lib/paint/headline.ts</code>.</li>
+      <li>World and fixture goldens: <code>world.golden.*</code>, <code>src/lib/sim/world/fixtures/*</code>, <code>src/lib/data/fixtures/scenario-tiny.ts</code>.</li>
+      <li>Docs: <code>docs/dev/world-core.md</code> (start, revision and durations), <code>world-score.md</code>, <code>sim-levers.md</code> (capacity), <code>fzp-mode.md</code>, <code>map-interfaces.md</code> if it names yields, and <code>building-choice.md</code> (run time).</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: everything from Task 4; <code>calibration.choice</code> and <code>heightTime</code> (Task 8).</li>
+      <li>Produces world columns (<code>columns.ts</code>): <code>level</code> holds the option index (Uint8); new <code>btype: Uint8Array</code> (the type code, 255 for none) and <code>optCap: Uint16Array</code> (<code>NULL_CAP</code> for none); <code>yields</code> (stride F, <code>columns.ts:16-20,99</code>) is removed; <code>top</code> stays, as the most homes among the allowed options.</li>
+      <li>Produces: <code>heightMultiplier(ht: HeightTimeModel | undefined, stage: 'permitIssued' | 'construction', stories: number, day: Day): number</code> in <code>stage.ts</code>, reading the step in force on <code>day</code> (the stage entry). It is 1 for NaN stories, other stages or a missing model, and <code>enterStage</code> (<code>stage.ts:54-88</code>) multiplies the drawn <code>p.length[row]</code> by it.</li>
+      <li>Produces: <code>capacityOf(view): number</code>. The room box, <code>leverCapacity</code> and <code>runner.capacity()</code> all read it.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Write the failing tests:
+        <pre><code data-lang="ts">// src/lib/sim/world/world.choice.spec.ts
+it('starts the option the size draw picks and records its type and stories', () =&gt; {
+  const w = runMini({ months: 24 });
+  const r = firstSimRow(w);
+  expect(w.projects.stories[r]).toBe(t.stories[t.offset[lot] + w.projects.level[r]]);
+  expect(w.projects.btype[r]).toBe(t.type[t.offset[lot] + w.projects.level[r]]);
+});
+it('rebuilds the choice row against 0 existing on a demolished lot', () =&gt; {
+  expect(secondStartUnits(w, lot)).toBe(optionHomes(t, j, cap, 0));
+});
+it('changes the choice for starts after a second cost step only', () =&gt; {
+  // same input, plus a second price step from day D that cuts Type I costPerHome by 30%
+  const one = runMini({ months: 120 });
+  const two = runMini({ months: 120, prices: [step0, { from: D, value: cheaperTypeI }] });
+  expect(startsBefore(two, D)).toEqual(startsBefore(one, D)); // lot, day, option index, units
+  expect(startsFrom(two, D)).not.toEqual(startsFrom(one, D));
+});
+it('marks a lot whose cap is at or below existing homes as not hostable', () =&gt; {
+  expect(view.parcels.hostable[lot]).toBe(0);
+  expect(pre.hazard[lot]).toBe(0);
+});
+// src/lib/sim/levers/resolve.spec.ts
+it('never lowers capacity when every cap rises', () =&gt; {
+  expect(netCapacity(at(13), parcels)).toBeGreaterThanOrEqual(netCapacity(at(12), parcels));
+});
+// src/lib/sim/world/stage.spec.ts
+it('lengthens construction by the band multiplier and leaves NaN stories at 1', () =&gt; {
+  expect(heightMultiplier(ht, 'construction', 30, asOf)).toBe(ht.steps[0].value.construction[4]);
+  expect(heightMultiplier(ht, 'construction', NaN, asOf)).toBe(1);
+  expect(heightMultiplier(htTwoSteps, 'construction', 30, D - 1)).toBe(htTwoSteps.steps[0].value.construction[4]);
+  expect(heightMultiplier(htTwoSteps, 'construction', 30, D)).toBe(htTwoSteps.steps[1].value.construction[4]);
+});
+it('revises within the same construction type', () =&gt; {
+  expect(w.projects.btype[row]).toBe(typeBefore);
+});</code></pre>
+      </li>
+      <li id="t9-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/world src/lib/sim/levers</code>. Expected: FAIL.</li>
+      <li id="t9-s3"><input type="checkbox"> Implement the switch. At a start (<code>world.ts:356-418</code>): step = <code>stepAt(calibration.choice.prices, day).index</code>; n = <code>allowedCount</code> at the view's envelope; build the row for that step against <code>existing</code>; <code>u = drawOn(stream, P.SIZE, 0)</code>; k = <code>pickOption</code>; units = the clipped homes; stories and type come from the option. The lot is <code>LOT_DONE</code> when k = −1. The revision follows the ruling. <code>pipeline.ts:113</code>'s <code>yieldCap</code> uses the most-homes option.</li>
+      <li id="t9-s4"><input type="checkbox"> Run the tests. Expected: PASS. Then delete any old-engine test that fails only because it runs the old engine (none should remain after the removal), regenerate the world golden by its documented command, and run <code>npm run check</code> and <code>npm run test:unit</code>. Expected: PASS, with no server stderr.</li>
+      <li id="t9-s5"><input type="checkbox"> Commit through <code>-F</code>, the message explaining the golden change: <code>feat(world): start the developer's chosen building instead of a fill level</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-10">
+    <h2>Task 10: Finance, funded sizing and parking by option</h2>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li>Funding: <code>src/lib/sim/world/funding/clocks.ts:57-123</code> (sizing reads the choice row, or <code>mostHomes</code> for affordable when <code>affordableRule</code> is 'most-homes'), <code>serve.ts:98,142</code>, <code>closing.ts:126</code>, <code>line-index.ts:12,135</code> and <code>apply.ts:96</code>.</li>
+      <li>Pricing: <code>src/lib/sim/world/score/finance.ts:188</code>; the finance index's price cache keys on <code>PriceKey</code>.</li>
+      <li>Parking: <code>src/lib/sim/world/cars/parking.ts:41-95</code>.</li>
+      <li><code>src/lib/sim/finance/prototypes.ts:80-104</code>: <code>prototypeFor</code> is kept for rows with no type, and its doc says so.</li>
+      <li>Docs: <code>docs/dev/finance-engine.md</code>, <code>world-funding.md</code>, <code>finance-model.md</code>, <code>finance-score.md</code> and <code>cars.md</code>.</li>
+    </ul>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>optionPrototype</code> (Task 1); <code>choiceRow</code> and <code>mostHomes</code> (Task 4); the <code>btype</code> and <code>level</code> columns (Task 9).</li>
+      <li>Produces: <code>pricingOfRow(w: World, row: number, m: ChoiceModel, day: Day): Prototype &amp; { id: PriceKey }</code>, priced on the step in force on <code>day</code> (the day the funding line prices the row). It is <code>optionPrototype</code> when <code>btype</code> ≠ 255, and <code>prototypeFor(stories, units)</code> otherwise. The counter <code>finance.binned</code> (rows priced by the binning) appears in the score and in <code>cap-measure</code>'s output.</li>
+      <li>Produces: <code>topPrototype(view, lot)</code>, now the prototype of the lot's most likely option (the argmax of the choice row), so <code>parkingTypeOf</code> follows construction type: V→A podium, E surface, III and I below grade.</li>
+    </ul>
+    <ol>
+      <li id="t10-s1"><input type="checkbox"> Write the failing tests. In <code>clocks.spec.ts</code>, an affordable latent under 'most-homes' sizes to <code>mostHomes</code>, and under 'market' to the choice draw. In <code>serve.spec.ts</code>, a Type I start at 18 stories is priced with cost 857,700 + 5/11 × 61,000. In <code>parking.spec.ts</code>, a lot whose most likely option is Type III gets <code>belowGrade</code>. In <code>finance.spec.ts</code>, a recorded row with no type is priced by <code>prototypeFor</code> and counted in <code>binned</code>, and with a second price step from day D a Type I row priced on D − 1 reads step 0 and on D reads step 1.</li>
+      <li id="t10-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/world/funding src/lib/sim/world/cars src/lib/sim/world/score</code>. Expected: FAIL.</li>
+      <li id="t10-s3"><input type="checkbox"> Implement them.</li>
+      <li id="t10-s4"><input type="checkbox"> Run them, then <code>npm run test:unit</code>. Expected: PASS. Once the dataset exists (Task 13), run <code>npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code> and record its last line in the PR (pipeline.md, "Changes on the funding paths").</li>
+      <li id="t10-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(funding): price and size funded starts by the chosen option"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-11">
+    <h2>Task 11: Draw the chosen building</h2>
+    <p><strong>Files:</strong> <code>src/lib/sim/world/massing.ts:65-185</code>, <code>world/score/project-card.ts</code>, <code>world/map-stream.ts</code>, <code>world/runner/{lookups,warm}.ts</code>, the paint preview (wherever <code>previewBuildings</code> lives after the removal), <code>src/lib/generator/cache.ts</code>. Docs: <code>docs/dev/map-stream.md</code> and <code>map-interfaces.md</code>.</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: <code>generateForm</code> (Task 2); the <code>level</code> and <code>btype</code> columns and <code>OptionTable</code>.</li>
+      <li>Produces: <code>simKey(parcelId: ParcelId, form: BuildingForm, stories: number, plates: number): string</code> (replacing <code>massing.ts:65</code>), and <code>massingFor</code> generating the schedule's chosen form and stories. Recorded projects keep <code>generate</code> at their stories. The paint preview draws <code>mostHomes</code> at the painted cap.</li>
+    </ul>
+    <ol>
+      <li id="t11-s1"><input type="checkbox"> Write <code>massing.spec.ts</code> cases. A simulated project's massing has the chosen option's form, stories and plates, and its units equal the option's homes. Two options of different forms at the same stories get different <code>simKey</code>s. A recorded project's massing is unchanged.</li>
+      <li id="t11-s2"><input type="checkbox"> Run <code>npx vitest run --project server src/lib/sim/world/massing.spec.ts</code>. Expected: FAIL.</li>
+      <li id="t11-s3"><input type="checkbox"> Implement it.</li>
+      <li id="t11-s4"><input type="checkbox"> Run it, then <code>npm run test:unit</code>. Expected: PASS.</li>
+      <li id="t11-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(map): draw the chosen building on the map and card"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-12">
+    <h2>Task 12: Record checks and the cap measurement</h2>
+    <p><strong>Files:</strong> create <code>scripts/record-check.ts</code>, <code>scripts/record-check.spec.ts</code>, <code>scripts/cap-measure.ts</code> and <code>scripts/cap-measure.spec.ts</code>. Docs: <code>docs/dev/testing.md</code> ("The record check"), <code>docs/dev/pipeline.md</code> (finishing: the record check runs before reach-check), <code>docs/dev/building-choice.md</code> and <code>CLAUDE.md</code> (Commands table rows for both scripts).</p>
+    <p><strong>Interfaces</strong></p>
+    <ul>
+      <li>Consumes: the runner's dataset loader, as <code>scripts/reach-check.ts</code> uses it, and <code>record-targets.json</code> (Task 5).</li>
+      <li>Produces: <code>npx tsx scripts/record-check.ts &lt;datasetDir&gt; [--json]</code>. It runs current law in the world engine for the first 120 simulated months and computes each check over the simulated starts and completions:
+        <ul>
+          <li>built stories ÷ envelope by limit bucket (the mean, and the share ≥ 0.9);</li>
+          <li>type share by height band;</li>
+          <li><code>permitIssued</code> and construction medians by height band;</li>
+          <li>median homes per project of 10 or more, by band;</li>
+          <li>the large-lot Type I share.</li>
+        </ul>
+        It compares each against the target's tolerance and prints one line per check (<code>pass</code>, <code>miss</code> or <code>report</code>, with n). It exits 1 on any miss. The pure functions <code>checkLines(targets, sim): CheckLine[]</code> and <code>recordExit(lines): 0 | 1</code> are exported for the spec.</li>
+      <li>Produces: <code>npx tsx scripts/cap-measure.ts &lt;datasetDir&gt; [--json]</code>. It reports <code>completedNet</code> at months 168 and 479 for current law, for current law plus one transit rule (all stop types, 805 m) at 12, 13, 16, 20, 40 and 80 stories, and for the full tree at the same caps. Each figure sits beside the old dataset's figure from the taller-caps report, with the share of starts by type at each cap. It always exits 0.</li>
+    </ul>
+    <ol>
+      <li id="t12-s1"><input type="checkbox"> Write <code>record-check.spec.ts</code>. A sim mean of 0.80 against a target of 0.72 ± 0.10 passes. A Type V start above 6 stories is a miss whatever the n. A bucket with n &lt; 30 is <code>report</code>. <code>recordExit</code> is 1 with any miss. In <code>cap-measure.spec.ts</code>, the table's rows are in cap order with the old figures 165,058, 157,445, 167,549, 171,072, 197,592 and 222,488 for the full tree at 2066.</li>
+      <li id="t12-s2"><input type="checkbox"> Run <code>npx vitest run --project server scripts/record-check.spec.ts scripts/cap-measure.spec.ts</code>. Expected: FAIL.</li>
+      <li id="t12-s3"><input type="checkbox"> Implement them.</li>
+      <li id="t12-s4"><input type="checkbox"> Run them. Expected: PASS.</li>
+      <li id="t12-s5"><input type="checkbox"> Commit: <code>git commit -m "feat(scripts): record checks and the homes-by-cap report"</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-13">
+    <h2>Task 13: Build the dataset, pass the record checks, re-derive the game, upload</h2>
+    <p><strong>Files:</strong> <code>scripts/reach-check.ts</code> and <code>scripts/reach-check.spec.ts</code> (the gate), <code>CLAUDE.md</code>, <code>docs/dev/testing.md</code>, <code>docs/dev/pipeline.md</code>, <code>src/lib/game/catalogue/ladder-years.ts</code> (written by reach-measure, currently <code>[2060, 2055, 2045, 2040]</code>, line 4), possibly <code>src/lib/game/catalogue/tuning.ts</code>, the docs that report measured results (<code>docs/dev/game.md</code>, <code>building-choice.md</code>, <code>map-perf.md</code>), and the e2e fixture.</p>
+    <ol>
+      <li id="t13-s1"><input type="checkbox"> Run <code>git merge origin/main</code>, then <code>npm run pipeline -- version</code>, then <code>npm run pipeline -- build</code>. Every invariant must pass, without <code>--skip-tiles</code>. Record the option counts per lot (<code>options.per_lot.*</code>) in the ledger.</li>
+      <li id="t13-s2"><input type="checkbox"> Run <code>npx tsx scripts/record-check.ts pipeline/out/&lt;v&gt;</code>. On a miss, allowed model changes (forms, <code>locationValue</code> smoothing, multipliers, coverage, a refit) go back through their own task's tests, then rebuild. A miss that remains after a change stops the work: report every line to the owner and upload nothing.</li>
+      <li id="t13-s3"><input type="checkbox"> Run <code>npx tsx scripts/cap-measure.ts pipeline/out/&lt;v&gt;</code> and put the table in <code>building-choice.md</code>. A cap that builds fewer homes than a lower one is reported with the reason the records support, not fixed.</li>
+      <li id="t13-s4"><input type="checkbox"> Run <code>npx tsx scripts/reach-measure.ts pipeline/out/&lt;v&gt; --write</code>, then <code>npx tsx scripts/tree-balance.ts pipeline/out/&lt;v&gt;</code>. Record the pacing against <code>tuning.ts</code>. Retune only what tree-balance reports out of its bounds, and document it in <code>game.md</code>.</li>
+      <li id="t13-s5"><input type="checkbox"> Change the reach gate (owner ruling, 2026-11-26): <code>reach-check</code> gates only on the full tree reaching the last deadline.
+        <ul>
+          <li>In <code>scripts/reach-check.spec.ts</code>, write the failing cases first: <code>reachExit([missed('current'), reached('full')])</code> is 0, and the current-law line still reads "missed, N homes, M short"; <code>reachExit([reached('current'), missed('full')])</code> is 1. Run <code>npx vitest run --project server scripts/reach-check.spec.ts</code> and see them fail.</li>
+          <li>Change <code>reachExit</code> (<code>scripts/reach-check.ts:96-98</code>) to return 1 only when the full tree's answer is missed. Current law's line is still printed, as information. Update the usage and doc comment, then run the spec and see it pass.</li>
+          <li>Update the docs that state the old rule:
+            <ul>
+              <li><code>CLAUDE.md</code>: the reach-check row of the Commands table becomes "…exit 1 when the full tree misses the last deadline; current law's reach is printed as information". The Conventions bullet becomes "A dataset is uploaded only after <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> exits 0 (the full tree meets the last deadline; current law's reach is reported, not gated)".</li>
+              <li><code>docs/dev/game.md</code>, "The reach check": question 1 is reported, not gated, and the exit codes change to match.</li>
+              <li><code>docs/dev/testing.md</code>, "The reach check": "Exit 0 when the full tree meets the last deadline, 1 when it misses, 2 when it could not run".</li>
+              <li><code>docs/dev/pipeline.md:68</code>, step 3 of "Finishing a branch that changes the dataset".</li>
+            </ul>
+          </li>
+          <li>Commit: <code>git commit -m "feat(game): gate the reach check on the full tree only"</code>.</li>
+        </ul>
+      </li>
+      <li id="t13-s6"><input type="checkbox"> Run <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code>. It must exit 0. Record both lines, current law's included, in <code>game.md</code>. If the full tree misses the last deadline, stop and report to the owner: a tree that cannot win is the owner's call.</li>
+      <li id="t13-s7"><input type="checkbox"> Run <code>npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code> and record its last line. It is a report, not a gate.</li>
+      <li id="t13-s8"><input type="checkbox"> On a quiet machine: time <code>precomputeOf</code> on the new dataset as in Task 0 (pass: ≤ 1.5 × <code>baseline.precomputeMs</code>), then run <code>npm run bench:map</code> yourself (purchase-to-ready within its pass bar). Record both in <code>map-perf.md</code>. If the machine is busy, defer and say so.</li>
+      <li id="t13-s9"><input type="checkbox"> Once step 2 passes (or the owner has ruled on a remaining miss) and step 6 exits 0, run <code>npm run pipeline -- upload &lt;v&gt;</code>, then <code>npm run pipeline -- verify &lt;v&gt; --origin &lt;staging-origin&gt;</code>.</li>
+      <li id="t13-s10"><input type="checkbox"> Commit the ladder, tuning and doc results through <code>-F</code>: <code>chore(game): re-derive the ladder and tuning on the building-choice dataset</code>.</li>
+      <li id="t13-s11"><input type="checkbox"> Run <code>npm run signoff</code>. If it fails because <code>origin/main</code> moved and changed <code>&lt;v&gt;</code>, go back to step 1. Then open the PR (body through <code>--body-file</code>, with no attribution), squash-merge it after signoff passes, and remove the worktree.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions for the owner</h2>
+    <ul>
+      <li><strong>The stage intervals.</strong> See Contradictions. Recommendation: confirm that the multipliers scale the model's own <code>permitIssued</code> and <code>construction</code> stages.</li>
+      <li><strong>Value above 24 stories.</strong> The plan holds D's value per home (see Rulings). Recommendation: keep it until a per-record value source by height exists.</li>
+    </ul>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li>Spec coverage:
+        <ul>
+          <li>Option set and pruning: Task 3.</li>
+          <li>Forms: Task 2.</li>
+          <li>Cost, value and time: Tasks 1 and 5.</li>
+          <li><code>locationValue</code>: Task 6.</li>
+          <li>Choice rule: Task 4.</li>
+          <li>Baked against run time: Tasks 7 and 9.</li>
+          <li>Start-odds refit and <code>choiceSpread</code>: Task 8.</li>
+          <li>Funded and affordable projects: Tasks 8 and 10.</li>
+          <li>Blast radius: capacity and room box, Task 9; durations, Task 9; finance and parking, Task 10; map and card, Task 11; pipeline checks, Task 7; game, Task 13; goldens, Tasks 2, 7 and 9; docs, in each task.</li>
+          <li>Acceptance: Tasks 12 and 13.</li>
+          <li>Measurement: Tasks 12 and 13.</li>
+          <li>Performance: Tasks 0 and 13.</li>
+          <li>Order (before money-limited): the money-limited plan re-measures on this dataset.</li>
+        </ul>
+      </li>
+      <li>Type names are used across tasks as defined: <code>Option</code>, <code>ChoiceModel</code>, <code>HeightTimeModel</code>, <code>OptionTable</code>, <code>PriceKey</code>, <code>choiceRow</code>, <code>pickOption</code>, <code>expectations</code>, <code>mostHomes</code>, <code>allowedCount</code>, <code>optionPrototype</code>, <code>pricingOfRow</code>, <code>heightMultiplier</code>, <code>DatedStep</code>, <code>stepAt</code>, <code>PriceStep</code>, <code>HeightTimeStep</code>, <code>ChoiceStep</code>, <code>pruneByCost</code>.</li>
+      <li>Task 7 cannot pass <code>npm run check</code> alone, since the readers switch in Task 9. This is stated in Task 7, step 3: the two are reviewed as one diff if needed.</li>
+    </ul>
+  </section>
+</article>
