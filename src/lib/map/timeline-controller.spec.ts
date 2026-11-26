@@ -1830,6 +1830,75 @@ describe('setMerged', () => {
     expect([...j.startIndices]).toEqual([...a.startIndices]);
   });
 
+  /** The merged join in each setLayers call from `from` on. */
+  const joinsFrom = (from: number) =>
+    deps.layerHistory
+      .slice(from)
+      .map((ls) => props(ls.find((l) => l.id === RUN_SOLID)!).data as Joined);
+  /** How many times the join object changes along `joins`, starting from `first`. */
+  const changes = (first: Joined, joins: Joined[]) => {
+    let n = 0;
+    let prev = first;
+    for (const j of joins) {
+      if (j !== prev) n++;
+      prev = j;
+    }
+    return n;
+  };
+
+  it('a two-slice swap while merged joins once, after its last slice', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 2) }));
+    drainWith(deps, c);
+    c.setMerged(true);
+    const before = joinOf(deps);
+    const from = deps.layerHistory.length;
+    const swapped = named('s', SWAP_CELLS_PER_SLICE + 4);
+    c.apply(update(0, { cells: swapped, swap: true, complete: true }));
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0); // the second slice is queued
+    expect(joinOf(deps)).toBe(before); // the first slice keeps the previous pair
+    drainWith(deps, c);
+    const joins = joinsFrom(from);
+    expect(joins.length).toBeGreaterThanOrEqual(2);
+    expect(changes(before, joins)).toBe(1);
+    expect(joins.at(-1)).not.toBe(before);
+    expect(joinOf(deps).length).toBe(swapped.reduce((n, x) => n + x.partCount, 0));
+  });
+
+  it('setLookups over more than one slice while merged joins once, after the last', () => {
+    const c = controller();
+    const cells = named('o', MAX_CELLS_PER_SLICE + 1);
+    c.apply(update(0, { cells }));
+    drainWith(deps, c);
+    c.setMerged(true);
+    const before = joinOf(deps);
+    const from = deps.layerHistory.length;
+    c.setLookups({ ...timelineLookups });
+    expect(c.debugSnapshot().pending).toBe(2);
+    deps.flushFrame(); // the first re-encode slice
+    expect(joinOf(deps)).toBe(before);
+    drainWith(deps, c);
+    const joins = joinsFrom(from);
+    expect(joins.length).toBeGreaterThanOrEqual(2);
+    expect(changes(before, joins)).toBe(1);
+    expect(joinOf(deps).length).toBe(before.length);
+  });
+
+  it('merging while slices are queued joins at once', () => {
+    const c = controller();
+    c.apply(update(0, { cells: manyCells(MAX_CELLS_PER_SLICE + 1) }));
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    c.setMerged(true);
+    expect(ids(deps).slice(0, 2)).toEqual([RUN_SOLID, RUN_GHOST]);
+    const first = joinOf(deps);
+    expect(first.length).toBe(manyCells(MAX_CELLS_PER_SLICE).reduce((n, x) => n + x.partCount, 0));
+    drainWith(deps, c);
+    expect(joinOf(deps)).not.toBe(first);
+    expect(joinOf(deps).length).toBe(
+      manyCells(MAX_CELLS_PER_SLICE + 1).reduce((n, x) => n + x.partCount, 0)
+    );
+  });
+
   it('emits no merged layer when no cell has parts', () => {
     const c = controller();
     c.setMerged(true);

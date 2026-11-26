@@ -850,11 +850,13 @@ export class TimelineController {
   }
 
   /**
-   * The merged pair over every cell with parts, in cellId order (the per-cell emit order), joined
-   * again only when a cell's layers were built or a cell went since; null when no cell has parts.
+   * The merged pair over every cell with parts, in cellId order (the per-cell emit order); null
+   * when no cell has parts. Joined again only when a cell's layers were built or a cell went
+   * since, and then once per update: while cell, removal or re-encode slices are queued the
+   * previous pair stays (as the bars and halos wait), unless there is none yet.
    */
   private mergedPair(sorted: [string, Cell][]): { solid: Layer; ghost: Layer } | null {
-    if (!this.mergeDirty) return this.mergedLayers;
+    if (!this.mergeDirty || (this.mergedLayers && !this.drained())) return this.mergedLayers;
     this.mergeDirty = false;
     const cells = sorted.map(([, c]) => c).filter((c) => c.pack.partCount > 0);
     if (cells.length === 0) return (this.mergedLayers = null);
