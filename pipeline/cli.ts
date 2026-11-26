@@ -10,7 +10,7 @@ import {
   checkDataset,
   type InvariantResult
 } from './steps/check';
-import { boxesCommand } from './steps/boxes';
+import { boxesReusing } from './steps/boxes-reuse';
 import { doctor, reportDoctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
@@ -99,16 +99,18 @@ const steps: Record<string, { help: string; run: Step }> = {
     run: async () => reportDoctor(await doctor(), console.log)
   },
   boxes: {
-    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact [--fixture: the mini fixture]',
+    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact; reuses an earlier run with the same code, config and inputs [--force: run in full] [--fixture: the mini fixture]',
     run: (args) => {
       const fixture = args.flags.fixture === true;
-      return boxesCommand({
+      return boxesReusing({
         lockPath: fixture ? join(MINI, 'sources.lock.json') : LOCK,
         lidarLockPath: fixture ? LIDAR_LOCK.fixture : LIDAR_LOCK.live,
         rawDir: fixture ? join(MINI, 'raw') : raw(),
         byName: fixture,
         repoRoot: ROOT,
-        fixture
+        fixture,
+        indexDir: fixture ? null : sharedCache().boxesIndex,
+        force: args.flags.force === true
       });
     }
   },
