@@ -1,0 +1,261 @@
+<article>
+  <header>
+    <h1>Building choice: the developer picks the building a cap allows</h1>
+    <p>For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
+  </header>
+
+  <section id="sec-intent">
+    <h2>Intent and why</h2>
+    <p>The simulation never chooses a building. A story cap <em>S</em> turns into five fixed heights (0.25, 0.5, 0.75, 0.9 and 1 times <em>S</em>, <code>FILL_LEVELS</code> and <code>fillStories</code> in <code>src/lib/data/scenario-codec.ts</code>). Each height gets the one building that the generator's height-and-area cascade produces (<code>selectTypology</code> in <code>src/lib/generator/select.ts</code>). Those yields are baked into <code>gross.bin</code> (<code>scenarioYield</code> in <code>src/lib/data/scenario-yield.ts</code> calls <code>generate(rec, {maxStories: s}, …, 'max')</code>). The size of a start is drawn as a fraction of the cap from buckets keyed on the cap (<code>bucketOf</code> and <code>fillSizeRow</code> in <code>src/lib/sim/scenario/input.ts</code>). The start odds are a logit fitted to the generator's own yields. Stage durations have no height term, and the finance prototypes give a fixed cost per home by invented height bins (<code>prototypeFor</code>, <code>PROTOTYPE_BINNING</code> tier 4, in <code>src/lib/sim/finance/prototypes.ts</code>).</p>
+    <p>So caps above 12 stories build fewer homes, for reasons that do not exist in the real world:</p>
+    <ul>
+      <li><strong>The tower cliff.</strong> At 13 stories or more, a lot of 1,500 m² or more becomes a 5-story podium plus one tower plate of at most 900 m² (<code>TOWER_MIN_M2</code>, <code>TOWER_PLATE_MAX_M2</code>, <code>TOWER_PODIUM_STORIES</code> in <code>src/lib/generator/constants.ts</code>; the plate is set in <code>massTower</code>, <code>src/lib/generator/massing.ts</code>). A 12-story midrise covers 75% of the lot. Lot 2455001 (15,648 m²) holds 1,663 homes at 12 stories and 797 at 13. Nothing lets a developer keep the 12-story building.</li>
+      <li><strong>The size bucket.</strong> Above an envelope of 12 stories, 17% of starts take the 0.25 fill (3 stories at a cap of 13), against 2.4% below. That includes small lots that physically top out at a 5-story walkup either way.</li>
+    </ul>
+    <p>Full tree, net homes by 2066: 165.1k at 12 stories, 157.4k at 13, 171.1k at 20. With these two artifacts removed in a data-only test, homes rise with the cap. The measurements are in the taller-caps report (scratchpad <code>taller/REPORT.md</code>), reproduced from dataset 2026-11-25-76c90397.</p>
+    <p>A cap is a permission: <strong>a developer may build up to it</strong>. The real decision is which building pays best, and it changes with the construction type. Wood (Type V) goes to about 6 stories and Type III to about 8. Above that the frame must be concrete or steel (Type I), which costs more per home and, at the top, takes longer to build. This spec replaces the fill-fraction rule with that decision and checks the result against San Francisco's own permit records.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals and anti-goals</h2>
+    <section id="sec-goals-goals">
+      <h3>Goals</h3>
+      <ul>
+        <li>A lot's start is one of the buildings it could really hold at or below its cap. A higher cap never removes an option.</li>
+        <li>The building is the one a developer would choose, scored with the model's market terms and real cost and build time by construction type.</li>
+        <li>Large lots can hold the forms real large sites use: a full-coverage Type I block, or several towers.</li>
+        <li>The picks match San Francisco records (built height against the zoned limit, construction type by height, build time by height) within stated tolerances.</li>
+        <li>Every parameter names its evidence tier. Invented values are flagged.</li>
+        <li>Start odds, the size model and the game's measures (<code>LADDER_YEARS</code>, the reach measures) are re-derived on the new yields.</li>
+      </ul>
+    </section>
+    <section id="sec-goals-non">
+      <h3>Non-goals</h3>
+      <ul>
+        <li>A land market. Land prices and expectations that respond to the cap are out of scope. The land cost of a lot is the same for every option on it, so it drops out of the choice.</li>
+        <li>The old scenario engine. Only the world engine (<code>src/lib/sim/world/</code>) and the modules it reads are changed. The scenario engine is being removed in another session.</li>
+        <li>Density-bonus projects that build over the cap. They keep today's handling: <code>sizeOverEnvelope</code> maps them to the top level. See <a href="#q-bonus">the open question</a>.</li>
+        <li>Random bands. The world shows one future, and every draw uses the existing seeded per-lot streams.</li>
+        <li>New UI. The card and map show the chosen building. Naming its construction type is optional and must follow the terse-copy rule.</li>
+      </ul>
+    </section>
+    <section id="sec-goals-anti">
+      <h3>Anti-goals</h3>
+      <aside data-kind="warning"><strong>Anti-goal</strong> Do not tune any choice, parameter or tolerance so that homes rise with the cap. "A higher cap never builds fewer homes" is not a goal. If the evidence says some caps build fewer homes than a lower one (a costlier Type I building chosen where it pays, a longer build, or a cap that changes nothing), the model shows that. The test is the record checks, not a shape of the cap curve.</aside>
+      <ul>
+        <li>Do not keep current law or the game's tuning fixed by adjusting this model. They move, and are re-derived afterwards.</li>
+        <li>Do not fit cost or duration to the model's own output. They come from records or sources outside the model.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <table id="tbl-approaches">
+      <caption>Three ways to decide what a lot builds</caption>
+      <thead>
+        <tr><th scope="col">Approach</th><th scope="col">Rule</th><th scope="col">For it</th><th scope="col">Against it</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">A. Most homes allowed</th><td>Build the option with the most homes at or below the cap (a running maximum of <code>gross.bin</code> over stories).</td><td>Cheap. The report's variant A already shows it removes the tower cliff.</td><td>Ignores cost and type. Real developers do not build to the most homes when the extra height needs a costlier frame. It overstates Type I towers in neighbourhoods where values do not carry them.</td></tr>
+        <tr><th scope="row">B. Developer's choice (chosen)</th><td>List the feasible options. Cost each by construction type, height and build time, value each with the market terms, and pick the one a developer would.</td><td>Follows how buildings are decided. Responds to costs, values and time, and so to future levers on any of them. Gives the construction type that finance and parking need, without the invented binning.</td><td>Needs a value index per lot, a cost by type and a fitted spread. More pipeline work.</td></tr>
+        <tr><th scope="row">C. Copy the records</th><td>Draw built height ÷ limit from the per-record distribution, keyed on buildable height.</td><td>Tier 0 directly.</td><td>Cannot extrapolate to caps the records never saw (40 or 80 stories in the neighbourhoods) or respond to cost, value or time levers. The records mix many markets.</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="decision"><strong>Decision</strong> B, checked against C. The records are the acceptance test (<a href="#sec-acceptance">Acceptance</a>), not the rule. A remains the definition of <em>capacity</em> ("room for N homes"), which counts what a lot can hold, not what gets built (<a href="#sec-blast">Blast radius</a>).</aside>
+  </section>
+
+  <section id="sec-options">
+    <h2>The option set</h2>
+    <p>An <strong>option</strong> is one building: a construction type, a form, a story count and the homes the generator masses for it on the lot. The option set of a lot is every option with stories from 1 to the lot's physical maximum (<code>src/lib/generator/physical.ts</code>, tier 0), pruned as below. A cap <em>S</em> and a density cap select the options with stories ≤ <em>S</em>, with homes clipped by the unit cap as <code>capScenarioYield</code> does today.</p>
+    <table id="tbl-types">
+      <caption>Construction types and forms an option can take</caption>
+      <thead>
+        <tr><th scope="col">Type</th><th scope="col">Forms</th><th scope="col">Stories</th><th scope="col">Basis</th><th scope="col">Tier</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">V (wood frame, including 5-over-1 on a concrete podium)</th><td>plex, walkup, podium (existing massing)</td><td>1 to 6</td><td>DBI permits of 10 or more homes, issued 2005 on: Type V maximum 6 stories, p95 5 (n = 213). IBC 2021 Table 504.4 (to verify against the CBC text).</td><td>0 (limit), 3 (code)</td></tr>
+        <tr><th scope="row">III</th><td>podium, midrise</td><td>4 to 8</td><td>DBI: Type III maximum 8, p95 7 (n = 77).</td><td>0</td></tr>
+        <tr><th scope="row">I, mid-rise and high-rise block</th><td>midrise massing at full coverage, step-back as today, extended above 12 stories</td><td>any, to the physical maximum</td><td>DBI: every building of 13 stories or more is Type I (n = 105). Type I also appears at 5 to 12 stories (267 of 427).</td><td>0</td></tr>
+        <tr><th scope="row">I, tower</th><td>podium plus one or more tower plates</td><td>13 and above</td><td>Plate size and spacing from the existing generator (<code>TOWER_PLATE_MAX_M2</code>, <code>TOWER_SEPARATION_M</code>); several plates on lots that fit them.</td><td>4 (flagged), fit from LiDAR if possible (<a href="#sec-cost-massing">Massing</a>)</td></tr>
+      </tbody>
+    </table>
+    <p>Types II and IV are left out. Type II appears on 13 DBI permits (8 to 9 stories) and is priced like Type III at most. Type IV (mass timber) appears twice, both 6 stories or less, so there is no San Francisco evidence for it at height.</p>
+    <p>Districts (sites of 20,000 m² or more) keep their split into lots of about 1,524 m² (<code>DISTRICT_MIN_M2</code>, <code>LOT_FRONTAGE_M</code>). Each district lot gets its own option set.</p>
+    <section id="sec-options-prune">
+      <h3>Pruning</h3>
+      <p>Option <em>o</em> is dropped when another option <em>o′</em> on the same lot has stories ≤ <em>o</em>'s, homes ≥ <em>o</em>'s, cost per home ≤ <em>o</em>'s, value per home ≥ <em>o</em>'s and build time ≤ <em>o</em>'s. Such an <em>o′</em> beats <em>o</em> at every cap and every value index, so the pruning never changes a choice. In practice a taller option of the same type with fewer homes is always dropped, which removes the tower cliff by construction. The builder measures how many options survive per lot (<a href="#sec-calls">calls left to the builder</a>).</p>
+    </section>
+  </section>
+
+  <section id="sec-cost-massing">
+    <h2>Cost, value and build time by construction type</h2>
+    <table id="tbl-params">
+      <caption>Parameters of the choice, with their evidence tier (0 per-record, 1 official aggregate, 2 inference, 3 literature, 4 invented)</caption>
+      <thead>
+        <tr><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col">Source</th><th scope="col">Tier</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Cost per home, Type V</th><td>729,700 (prototype A, 5 stories, 45 homes); 929,700 under 25 homes (E)</td><td>Controller, Triennial Review of Economic Feasibility 2026, already in <code>PROTOTYPES</code></td><td>1</td></tr>
+        <tr><th scope="row">Cost per home, Type III</th><td>736,700 (B, 8 stories)</td><td>Controller 2026</td><td>1</td></tr>
+        <tr><th scope="row">Cost per home, Type I, 13 and 24 stories</th><td>857,700 (C), 918,700 (D)</td><td>Controller 2026</td><td>1</td></tr>
+        <tr><th scope="row">Cost per home, Type I below 13 stories</th><td>C's value</td><td>Same construction type as C. Cross-check: Terner Center, <em>The Hard Costs of Construction</em> (2020), Table 3: Type I +$65 per ft² hard cost</td><td>2 (3 for the cross-check)</td></tr>
+        <tr><th scope="row">Cost per home, Type I, 13 to 24 stories</th><td>linear from C to D</td><td>interpolation</td><td>2</td></tr>
+        <tr><th scope="row">Cost per home, Type I above 24 stories</th><td>D times the ratio of median permit valuation per home above 24 stories to that at 13 to 24 stories, fitted in the pipeline</td><td>DBI permit valuation (valuation is not cost; only the ratio is used). The raw pull gives 502k at 21+ stories against 361k at 13 to 20.</td><td>2, weak: flagged</td></tr>
+        <tr><th scope="row">Value per home by type</th><td>cost − shortfall: A 552,700; B 584,700; C 651,700; D 626,700; E 576,700. The same interpolation by stories as cost.</td><td>Controller 2026 residual land value (<code>shortfallPerHome</code>)</td><td>1</td></tr>
+        <tr><th scope="row">Location value index λ per lot</th><td>assessed value per home of residential buildings completed 2015 on, smoothed by area, ÷ the citywide figure</td><td>Assessor roll (wv5m-vpq2). New construction is assessed at market value when completed.</td><td>0 data, 2 index. <a href="#q-lambda">Open question</a>.</td></tr>
+        <tr><th scope="row">Construction time by height band</th><td>median months from first construction document to completion: 26.2 (≤ 4 stories), 29.3 (5 to 7), 28.6 (8 to 12), 27.4 (13 to 20), 34.7 (21+)</td><td>DBI permits (raw pull, n = 705, censored). The pipeline refits this from its own fetch, with <code>completed_date</code>.</td><td>0</td></tr>
+        <tr><th scope="row">Carrying cost of time</th><td><code>constructionRate</code> 0.085 on <code>AVERAGE_DRAWN</code> 0.55 of cost, for the months beyond the prototype's own band</td><td><code>MARKET_TERMS</code> (sourced in <code>terms.ts</code>); <code>AVERAGE_DRAWN</code> is the partner's assumption R11</td><td>as sourced there (R11 is 4)</td></tr>
+        <tr><th scope="row">Choice spread σ</th><td>fitted</td><td>DBI and Planning records: built stories ÷ <code>baseStoriesAtFiling</code></td><td>2</td></tr>
+        <tr><th scope="row">Full-coverage Type I coverage above 12 stories</th><td>midrise coverage 0.75 with step-back, or fitted</td><td>LiDAR footprints (ynuv-fyni) of buildings of 13 or more stories built 2005 on, footprint ÷ lot. Use 0.75 only if the fit cannot be made.</td><td>0 if fitted, else 4: flagged</td></tr>
+        <tr><th scope="row">Several towers: plate and spacing</th><td><code>TOWER_PLATE_MAX_M2</code> 900, <code>TOWER_SEPARATION_M</code> 6</td><td>existing generator constants</td><td>4: flagged. Replace with Planning Code tower-spacing rules where the builder can cite them.</td></tr>
+      </tbody>
+    </table>
+    <aside data-kind="note"><strong>Note</strong> The Controller's ratio of value to cost is about 0.76 for A, 0.79 for B, 0.76 for C, 0.68 for D and 0.62 for E. So at an average location Type III pays best per dollar, which matches the Controller's finding (reported by SPUR) that the 85-ft mid-rise is the most feasible prototype. A Type I tower wins only where λ is high enough that its extra homes outweigh the thinner margin. That is the real pattern: towers downtown and in SoMa, mid-rises elsewhere.</aside>
+    <p>The construction times say height barely matters to 20 stories and adds about 6 months above it. The stage tables get a construction-time multiplier by height band, fitted from DBI records in the pipeline (<code>pipeline/lib/fzp-cal/transitions.ts</code>). Bands with too few records merge into the lower neighbour, as the size model does with <code>sizeMinN</code>. Earlier stages keep no height term unless the records show one; the builder reports the per-band medians for filed-to-issued as well.</p>
+  </section>
+
+  <section id="sec-choice">
+    <h2>The choice rule</h2>
+    <p>For option <em>o</em> on lot ℓ, with <em>h</em> homes, cost per home <em>c</em>, value per home <em>v</em> and extra carrying cost per home <em>k</em> (all from <a href="#tbl-params">the parameter table</a>):</p>
+    <pre><code data-lang="text">RLV(o, λ) = h × (λ × v − c − k)
+λ*(ℓ)     = min over options of (c + k) / v       # the index at which the best option breaks even
+λeff(ℓ)   = max(λ(ℓ), λ*(ℓ))
+P(o)      ∝ exp(RLV(o, λeff) / (σ × h̄ × c̄))      # h̄, c̄: the lot's mean option homes and cost, so σ is unitless</code></pre>
+    <ul>
+      <li><strong>Land drops out.</strong> The lot's land cost is the same for every option on it, so it does not change which option scores highest.</li>
+      <li><strong>A start means the project pencils.</strong> The start logit, with today's market shift, decides whether a lot starts. Most lots today have no positive residual at the citywide value (the Controller finds every prototype short). A developer who starts anyway knows something the model does not, so the choice treats the lot as at least at break-even (λ<sub>eff</sub>). At break-even the option that pays best per dollar wins. Above it, the margin times homes decides, and bigger buildings win where values carry them. The rule is continuous in λ.</li>
+      <li><strong>One future.</strong> The draw uses the lot's existing size stream (<code>drawOn(stream, P.SIZE, 0)</code> in <code>world.ts</code>), so a run stays deterministic. As σ approaches 0 the rule becomes the argmax. σ is fitted so that the spread of built height ÷ limit matches the records.</li>
+      <li><strong>Revisions</strong> (<code>src/lib/sim/world/stage.ts</code>) move to a neighbouring option on the lot instead of rescaling a fill fraction. The builder keeps the existing ratio draw for the unit count when the option's type is unchanged.</li>
+    </ul>
+    <figure id="fig-flow">
+      <svg class="diagram" viewBox="0 0 760 200" role="img" aria-labelledby="fig-flow-t">
+        <title id="fig-flow-t">From a lot to a started building: what is baked and what runs</title>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+        <g class="group"><rect x="5" y="5" width="300" height="190"/><text x="155" y="22">dataset build</text></g>
+        <g class="group"><rect x="320" y="5" width="435" height="190"/><text x="537" y="22">run time (world)</text></g>
+        <g class="node" id="n-lot"><rect x="20" y="40" width="120" height="44"/><text x="80" y="62">lot geometry</text></g>
+        <g class="node missing" id="n-opts"><rect x="170" y="40" width="120" height="44"/><text x="230" y="62">option rows</text></g>
+        <g class="node missing" id="n-lambda"><rect x="170" y="120" width="120" height="44"/><text x="230" y="142">λ per lot</text></g>
+        <g class="node" id="n-cap"><rect x="335" y="40" width="120" height="44"/><text x="395" y="62">cap filter</text></g>
+        <g class="node missing" id="n-choice"><rect x="485" y="80" width="120" height="44"/><text x="545" y="102">choice row</text></g>
+        <g class="node" id="n-odds"><rect x="335" y="130" width="120" height="44"/><text x="395" y="152">start odds</text></g>
+        <g class="node result" id="n-start"><rect x="630" y="80" width="115" height="44"/><text x="687" y="102">start</text></g>
+        <g class="edge" data-from="n-lot" data-to="n-opts"><path d="M140 62H168"/></g>
+        <g class="edge" data-from="n-opts" data-to="n-cap"><path d="M290 62H333"/></g>
+        <g class="edge" data-from="n-cap" data-to="n-choice"><path d="M455 62L483 95"/></g>
+        <g class="edge" data-from="n-lambda" data-to="n-choice"><path d="M290 142H470L485 115"/></g>
+        <g class="edge" data-from="n-cap" data-to="n-odds"><path d="M395 84V128"/></g>
+        <g class="edge" data-from="n-odds" data-to="n-start"><path d="M455 152H660V126"/></g>
+        <g class="edge" data-from="n-choice" data-to="n-start"><path d="M605 102H628"/></g>
+      </svg>
+      <figcaption>Figure 1. Options and λ are baked per lot. A cap filters the options at run time, the choice row replaces <code>sizeCum</code>, and the start draws whether and then which. Dashed nodes are new.</figcaption>
+    </figure>
+  </section>
+
+  <section id="sec-funded">
+    <h2>Funded and affordable projects</h2>
+    <ul>
+      <li><strong>Market-rate projects with public money.</strong> They choose like any market project. The choice is made at the start, and money arrives later through the funding line. The money then prices the chosen option by its own type and stories, in place of <code>prototypeFor</code>'s tier 4 binning: Type V is A (E under 25 homes), Type III is B, and Type I is C, D or the interpolation. The funded latent sizes (<code>sizeAt</code> and the size draw in <code>src/lib/sim/scenario/funded.ts</code>) read the choice row instead of <code>sizeCum</code>.</li>
+      <li><strong>Affordable (100% affordable, tax-credit) projects.</strong> They maximise homes, not land residual. The money is awarded per home, and the cost per home is one figure whatever the building (<code>AFFORDABLE.costPerHome</code> 954,127, BLA Exhibit F, tier 1). So their rule is A: the option with the most homes at or below the cap, priced at the affordable cost. The evidence for a different rule is an inference (tier 2) from how they are paid. The check is per-record: the affordable cohort (<code>startCohort</code> = <code>'affordable'</code>, <code>pipeline/lib/affordable-cohort.ts</code>) should build closer to its limit than the private cohort. The builder reports built height ÷ limit by cohort. If the records show no difference, affordable projects use the market rule instead (<a href="#q-affordable">open question</a>).</li>
+    </ul>
+  </section>
+
+  <section id="sec-bake">
+    <h2>Baked at dataset build, chosen at run time</h2>
+    <ul>
+      <li><strong>Baked</strong> (pipeline, so a new dataset version): per lot, a fixed-width row of <em>K</em> pruned options, each (type, form, stories, homes); λ per lot; the type cost, value and duration tables in the calibration; the refitted <code>initiation</code>, size (σ) and stage tables. <code>gross.bin</code> is replaced by the option rows, or gains a type dimension (<code>gross-table.ts</code>, <code>pipeline/steps/gross.ts</code>). FZP, base, SB 79 and current-law rows (<code>pipeline/steps/scenario.ts</code>, <code>policy.ts</code>) become option rows filtered at those caps. Changing <code>src/lib/generator/</code> already changes the dataset version (<code>PATHS</code> in <code>pipeline/lib/version.ts</code>).</li>
+      <li><strong>At run time:</strong> for a cap from a lever or a game grant, filter the lot's <em>K</em> options by stories and the unit cap, then compute <em>K</em> exponentials. This builds the choice row in place of <code>sizeCum</code>, memoised per view as <code>precomputeOf</code> is today. That is O(<em>K</em>) per lot with no generator call. The per-project columns <code>level</code>, <code>yields</code> and <code>stories</code> (<code>world.ts</code>, <code>columns.ts</code>) hold the option index and the option's homes.</li>
+      <li><strong>Performance budget.</strong> <code>precomputeOf</code> on the live dataset stays within 1.5 times its current time, and the purchase-to-ready wait in <code>bench:map</code> stays within its pass bar (<code>docs/dev/map-perf.md</code>). Both are measured on a quiet machine.</li>
+    </ul>
+    <aside data-kind="warning"><strong>Warning</strong> This is a dataset change. Upload follows <code>docs/dev/pipeline.md</code>: build, then <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> must exit 0, then upload, then signoff. If current law no longer meets the first deadline, the ladder moves; see <a href="#sec-blast">blast radius</a>, game.</aside>
+  </section>
+
+  <section id="sec-odds">
+    <h2>Start odds refit</h2>
+    <ul>
+      <li><code>potentialRatio</code> and <code>storiesGap</code> (<code>scenario-codec.ts</code>, <code>input.ts</code>) are taken from the option set at the cap. <code>potentialRatio</code> becomes the expected homes of the choice row ÷ existing homes, and <code>storiesGap</code> becomes the chosen expected stories − existing stories. Both are computed with the same code in the panel and at run time.</li>
+      <li>The panel yields that the <code>initiation</code> fit reads (<code>pipeline/steps/scenario.ts</code>, panel; <code>pipeline/lib/fzp-cal/initiation.ts</code>) are recomputed from option rows at each record's base limit. Then <code>initiation</code> is refitted. <code>calibration.market</code> (<code>today.implied</code>, <code>today.private</code>, the slope) is recomputed from the refitted model, as <code>docs/dev/market.md</code> requires.</li>
+      <li>Whether to add the best option's margin (RLV at λ) as a start feature is a <a href="#q-margin">question for the owner</a>. It would let costs and values move starts directly, but it overlaps the market slope.</li>
+      <li>The size model (<code>pipeline/lib/fzp-cal/size.ts</code>, <code>calibration.size</code>) is replaced by σ, fitted on the same histories (built stories ÷ <code>baseStoriesAtFiling</code>). <code>sizeOverEnvelope</code> stays as a reported count.</li>
+    </ul>
+  </section>
+
+  <section id="sec-blast">
+    <h2>Blast radius</h2>
+    <table id="tbl-blast">
+      <caption>What reads the chosen building, and what changes in each</caption>
+      <thead>
+        <tr><th scope="col">Area</th><th scope="col">Where</th><th scope="col">Change</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Capacity counts</th><td><code>netCapacity</code>, <code>leverCapacity</code> (<code>levers/resolve.ts</code>); <code>world/policy/compile.ts</code>; <code>runner/runner.ts</code> <code>capacity()</code>; <code>timeline/session.svelte.ts</code></td><td>Capacity is the most-homes option at the cap (rule A): what a lot can hold, not what a developer builds. It no longer falls when the cap rises.</td></tr>
+        <tr><th scope="row">Opening room box</th><td><code>src/lib/paint/headline.ts</code></td><td>"Room for N homes" reads the new capacity. The numbers change. The homes goal may need re-tuning against them (game tuning).</td></tr>
+        <tr><th scope="row">Envelope and levers</th><td><code>levers/{resolve,layers,view,apply}.ts</code>; <code>world/policy/{zoning-view,limits}.ts</code></td><td>Envelope stories stay as the cap. The yield row of five fill levels becomes the option row.</td></tr>
+        <tr><th scope="row">Start, size and revision</th><td><code>scenario/input.ts</code> (<code>bucketOf</code>, <code>fillSizeRow</code>, <code>sizeCumAgainst</code>, <code>precomputeOf</code>); <code>world/world.ts</code>; <code>world/stage.ts</code>; <code>world/columns.ts</code>; <code>world/pipeline.ts</code></td><td>The choice row replaces <code>sizeCum</code>. A start records the option index, homes, stories and type. Revisions move between options.</td></tr>
+        <tr><th scope="row">Durations</th><td><code>calibration.transitions</code>; <code>world/stage.ts</code></td><td>Construction-time multiplier by height band.</td></tr>
+        <tr><th scope="row">Finance</th><td><code>prototypes.ts</code> (<code>prototypeFor</code>); <code>world/funding/{clocks,serve,closing,line-index,apply}.ts</code>; <code>scenario/funded.ts</code>; <code>scenario/finance-score.ts</code></td><td>Price by the option's type and stories. <code>PROTOTYPE_BINNING</code> (tier 4) is retired for new starts. Recorded projects with no type keep the binning, and the builder reports how many do. The money-limited funding plan re-measures on this dataset.</td></tr>
+        <tr><th scope="row">Parking and cars</th><td><code>world/cars/parking.ts</code> (<code>protoIndexOf</code>, <code>topPrototype</code>, <code>lotShift</code>)</td><td>The parking type follows the construction type of the lot's most likely option, not the top fill level.</td></tr>
+        <tr><th scope="row">Map massing and cards</th><td><code>scenario/massing.ts</code> (<code>massingFor</code>, <code>simKey</code>); <code>world/map-stream.ts</code>; <code>runner/{lookups,dataset,warm}.ts</code>; <code>scenario/card.ts</code>; <code>scenario/scenario-host.ts</code> (paint preview); <code>generator/cache.ts</code></td><td>The drawn building is the chosen option (type, form, stories, plates), so the map matches the homes. <code>simKey</code> includes the option. The paint preview shows the most-homes option. A card shows the chosen building; naming its type is optional.</td></tr>
+        <tr><th scope="row">Building boxes</th><td><code>render-boxes</code></td><td>None: these are existing buildings.</td></tr>
+        <tr><th scope="row">Pipeline</th><td><code>pipeline/steps/{scenario,policy,gross,check,check-gross}.ts</code>; <code>pipeline/lib/fzp-cal/{initiation,size,panel,transitions}.ts</code>; <code>pipeline/sources/datasf.ts</code></td><td>Option rows, λ, and the cost and time tables. Fetch <code>proposed_construction_type</code> from i98e-djp9. Refit initiation, σ and the stage multiplier. V17 and V36 are rewritten for option rows. New checks: no Type V above 6 stories and no Type III above 8.</td></tr>
+        <tr><th scope="row">Game</th><td><code>src/lib/game/catalogue/ladder-years.ts</code>; <code>catalogue/tuning.ts</code>; <code>scripts/{reach-check,reach-measure,tree-balance,money-monotone}.ts</code></td><td>Re-derive <code>LADDER_YEARS</code> with <code>reach-measure --write</code> and re-run <code>tree-balance</code>. The taller nodes' rewards may move.</td></tr>
+        <tr><th scope="row">Goldens</th><td><code>world.golden</code>, <code>model.golden</code>, the generator golden; <code>simulate.golden</code> goes with the scenario engine</td><td>Regenerate, with the change explained in the commit.</td></tr>
+        <tr><th scope="row">Docs</th><td><code>docs/dev/{fzp-mode,world-core,world-score,finance-model,market,cars,game,pipeline}.md</code>; a new <code>docs/dev/building-choice.md</code></td><td>Describe the option set, the choice rule and the tiers.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-acceptance">
+    <h2>Acceptance: record checks</h2>
+    <p>The records are fitted on 2015 onward and checked on the same window, at current law, in the world engine's first ten simulated years against the latest ten record years. Tolerances are two standard errors of the record statistic at its own sample size, so they widen where records are thin.</p>
+    <table id="tbl-accept">
+      <caption>Record checks the new dataset must pass</caption>
+      <thead>
+        <tr><th scope="col">Check</th><th scope="col">Records</th><th scope="col">Tolerance</th><th scope="col">Basis</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Built height ÷ limit, by limit bucket (≤ 4, ≤ 6, ≤ 8, ≤ 12, above 12)</th><td>Planning and DBI histories: <code>storiesProposed</code> ÷ <code>baseStoriesAtFiling</code> (<code>derive.ts</code>)</td><td>Mean ratio within ±0.10, and share at or above 0.9 of the limit within ±2 SE (binomial), for each bucket with n ≥ 30</td><td>Binomial SE at n of 30 to 300 is 3 to 9 points</td></tr>
+        <tr><th scope="row">Construction type by height band</th><td>DBI <code>proposed_construction_type</code></td><td>Exact: no Type V above 6 stories, no Type III above 8. Type I share at 8 to 12 stories within ±2 SE of the records' 90% (128 of 142)</td><td>Code limits; binomial SE</td></tr>
+        <tr><th scope="row">Issued to completion, median by height band</th><td>DBI dates (raw pull medians: 28.4, 36.8, 36.5, 33.7, 40.1 months)</td><td>Within ±2 SE of the median per band; the SE is about 1.25 × IQR ÷ (1.35 √n), so about ±7 months at n = 25</td><td>Large-sample SE of a median</td></tr>
+        <tr><th scope="row">Homes per new project of 10 or more, median by height band</th><td>DBI <code>proposed_units</code></td><td>Within ±2 SE per band</td><td>As above</td></tr>
+        <tr><th scope="row">Large lots (≥ 1,500 m²) with a limit of 13 or more: share built as Type I at 13 or more stories</th><td>DBI joined to parcels in the pipeline</td><td>Within ±2 SE, reported with n; if n &lt; 30, report only</td><td>Binomial SE</td></tr>
+        <tr><th scope="row">Built height ÷ limit by cohort (affordable against private)</th><td>as the first check, split by <code>startCohort</code></td><td>Report only; it decides <a href="#q-affordable">the affordable rule</a></td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p>The existing checks still pass: <code>reach-check</code> (after any ladder change), the pipeline invariants, the unit and e2e suites, and signoff.</p>
+  </section>
+
+  <section id="sec-measure">
+    <h2>Measurement to report</h2>
+    <p>This is reporting, not a gate. Report net completed homes (<code>completedNet</code>) at 2040 (month 168) and 2066 (month 479) for current law, and for current law with one transit rule (all stop types, 805 m) at 12, 13, 16, 20, 40 and 80 stories. Report the full tree at the same caps too. Put each figure beside the old dataset's from the taller-caps report, with the share of starts by construction type at each cap. A cap that builds fewer homes than a lower one is reported with the reason the records support. It is not fixed.</p>
+  </section>
+
+  <section id="sec-order">
+    <h2>Order</h2>
+    <p>This spec and its dataset land before the money-limited funding plan (<code>docs/superpowers/plans/2026-11-26-money-limited-funding.html</code>, branch <code>docs/money-limited-plan</code>). That plan re-measures on this dataset.</p>
+  </section>
+
+  <section id="sec-questions">
+    <h2>Open questions for the owner</h2>
+    <aside data-kind="question" id="q-lambda"><strong>Question 1: the location value index.</strong> Use λ from the assessor's values of buildings completed 2015 on (tier 0 data, tier 2 index), or one citywide value (λ = 1)? With λ = 1 everywhere, the break-even rule makes Type III win almost everywhere and towers rare, even downtown.</aside>
+    <aside data-kind="question" id="q-spread"><strong>Question 2: the spread.</strong> Draw the option with a logit whose spread σ is fitted to the records (the recommendation, which reproduces the under-building the records show), or always take the single best option (σ = 0)?</aside>
+    <aside data-kind="question" id="q-affordable"><strong>Question 3: affordable projects.</strong> Should they use rule A (most homes at the cap), as proposed, if the cohort check shows they build closer to the limit, and the market rule if it shows no difference?</aside>
+    <aside data-kind="question" id="q-margin"><strong>Question 4: start odds.</strong> Should the best option's margin become a start feature, beyond the refit on new yields?</aside>
+    <aside data-kind="question" id="q-bonus"><strong>Question 5: density bonus.</strong> Keep projects over the limit as today, or add a state density-bonus option (the records count them in <code>sizeOverEnvelope</code>) in a later spec?</aside>
+  </section>
+
+  <section id="sec-calls">
+    <h2>Calls left to the builder</h2>
+    <ul>
+      <li>The option row width <em>K</em> and its encoding. Report the distribution of surviving options per lot.</li>
+      <li>The smoothing area and method for λ, and the neighbourhood fallback where there are few new buildings.</li>
+      <li>The height-band edges for the construction-time multiplier, and how thin bands merge.</li>
+      <li>The tower plate count and placement on large lots, within the existing generator.</li>
+      <li>Whether the full-coverage Type I coverage can be fitted from LiDAR. If not, use 0.75 and flag it tier 4.</li>
+      <li>How revisions pick a neighbouring option.</li>
+      <li>File layout: option rows in a new binary or a widened <code>gross.bin</code>.</li>
+      <li>Whether the card names the construction type, under the terse-copy rule.</li>
+    </ul>
+  </section>
+</article>
