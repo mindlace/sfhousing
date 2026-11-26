@@ -1,5 +1,6 @@
-import { linkSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
+import { dirname } from 'node:path';
 import { tempSibling } from './atomic.js';
 
 export interface LockHolder {
@@ -19,6 +20,8 @@ export interface KeyLockDeps {
   pollMs?: number;
   /** Called once, on the first wait. */
   onWait?: (holder: LockHolder) => void;
+  /** Test seam: read the lock file's text. Default: readFileSync utf8. */
+  readLockFile?: (path: string) => string;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -32,13 +35,15 @@ function defaultIsAlive(pid: number): boolean {
   }
 }
 
-function readHolder(lockFile: string): LockHolder | null {
+/** The holder; 'gone' when the file vanished before the read; null when unparsable. */
+function readHolder(lockFile: string, read: (p: string) => string): LockHolder | null | 'gone' {
   try {
-    const h = JSON.parse(readFileSync(lockFile, 'utf8')) as Partial<LockHolder> | null;
+    const h = JSON.parse(read(lockFile)) as Partial<LockHolder> | null;
     if (h && typeof h.pid === 'number' && typeof h.host === 'string') {
       return { pid: h.pid, host: h.host, startedAt: String(h.startedAt ?? '') };
     }
-  } catch {
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return 'gone';
     // unreadable or unparsable: stale
   }
   return null;
@@ -60,6 +65,8 @@ export async function withKeyLock<T>(
   const host = deps.host ?? hostname();
   const pollMs = deps.pollMs ?? 5000;
   const mine: LockHolder = { pid: process.pid, host, startedAt: new Date().toISOString() };
+  const read = deps.readLockFile ?? ((p: string) => readFileSync(p, 'utf8'));
+  mkdirSync(dirname(lockFile), { recursive: true });
   const tmp = tempSibling(lockFile);
   writeFileSync(tmp, JSON.stringify(mine));
   try {
@@ -71,7 +78,9 @@ export async function withKeyLock<T>(
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
       }
-      const holder = readHolder(lockFile);
+      const holder = readHolder(lockFile, read);
+      // Released since the failed link: retry now; unlinking could delete a new holder's lock.
+      if (holder === 'gone') continue;
       if (holder === null || (holder.host === host && !isAlive(holder.pid))) {
         rmSync(lockFile, { force: true });
         continue;

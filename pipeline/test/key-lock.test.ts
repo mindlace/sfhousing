@@ -103,4 +103,42 @@ describe('withKeyLock', () => {
     expect(onWait).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  it('retries without unlinking when the lock vanishes before it is read', async () => {
+    writeFileSync(lockFile, holder('h'));
+    let reads = 0;
+    let presentAtSleep: boolean | null = null;
+    const sleep = vi.fn(async () => {
+      presentAtSleep = existsSync(lockFile);
+      rmSync(lockFile, { force: true });
+    });
+    const fn = vi.fn(async () => 'ok');
+    await withKeyLock(lockFile, fn, {
+      host: 'h',
+      isAlive: () => true,
+      sleep,
+      readLockFile: (p) => {
+        if (reads++ === 0) {
+          // the old holder released and a third process took the lock
+          rmSync(lockFile, { force: true });
+          writeFileSync(lockFile, holder('h'));
+          const e = new Error('gone') as NodeJS.ErrnoException;
+          e.code = 'ENOENT';
+          throw e;
+        }
+        return readFileSync(p, 'utf8');
+      }
+    });
+    expect(presentAtSleep).toBe(true);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates the lock directory', async () => {
+    const nested = join(dir, 'a', 'b', 'k.lock');
+    const fn = vi.fn(async () => 'ok');
+    await withKeyLock(nested, fn, { host: 'h', sleep: async () => {} });
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(existsSync(nested)).toBe(false);
+  });
 });

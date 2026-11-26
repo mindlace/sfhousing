@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './atomic.js';
-import { BOXES_FILES, type BoxesInputs } from './lidar/artifact.js';
+import { BOXES_FILES, BOXES_ID, type BoxesInputs } from './lidar/artifact.js';
 import { canonicalJson, verifyRaw, type LockEntry, type LockFile } from './lock.js';
 
 export interface BoxesIndexRecord {
@@ -66,6 +66,12 @@ export async function reusableEntry(
   if (!record || record.schema !== 1 || record.key !== key) return null;
   const entry = record.entry;
   if (!entry || !Array.isArray(entry.files) || !Array.isArray(record.requires)) return null;
+  if (entry.id !== BOXES_ID) return null;
+  try {
+    if (inputsFileOf(entry).sha256 !== key) return null;
+  } catch {
+    return null;
+  }
   const shas = entry.files.map((f) => f.sha256);
   if (shas.length !== record.requires.length || shas.some((s, i) => s !== record.requires[i])) {
     return null;

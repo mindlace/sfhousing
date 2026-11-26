@@ -112,6 +112,30 @@ describe('boxes index', () => {
       expect(await reusableEntry(idx, k, raw, true)).toBeNull();
     });
 
+    it('when the entry id is not building-boxes', async () => {
+      const k = key();
+      writeBoxesIndex(idx, k, { ...entry, id: 'other' });
+      expect(await reusableEntry(idx, k, raw, true)).toBeNull();
+    });
+
+    it('when the entry inputs.json sha256 is not the key', async () => {
+      const k = key();
+      const files = entry.files.map((f) =>
+        f.name.endsWith('inputs.json') ? { ...f, sha256: 'e'.repeat(64) } : f
+      );
+      writeBoxesIndex(idx, k, { ...entry, files });
+      expect(await reusableEntry(idx, k, raw, true)).toBeNull();
+    });
+
+    it('when the entry has no inputs.json', async () => {
+      const k = key();
+      writeBoxesIndex(idx, k, {
+        ...entry,
+        files: entry.files.filter((f) => !f.name.endsWith('inputs.json'))
+      });
+      expect(await reusableEntry(idx, k, raw, true)).toBeNull();
+    });
+
     it('when the JSON is unparsable', async () => {
       const k = key();
       writeBoxesIndex(idx, k, entry);
