@@ -152,11 +152,11 @@ Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `be6467dc`), cars on
 `LADDER_YEARS = [2060, 2055, 2045, 2040]`: exit 0 with `tuning.ts` unchanged. Gated hand plays
 (runs, purchases, clock): `catalogue` 21, 17, 11:56; `permitting-first` 21, 17, 11:56;
 `zoning-first` 22, 19, 12:32; `hands-first` 11, 25, 7:48; `cheapest` 16, 31, 10:32. No side goal
-is flagged. `funded-homes` and `affordable-homes` stay left out from the tuning on
+is flagged. `funded-homes` and `affordable-homes` are carried left out from
 `2026-11-14-09ca30c8`, where the bought sets seen reached about 12,460 funded and 16,230
-affordable homes against floors of about 15,000 and 17,000 at the deadline the plays first show
-them; the script does not read a goal left out, so these figures are not re-measured on this
-version.
+affordable homes against floors of about 15,000 and 17,000 by the deadline at which the plays
+first show them. They are not decided on this version: the script does not read a goal left out.
+The retake of the pass that merges main `083fb7ae` decides them, starting from all eleven ids.
 
 ## Grants and the policy document
 
