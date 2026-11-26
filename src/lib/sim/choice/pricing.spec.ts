@@ -28,6 +28,13 @@ describe('pricing by option', () => {
     expect(costPerHome({ type: 'V', stories: 3, homes: 24 }, m)).toBe(929_700);
     expect(valuePerHome({ type: 'V', stories: 5, homes: 45 }, m)).toBe(552_700);
   });
+  it('prices E for Type V only: a small Type III or Type I keeps its own anchor', () => {
+    expect(costPerHome({ type: 'III', stories: 5, homes: 24 }, m)).toBe(736_700);
+    expect(valuePerHome({ type: 'III', stories: 5, homes: 24 }, m)).toBe(584_700);
+    expect(costPerHome({ type: 'I', stories: 3, homes: 10 }, m)).toBe(857_700);
+    expect(optionPrototype({ type: 'III', stories: 5, homes: 24 }, m).id).toBe('B');
+    expect(optionPrototype({ type: 'V', stories: 3, homes: 24 }, m).id).toBe('E');
+  });
   it('prices Type III as B and Type I below 13 as C', () => {
     expect(costPerHome({ type: 'III', stories: 7, homes: 80 }, m)).toBe(736_700);
     expect(costPerHome({ type: 'I', stories: 9, homes: 80 }, m)).toBe(857_700);

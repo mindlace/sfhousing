@@ -9,12 +9,12 @@ export type PriceKey = PrototypeId | `I${number}`;
 type Sized = Pick<Option, 'type' | 'stories' | 'homes'>;
 type Anchor = PriceStep['anchors'][PrototypeId];
 
+/** Type V under this many homes is priced as prototype E; other types keep their own anchor. */
 const SMALL = 25;
 
 /** Anchor a non-interpolated option is priced as, or null when Type I interpolates. */
 function fixedAnchor(o: Sized, p: PriceStep): PrototypeId | null {
-  if (o.homes < SMALL) return 'E';
-  if (o.type === 'V') return 'A';
+  if (o.type === 'V') return o.homes < SMALL ? 'E' : 'A';
   if (o.type === 'III') return 'B';
   return o.stories <= p.anchors.C.stories ? 'C' : null;
 }
