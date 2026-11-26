@@ -55,6 +55,12 @@ export const BOXES = {
   // Landmark parts: 5 roof tiers.
   partTiers: 5,
   partTierShapes: ['pyramidal', 'dome', 'cone', 'onion'],
+  // Parts the LiDAR disputes: a checked part whose drawn top differs from the median raised LiDAR
+  // height over the cells it alone shows by more than max(partTolM, partTolFrac x top) is
+  // disputed; the parts are rejected when the disputed ones cover partRejectShare of all parts.
+  partTolM: 5,
+  partTolFrac: 0.1,
+  partRejectShare: 0.25,
   // The uncovered area loses slivers under 2x this wide (an opening): part and footprint edges
   // that should coincide differ by mm to cm after the lng/lat round trip.
   partSliverM: 0.05,

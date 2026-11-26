@@ -2,16 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { BOXES } from '../boxes-config.js';
 import { area, difference, grow, intersect, type MultiPoly, type Ring } from '../geom.js';
 import { deriveBoxes, groundOf, type DeriveInput, type RenderBox } from '../lib/lidar/derive.js';
-import type { Footprint, Shift, ShiftSource } from '../lib/lidar/register.js';
+import type { Footprint } from '../lib/lidar/register.js';
 import { StreetIndex } from '../lib/lidar/streets.js';
-import { synthWindow, type SynthScene } from './lidar-synth.js';
-
-const rect = (x0: number, y0: number, x1: number, y1: number): Ring => [
-  [x0, y0],
-  [x1, y0],
-  [x1, y1],
-  [x0, y1]
-];
+import { fpOf, rect, shiftOf, synthWindow, type SynthScene } from './lidar-synth.js';
 
 const disc = (cx: number, cy: number, r: number, n = 32): Ring =>
   Array.from({ length: n }, (_, k): [number, number] => [
@@ -20,28 +13,6 @@ const disc = (cx: number, cy: number, r: number, n = 32): Ring =>
   ]);
 
 const flatGround = (): number => 15;
-
-const fpOf = (shape: MultiPoly, o: Partial<Footprint> = {}): Footprint => ({
-  bid: 'b1',
-  shape,
-  heightM: 9,
-  baseM: 0,
-  hs: 0,
-  ...o
-});
-
-const shiftOf = (dx = 0, dy = 0, source: ShiftSource = 'fit'): Shift => ({
-  dx,
-  dy,
-  source,
-  score: source === 'none' ? 0 : 0.5,
-  best: source === 'none' ? 0 : 0.5,
-  ratio: 0.2,
-  sharpX: 0.1,
-  sharpY: 0.1,
-  atEdge: false,
-  flagged: source !== 'fit'
-});
 
 // The mini streets pattern: a public centreline 12 m in front of the street face (y = 200).
 const FRONT_LINE: Ring = [

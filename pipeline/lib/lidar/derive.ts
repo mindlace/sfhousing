@@ -62,7 +62,7 @@ export interface DeriveInput {
 const round1 = (v: number): number => Math.round(v * 10) / 10 + 0;
 const round2 = (v: number): number => Math.round(v * 100) / 100 + 0;
 
-function bboxOf(p: MultiPoly): Bbox7131 {
+export function bboxOf(p: MultiPoly): Bbox7131 {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -79,7 +79,7 @@ function bboxOf(p: MultiPoly): Bbox7131 {
 }
 
 /** The cells of w over b (clamped to w); null when they do not overlap. */
-function subWindow(w: RasterWindow, b: Bbox7131): RasterWindow | null {
+export function subWindow(w: RasterWindow, b: Bbox7131): RasterWindow | null {
   const i0 = Math.max(0, Math.floor((b.x0 - w.x0) / w.res));
   const j0 = Math.max(0, Math.floor((b.y0 - w.y0) / w.res));
   const i1 = Math.min(w.nx, Math.ceil((b.x1 - w.x0) / w.res));
