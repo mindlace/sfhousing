@@ -120,14 +120,14 @@ Point` x[E−50, E+50] y[-100,100].
 `overture-building-parts` (optional source; same release as `overture-buildings`, both `fixture` here) has
 six parts. Local metres, as the lots:
 
-| part     | building | extent              | height | other                                                      | exercises                                     |
-| -------- | -------- | ------------------- | ------ | ---------------------------------------------------------- | --------------------------------------------- |
-| `p14a`   | `b14`    | x[132,138] y[5,25]  | 20     |                                                            | podium over the whole footprint               |
-| `p14b`   | `b14`    | x[133,137] y[15,24] | 60     | `roof_shape` `pyramidal`, `roof_height` 8, `min_height` 20 | tower with a roof                             |
-| `p14c`   | `b14`    | x[132,134] y[5,7]   | none   |                                                            | a part without a height (not counted)         |
-| `p14leg` | `b14`    | x[139,140] y[26,27] | 10     |                                                            | outside the footprint, inside lot 14          |
-| `p10`    | `b10`    | x[95,100] y[5,25]   | 18     |                                                            | covers half of `b10`: x[100,105] is uncovered |
-| `ppier`  | `bpier`  | x[20,40] y[-40,-32] | 70     | `roof_shape` `skillion`, `roof_height` 50 (drawn top 45)   | disputed by the LiDAR and rejected (boxes)    |
+| part     | building | extent              | height | other                                                      | exercises                                                  |
+| -------- | -------- | ------------------- | ------ | ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `p14a`   | `b14`    | x[132,138] y[5,25]  | 20     |                                                            | podium over the whole footprint                            |
+| `p14b`   | `b14`    | x[133,137] y[15,24] | 60     | `roof_shape` `pyramidal`, `roof_height` 8, `min_height` 20 | tower with a roof                                          |
+| `p14c`   | `b14`    | x[132,134] y[5,7]   | none   |                                                            | a part without a height (not counted)                      |
+| `p14leg` | `b14`    | x[139,140] y[26,27] | 10     |                                                            | outside the footprint, inside lot 14                       |
+| `p10`    | `b10`    | x[95,100] y[5,25]   | 18     |                                                            | covers half of `b10`: x[100,105] is uncovered              |
+| `ppier`  | `bpier`  | x[20,40] y[-40,-32] | 20     | `roof_shape` `skillion`, `roof_height` 10 (drawn top 15)   | under the LiDAR (median 36): disputed and rejected (boxes) |
 
 ## LiDAR
 

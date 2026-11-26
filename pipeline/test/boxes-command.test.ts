@@ -369,10 +369,11 @@ describe('buildingBoxes', () => {
         { ring: rect(107, 207, 123, 213), top: 60 }
       ]
     };
+    // Drawn too low: a skillion topping at 15 m over the cake's 24-60 m.
     const p = part('a', rect(100, 200, 120, 208), {
-      heightM: 70,
+      heightM: 20,
       roofShape: 'skillion',
-      roofHeightM: 50
+      roofHeightM: 10
     });
     const r = buildingBoxes(win(cake, ring), fpOf([[ring]]), shiftOf(), streets, [p]);
     expect(r.check?.rejected).toBe(true);
@@ -390,7 +391,7 @@ describe('buildingBoxes', () => {
     const pr = rect(100, 200, 106, 205); // 30 m2
     const scene: SynthScene = { ground: () => 15, boxes: [{ ring: pr, top: 10 }] };
     const r = buildingBoxes(win(scene, ring), fpOf([[ring]]), shiftOf(), streets, [
-      part('a', pr, { heightM: 45 })
+      part('a', pr, { heightM: 3 }) // drawn 7 m under the LiDAR's 10 m
     ]);
     expect(area([[pr]])).toBe(30);
     expect(r.check).toMatchObject({ disputed: 1, rejected: true });

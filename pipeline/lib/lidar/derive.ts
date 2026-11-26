@@ -82,6 +82,14 @@ export function bboxOf(p: MultiPoly): Bbox7131 {
   return { x0, y0, x1, y1 };
 }
 
+/**
+ * Cell k of w is vegetation for derive: flagged, and under vegKeepAboveM above ground (a taller
+ * flagged cell is glass that tripped the multi-return rule, not a tree).
+ */
+export function isVegCell(w: RasterWindow, k: number): boolean {
+  return w.veg[k] === 1 && !(w.hag[k] >= BOXES.vegKeepAboveM);
+}
+
 /** The cells of w over b (clamped to w); null when they do not overlap. */
 export function subWindow(w: RasterWindow, b: Bbox7131): RasterWindow | null {
   const i0 = Math.max(0, Math.floor((b.x0 - w.x0) / w.res));
@@ -882,7 +890,7 @@ export function deriveBoxes(
   }
   const cIdx: number[] = [];
   for (let k = 0; k < h.length; k++)
-    if (intMask[k] && !Number.isNaN(h[k]) && !sw.veg[k] && sw.hag[k] >= BOXES.raisedHagM)
+    if (intMask[k] && !Number.isNaN(h[k]) && !isVegCell(sw, k) && sw.hag[k] >= BOXES.raisedHagM)
       cIdx.push(k);
   // Raised non-vegetation cells under minInteriorM2: nothing in the LiDAR is a building (a lot
   // with trees, built after the flight).
@@ -988,7 +996,7 @@ export function deriveBoxes(
   };
   const minCells = BOXES.stepMinAreaM2 / (res * res);
   const rough = roughMask(h, nx, ny, BOXES.treeRoughM);
-  let stepCells = new Uint8Array(nx * ny);
+  let stepCells: Uint8Array = new Uint8Array(nx * ny);
   const steps: { shape: MultiPoly; level: number }[] = [];
   let terraces: Terrace[] = [];
   let stepUnion: MultiPoly = [];
@@ -1081,7 +1089,7 @@ export function deriveBoxes(
     for (let k = 0; k < bandMask.length; k++) {
       if (!bandMask[k]) continue;
       nBand++;
-      if (Number.isNaN(h[k]) || sw.veg[k] || rough[k] || stepNear[k]) continue;
+      if (Number.isNaN(h[k]) || isVegCell(sw, k) || rough[k] || stepNear[k]) continue;
       vals.push(h[k]);
       const i = k % nx;
       const j = (k - i) / nx;

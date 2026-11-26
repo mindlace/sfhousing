@@ -1,5 +1,6 @@
 // Parts the LiDAR disputes (spec "Parts the LiDAR disputes"): each counted part's drawn top is
-// compared with the LiDAR over the cells the part alone shows (its shape minus every taller part).
+// compared with the LiDAR over the cells the part alone shows (its shape minus every taller part);
+// it is disputed only when the LiDAR stands above it (drawn too low).
 // Parts stay unshifted; the mask samples the raster at part + shift. Anything that cannot be
 // compared (no registration, a tiered or small part, a lattice, no cells) is trusted.
 import { BOXES } from '../../boxes-config.js';
@@ -99,7 +100,9 @@ export function checkParts(
     raised.sort((a, c) => a - c);
     v.lidarM = round2(median(raised));
     v.checked = true;
-    v.disputed = Math.abs(v.topM - v.lidarM) > Math.max(BOXES.partTolM, BOXES.partTolFrac * v.topM);
+    // Only a part drawn too low is disputed: LiDAR under the drawn top is a lattice, spire or open
+    // frame the pulses fall through, and the part stays trusted.
+    v.disputed = v.lidarM - v.topM > Math.max(BOXES.partTolM, BOXES.partTolFrac * v.topM);
   });
 
   const checked = parts.filter((v) => v.checked).length;

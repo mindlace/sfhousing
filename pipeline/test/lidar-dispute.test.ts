@@ -52,12 +52,31 @@ describe('checkParts', () => {
     expect(Math.abs((c.parts[0].lidarM as number) - 20)).toBeLessThan(0.2);
   });
 
-  it('a skillion part drawn at mid-roof over a lower roof is disputed and rejects the building', () => {
+  it('a skillion part drawn at mid-roof under a taller roof is disputed and rejects the building', () => {
+    // Salesforce: skillion parts drawn at 203.5 m, the LiDAR reads about 270 m.
     const r = rect(100, 200, 120, 208);
     const p = part('a', r, { heightM: 70, roofShape: 'skillion', roofHeightM: 50 });
-    const c = agree(r, p, 24);
+    const c = agree(r, p, 70);
     expect(c.parts[0].topM).toBe(45);
     expect(c).toMatchObject({ checked: 1, disputed: 1, rejected: true });
+  });
+
+  it('a part drawn above the LiDAR is trusted: an open frame the LiDAR sees into', () => {
+    // Sutro: a 232 m part over cells whose raised median is 67 m, raised share about 0.6.
+    const r = rect(100, 200, 120, 210);
+    const c = run(
+      {
+        boxes: [
+          { ring: rect(100, 200, 112, 210), top: 60 },
+          { ring: rect(112, 200, 113, 210), top: 230 }
+        ]
+      },
+      r,
+      [part('a', r, { heightM: 232 })]
+    );
+    expect(c.parts[0].raisedShare as number).toBeCloseTo(0.65, 1);
+    expect(c.parts[0].lidarM as number).toBeLessThan(70);
+    expect(c).toMatchObject({ checked: 1, disputed: 0, rejected: false });
   });
 
   it('tiered and small parts are never checked', () => {
@@ -115,19 +134,21 @@ describe('checkParts', () => {
         ]
       },
       rect(100, 200, 150, 210),
-      [part('a', big, { heightM: 20 }), part('b', small, { heightM: 80 })]
+      [part('a', big, { heightM: 20 }), part('b', small, { heightM: 20 })]
     );
     expect(c).toMatchObject({ checked: 2, disputed: 1, rejected: false });
   });
 
-  it('the tolerance is max(partTolM, partTolFrac x top)', () => {
+  it('the tolerance is max(partTolM, partTolFrac x top), LiDAR above the drawn top only', () => {
     const r = rect(100, 200, 120, 220);
     const dispute = (top: number, lidar: number): boolean =>
       agree(r, part('a', r, { heightM: top }), lidar).disputed === 1;
-    expect(dispute(100, 91)).toBe(false);
-    expect(dispute(100, 89)).toBe(true);
+    expect(dispute(100, 109)).toBe(false);
+    expect(dispute(100, 111)).toBe(true);
     expect(dispute(20, 24.5)).toBe(false);
     expect(dispute(20, 25.5)).toBe(true);
+    expect(dispute(100, 50)).toBe(false);
+    expect(dispute(20, 10)).toBe(false);
   });
 
   it('without a window, a shift, or with shift source none, every part is trusted', () => {

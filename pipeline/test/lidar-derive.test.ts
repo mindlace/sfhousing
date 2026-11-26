@@ -480,6 +480,29 @@ describe('deriveBoxes', () => {
       expect(bySrc(boxes, 'step')).toHaveLength(0);
       expectInside(boxes, fp.shape);
     });
+
+    it('a tall block flagged vegetation is building (glass trips the multi-return flag)', () => {
+      const tall = BOXES.vegKeepAboveM + 20;
+      const s: SynthScene = {
+        ground: flatGround,
+        boxes: [],
+        veg: [{ ring, top: tall }]
+      };
+      const { boxes, roof } = run(s, fp, { streets: new StreetIndex([]) });
+      expect(roof.fallback).toBeNull();
+      expect(Math.max(...boxes.map((b) => b.heightM))).toBeCloseTo(tall, 0);
+      expectInside(boxes, fp.shape);
+    });
+
+    it('a low block flagged vegetation still drops', () => {
+      const s: SynthScene = {
+        ground: flatGround,
+        boxes: [],
+        veg: [{ ring, top: 16 }]
+      };
+      const { roof } = run(s, fp, { streets: new StreetIndex([]) });
+      expect(roof.fallback).toBe('new_building');
+    });
   });
 
   describe('fallbacks', () => {

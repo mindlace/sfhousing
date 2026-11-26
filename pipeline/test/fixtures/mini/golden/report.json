@@ -856,7 +856,7 @@
     "derivedData": "ODbL-1.0",
     "notice": "Derived data files under /data/ that incorporate OpenStreetMap or Overture data are made available under the ODbL 1.0."
   },
-  "lockSha256": "7a8c3d2b52936271a3e6f5af24c08fd9b4b974ad89c32f77ac5194051eb523bd",
+  "lockSha256": "254185483a5cb4b0817a993cecfb216f76250a8f1ec338c3736aa545b2e5bd4e",
   "tilesSkipped": false,
   "toolVersions": {
     "duckdb": "1.5.6",

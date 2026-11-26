@@ -8,6 +8,11 @@ export const BOXES = {
   tileSizeM: 500,
   tilePadM: 20,
   vegFracMin: 0.35,
+  // Derive keeps a vegetation-flagged cell inside a footprint as building at this height above
+  // ground or more: this cloud has no vegetation classes, so the flag is the multi-return rule,
+  // which glass curtain walls trip (Salesforce Tower, 60% of its cells); no SF tree in a footprint
+  // is this tall. Tier 3 (measured on Salesforce, 2026-11-26).
+  vegKeepAboveM: 60,
   // Registration: search +-3 m at 0.1 m, cluster touch tolerance 1.5 m.
   regSearchM: 3,
   regStepM: 0.1,
@@ -44,7 +49,7 @@ export const BOXES = {
   taperMinRiseM: 40,
   taperTiers: 16,
   taperMergeShare: 0.98,
-  taperRoughM: 1,
+  taperRoughM: 4,
   taperSampleFrac: 0.5,
   // Roofs.
   roofBinM: 0.5,
@@ -65,9 +70,10 @@ export const BOXES = {
   // Landmark parts: 5 roof tiers.
   partTiers: 5,
   partTierShapes: ['pyramidal', 'dome', 'cone', 'onion'],
-  // Parts the LiDAR disputes: a checked part whose drawn top differs from the median raised LiDAR
+  // Parts the LiDAR disputes: a checked part whose drawn top lies under the median raised LiDAR
   // height over the cells it alone shows by more than max(partTolM, partTolFrac x top) is
-  // disputed; the parts are rejected when the disputed ones cover partRejectShare of all parts.
+  // disputed (LiDAR under the top is a lattice or open frame, trusted); the parts are rejected
+  // when the disputed ones cover partRejectShare of all parts.
   partTolM: 5,
   partTolFrac: 0.1,
   partRejectShare: 0.25,

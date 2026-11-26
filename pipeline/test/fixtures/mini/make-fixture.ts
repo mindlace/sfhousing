@@ -584,11 +584,12 @@ const overtureParts = [
   }),
   part('p14c', 'b14', null, polygon(rect(132, 5, 134, 7))),
   part('p14leg', 'b14', 10, polygon(rect(139, 26, 140, 27))),
-  // bpier is Salesforce in small: the part draws a 70 m skillion over the whole footprint (top 45
-  // at the eave side), the LiDAR a stepped tower, so the part is disputed and rejected.
-  part('ppier', 'bpier', 70, polygon(rect(20, -40, 40, -32)), {
+  // bpier is Salesforce in small: the part draws a 20 m skillion over the whole footprint (top 15
+  // at the eave side), under the LiDAR's stepped tower (median 36 m), so the part is drawn too low,
+  // disputed and rejected.
+  part('ppier', 'bpier', 20, polygon(rect(20, -40, 40, -32)), {
     roof_shape: 'skillion',
-    roof_height: 50
+    roof_height: 10
   })
 ];
 
