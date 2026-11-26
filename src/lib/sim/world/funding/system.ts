@@ -14,7 +14,6 @@ import { lotRow } from '../columns';
 import { applyLots, leaveLine, planLotMonth } from './apply';
 import { closedTimeline, reopenArrivals } from './closing';
 import { fundOf, initFunding, type FundLine, type FundPools } from './columns';
-import { lineIndex, rowOfSeq } from './line-index';
 import { policyChanged } from './policy';
 import { moneyIn, moneyOnEvent } from './pools';
 import { serveLine } from './serve';
@@ -25,27 +24,56 @@ import * as typesModule from '../types';
 // getter call (docs/dev/world-core.md, Cost).
 const { LOT_FREE } = typesModule;
 const lotRowOf = lotRow;
-const lineIndexOf = lineIndex;
-const rowOfSeqIn = rowOfSeq;
+
+// Per-lot scratch for waitingHomes, outside any world: `seenAt[lot] === stamp` marks a lot met in
+// this call, `bestOf[lot]` its largest units so far. Grown (doubling) only when a lot id is past
+// the end, so a month allocates nothing.
+let seenAt = new Int32Array(0);
+let bestOf = new Int32Array(0);
+let stamp = 0;
 
 /** Homes in the applications waiting in the line now. 0 for a world without funding columns. */
 export function waitingHomes(world: World): number {
   if (!('gone' in world.line)) return 0;
   const line = world.line as FundLine;
   const lots = world.lots;
+  const n = line.n;
+  const lotCol = line.lot;
+  const gone = line.gone;
+  const units = line.units;
+  if (stamp >= 0x7fffffff) {
+    seenAt.fill(0);
+    stamp = 0;
+  }
+  stamp++;
   let sum = 0;
-  for (const [lot, members] of lineIndexOf(line).byLot) {
+  for (let i = 0; i < n; i++) {
+    if (gone[i] === 1) continue;
+    const lot = lotCol[i];
+    if (lot >= seenAt.length) {
+      const size = Math.max(lot + 1, 2 * seenAt.length, 1024);
+      const nextSeen = new Int32Array(size);
+      nextSeen.set(seenAt);
+      seenAt = nextSeen;
+      const nextBest = new Int32Array(size);
+      nextBest.set(bestOf);
+      bestOf = nextBest;
+    }
+    const u = units[i] > 0 ? units[i] : 0;
+    if (seenAt[lot] === stamp) {
+      // A lot with two applications counts once, by the larger.
+      if (u > bestOf[lot]) {
+        sum += u - bestOf[lot];
+        bestOf[lot] = u;
+      }
+      continue;
+    }
     // Rule 8's lazy guard, the same test as serveRow's: a lot no longer free waits for nothing.
     const li = lotRowOf(lots, lot);
     if (li >= 0 && lots.state[li] !== LOT_FREE) continue;
-    // A lot with two applications counts once, by the larger.
-    let most = 0;
-    for (const m of members) {
-      const i = rowOfSeqIn(line, m.seq);
-      if (i < 0 || line.gone[i] === 1) continue;
-      if (line.units[i] > most) most = line.units[i];
-    }
-    sum += most;
+    seenAt[lot] = stamp;
+    bestOf[lot] = u;
+    sum += u;
   }
   return sum;
 }
