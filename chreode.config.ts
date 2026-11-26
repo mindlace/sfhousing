@@ -24,7 +24,9 @@ export default defineConfig({
         'src/lib/timelapse/**',
         'src/lib/plan/types.ts',
         'src/lib/plan/geometry.ts',
-        'src/lib/sim/finance/**'
+        'src/lib/sim/finance/**',
+        'src/lib/sim/cars/**',
+        'src/lib/transit/**'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
     },
