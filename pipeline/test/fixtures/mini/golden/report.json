@@ -647,6 +647,8 @@
     "scenario.yield.fzp_net_total": 36,
     "scenario.yield.nonlp_base_mismatch": 0,
     "tiles.buildings.drops_z14plus": 0,
+    "tiles.buildings.z12_parcels": 11,
+    "tiles.buildings.z13_parcels": 11,
     "transit.bytes": 2876,
     "transit.patterns": 7,
     "transit.stops": 8,

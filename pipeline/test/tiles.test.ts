@@ -17,6 +17,7 @@ import { build } from '../steps/build';
 import { writeRenderBoxes } from '../steps/render-boxes';
 import {
   installFonts,
+  parcelIdsAtZoom,
   SPLIT_MAX_TILE_BYTES,
   tileDropReports,
   writeBasemap,
@@ -223,20 +224,60 @@ describe.skipIf(!hasTippecanoe || !hasPmtiles)('buildings tiles zoom split [tool
     });
   }, 300_000);
 
-  it("z12-13 keep today's boxes", async () => {
-    const z13 = await tileFeatures(splitFile, 13, LOT['3512014']);
-    expect(z13.length).toBeGreaterThan(0);
-    for (const f of z13)
-      expect(Object.keys(f.props).filter((k) => !TODAY_FIELDS.includes(k))).toEqual([]);
-    const heights = z13.filter((f) => f.props.parcelId === '3512014').map((f) => f.props.heightM);
-    expect(new Set(heights)).toEqual(new Set([60]));
-    // The same features as the archive without the artifact, at both zooms.
+  it('z12-13 draw a parts building as its render boxes, every other building as before', async () => {
+    // F3: every mini lot lies in one z12 and one z13 tile, so compare by parcel, not by tile.
+    const partParcels = (
+      await db.all<{ parcel_id: string }>(
+        `SELECT DISTINCT parcel_id FROM render_export
+         WHERE parcel_id IS NOT NULL AND bid IN (SELECT bid FROM render_boxes WHERE src = 'part')`
+      )
+    ).map((r) => r.parcel_id);
+    expect(partParcels).toEqual(expect.arrayContaining(['3512010', '3512011', '3512014']));
+    const pairs = (fs: TileFeature[], id: string) =>
+      fs.filter((f) => f.props.parcelId === id).map((f) => `${f.props.heightM}/${f.props.baseM}`);
+    const z15 = pairs(await tileFeatures(splitFile, 15, LOT['3512014']), '3512014');
+    expect(z15.length).toBe(8);
     for (const z of [12, 13]) {
-      for (const at of Object.values(LOT)) {
-        expect(sortedFeatures(await tileFeatures(splitFile, z, at)), `z${z}`).toEqual(
-          sortedFeatures(await tileFeatures(plainFile, z, at))
+      const fs = await tileFeatures(splitFile, z, LOT['3512014']);
+      expect(fs.length, `z${z}`).toBeGreaterThan(0);
+      for (const f of fs)
+        expect(Object.keys(f.props).filter((k) => !TODAY_FIELDS.includes(k))).toEqual([]);
+      // b14's z13 features are a subset of its z15 boxes (F9: tippecanoe may merge or drop some).
+      const b14 = pairs(fs, '3512014');
+      expect(b14.length, `z${z}`).toBeGreaterThan(1);
+      for (const p of b14) expect(z15, `z${z}`).toContain(p);
+      expect(b14, `z${z}`).toEqual(expect.arrayContaining(['20/0', '52/20']));
+      // b10 (part + LiDAR step) and b11 by parcel.
+      const heights = (id: string) =>
+        new Set(fs.filter((f) => f.props.parcelId === id).map((f) => f.props.heightM));
+      expect(heights('3512010'), `z${z}`).toEqual(new Set([18]));
+      expect(heights('3512011'), `z${z}`).toEqual(new Set([18, 26]));
+      // Every other building (no part boxes) is as in the archive without the artifact.
+      const rest = (fs: TileFeature[]) =>
+        sortedFeatures(
+          fs.filter(
+            (f) =>
+              f.props.parcelId !== undefined && !partParcels.includes(f.props.parcelId as string)
+          )
         );
+      for (const at of Object.values(LOT)) {
+        const r = rest(await tileFeatures(plainFile, z, at));
+        expect(r.length, `z${z}`).toBeGreaterThan(0);
+        expect(rest(await tileFeatures(splitFile, z, at)), `z${z}`).toEqual(r);
       }
+    }
+  });
+
+  it('parcelIdsAtZoom counts the decoded parcel ids', async () => {
+    for (const z of [12, 13]) {
+      const ids = new Set<string>();
+      for (const at of Object.values(LOT)) {
+        for (const f of await tileFeatures(splitFile, z, at))
+          if (f.props.parcelId !== undefined) ids.add(String(f.props.parcelId));
+      }
+      const n = await parcelIdsAtZoom(splitFile, z, BBOX);
+      expect(n, `z${z}`).toBeGreaterThan(0);
+      expect(n, `z${z}`).toBe(ids.size);
     }
   });
 

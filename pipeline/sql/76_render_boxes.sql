@@ -2,7 +2,7 @@
 -- boxes in build). Not in SQL_FILES: pipeline/steps/render-boxes.ts runs it after loading the
 -- locked building-boxes artifact into bx_boxes(bid, k, src, base_m, height_m, geom GEOMETRY, NULL
 -- = the whole footprint) and bx_roofs. Reads buildings, parcels, bx_boxes, bx_roofs. Writes
--- render_boxes, render_pieces and render_export; never touches pieces, parcel_out or
+-- render_boxes, render_pieces, render_export and low_export (the z12-13 tiles' input); never touches pieces, parcel_out or
 -- buildings_export, so the model's inputs do not move.
 --
 -- A building is drawn by its artifact rows; one with no row (a fallback, or a bid the artifact
@@ -66,4 +66,13 @@ CREATE OR REPLACE TABLE render_export AS
 SELECT parcel_id, bid, k, src, height_m, base_m, hs, ground_m, ground_min_m,
        ST_AsGeoJSON(ST_Transform(geom, 'EPSG:7131', 'EPSG:4326', always_xy := true)) AS geojson4326
 FROM render_pieces
+ORDER BY parcel_id NULLS LAST, bid, k;
+
+-- Parts buildings at z12-13 are their render boxes; every other building is today's export.
+CREATE OR REPLACE TABLE low_export AS
+SELECT parcel_id, bid, 0 AS k, height_m, base_m, hs, geojson4326 FROM buildings_export
+WHERE bid NOT IN (SELECT bid FROM render_boxes WHERE src = 'part')
+UNION ALL
+SELECT parcel_id, bid, k, height_m, base_m, hs, geojson4326 FROM render_export
+WHERE bid IN (SELECT bid FROM render_boxes WHERE src = 'part')
 ORDER BY parcel_id NULLS LAST, bid, k;
