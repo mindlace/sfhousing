@@ -59,7 +59,7 @@ Fetch the file when working in the relevant area:
 - **Scores from the step engine (WorldSeries, chunks, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
 - **Car ownership (zones and households, the choice, moves and fills, the car hook, parking into start odds, the back-cast, level 2 with and without cars, measured cost)** — [docs/dev/cars.md](docs/dev/cars.md)
 - **Car ownership data sources (ACS, PUMS, SF3 2000, crosswalks, DMV, archived GTFS, parking counts and cost per space, AMI), each verified** — [docs/dev/cars-data.md](docs/dev/cars-data.md)
-- **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, the tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
+- **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, the retired tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Ensemble runner (the /sim timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **The game (levels, bars, what each level allows, the playable document, saved games and the store's keys, the win card, the level panel, the e2e seam and its helpers)** — [docs/dev/game.md](docs/dev/game.md)
 - **Game save (`/api/game`, the `game_save` table, the browser's save sync, the account offer)** — [docs/dev/game-save.md](docs/dev/game-save.md)
@@ -88,6 +88,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 | `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                                                    |
 | `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `version`, `build`, `check`, `upload`, `verify`, `fixture`, `quality-doc`, `boxes`, `all` |
 | `npx tsx scripts/level2-check.ts <datasetDir>`      | Run current law over the window on a built dataset; exit 1 when the goal is missed. Run before every dataset upload.        |
+| `npx tsx scripts/money-monotone.ts <datasetDir>`    | Every funding-preset subset on a dataset; exit 1 when more money builds fewer homes. Report only for now, not a gate.       |
 | `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                                                         |
 | `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                                                            |
 | `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)                                                  |

@@ -3,6 +3,7 @@
 // offered) gets no clock. Exact: runs with and without the skip give the same events, ledger and
 // world, and every skipped (lot, kind) has a clock with no day.
 import { beforeAll, describe, expect, it } from 'vitest';
+import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { seedHash } from '$lib/sim/scenario/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
@@ -112,7 +113,14 @@ describe('the eligibility skip on the mini city, random finances', () => {
 describe.each([['baseline'], ['bench']] as const)(
   'the eligibility skip on synthCity, %s money',
   (set) => {
-    const { input, doc } = benchFunded(set);
+    const { input: uncapped, doc } = benchFunded(set);
+    // The federal pool at 300,000,000 a year (a fixture choice, 2026-11-25): with the fallback
+    // award (rule 16 as amended) an uncapped federal pool starts nearly every lot at once, about
+    // eight times the events, and the runs outgrow the test's budget.
+    const input = {
+      ...uncapped,
+      finance: withFederalYearly(uncapped.finance!, uncapped.asOf, 300_000_000)
+    };
     const statics = staticsOf(input);
     const timeline = moneyTimeline(input, doc);
 

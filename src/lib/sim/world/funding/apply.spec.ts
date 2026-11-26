@@ -22,11 +22,16 @@ import { kindClock } from './clocks';
 import { KIND_AFFORDABLE, KIND_MARKET, fundOf, initFunding } from './columns';
 import { createFundingSystem } from './system';
 import { fundedMini, oneMoneyTimeline } from './test/fixtures';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 
 const input = fundedMini();
 const statics = staticsOf(input);
-const timeline = oneMoneyTimeline(input, miniFinance(input.asOf));
+// A federal pool of 20,000,000 a year: every pool of the affordable stack runs short, so rows
+// wait in line (rule 16 as amended awards on the federal grant alone while it can pay).
+const timeline = oneMoneyTimeline(
+  input,
+  withFederalYearly(miniFinance(input.asOf), input.asOf, 20_000_000)
+);
 const KINDS: readonly ProjectKind[] = ['market', 'affordable'];
 const NOWHERE: StepSink = { event() {} };
 
@@ -429,8 +434,15 @@ describe('the funding line', () => {
     // A lot left out of month m1's `apply` (as one freed after system 4 is) with one kind's day in
     // m1 and the other's in m2 > m1 + 1: the core's own replan after apply, a replan in month
     // m1 + 1 and a `planDue` rebuild from the world after m1 all give m2, and by m2 only the later
-    // kind has applied.
-    const t = oneMoneyTimeline(input, { ...miniFinance(input.asOf), off: [] });
+    // kind has applied. Every pool's money arrives in 100 years, so no row is served and the
+    // later kind's row stays in line (rule 16 as amended awards whatever some pool can pay).
+    const mf = miniFinance(input.asOf);
+    const late = [{ kind: 'once' as const, day: input.asOf + 36_500, dollars: 1e12 }];
+    const t = oneMoneyTimeline(input, {
+      ...mf,
+      pools: mf.pools.map((p) => ({ ...p, inflows: late })),
+      off: []
+    });
     let found = 0;
     for (let seed = 1; seed <= 20 && found < 3; seed++) {
       // The replans read the base timeline `t`: closing off, the world steps under it.

@@ -6,20 +6,24 @@
  */
 import type { Day } from '$lib/timelapse/time';
 import { runEngine } from './engine';
-import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
+import { miniCalibrationWithRoutes, miniFinance, withFederalYearly } from './fixtures/mini-finance';
 import type { LedgerEvent } from './money';
 import { GOLDEN_HORIZON, goldenInput } from './simulate.golden.cases';
 import type { Schedule, SimInput } from './types';
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** `goldenInput()` on the calibration with `affordableRoutes`, with the mini finance stack. */
+/**
+ * `goldenInput()` on the calibration with `affordableRoutes`, with the mini finance stack and its
+ * federal pool at 20,000,000 a year (2026-11-25): with the fallback award (rule 16 as amended) an
+ * uncapped federal pool funds every lot at once, leaving seed 4 no market-funded start.
+ */
 export function financeGoldenInput(): SimInput {
   const base = goldenInput();
   return {
     ...base,
     calibration: miniCalibrationWithRoutes(),
-    finance: miniFinance(base.asOf)
+    finance: withFederalYearly(miniFinance(base.asOf), base.asOf, 20_000_000)
   };
 }
 

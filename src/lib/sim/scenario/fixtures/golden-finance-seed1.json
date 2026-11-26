@@ -479,29 +479,71 @@
           "projectId": "sim:0026T009:0",
           "origin": "simulated",
           "parcelIds": ["0026T009"],
-          "pathway": "streamlined",
-          "entered": {
-            "filed": 21107,
-            "entitled": 21331,
-            "permitFiled": 21429,
-            "permitIssued": 21465,
-            "construction": 21538,
-            "complete": 22089
-          },
-          "end": { "kind": "complete", "day": 22089 },
+          "pathway": "permitOnly",
+          "entered": { "permitFiled": 21107 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 21113 },
           "revisions": [{ "day": 21107, "units": 7, "stories": 4 }],
           "existingUnits": 4,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 6030675,
+            "granted": 2110736,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T009:1",
+          "origin": "simulated",
+          "parcelIds": ["0026T009"],
+          "pathway": "streamlined",
+          "entered": { "filed": 21473 },
+          "end": { "kind": "exit", "stage": "filed", "reason": "disapproved", "day": 21533 },
+          "revisions": [{ "day": 21473, "units": 7, "stories": 4 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["federal-grant"],
+            "applied": 21114,
+            "granted": 3919939,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 3,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T009:2",
+          "origin": "simulated",
+          "parcelIds": ["0026T009"],
+          "pathway": "permitOnly",
+          "entered": {
+            "permitFiled": 21553,
+            "permitIssued": 21610,
+            "construction": 21794,
+            "complete": 22679
+          },
+          "end": { "kind": "complete", "day": 22679 },
+          "revisions": [{ "day": 21553, "units": 7, "stories": 4 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 21534,
+            "granted": 2110736,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 3,
+            "certain": false
           }
         },
         {
@@ -509,28 +551,50 @@
           "origin": "simulated",
           "parcelIds": ["0026T010"],
           "pathway": "streamlined",
-          "entered": {
-            "filed": 21107,
-            "entitled": 21254,
-            "permitFiled": 21409,
-            "permitIssued": 22722,
-            "construction": 23220,
-            "complete": 23897
-          },
-          "end": { "kind": "complete", "day": 23897 },
+          "entered": { "filed": 21107, "entitled": 21254 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 21409 },
           "revisions": [{ "day": 21107, "units": 3, "stories": 3 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T010:1",
+          "origin": "simulated",
+          "parcelIds": ["0026T010"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 21410,
+            "entitled": 21527,
+            "permitFiled": 21759,
+            "permitIssued": 22067,
+            "construction": 22073,
+            "complete": 22975
+          },
+          "end": { "kind": "complete", "day": 22975 },
+          "revisions": [{ "day": 21410, "units": 3, "stories": 3 }],
+          "existingUnits": 0,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 21410,
+            "granted": 904601,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 3,
+            "certain": false
           }
         },
         {
@@ -567,27 +631,52 @@
           "origin": "simulated",
           "parcelIds": ["0026T012"],
           "pathway": "discretionary",
+          "entered": { "filed": 21107, "entitled": 21640, "permitFiled": 21719 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 22082 },
+          "revisions": [
+            { "day": 21107, "units": 3, "stories": 3 },
+            { "day": 21719, "units": 2, "stories": 3 }
+          ],
+          "existingUnits": 1,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 20743,
+            "granted": 904601,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 2,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T012:1",
+          "origin": "simulated",
+          "parcelIds": ["0026T012"],
+          "pathway": "streamlined",
           "entered": {
-            "filed": 21107,
-            "entitled": 21640,
-            "permitFiled": 21719,
-            "permitIssued": 22110,
-            "construction": 22900,
-            "complete": 23311
+            "filed": 22083,
+            "entitled": 22139,
+            "permitFiled": 22244,
+            "permitIssued": 22619,
+            "construction": 23176,
+            "complete": 23422
           },
-          "end": { "kind": "complete", "day": 23311 },
-          "revisions": [{ "day": 21107, "units": 3, "stories": 3 }],
+          "end": { "kind": "complete", "day": 23422 },
+          "revisions": [{ "day": 22083, "units": 3, "stories": 3 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
             "programmes": ["m-city-grant", "federal-grant"],
-            "applied": 20743,
+            "applied": 22083,
             "granted": 2584575,
             "lent": 0,
             "guaranteed": 0,
-            "displaced": 2,
+            "displaced": 0,
             "certain": true
           }
         },
@@ -597,15 +686,15 @@
           "parcelIds": ["0026T014"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22203,
-            "entitled": 22300,
-            "permitFiled": 22603,
-            "permitIssued": 22686,
-            "construction": 22865,
-            "complete": 24352
+            "filed": 21473,
+            "entitled": 21570,
+            "permitFiled": 21873,
+            "permitIssued": 21956,
+            "construction": 22135,
+            "complete": 23622
           },
-          "end": { "kind": "complete", "day": 24352 },
-          "revisions": [{ "day": 22203, "units": 9, "stories": 5 }],
+          "end": { "kind": "complete", "day": 23622 },
+          "revisions": [{ "day": 21473, "units": 9, "stories": 5 }],
           "existingUnits": 6,
           "multiPhase": false,
           "phase": null,
@@ -732,27 +821,27 @@
           "parcelIds": ["2999A006"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22203,
-            "entitled": 22249,
-            "permitFiled": 22313,
-            "permitIssued": 22816,
-            "construction": 22889,
-            "complete": 23075
+            "filed": 21473,
+            "entitled": 21519,
+            "permitFiled": 21583,
+            "permitIssued": 22086,
+            "construction": 22159,
+            "complete": 22345
           },
-          "end": { "kind": "complete", "day": 23075 },
-          "revisions": [{ "day": 22203, "units": 9, "stories": 5 }],
+          "end": { "kind": "complete", "day": 22345 },
+          "revisions": [{ "day": 21473, "units": 9, "stories": 5 }],
           "existingUnits": 3,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["federal-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 5039921,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 6,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -760,57 +849,80 @@
           "origin": "simulated",
           "parcelIds": ["2999A008"],
           "pathway": "streamlined",
-          "entered": {
-            "filed": 21838,
-            "entitled": 21931,
-            "permitFiled": 22587,
-            "permitIssued": 22834,
-            "construction": 24174,
-            "complete": 24542
-          },
-          "end": { "kind": "complete", "day": 24542 },
+          "entered": { "filed": 21838, "entitled": 21931 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 22587 },
           "revisions": [{ "day": 21838, "units": 72, "stories": 9 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 62029800,
+            "granted": 21710430,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 72,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A008:1",
+          "origin": "simulated",
+          "parcelIds": ["2999A008"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 22588,
+            "entitled": 22638,
+            "permitFiled": 22641,
+            "permitIssued": 22835,
+            "construction": 22909,
+            "complete": 23234
+          },
+          "end": { "kind": "complete", "day": 23234 },
+          "revisions": [
+            { "day": 22588, "units": 49, "stories": 5 },
+            { "day": 22835, "units": 52, "stories": 8 }
+          ],
+          "existingUnits": 0,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 22588,
+            "granted": 14775154,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 49,
+            "certain": false
           }
         },
         {
           "projectId": "sim:2999A009:0",
           "origin": "simulated",
           "parcelIds": ["2999A009"],
-          "pathway": "streamlined",
+          "pathway": "permitOnly",
           "entered": {
-            "filed": 21107,
-            "entitled": 21222,
-            "permitFiled": 21519,
-            "permitIssued": 22412,
-            "construction": 22747,
-            "complete": 23135
+            "permitFiled": 21107,
+            "permitIssued": 22000,
+            "construction": 22335,
+            "complete": 22723
           },
-          "end": { "kind": "complete", "day": 23135 },
+          "end": { "kind": "complete", "day": 22723 },
           "revisions": [{ "day": 21107, "units": 3, "stories": 3 }],
           "existingUnits": 2,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 1,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -833,13 +945,13 @@
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 8,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -848,15 +960,15 @@
           "parcelIds": ["2999A011"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22203,
-            "entitled": 22366,
-            "permitFiled": 22395,
-            "permitIssued": 22688,
-            "construction": 22794,
-            "complete": 23068
+            "filed": 21473,
+            "entitled": 21636,
+            "permitFiled": 21665,
+            "permitIssued": 21958,
+            "construction": 22064,
+            "complete": 22338
           },
-          "end": { "kind": "complete", "day": 23068 },
-          "revisions": [{ "day": 22203, "units": 9, "stories": 4 }],
+          "end": { "kind": "complete", "day": 22338 },
+          "revisions": [{ "day": 21473, "units": 9, "stories": 4 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
@@ -876,28 +988,50 @@
           "origin": "simulated",
           "parcelIds": ["2999A012"],
           "pathway": "streamlined",
-          "entered": {
-            "filed": 21473,
-            "entitled": 21819,
-            "permitFiled": 22015,
-            "permitIssued": 22184,
-            "construction": 22200,
-            "complete": 23071
-          },
-          "end": { "kind": "complete", "day": 23071 },
-          "revisions": [{ "day": 21473, "units": 9, "stories": 5 }],
+          "entered": { "filed": 21232 },
+          "end": { "kind": "exit", "stage": "filed", "reason": "withdrawn", "day": 21553 },
+          "revisions": [{ "day": 21232, "units": 9, "stories": 5 }],
           "existingUnits": 8,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A012:1",
+          "origin": "simulated",
+          "parcelIds": ["2999A012"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 21801,
+            "entitled": 22379,
+            "permitFiled": 22477,
+            "permitIssued": 23289,
+            "construction": 23482,
+            "complete": 23937
+          },
+          "end": { "kind": "complete", "day": 23937 },
+          "revisions": [{ "day": 21801, "units": 9, "stories": 5 }],
+          "existingUnits": 8,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["federal-grant"],
+            "applied": 21554,
+            "granted": 5039921,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
           }
         },
         {
@@ -920,13 +1054,13 @@
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -949,13 +1083,13 @@
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 9,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -1060,19 +1194,22 @@
             "complete": 24558
           },
           "end": { "kind": "complete", "day": 24558 },
-          "revisions": [{ "day": 21473, "units": 48, "stories": 5 }],
+          "revisions": [
+            { "day": 21473, "units": 48, "stories": 5 },
+            { "day": 23507, "units": 55, "stories": 6 }
+          ],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 41353200,
+            "granted": 14473620,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 48,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -1138,57 +1275,99 @@
           "origin": "simulated",
           "parcelIds": ["3512013"],
           "pathway": "streamlined",
-          "entered": {
-            "filed": 21473,
-            "entitled": 21510,
-            "permitFiled": 21592,
-            "permitIssued": 21952,
-            "construction": 22327,
-            "complete": 22755
-          },
-          "end": { "kind": "complete", "day": 22755 },
-          "revisions": [{ "day": 21473, "units": 9, "stories": 8 }],
+          "entered": { "filed": 21113, "entitled": 21150 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 21232 },
+          "revisions": [{ "day": 21113, "units": 9, "stories": 8 }],
           "existingUnits": 4,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:3512013:1",
+          "origin": "simulated",
+          "parcelIds": ["3512013"],
+          "pathway": "streamlined",
+          "entered": { "filed": 21533, "entitled": 21745 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 21801 },
+          "revisions": [{ "day": 21533, "units": 9, "stories": 10 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["federal-grant"],
+            "applied": 21233,
+            "granted": 5039921,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:3512013:2",
+          "origin": "simulated",
+          "parcelIds": ["3512013"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 21838,
+            "entitled": 21923,
+            "permitFiled": 22632,
+            "permitIssued": 22701,
+            "construction": 22718,
+            "complete": 23650
+          },
+          "end": { "kind": "complete", "day": 23650 },
+          "revisions": [{ "day": 21838, "units": 9, "stories": 10 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["federal-grant"],
+            "applied": 21802,
+            "granted": 5039921,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
           }
         },
         {
           "projectId": "sim:3512014:0",
           "origin": "simulated",
           "parcelIds": ["3512014"],
-          "pathway": "streamlined",
+          "pathway": "permitOnly",
           "entered": {
-            "filed": 20743,
-            "entitled": 20851,
-            "permitFiled": 21053,
-            "permitIssued": 21840,
-            "construction": 22424,
-            "complete": 22784
+            "permitFiled": 20743,
+            "permitIssued": 21530,
+            "construction": 22114,
+            "complete": 22474
           },
-          "end": { "kind": "complete", "day": 22784 },
+          "end": { "kind": "complete", "day": 22474 },
           "revisions": [{ "day": 20743, "units": 3, "stories": 3 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -1226,21 +1405,30 @@
           "parcelIds": ["3600003"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22929,
-            "entitled": 23308,
-            "permitFiled": 23458,
-            "permitIssued": 23583,
-            "construction": 23698,
-            "complete": 24109
+            "filed": 22868,
+            "entitled": 23247,
+            "permitFiled": 23397,
+            "permitIssued": 23522,
+            "construction": 23637,
+            "complete": 24048
           },
-          "end": { "kind": "complete", "day": 24109 },
+          "end": { "kind": "complete", "day": 24048 },
           "revisions": [
-            { "day": 22929, "units": 252, "stories": 10 },
-            { "day": 23458, "units": 295, "stories": 12 }
+            { "day": 22868, "units": 252, "stories": 10 },
+            { "day": 23397, "units": 295, "stories": 12 }
           ],
           "existingUnits": 0,
           "multiPhase": false,
-          "phase": null
+          "phase": null,
+          "funding": {
+            "programmes": ["m-city-guarantee"],
+            "applied": 22868,
+            "granted": 0,
+            "lent": 0,
+            "guaranteed": 92824200,
+            "displaced": 252,
+            "certain": false
+          }
         },
         {
           "projectId": "sim:3600015:0",
@@ -1262,54 +1450,48 @@
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 7,
-            "certain": true
+            "certain": false
           }
         },
         {
           "projectId": "sim:3600016:0",
           "origin": "simulated",
           "parcelIds": ["3600016"],
-          "pathway": "streamlined",
+          "pathway": "discretionary",
           "entered": {
             "filed": 20743,
-            "entitled": 20845,
-            "permitFiled": 20930,
-            "permitIssued": 21100,
-            "construction": 21700,
-            "complete": 21920
+            "entitled": 20935,
+            "permitFiled": 21052,
+            "permitIssued": 21222,
+            "construction": 21822,
+            "complete": 22042
           },
-          "end": { "kind": "complete", "day": 21920 },
+          "end": { "kind": "complete", "day": 22042 },
           "revisions": [{ "day": 20743, "units": 7, "stories": 4 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 6030675,
+            "granted": 2110736,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         }
       ],
       "ledger": [
         { "day": 20742, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 20742,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 20742, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 20743,
           "pool": "m-city",
@@ -1400,13 +1582,6 @@
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 2713804
-        },
-        {
-          "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
         },
         {
           "day": 20743,
@@ -1431,24 +1606,10 @@
         },
         {
           "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 20743,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 904601
-        },
-        {
-          "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
         },
         {
           "day": 20743,
@@ -1459,24 +1620,10 @@
         },
         {
           "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 3919939
-        },
-        {
-          "day": 20743,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 904601
-        },
-        {
-          "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
         },
         {
           "day": 20909,
@@ -1484,22 +1631,9 @@
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 904601
-        },
-        {
-          "day": 20909,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
         },
         { "day": 21107, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 21107,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 21107, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 21107,
           "pool": "m-city",
@@ -1579,13 +1713,6 @@
         },
         {
           "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 3919939
-        },
-        {
-          "day": 21107,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
@@ -1593,10 +1720,10 @@
         },
         {
           "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
+          "pool": "m-city",
+          "programme": "m-city-grant",
           "kind": "commit",
-          "dollars": 5039921
+          "dollars": 904601
         },
         {
           "day": 21107,
@@ -1607,38 +1734,24 @@
         },
         {
           "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
-        },
-        {
-          "day": 21107,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 904601
         },
         {
-          "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
+          "day": 21113,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2110736
         },
         {
-          "day": 21107,
+          "day": 21113,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
-          "dollars": 904601
-        },
-        {
-          "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
+          "dollars": 2713804
         },
         { "day": 21142, "pool": "m-bank", "programme": null, "kind": "in", "dollars": 5000000 },
         {
@@ -1647,13 +1760,6 @@
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 2713804
-        },
-        {
-          "day": 21147,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
         },
         {
           "day": 21158,
@@ -1684,6 +1790,20 @@
           "dollars": 1679974
         },
         {
+          "day": 21232,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2713804
+        },
+        {
+          "day": 21232,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2713804
+        },
+        {
           "day": 21291,
           "pool": "m-city",
           "programme": "m-city-grant",
@@ -1724,6 +1844,20 @@
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 1679974
+        },
+        {
+          "day": 21409,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 904601
+        },
+        {
+          "day": 21410,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 904601
         },
         {
           "day": 21420,
@@ -1740,41 +1874,7 @@
           "dollars": 1679974
         },
         { "day": 21473, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 21473,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 21473,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 21473,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 21473,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 21473,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
+        { "day": 21473, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 21473,
           "pool": "m-city",
@@ -1784,10 +1884,45 @@
         },
         {
           "day": 21473,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2713804
+        },
+        {
+          "day": 21473,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "commit",
-          "dollars": 26879580
+          "dollars": 5039921
+        },
+        {
+          "day": 21473,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2713804
+        },
+        {
+          "day": 21473,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
+        },
+        {
+          "day": 21473,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
+        },
+        {
+          "day": 21473,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 3919939
         },
         {
           "day": 21519,
@@ -1804,18 +1939,32 @@
           "dollars": 3919939
         },
         {
-          "day": 21538,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2110736
-        },
-        {
-          "day": 21538,
+          "day": 21533,
           "pool": "federal",
           "programme": "federal-grant",
-          "kind": "spend",
+          "kind": "release",
           "dollars": 3919939
+        },
+        {
+          "day": 21533,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
+        },
+        {
+          "day": 21553,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2713804
+        },
+        {
+          "day": 21553,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2110736
         },
         {
           "day": 21566,
@@ -1853,25 +2002,32 @@
           "dollars": 2713804
         },
         {
-          "day": 21681,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 21700,
+          "day": 21794,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 2110736
         },
         {
-          "day": 21700,
+          "day": 21801,
           "pool": "federal",
           "programme": "federal-grant",
+          "kind": "release",
+          "dollars": 5039921
+        },
+        {
+          "day": 21801,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
+        },
+        {
+          "day": 21822,
+          "pool": "m-city",
+          "programme": "m-city-grant",
           "kind": "spend",
-          "dollars": 3919939
+          "dollars": 2110736
         },
         {
           "day": 21830,
@@ -1888,13 +2044,7 @@
           "dollars": 2239965
         },
         { "day": 21838, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 21838, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 21838,
           "pool": "m-city",
@@ -1907,7 +2057,7 @@
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "commit",
-          "dollars": 40319370
+          "dollars": 5039921
         },
         {
           "day": 22006,
@@ -1924,110 +2074,97 @@
           "dollars": 5039921
         },
         {
-          "day": 22200,
+          "day": 22064,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 2713804
         },
         {
-          "day": 22200,
+          "day": 22064,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22073,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 904601
+        },
+        {
+          "day": 22082,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 904601
+        },
+        {
+          "day": 22083,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 904601
+        },
+        {
+          "day": 22083,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 1679974
+        },
+        {
+          "day": 22114,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 904601
+        },
+        {
+          "day": 22135,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22135,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22159,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 5039921
         },
         { "day": 22203, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 22203, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 22203,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 22203,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 22203,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 22203,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 22203,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 22203,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 22203,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 22327,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22327,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22417,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22417,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22424,
+          "day": 22335,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 904601
         },
         {
-          "day": 22424,
+          "day": 22417,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22417,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
-          "dollars": 1679974
+          "dollars": 5039921
         },
         {
           "day": 22513,
@@ -2035,22 +2172,9 @@
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 2713804
-        },
-        {
-          "day": 22513,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
         },
         { "day": 22568, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 22568,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 22568, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 22568,
           "pool": "m-city",
@@ -2066,83 +2190,42 @@
           "dollars": 42559335
         },
         {
-          "day": 22747,
+          "day": 22587,
           "pool": "m-city",
           "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 904601
+          "kind": "release",
+          "dollars": 21710430
         },
         {
-          "day": 22747,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
-        },
-        {
-          "day": 22794,
+          "day": 22588,
           "pool": "m-city",
           "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
+          "kind": "commit",
+          "dollars": 14775154
         },
         {
-          "day": 22794,
+          "day": 22718,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 5039921
         },
         {
-          "day": 22865,
+          "day": 22868,
+          "pool": "m-city",
+          "programme": "m-city-guarantee",
+          "kind": "commit",
+          "dollars": 9282420
+        },
+        {
+          "day": 22909,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22865,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22889,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22889,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22900,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 904601
-        },
-        {
-          "day": 22900,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
+          "dollars": 14775154
         },
         { "day": 22934, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 22934,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 22934, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 23117,
           "pool": "m-city",
@@ -2158,35 +2241,30 @@
           "dollars": 42559335
         },
         {
-          "day": 23220,
+          "day": 23176,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 904601
         },
         {
-          "day": 23220,
+          "day": 23176,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 1679974
         },
         { "day": 23299, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 23299, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 23299,
+          "day": 23482,
           "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
         },
         { "day": 23664, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 23664,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 23664, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 23762,
           "pool": "m-city",
@@ -2194,155 +2272,45 @@
           "kind": "spend",
           "dollars": 14473620
         },
-        {
-          "day": 23762,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 26879580
-        },
         { "day": 24029, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 24029, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 24029,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 24174,
+          "day": 24048,
           "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 21710430
-        },
-        {
-          "day": 24174,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 40319370
+          "programme": "m-city-guarantee",
+          "kind": "release",
+          "dollars": 9282420
         },
         { "day": 24395, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 24395,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 24395, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 24760, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 24760,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 24760, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 25125, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 25125,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 25125, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 25490, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 25490,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 25490, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 25856, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 25856,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 25856, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 26221, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 26221,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 26221, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 26586, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 26586,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 26586, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 26951, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 26951,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 26951, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 27317, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 27317,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 27317, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 27682, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 27682,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 27682, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 28047, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 28047,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 28047, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 28412, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 28412,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 28412, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 28778, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 28778,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 28778, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 29143, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 29143,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 29143, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 29508, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 29508,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        }
+        { "day": 29508, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 }
       ]
     },
     {
@@ -2724,56 +2692,54 @@
           "parcelIds": ["0026T003"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22203,
-            "entitled": 22406,
-            "permitFiled": 22436,
-            "permitIssued": 23280,
-            "construction": 23642,
-            "complete": 24053
+            "filed": 22144,
+            "entitled": 22347,
+            "permitFiled": 22377,
+            "permitIssued": 23221,
+            "construction": 23583,
+            "complete": 23994
           },
-          "end": { "kind": "complete", "day": 24053 },
-          "revisions": [{ "day": 22203, "units": 9, "stories": 5 }],
+          "end": { "kind": "complete", "day": 23994 },
+          "revisions": [{ "day": 22144, "units": 9, "stories": 5 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 22144,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 9,
-            "certain": true
+            "certain": false
           }
         },
         {
           "projectId": "sim:0026T004:0",
           "origin": "simulated",
           "parcelIds": ["0026T004"],
-          "pathway": "streamlined",
+          "pathway": "permitOnly",
           "entered": {
-            "filed": 22144,
-            "entitled": 22359,
-            "permitFiled": 22538,
-            "permitIssued": 23396,
-            "construction": 23447,
-            "complete": 23818
+            "permitFiled": 22144,
+            "permitIssued": 23002,
+            "construction": 23053,
+            "complete": 23424
           },
-          "end": { "kind": "complete", "day": 23818 },
+          "end": { "kind": "complete", "day": 23424 },
           "revisions": [{ "day": 22144, "units": 3, "stories": 3 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 22144,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 3,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -2782,27 +2748,27 @@
           "parcelIds": ["0026T006"],
           "pathway": "discretionary",
           "entered": {
-            "filed": 21838,
-            "entitled": 23159,
-            "permitFiled": 23216,
-            "permitIssued": 23294,
-            "construction": 23378,
-            "complete": 24283
+            "filed": 21178,
+            "entitled": 22499,
+            "permitFiled": 22556,
+            "permitIssued": 22634,
+            "construction": 22718,
+            "complete": 23623
           },
-          "end": { "kind": "complete", "day": 24283 },
-          "revisions": [{ "day": 21838, "units": 3, "stories": 3 }],
+          "end": { "kind": "complete", "day": 23623 },
+          "revisions": [{ "day": 21178, "units": 3, "stories": 3 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -2831,24 +2797,46 @@
           "projectId": "sim:0026T009:0",
           "origin": "simulated",
           "parcelIds": ["0026T009"],
-          "pathway": "streamlined",
-          "entered": {
-            "filed": 20743,
-            "entitled": 20906,
-            "permitFiled": 21020,
-            "permitIssued": 21214,
-            "construction": 21455,
-            "complete": 22585
-          },
-          "end": { "kind": "complete", "day": 22585 },
+          "pathway": "permitOnly",
+          "entered": { "permitFiled": 20743, "permitIssued": 20937 },
+          "end": { "kind": "exit", "stage": "permitIssued", "reason": "expired", "day": 21178 },
           "revisions": [{ "day": 20743, "units": 7, "stories": 4 }],
           "existingUnits": 4,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
+            "granted": 2110736,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T009:1",
+          "origin": "simulated",
+          "parcelIds": ["0026T009"],
+          "pathway": "discretionary",
+          "entered": {
+            "filed": 21838,
+            "entitled": 21885,
+            "permitFiled": 22531,
+            "permitIssued": 22622,
+            "construction": 22717,
+            "complete": 23188
+          },
+          "end": { "kind": "complete", "day": 23188 },
+          "revisions": [{ "day": 21838, "units": 7, "stories": 4 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant", "federal-grant"],
+            "applied": 21179,
             "granted": 6030675,
             "lent": 0,
             "guaranteed": 0,
@@ -2918,28 +2906,50 @@
           "projectId": "sim:0026T012:0",
           "origin": "simulated",
           "parcelIds": ["0026T012"],
+          "pathway": "discretionary",
+          "entered": { "filed": 21107 },
+          "end": { "kind": "exit", "stage": "filed", "reason": "withdrawn", "day": 22820 },
+          "revisions": [{ "day": 21107, "units": 7, "stories": 4 }],
+          "existingUnits": 1,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 20743,
+            "granted": 2110736,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 6,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T012:1",
+          "origin": "simulated",
+          "parcelIds": ["0026T012"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 21473,
-            "entitled": 22261,
-            "permitFiled": 22319,
-            "permitIssued": 22488,
-            "construction": 22765,
-            "complete": 23126
+            "filed": 22821,
+            "entitled": 23010,
+            "permitFiled": 23433,
+            "permitIssued": 23616,
+            "construction": 23632,
+            "complete": 23825
           },
-          "end": { "kind": "complete", "day": 23126 },
-          "revisions": [{ "day": 21473, "units": 7, "stories": 4 }],
+          "end": { "kind": "complete", "day": 23825 },
+          "revisions": [{ "day": 22821, "units": 3, "stories": 3 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
             "programmes": ["m-city-grant", "federal-grant"],
-            "applied": 20743,
-            "granted": 6030675,
+            "applied": 22821,
+            "granted": 2584575,
             "lent": 0,
             "guaranteed": 0,
-            "displaced": 6,
+            "displaced": 0,
             "certain": true
           }
         },
@@ -2948,15 +2958,37 @@
           "origin": "simulated",
           "parcelIds": ["0026T014"],
           "pathway": "streamlined",
+          "entered": { "filed": 21556, "entitled": 21664, "permitFiled": 21669 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 21804 },
+          "revisions": [{ "day": 21556, "units": 9, "stories": 5 }],
+          "existingUnits": 6,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 20743,
+            "granted": 2713804,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:0026T014:1",
+          "origin": "simulated",
+          "parcelIds": ["0026T014"],
+          "pathway": "streamlined",
           "entered": {
             "filed": 21838,
-            "entitled": 21946,
-            "permitFiled": 21951,
-            "permitIssued": 22114,
-            "construction": 22480,
-            "complete": 22946
+            "entitled": 21896,
+            "permitFiled": 21918,
+            "permitIssued": 22179,
+            "construction": 22378,
+            "complete": 22740
           },
-          "end": { "kind": "complete", "day": 22946 },
+          "end": { "kind": "complete", "day": 22740 },
           "revisions": [{ "day": 21838, "units": 9, "stories": 5 }],
           "existingUnits": 6,
           "multiPhase": false,
@@ -2964,7 +2996,7 @@
           "kind": "affordable",
           "funding": {
             "programmes": ["m-city-grant", "federal-grant"],
-            "applied": 20743,
+            "applied": 21805,
             "granted": 7753725,
             "lent": 0,
             "guaranteed": 0,
@@ -2978,56 +3010,56 @@
           "parcelIds": ["0026T015"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22568,
-            "entitled": 22763,
-            "permitFiled": 22875,
-            "permitIssued": 22911,
-            "construction": 23377,
-            "complete": 23677
+            "filed": 22934,
+            "entitled": 23129,
+            "permitFiled": 23241,
+            "permitIssued": 23277,
+            "construction": 23743,
+            "complete": 24043
           },
-          "end": { "kind": "complete", "day": 23677 },
-          "revisions": [{ "day": 22568, "units": 106, "stories": 11 }],
+          "end": { "kind": "complete", "day": 24043 },
+          "revisions": [{ "day": 22934, "units": 106, "stories": 11 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 91321651,
+            "granted": 31962578,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 105,
-            "certain": true
+            "certain": false
           }
         },
         {
           "projectId": "sim:2999A001:0",
           "origin": "simulated",
           "parcelIds": ["2999A001"],
-          "pathway": "streamlined",
+          "pathway": "discretionary",
           "entered": {
-            "filed": 21838,
-            "entitled": 21982,
-            "permitFiled": 22074,
-            "permitIssued": 22108,
-            "construction": 22325,
-            "complete": 22908
+            "filed": 21473,
+            "entitled": 21760,
+            "permitFiled": 21888,
+            "permitIssued": 21922,
+            "construction": 22139,
+            "complete": 22722
           },
-          "end": { "kind": "complete", "day": 22908 },
-          "revisions": [{ "day": 21838, "units": 7, "stories": 4 }],
+          "end": { "kind": "complete", "day": 22722 },
+          "revisions": [{ "day": 21473, "units": 7, "stories": 4 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["federal-grant"],
             "applied": 20743,
-            "granted": 6030675,
+            "granted": 3919939,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3093,18 +3125,19 @@
           "origin": "simulated",
           "parcelIds": ["2999A005"],
           "pathway": "permitOnly",
-          "entered": { "permitFiled": 22990 },
-          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 23295 },
-          "revisions": [{ "day": 22990, "units": 82, "stories": 7 }],
+          "entered": { "permitFiled": 22934 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 23239 },
+          "revisions": [{ "day": 22934, "units": 82, "stories": 7 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
+          "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-guarantee"],
-            "applied": 22990,
-            "granted": 0,
+            "programmes": ["federal-grant"],
+            "applied": 20855,
+            "granted": 45919283,
             "lent": 0,
-            "guaranteed": 30204700,
+            "guaranteed": 0,
             "displaced": 82,
             "certain": false
           }
@@ -3113,29 +3146,32 @@
           "projectId": "sim:2999A005:1",
           "origin": "simulated",
           "parcelIds": ["2999A005"],
-          "pathway": "streamlined",
+          "pathway": "discretionary",
           "entered": {
-            "filed": 23299,
-            "entitled": 23414,
-            "permitFiled": 23479,
-            "permitIssued": 23798,
-            "construction": 23849,
-            "complete": 24362
+            "filed": 23240,
+            "entitled": 23460,
+            "permitFiled": 23550,
+            "permitIssued": 23869,
+            "construction": 23920,
+            "complete": 24433
           },
-          "end": { "kind": "complete", "day": 24362 },
-          "revisions": [{ "day": 23299, "units": 80, "stories": 8 }],
+          "end": { "kind": "complete", "day": 24433 },
+          "revisions": [
+            { "day": 23240, "units": 80, "stories": 8 },
+            { "day": 23550, "units": 78, "stories": 7 }
+          ],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
-            "applied": 23296,
-            "granted": 68922000,
+            "programmes": ["federal-grant"],
+            "applied": 23240,
+            "granted": 44799300,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 80,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3144,15 +3180,15 @@
           "parcelIds": ["2999A006"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 21838,
-            "entitled": 22072,
-            "permitFiled": 22101,
-            "permitIssued": 22191,
-            "construction": 22424,
-            "complete": 22689
+            "filed": 21473,
+            "entitled": 21707,
+            "permitFiled": 21736,
+            "permitIssued": 21826,
+            "construction": 22059,
+            "complete": 22324
           },
-          "end": { "kind": "complete", "day": 22689 },
-          "revisions": [{ "day": 21838, "units": 9, "stories": 6 }],
+          "end": { "kind": "complete", "day": 22324 },
+          "revisions": [{ "day": 21473, "units": 9, "stories": 6 }],
           "existingUnits": 3,
           "multiPhase": false,
           "phase": null,
@@ -3172,12 +3208,21 @@
           "origin": "simulated",
           "parcelIds": ["2999A008"],
           "pathway": "streamlined",
-          "entered": { "filed": 22245 },
-          "end": { "kind": "exit", "stage": "filed", "reason": "withdrawn", "day": 22279 },
-          "revisions": [{ "day": 22245, "units": 78, "stories": 10 }],
+          "entered": { "filed": 22092 },
+          "end": { "kind": "exit", "stage": "filed", "reason": "withdrawn", "day": 22126 },
+          "revisions": [{ "day": 22092, "units": 78, "stories": 10 }],
           "existingUnits": 0,
           "multiPhase": false,
-          "phase": null
+          "phase": null,
+          "funding": {
+            "programmes": ["m-city-guarantee"],
+            "applied": 22092,
+            "granted": 0,
+            "lent": 0,
+            "guaranteed": 28731300,
+            "displaced": 78,
+            "certain": false
+          }
         },
         {
           "projectId": "sim:2999A008:1",
@@ -3185,27 +3230,28 @@
           "parcelIds": ["2999A008"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 22848,
-            "entitled": 22897,
-            "permitFiled": 22914,
-            "permitIssued": 23086,
-            "construction": 23464,
-            "complete": 23703
+            "filed": 22203,
+            "entitled": 22252,
+            "permitFiled": 22269,
+            "permitIssued": 22441,
+            "construction": 22819,
+            "complete": 23058
           },
-          "end": { "kind": "complete", "day": 23703 },
+          "end": { "kind": "complete", "day": 23058 },
           "revisions": [
-            { "day": 22848, "units": 72, "stories": 9 },
-            { "day": 22914, "units": 73, "stories": 10 }
+            { "day": 22203, "units": 72, "stories": 9 },
+            { "day": 22269, "units": 73, "stories": 10 }
           ],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
+          "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-guarantee"],
-            "applied": 22848,
-            "granted": 0,
+            "programmes": ["m-city-grant"],
+            "applied": 22127,
+            "granted": 21710430,
             "lent": 0,
-            "guaranteed": 26521200,
+            "guaranteed": 0,
             "displaced": 72,
             "certain": false
           }
@@ -3220,22 +3266,72 @@
             "entitled": 21414,
             "permitFiled": 21604,
             "permitIssued": 21644,
-            "construction": 21893,
-            "complete": 22342
+            "construction": 21893
           },
-          "end": { "kind": "complete", "day": 22342 },
+          "end": { "kind": "exit", "stage": "construction", "reason": "cancelled", "day": 22195 },
           "revisions": [{ "day": 21107, "units": 3, "stories": 3 }],
           "existingUnits": 2,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 1,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A009:1",
+          "origin": "simulated",
+          "parcelIds": ["2999A009"],
+          "pathway": "discretionary",
+          "entered": { "filed": 22196 },
+          "end": { "kind": "exit", "stage": "filed", "reason": "withdrawn", "day": 22889 },
+          "revisions": [{ "day": 22196, "units": 7, "stories": 4 }],
+          "existingUnits": 0,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 22196,
+            "granted": 2110736,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A009:2",
+          "origin": "simulated",
+          "parcelIds": ["2999A009"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 22890,
+            "entitled": 23003,
+            "permitFiled": 23162,
+            "permitIssued": 23389,
+            "construction": 23688,
+            "complete": 24666
+          },
+          "end": { "kind": "complete", "day": 24666 },
+          "revisions": [{ "day": 22890, "units": 3, "stories": 3 }],
+          "existingUnits": 0,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant", "federal-grant"],
+            "applied": 22890,
+            "granted": 2584575,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
             "certain": true
           }
         },
@@ -3244,23 +3340,45 @@
           "origin": "simulated",
           "parcelIds": ["2999A010"],
           "pathway": "streamlined",
-          "entered": {
-            "filed": 21107,
-            "entitled": 21487,
-            "permitFiled": 21556,
-            "permitIssued": 21711,
-            "construction": 21812,
-            "complete": 22337
-          },
-          "end": { "kind": "complete", "day": 22337 },
+          "entered": { "filed": 21107, "entitled": 21487 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 21556 },
           "revisions": [{ "day": 21107, "units": 9, "stories": 9 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
+            "granted": 2713804,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 8,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A010:1",
+          "origin": "simulated",
+          "parcelIds": ["2999A010"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 21838,
+            "entitled": 22193,
+            "permitFiled": 22220,
+            "permitIssued": 22429,
+            "construction": 22514,
+            "complete": 23664
+          },
+          "end": { "kind": "complete", "day": 23664 },
+          "revisions": [{ "day": 21838, "units": 9, "stories": 10 }],
+          "existingUnits": 1,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant", "federal-grant"],
+            "applied": 21557,
             "granted": 7753725,
             "lent": 0,
             "guaranteed": 0,
@@ -3272,29 +3390,27 @@
           "projectId": "sim:2999A011:0",
           "origin": "simulated",
           "parcelIds": ["2999A011"],
-          "pathway": "streamlined",
+          "pathway": "permitOnly",
           "entered": {
-            "filed": 20743,
-            "entitled": 20968,
-            "permitFiled": 21378,
-            "permitIssued": 21994,
-            "construction": 22166,
-            "complete": 22848
+            "permitFiled": 20743,
+            "permitIssued": 21359,
+            "construction": 21531,
+            "complete": 22213
           },
-          "end": { "kind": "complete", "day": 22848 },
+          "end": { "kind": "complete", "day": 22213 },
           "revisions": [{ "day": 20743, "units": 4, "stories": 3 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 3446100,
+            "granted": 1206135,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 3,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3302,23 +3418,45 @@
           "origin": "simulated",
           "parcelIds": ["2999A012"],
           "pathway": "streamlined",
+          "entered": { "filed": 21473, "entitled": 22026, "permitFiled": 22048 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 22130 },
+          "revisions": [{ "day": 21473, "units": 9, "stories": 5 }],
+          "existingUnits": 8,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["federal-grant"],
+            "applied": 20743,
+            "granted": 5039921,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A012:1",
+          "origin": "simulated",
+          "parcelIds": ["2999A012"],
+          "pathway": "streamlined",
           "entered": {
-            "filed": 21838,
-            "entitled": 22391,
-            "permitFiled": 22413,
-            "permitIssued": 22523,
-            "construction": 22622,
-            "complete": 23147
+            "filed": 22131,
+            "entitled": 22200,
+            "permitFiled": 22244,
+            "permitIssued": 22500,
+            "construction": 23464,
+            "complete": 23814
           },
-          "end": { "kind": "complete", "day": 23147 },
-          "revisions": [{ "day": 21838, "units": 9, "stories": 5 }],
+          "end": { "kind": "complete", "day": 23814 },
+          "revisions": [{ "day": 22131, "units": 9, "stories": 5 }],
           "existingUnits": 8,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
             "programmes": ["m-city-grant", "federal-grant"],
-            "applied": 20743,
+            "applied": 22131,
             "granted": 7753725,
             "lent": 0,
             "guaranteed": 0,
@@ -3330,29 +3468,51 @@
           "projectId": "sim:2999A013:0",
           "origin": "simulated",
           "parcelIds": ["2999A013"],
-          "pathway": "streamlined",
-          "entered": {
-            "filed": 20743,
-            "entitled": 20859,
-            "permitFiled": 21175,
-            "permitIssued": 21228,
-            "construction": 21769,
-            "complete": 22028
-          },
-          "end": { "kind": "complete", "day": 22028 },
+          "pathway": "permitOnly",
+          "entered": { "permitFiled": 20743 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 20767 },
           "revisions": [{ "day": 20743, "units": 7, "stories": 4 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 6030675,
+            "granted": 2110736,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:2999A013:1",
+          "origin": "simulated",
+          "parcelIds": ["2999A013"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 21804,
+            "entitled": 21871,
+            "permitFiled": 22107,
+            "permitIssued": 23325,
+            "construction": 24137,
+            "complete": 24646
+          },
+          "end": { "kind": "complete", "day": 24646 },
+          "revisions": [{ "day": 21804, "units": 7, "stories": 4 }],
+          "existingUnits": 1,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 20768,
+            "granted": 2110736,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 6,
+            "certain": false
           }
         },
         {
@@ -3390,27 +3550,27 @@
           "parcelIds": ["2999A019"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 21838,
-            "entitled": 21969,
-            "permitFiled": 21978,
-            "permitIssued": 22360,
-            "construction": 22499,
-            "complete": 23147
+            "filed": 21478,
+            "entitled": 21609,
+            "permitFiled": 21618,
+            "permitIssued": 22000,
+            "construction": 22139,
+            "complete": 22787
           },
-          "end": { "kind": "complete", "day": 23147 },
-          "revisions": [{ "day": 21838, "units": 3, "stories": 3 }],
+          "end": { "kind": "complete", "day": 22787 },
+          "revisions": [{ "day": 21478, "units": 3, "stories": 3 }],
           "existingUnits": 2,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["federal-grant"],
             "applied": 21478,
-            "granted": 2584575,
+            "granted": 1679974,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3446,29 +3606,29 @@
           "projectId": "sim:3512001:0",
           "origin": "simulated",
           "parcelIds": ["3512001"],
-          "pathway": "streamlined",
+          "pathway": "discretionary",
           "entered": {
             "filed": 21107,
-            "entitled": 21345,
-            "permitFiled": 21487,
-            "permitIssued": 21712,
-            "construction": 21809,
-            "complete": 22236
+            "entitled": 21605,
+            "permitFiled": 21803,
+            "permitIssued": 22028,
+            "construction": 22125,
+            "complete": 22552
           },
-          "end": { "kind": "complete", "day": 22236 },
+          "end": { "kind": "complete", "day": 22552 },
           "revisions": [{ "day": 21107, "units": 2, "stories": 2 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 1723051,
+            "granted": 603068,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3477,25 +3637,25 @@
           "parcelIds": ["3512002"],
           "pathway": "permitOnly",
           "entered": {
-            "permitFiled": 21107,
-            "permitIssued": 21883,
-            "construction": 21987,
-            "complete": 22277
+            "permitFiled": 20767,
+            "permitIssued": 21543,
+            "construction": 21647,
+            "complete": 21937
           },
-          "end": { "kind": "complete", "day": 22277 },
-          "revisions": [{ "day": 21107, "units": 7, "stories": 4 }],
+          "end": { "kind": "complete", "day": 21937 },
+          "revisions": [{ "day": 20767, "units": 7, "stories": 4 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 6030675,
+            "granted": 2110736,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 7,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3541,48 +3701,49 @@
             "complete": 23140
           },
           "end": { "kind": "complete", "day": 23140 },
-          "revisions": [{ "day": 21473, "units": 58, "stories": 6 }],
+          "revisions": [
+            { "day": 21473, "units": 58, "stories": 6 },
+            { "day": 21658, "units": 57, "stories": 6 }
+          ],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 49968451,
+            "granted": 17488958,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
           "projectId": "sim:3512007:0",
           "origin": "simulated",
           "parcelIds": ["3512007"],
-          "pathway": "streamlined",
+          "pathway": "permitOnly",
           "entered": {
-            "filed": 21838,
-            "entitled": 21956,
-            "permitFiled": 22000,
-            "permitIssued": 22363,
-            "construction": 22374,
-            "complete": 22869
+            "permitFiled": 21178,
+            "permitIssued": 21541,
+            "construction": 21552,
+            "complete": 22047
           },
-          "end": { "kind": "complete", "day": 22869 },
-          "revisions": [{ "day": 21838, "units": 4, "stories": 4 }],
+          "end": { "kind": "complete", "day": 22047 },
+          "revisions": [{ "day": 21178, "units": 4, "stories": 4 }],
           "existingUnits": 2,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 3446100,
+            "granted": 1206135,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3620,27 +3781,27 @@
           "parcelIds": ["3512010"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 24029,
-            "entitled": 24186,
-            "permitFiled": 24820,
-            "permitIssued": 25035,
-            "construction": 25099,
-            "complete": 26238
+            "filed": 23664,
+            "entitled": 23821,
+            "permitFiled": 24455,
+            "permitIssued": 24670,
+            "construction": 24734,
+            "complete": 25873
           },
-          "end": { "kind": "complete", "day": 26238 },
-          "revisions": [{ "day": 24029, "units": 109, "stories": 14 }],
+          "end": { "kind": "complete", "day": 25873 },
+          "revisions": [{ "day": 23664, "units": 109, "stories": 14 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 21300,
-            "granted": 93906225,
+            "granted": 32867179,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 108,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3648,27 +3809,71 @@
           "origin": "simulated",
           "parcelIds": ["3512013"],
           "pathway": "streamlined",
-          "entered": {
-            "filed": 20743,
-            "entitled": 21008,
-            "permitFiled": 21143,
-            "permitIssued": 22066,
-            "construction": 22126,
-            "complete": 22456
-          },
-          "end": { "kind": "complete", "day": 22456 },
+          "entered": { "filed": 20743, "entitled": 21008, "permitFiled": 21143 },
+          "end": { "kind": "exit", "stage": "permitFiled", "reason": "withdrawn", "day": 22037 },
           "revisions": [{ "day": 20743, "units": 9, "stories": 8 }],
           "existingUnits": 4,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 5,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:3512013:1",
+          "origin": "simulated",
+          "parcelIds": ["3512013"],
+          "pathway": "streamlined",
+          "entered": { "filed": 22038, "entitled": 22096 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 22240 },
+          "revisions": [{ "day": 22038, "units": 9, "stories": 10 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant"],
+            "applied": 22038,
+            "granted": 2713804,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 5,
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:3512013:2",
+          "origin": "simulated",
+          "parcelIds": ["3512013"],
+          "pathway": "streamlined",
+          "entered": {
+            "filed": 22241,
+            "entitled": 22692,
+            "permitFiled": 22911,
+            "permitIssued": 23520,
+            "construction": 23582,
+            "complete": 24987
+          },
+          "end": { "kind": "complete", "day": 24987 },
+          "revisions": [{ "day": 22241, "units": 9, "stories": 8 }],
+          "existingUnits": 4,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["m-city-grant", "federal-grant"],
+            "applied": 22241,
+            "granted": 7753725,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
             "certain": true
           }
         },
@@ -3678,27 +3883,27 @@
           "parcelIds": ["3512014"],
           "pathway": "discretionary",
           "entered": {
-            "filed": 21838,
-            "entitled": 22454,
-            "permitFiled": 22462,
-            "permitIssued": 22933,
-            "construction": 23257,
-            "complete": 24133
+            "filed": 21473,
+            "entitled": 22089,
+            "permitFiled": 22097,
+            "permitIssued": 22568,
+            "construction": 22892,
+            "complete": 23768
           },
-          "end": { "kind": "complete", "day": 24133 },
-          "revisions": [{ "day": 21838, "units": 7, "stories": 4 }],
+          "end": { "kind": "complete", "day": 23768 },
+          "revisions": [{ "day": 21473, "units": 7, "stories": 4 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["federal-grant"],
             "applied": 20743,
-            "granted": 6030675,
+            "granted": 3919939,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3721,13 +3926,13 @@
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 7753725,
+            "granted": 2713804,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 6,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3736,55 +3941,69 @@
           "parcelIds": ["3600001"],
           "pathway": "discretionary",
           "entered": {
-            "filed": 22972,
-            "entitled": 23538,
-            "permitFiled": 23610,
-            "permitIssued": 24140,
-            "construction": 24546,
-            "complete": 25132
+            "filed": 23155,
+            "entitled": 23721,
+            "permitFiled": 23793,
+            "permitIssued": 24323,
+            "construction": 24729,
+            "complete": 25315
           },
-          "end": { "kind": "complete", "day": 25132 },
-          "revisions": [{ "day": 22972, "units": 212, "stories": 8 }],
+          "end": { "kind": "complete", "day": 25315 },
+          "revisions": [{ "day": 23155, "units": 212, "stories": 8 }],
           "existingUnits": 0,
           "multiPhase": false,
-          "phase": null,
-          "funding": {
-            "programmes": ["m-city-guarantee"],
-            "applied": 22972,
-            "granted": 0,
-            "lent": 0,
-            "guaranteed": 78090200,
-            "displaced": 212,
-            "certain": false
-          }
+          "phase": null
         },
         {
           "projectId": "sim:3600002:0",
           "origin": "simulated",
           "parcelIds": ["3600002"],
           "pathway": "discretionary",
-          "entered": {
-            "filed": 25125,
-            "entitled": 25164,
-            "permitFiled": 25321,
-            "permitIssued": 25505,
-            "construction": 25896,
-            "complete": 26844
-          },
-          "end": { "kind": "complete", "day": 26844 },
-          "revisions": [{ "day": 25125, "units": 208, "stories": 8 }],
+          "entered": { "filed": 24760, "entitled": 24799 },
+          "end": { "kind": "exit", "stage": "entitled", "reason": "expired", "day": 24956 },
+          "revisions": [{ "day": 24760, "units": 208, "stories": 8 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 21143,
-            "granted": 179197200,
+            "granted": 62719020,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 208,
-            "certain": true
+            "certain": false
+          }
+        },
+        {
+          "projectId": "sim:3600002:1",
+          "origin": "simulated",
+          "parcelIds": ["3600002"],
+          "pathway": "permitOnly",
+          "entered": {
+            "permitFiled": 24957,
+            "permitIssued": 25112,
+            "construction": 25129,
+            "complete": 26251
+          },
+          "end": { "kind": "complete", "day": 26251 },
+          "revisions": [
+            { "day": 24957, "units": 95, "stories": 4 },
+            { "day": 25112, "units": 89, "stories": 4 }
+          ],
+          "existingUnits": 0,
+          "multiPhase": false,
+          "phase": null,
+          "kind": "affordable",
+          "funding": {
+            "programmes": ["federal-grant"],
+            "applied": 24957,
+            "granted": 53199169,
+            "lent": 0,
+            "guaranteed": 0,
+            "displaced": 0,
+            "certain": false
           }
         },
         {
@@ -3805,16 +4024,25 @@
           "parcelIds": ["3600005"],
           "pathway": "permitOnly",
           "entered": {
-            "permitFiled": 22778,
-            "permitIssued": 22850,
-            "construction": 22926,
-            "complete": 23639
+            "permitFiled": 22748,
+            "permitIssued": 22820,
+            "construction": 22896,
+            "complete": 23609
           },
-          "end": { "kind": "complete", "day": 23639 },
-          "revisions": [{ "day": 22778, "units": 256, "stories": 10 }],
+          "end": { "kind": "complete", "day": 23609 },
+          "revisions": [{ "day": 22748, "units": 256, "stories": 10 }],
           "existingUnits": 5,
           "multiPhase": false,
-          "phase": null
+          "phase": null,
+          "funding": {
+            "programmes": ["m-city-guarantee"],
+            "applied": 22748,
+            "granted": 0,
+            "lent": 0,
+            "guaranteed": 94297600,
+            "displaced": 251,
+            "certain": false
+          }
         },
         {
           "projectId": "sim:3600008:0",
@@ -3822,27 +4050,18 @@
           "parcelIds": ["3600008"],
           "pathway": "discretionary",
           "entered": {
-            "filed": 22944,
-            "entitled": 22979,
-            "permitFiled": 23536,
-            "permitIssued": 23849,
-            "construction": 23879,
-            "complete": 24173
+            "filed": 22974,
+            "entitled": 23009,
+            "permitFiled": 23566,
+            "permitIssued": 23879,
+            "construction": 23909,
+            "complete": 24203
           },
-          "end": { "kind": "complete", "day": 24173 },
-          "revisions": [{ "day": 22944, "units": 207, "stories": 8 }],
+          "end": { "kind": "complete", "day": 24203 },
+          "revisions": [{ "day": 22974, "units": 207, "stories": 8 }],
           "existingUnits": 0,
           "multiPhase": false,
-          "phase": null,
-          "funding": {
-            "programmes": ["m-city-guarantee"],
-            "applied": 22944,
-            "granted": 0,
-            "lent": 0,
-            "guaranteed": 76248450,
-            "displaced": 207,
-            "certain": false
-          }
+          "phase": null
         },
         {
           "projectId": "sim:3600010:0",
@@ -3850,27 +4069,27 @@
           "parcelIds": ["3600010"],
           "pathway": "streamlined",
           "entered": {
-            "filed": 26221,
-            "entitled": 26304,
-            "permitFiled": 26316,
-            "permitIssued": 26373,
-            "construction": 26585,
-            "complete": 27428
+            "filed": 24956,
+            "entitled": 25039,
+            "permitFiled": 25051,
+            "permitIssued": 25108,
+            "construction": 25320,
+            "complete": 26163
           },
-          "end": { "kind": "complete", "day": 27428 },
-          "revisions": [{ "day": 26221, "units": 253, "stories": 10 }],
+          "end": { "kind": "complete", "day": 26163 },
+          "revisions": [{ "day": 24956, "units": 253, "stories": 10 }],
           "existingUnits": 0,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 21505,
-            "granted": 217965825,
+            "granted": 76288039,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 253,
-            "certain": true
+            "certain": false
           }
         },
         {
@@ -3906,41 +4125,33 @@
           "projectId": "sim:3600016:0",
           "origin": "simulated",
           "parcelIds": ["3600016"],
-          "pathway": "streamlined",
+          "pathway": "permitOnly",
           "entered": {
-            "filed": 20743,
-            "entitled": 20850,
-            "permitFiled": 21026,
-            "permitIssued": 21083,
-            "construction": 21150,
-            "complete": 21594
+            "permitFiled": 20743,
+            "permitIssued": 20800,
+            "construction": 20867,
+            "complete": 21311
           },
-          "end": { "kind": "complete", "day": 21594 },
+          "end": { "kind": "complete", "day": 21311 },
           "revisions": [{ "day": 20743, "units": 3, "stories": 3 }],
           "existingUnits": 1,
           "multiPhase": false,
           "phase": null,
           "kind": "affordable",
           "funding": {
-            "programmes": ["m-city-grant", "federal-grant"],
+            "programmes": ["m-city-grant"],
             "applied": 20743,
-            "granted": 2584575,
+            "granted": 904601,
             "lent": 0,
             "guaranteed": 0,
             "displaced": 0,
-            "certain": true
+            "certain": false
           }
         }
       ],
       "ledger": [
         { "day": 20742, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 20742,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 20742, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 20743,
           "pool": "m-city",
@@ -4006,24 +4217,10 @@
         },
         {
           "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 3919939
-        },
-        {
-          "day": 20743,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 904601
-        },
-        {
-          "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
         },
         {
           "day": 20743,
@@ -4034,24 +4231,10 @@
         },
         {
           "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 20743,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 2110736
-        },
-        {
-          "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 3919939
         },
         {
           "day": 20743,
@@ -4075,20 +4258,28 @@
           "dollars": 1206135
         },
         {
-          "day": 20743,
-          "pool": "federal",
-          "programme": "federal-grant",
+          "day": 20767,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2110736
+        },
+        {
+          "day": 20767,
+          "pool": "m-city",
+          "programme": "m-city-grant",
           "kind": "commit",
-          "dollars": 2239965
+          "dollars": 2110736
+        },
+        {
+          "day": 20867,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 904601
         },
         { "day": 21107, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 21107,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 21107, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 21107,
           "pool": "m-city",
@@ -4102,20 +4293,6 @@
           "programme": "federal-grant",
           "kind": "commit",
           "dollars": 5039921
-        },
-        {
-          "day": 21107,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2110736
-        },
-        {
-          "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 3919939
         },
         {
           "day": 21107,
@@ -4168,24 +4345,10 @@
         },
         {
           "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1119983
-        },
-        {
-          "day": 21107,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 2713804
-        },
-        {
-          "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
         },
         {
           "day": 21107,
@@ -4196,13 +4359,6 @@
         },
         {
           "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
-        },
-        {
-          "day": 21107,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
@@ -4210,27 +4366,13 @@
         },
         {
           "day": 21107,
-          "pool": "federal",
-          "programme": "federal-grant",
+          "pool": "m-city",
+          "programme": "m-city-grant",
           "kind": "commit",
-          "dollars": 5039921
+          "dollars": 2110736
         },
         { "day": 21142, "pool": "m-bank", "programme": null, "kind": "in", "dollars": 5000000 },
         {
-          "day": 21150,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 904601
-        },
-        {
-          "day": 21150,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
-        },
-        {
           "day": 21165,
           "pool": "m-city",
           "programme": "m-city-grant",
@@ -4245,55 +4387,56 @@
           "dollars": 2239965
         },
         {
-          "day": 21320,
+          "day": 21178,
           "pool": "m-city",
           "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 21320,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 21390,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 21390,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 21455,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
+          "kind": "release",
           "dollars": 2110736
         },
         {
-          "day": 21455,
+          "day": 21178,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 904601
+        },
+        {
+          "day": 21178,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 1206135
+        },
+        {
+          "day": 21320,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 21320,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
-          "dollars": 3919939
+          "dollars": 5039921
+        },
+        {
+          "day": 21390,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 21390,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
         },
         { "day": 21473, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 21473,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 21473, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 21473,
           "pool": "m-city",
@@ -4303,17 +4446,24 @@
         },
         {
           "day": 21473,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 32479493
-        },
-        {
-          "day": 21473,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
-          "dollars": 2110736
+          "dollars": 2713804
+        },
+        {
+          "day": 21473,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
+        },
+        {
+          "day": 21473,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
         },
         {
           "day": 21473,
@@ -4321,6 +4471,55 @@
           "programme": "federal-grant",
           "kind": "commit",
           "dollars": 3919939
+        },
+        {
+          "day": 21473,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 3919939
+        },
+        {
+          "day": 21478,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 1679974
+        },
+        {
+          "day": 21531,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 1206135
+        },
+        {
+          "day": 21552,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 1206135
+        },
+        {
+          "day": 21556,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2713804
+        },
+        {
+          "day": 21556,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2713804
+        },
+        {
+          "day": 21647,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2110736
         },
         {
           "day": 21670,
@@ -4351,139 +4550,35 @@
           "dollars": 6159904
         },
         {
-          "day": 21769,
+          "day": 21793,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 21793,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 21804,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2713804
+        },
+        {
+          "day": 21804,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
           "dollars": 2110736
-        },
-        {
-          "day": 21769,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 3919939
-        },
-        {
-          "day": 21793,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 21793,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 21809,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 603068
-        },
-        {
-          "day": 21809,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1119983
-        },
-        {
-          "day": 21812,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 21812,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
         },
         { "day": 21838, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 21838,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 21838,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2713804
-        },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 5039921
-        },
-        {
-          "day": 21838,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 904601
-        },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
-        },
-        {
-          "day": 21838,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 2110736
-        },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 3919939
-        },
-        {
-          "day": 21838,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 1206135
-        },
-        {
-          "day": 21838,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 2239965
-        },
+        { "day": 21838, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 21838,
           "pool": "m-city",
@@ -4517,14 +4612,14 @@
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
-          "dollars": 904601
+          "dollars": 2713804
         },
         {
           "day": 21838,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "commit",
-          "dollars": 1679974
+          "dollars": 5039921
         },
         {
           "day": 21838,
@@ -4546,13 +4641,6 @@
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 904601
-        },
-        {
-          "day": 21893,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
         },
         {
           "day": 21975,
@@ -4562,53 +4650,95 @@
           "dollars": 17488958
         },
         {
-          "day": 21975,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 32479493
-        },
-        {
-          "day": 21987,
+          "day": 22030,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
-          "dollars": 2110736
+          "dollars": 2713804
         },
         {
-          "day": 21987,
+          "day": 22037,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2713804
+        },
+        {
+          "day": 22038,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2713804
+        },
+        {
+          "day": 22059,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22059,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22092,
+          "pool": "m-city",
+          "programme": "m-city-guarantee",
+          "kind": "commit",
+          "dollars": 2873130
+        },
+        {
+          "day": 22125,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 603068
+        },
+        {
+          "day": 22126,
+          "pool": "m-city",
+          "programme": "m-city-guarantee",
+          "kind": "release",
+          "dollars": 2873130
+        },
+        {
+          "day": 22130,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "release",
+          "dollars": 5039921
+        },
+        {
+          "day": 22131,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2713804
+        },
+        {
+          "day": 22131,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 5039921
+        },
+        {
+          "day": 22139,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 3919939
         },
         {
-          "day": 22030,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22030,
+          "day": 22139,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22126,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22126,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
+          "dollars": 1679974
         },
         {
           "day": 22144,
@@ -4619,244 +4749,233 @@
         },
         {
           "day": 22144,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 1679974
-        },
-        {
-          "day": 22166,
           "pool": "m-city",
           "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 1206135
+          "kind": "commit",
+          "dollars": 2713804
         },
         {
-          "day": 22166,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 2239965
+          "day": 22195,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "loss",
+          "dollars": 904601
+        },
+        {
+          "day": 22196,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 2110736
         },
         { "day": 22203, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 22203, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
           "day": 22203,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 21710430
         },
         {
-          "day": 22203,
+          "day": 22240,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2713804
+        },
+        {
+          "day": 22241,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 2713804
         },
         {
-          "day": 22203,
+          "day": 22241,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "commit",
           "dollars": 5039921
         },
         {
-          "day": 22325,
+          "day": 22378,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22378,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22455,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22455,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22514,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22514,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        { "day": 22568, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 22568, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
+        {
+          "day": 22717,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 2110736
         },
         {
-          "day": 22325,
+          "day": 22717,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 3919939
         },
         {
-          "day": 22374,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 1206135
-        },
-        {
-          "day": 22374,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 2239965
-        },
-        {
-          "day": 22424,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22424,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22455,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22455,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22480,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22480,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22499,
+          "day": 22718,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 904601
         },
         {
-          "day": 22499,
+          "day": 22721,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22721,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22748,
+          "pool": "m-city",
+          "programme": "m-city-guarantee",
+          "kind": "commit",
+          "dollars": 9429760
+        },
+        {
+          "day": 22819,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 21710430
+        },
+        {
+          "day": 22820,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2110736
+        },
+        {
+          "day": 22821,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 904601
+        },
+        {
+          "day": 22821,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
           "dollars": 1679974
         },
-        { "day": 22568, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 22568,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
+          "day": 22889,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 2110736
         },
         {
-          "day": 22568,
+          "day": 22890,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 904601
+        },
+        {
+          "day": 22890,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 1679974
+        },
+        {
+          "day": 22892,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 22892,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 22892,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 3919939
+        },
+        { "day": 22934, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 22934, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
+        {
+          "day": 22934,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "commit",
           "dollars": 31962578
         },
         {
-          "day": 22568,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 59359073
-        },
-        {
-          "day": 22622,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22622,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22721,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22721,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        {
-          "day": 22765,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2110736
-        },
-        {
-          "day": 22765,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 3919939
-        },
-        {
-          "day": 22848,
-          "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "commit",
-          "dollars": 2652120
-        },
-        {
-          "day": 22892,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2713804
-        },
-        {
-          "day": 22892,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 5039921
-        },
-        { "day": 22934, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
           "day": 22934,
           "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
+          "programme": "federal-grant",
+          "kind": "commit",
+          "dollars": 45919283
         },
         {
-          "day": 22944,
+          "day": 23053,
           "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "commit",
-          "dollars": 7624845
-        },
-        {
-          "day": 22972,
-          "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "commit",
-          "dollars": 7809020
-        },
-        {
-          "day": 22990,
-          "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "commit",
-          "dollars": 3020470
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 904601
         },
         {
           "day": 23234,
@@ -4873,359 +4992,202 @@
           "dollars": 5039921
         },
         {
-          "day": 23257,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 2110736
-        },
-        {
-          "day": 23257,
+          "day": 23239,
           "pool": "federal",
           "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 3919939
-        },
-        {
-          "day": 23295,
-          "pool": "m-city",
-          "programme": "m-city-guarantee",
           "kind": "release",
-          "dollars": 3020470
-        },
-        { "day": 23299, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 23299,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
+          "dollars": 45919283
         },
         {
-          "day": 23299,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 24122700
-        },
-        {
-          "day": 23299,
+          "day": 23240,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "commit",
           "dollars": 44799300
         },
+        { "day": 23299, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 23299, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 23377,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 31962578
-        },
-        {
-          "day": 23377,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 59359073
-        },
-        {
-          "day": 23378,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 904601
-        },
-        {
-          "day": 23378,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
-        },
-        {
-          "day": 23447,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 904601
-        },
-        {
-          "day": 23447,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 1679974
-        },
-        {
-          "day": 23642,
+          "day": 23464,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 2713804
         },
         {
-          "day": 23642,
+          "day": 23464,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 5039921
         },
-        { "day": 23664, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 23664,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 23703,
-          "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "release",
-          "dollars": 2652120
-        },
-        {
-          "day": 23849,
+          "day": 23582,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
-          "dollars": 24122700
+          "dollars": 2713804
         },
         {
-          "day": 23849,
+          "day": 23582,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 5039921
+        },
+        {
+          "day": 23583,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 2713804
+        },
+        {
+          "day": 23609,
+          "pool": "m-city",
+          "programme": "m-city-guarantee",
+          "kind": "release",
+          "dollars": 9429760
+        },
+        {
+          "day": 23632,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 904601
+        },
+        {
+          "day": 23632,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 1679974
+        },
+        { "day": 23664, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 23664, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
+        {
+          "day": 23664,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 32867179
+        },
+        {
+          "day": 23688,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 904601
+        },
+        {
+          "day": 23688,
+          "pool": "federal",
+          "programme": "federal-grant",
+          "kind": "spend",
+          "dollars": 1679974
+        },
+        {
+          "day": 23743,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 31962578
+        },
+        {
+          "day": 23920,
           "pool": "federal",
           "programme": "federal-grant",
           "kind": "spend",
           "dollars": 44799300
         },
         { "day": 24029, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 24029, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 24029,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 24029,
+          "day": 24137,
           "pool": "m-city",
           "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 32867179
-        },
-        {
-          "day": 24029,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 61039046
-        },
-        {
-          "day": 24173,
-          "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "release",
-          "dollars": 7624845
+          "kind": "spend",
+          "dollars": 2110736
         },
         { "day": 24395, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 24395, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 24395,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        { "day": 24760, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 24760,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 25099,
+          "day": 24734,
           "pool": "m-city",
           "programme": "m-city-grant",
           "kind": "spend",
           "dollars": 32867179
         },
+        { "day": 24760, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 24760, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 25099,
+          "day": 24760,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 62719020
+        },
+        {
+          "day": 24956,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "release",
+          "dollars": 62719020
+        },
+        {
+          "day": 24956,
+          "pool": "m-city",
+          "programme": "m-city-grant",
+          "kind": "commit",
+          "dollars": 76288039
+        },
+        {
+          "day": 24957,
           "pool": "federal",
           "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 61039046
+          "kind": "commit",
+          "dollars": 53199169
         },
         { "day": 25125, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
+        { "day": 25125, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         {
-          "day": 25125,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 25125,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 62719020
-        },
-        {
-          "day": 25125,
+          "day": 25129,
           "pool": "federal",
           "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 116478180
+          "kind": "spend",
+          "dollars": 53199169
         },
         {
-          "day": 25132,
+          "day": 25320,
           "pool": "m-city",
-          "programme": "m-city-guarantee",
-          "kind": "release",
-          "dollars": 7809020
+          "programme": "m-city-grant",
+          "kind": "spend",
+          "dollars": 76288039
         },
         { "day": 25490, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 25490,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 25490, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 25856, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 25856,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 25896,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 62719020
-        },
-        {
-          "day": 25896,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 116478180
-        },
+        { "day": 25856, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 26221, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 26221,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
-        {
-          "day": 26221,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "commit",
-          "dollars": 76288039
-        },
-        {
-          "day": 26221,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "commit",
-          "dollars": 141677786
-        },
-        {
-          "day": 26585,
-          "pool": "m-city",
-          "programme": "m-city-grant",
-          "kind": "spend",
-          "dollars": 76288039
-        },
-        {
-          "day": 26585,
-          "pool": "federal",
-          "programme": "federal-grant",
-          "kind": "spend",
-          "dollars": 141677786
-        },
+        { "day": 26221, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 26586, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 26586,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 26586, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 26951, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 26951,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 26951, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 27317, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 27317,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 27317, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 27682, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 27682,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 27682, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 28047, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 28047,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 28047, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 28412, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 28412,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 28412, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 28778, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 28778,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 28778, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 29143, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 29143,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        },
+        { "day": 29143, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 },
         { "day": 29508, "pool": "m-city", "programme": null, "kind": "in", "dollars": 20000000 },
-        {
-          "day": 29508,
-          "pool": "federal",
-          "programme": null,
-          "kind": "in",
-          "dollars": 10000000000000
-        }
+        { "day": 29508, "pool": "federal", "programme": null, "kind": "in", "dollars": 20000000 }
       ]
     }
   ]

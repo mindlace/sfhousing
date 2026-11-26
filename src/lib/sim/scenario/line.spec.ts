@@ -277,6 +277,8 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
     let applied = 0;
     let key = 0;
     let lot = 0;
+    // awards whose set is shorter than the application's bundle (a short pool left out)
+    let partial = 0;
     const addSome = (n: number) => {
       applied += Math.floor(r() * 3);
       for (let i = 0; i < n; i++) {
@@ -315,6 +317,7 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
       }
       const take = (p: number) => (a: App, w: Award) => {
         for (const [q, d] of w.asks) money.set(q, avail(q) - d);
+        if (w.set.length < a.bundle.length) partial++;
         out.push([p, a.lot, a.key, a.kind, w.set]);
         for (const x of all) if (x.lot === a.lot) line.remove(x);
       };
@@ -326,12 +329,13 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
       for (const a of live()) if (r() < 0.05) line.remove(a);
       line.serve(test, take(pass + 0.5), true, passes);
     }
-    return { out, money: [...money], left: line.apps().map((a) => a.key) };
+    return { out, money: [...money], left: line.apps().map((a) => a.key), partial };
   }
 
   it('500 random lines: the same awards, in the same order, with the same sets', () => {
     let awards = 0;
     let waiting = 0;
+    let partial = 0;
     for (let seed = 1; seed <= 500; seed++) {
       const scan = play(seed, scanLine);
       const grouped = play(seed, () => groupedLine(poolsOf));
@@ -341,9 +345,12 @@ describe('scanLine and groupedLine agree (property, spec 6)', () => {
       expect(probed, `seed ${seed} (probe)`).toEqual(scan);
       awards += scan.out.length;
       waiting += scan.left.length;
+      partial += scan.partial;
     }
     // both outcomes are common: many awards, and many applications left waiting past them
     expect(awards).toBeGreaterThan(500);
     expect(waiting).toBeGreaterThan(500);
+    // the fallback award: some awards leave a short pool out of the bundle
+    expect(partial).toBeGreaterThan(0);
   });
 });

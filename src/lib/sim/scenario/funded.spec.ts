@@ -6,7 +6,7 @@ import { prototypeFor } from '$lib/sim/finance';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import { runOf } from './engine';
 import { benchBaseline, withBenchFunding } from './fixtures/bench-finance';
-import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
+import { miniCalibrationWithRoutes, miniFinance, withFederalYearly } from './fixtures/mini-finance';
 import {
   WARM_CHUNK,
   attemptLatents,
@@ -331,15 +331,22 @@ const deep: [string, SimInput, boolean, (inp: SimInput, respells: number) => voi
   ],
   [
     'miniFinance, a pool every affordable bundle needs off and on again',
+    // a federal pool of 20,000,000 a year, so the line waits (rule 16 as amended)
     withFinance(
-      offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }])
+      offCase(withFederalYearly(miniFinance(asOf), asOf, 20_000_000), [
+        { pool: 'm-city', from: asOf + 600, to: asOf + 1400 }
+      ])
     ),
     false,
     (_inp, respells) => expect(respells).toBeGreaterThan(0)
   ],
   [
     'miniFinance, a pool every affordable bundle needs off for good',
-    withFinance(offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 1800, to: null }])),
+    withFinance(
+      offCase(withFederalYearly(miniFinance(asOf), asOf, 20_000_000), [
+        { pool: 'm-city', from: asOf + 1800, to: null }
+      ])
+    ),
     false,
     (_inp, respells) => expect(respells).toBeGreaterThan(0)
   ],
@@ -354,9 +361,13 @@ const deep: [string, SimInput, boolean, (inp: SimInput, respells: number) => voi
   ],
   [
     'the bench baseline with the state pool off for good',
-    withFinance(offCase(benchBaseline(asOf), [{ pool: 'state', from: asOf + 900, to: null }]), {
-      regimes: [{ day: asOf + 300, parcels: view1 }]
-    }),
+    // a federal pool of 300,000,000 a year, so the line waits (rule 16 as amended)
+    withFinance(
+      offCase(withFederalYearly(benchBaseline(asOf), asOf, 300_000_000), [
+        { pool: 'state', from: asOf + 900, to: null }
+      ]),
+      { regimes: [{ day: asOf + 300, parcels: view1 }] }
+    ),
     true,
     (_inp, respells) => expect(respells).toBeGreaterThan(0)
   ]
@@ -683,7 +694,9 @@ describe('the typed walk (perf Task 3)', () => {
     const inputs: SimInput[] = [
       ...deep.map(([, inp]) => inp),
       withFinance(
-        offCase(miniFinance(asOf), [{ pool: 'm-city', from: asOf + 600, to: asOf + 1400 }]),
+        offCase(withFederalYearly(miniFinance(asOf), asOf, 20_000_000), [
+          { pool: 'm-city', from: asOf + 600, to: asOf + 1400 }
+        ]),
         { reservedFrom }
       )
     ];

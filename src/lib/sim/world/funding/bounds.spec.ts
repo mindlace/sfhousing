@@ -155,9 +155,12 @@ describe('older-format calibration', () => {
     const got = run(DEFAULT_POLICY4);
     expect(got.least).toBeGreaterThanOrEqual(0.99 * LEGACY_UNCAPPED_DOLLARS);
     expect(got.short).toBe(0);
-    // rows waiting on other pools still ask this one: the check is not vacuous
-    expect(got.asking).toBeGreaterThan(0);
-    expect(got.ledger.some((e) => e.kind === 'commit' && e.pool === FEDERAL)).toBe(true);
+    // Rule 16 as amended: a row whose bundle holds the federal grant is awarded at once (the
+    // federal pool can pay), so no row waits asking it; the check is that it is asked at award.
+    expect(got.asking).toBe(0);
+    expect(
+      got.ledger.filter((e) => e.kind === 'commit' && e.pool === FEDERAL).length
+    ).toBeGreaterThan(0);
   });
 
   it('Review Focus 4: switched off from month 13 and back on from month 25, it awards nothing while off and is never short', () => {
@@ -189,7 +192,8 @@ describe('older-format calibration', () => {
     });
     expect(offCommits).toEqual([]);
     expect(got.short).toBe(0);
-    expect(got.asking).toBeGreaterThan(0);
+    // as above: no row waits asking the federal pool (rule 16 as amended)
+    expect(got.asking).toBe(0);
     expect(
       got.ledger.some(
         (e) => e.kind === 'commit' && e.pool === FEDERAL && monthOfDay(input.asOf, e.day) >= 25

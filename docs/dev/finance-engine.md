@@ -11,16 +11,16 @@ line and its order, the award rule, re-pricing and lapse, the ledger protocol, `
 
 Code, all in `src/lib/sim/scenario/` unless noted:
 
-| File                         | Holds                                                                                                                 |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `funding.ts`                 | `inflowArrivals`, `PIPELINE_FUNDED`, `checkFinance`, `coverageLevel`, `below`, pool state, `FinanceIndex`, `awardSet` |
-| `funded.ts`                  | `fundedPass` (the three phases and the day loop), the latents of an attempt, re-pricing, the shortcuts                |
-| `line.ts`                    | the line: `scanLine` (the definition) and `groupedLine` (the implementation)                                          |
-| `money.ts`                   | `Treasury`: pool counters, inflows, the money events and the ledger                                                   |
-| `engine.ts`                  | the branch in `runEngine`, `Job.certain` in `stageStep`, `startSimulated`, `EngineOpts` (tests only)                  |
-| `input.ts`, `market.ts`      | `buildSimInput`, `Precompute.logit`, `parcelRankOf`; `marketLevel`                                                    |
-| `card.ts`                    | `projectCard` copies `kind` and `funding`                                                                             |
-| `src/lib/timelapse/model.ts` | `sampleAdvance`                                                                                                       |
+| File                         | Holds                                                                                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `funding.ts`                 | `inflowArrivals`, `PIPELINE_FUNDED`, `checkFinance`, `coverageLevel`, `cappedShift`, `below`, pool state, `FinanceIndex`, `awardSet` |
+| `funded.ts`                  | `fundedPass` (the three phases and the day loop), the latents of an attempt, re-pricing, the shortcuts                               |
+| `line.ts`                    | the line: `scanLine` (the definition) and `groupedLine` (the implementation)                                                         |
+| `money.ts`                   | `Treasury`: pool counters, inflows, the money events and the ledger                                                                  |
+| `engine.ts`                  | the branch in `runEngine`, `Job.certain` in `stageStep`, `startSimulated`, `EngineOpts` (tests only)                                 |
+| `input.ts`, `market.ts`      | `buildSimInput`, `Precompute.logit`, `parcelRankOf`; `marketLevel`                                                                   |
+| `card.ts`                    | `projectCard` copies `kind` and `funding`                                                                                            |
+| `src/lib/timelapse/model.ts` | `sampleAdvance`                                                                                                                      |
 
 Where this page and the design differ, the code is described and the ruling that made it so is
 named (rulings R-P1, R-P6, R-5a, R-7a, R-11a and the conductor's order for a guarantee's release; see
@@ -82,17 +82,25 @@ and segment, the offered programmes.
 the market step's:
 
 - Market kind: `z + m` (plus the frame's parking shift, `frame.parking`, in the world engine;
-  `world-core.md`, The car hook), plus `oddsShift` of the bundle when the bundle is not empty. The
+  `world-core.md`, The car hook), plus the bundle's shift when the bundle is not empty. The
   rate used is `min(ordinary rate, shifted rate)` (the min-rate rule, below).
 - Affordable kind: `z + m − slope × (uncoveredPerHome('affordable') − uncoveredPerHome('market')) ÷
-costPerHome('affordable')`, plus `oddsShift` of the bundle when the bundle is not empty.
-- A certain bundle gives rate `−Infinity` (hazard 1). A segment where the view has no size, or the
-  lot has no hazard, gives no start.
+costPerHome('affordable')`, plus the bundle's shift when the bundle is not empty.
+- The bundle's shift is `cappedShift` (`funding.ts`): `oddsShift` of the grant-equivalent
+  capped at the uncovered cost, so coverage above 1 shifts as coverage 1. Every rate is finite: a
+  fully funded bundle starts at the ordinary odds at full coverage, not at once (the funding award
+  rule, R2 and its clamp). A segment where the view has no size, or the lot has no hazard, gives no
+  start.
 
-`piecewiseMonth` turns the draw and the rates into the latent month `T`. A latent that falls in a
-**certain** month starts on that month's first day, so every certain application of a cohort is on
-one day and the line key, not a uniform, orders them. Any other latent starts on
-`r + 1 + floor((T − 1 + v) × MONTH_DAYS)`.
+`piecewiseMonth` turns the draw and the rates into the latent month `T`. Every latent starts on
+`r + 1 + floor((T − 1 + v) × MONTH_DAYS)`: there is no first-day rule, so fully funded
+applications spread over their month like any other.
+
+The world engine (`world/funding/clocks.ts`, what `/sim` runs) is the one described. The old
+scenario engine (`funded.ts`: `segValue`, `kindLatentInto`, the fused pass), which no longer runs in
+production, keeps the rule it was built with: a certain bundle's rate is `−Infinity` (hazard 1),
+its latent starts on the month's first day, and its shift is `oddsShift` uncapped. It was left
+unchanged when its comparisons with the world engine were retired (2026-11-25).
 
 **No application in a month without a bundle.** The month's bundle is the programmes of its kind
 that are active on its first day, whose pool is not off that day and whose `minHomes` the drawn size
@@ -157,8 +165,11 @@ pays only from what it has received, the federal pool included.
 2. Price the current set and find the short pools. If none, stop. Otherwise remove **every
    programme of every short pool at once**, then repeat. If the set becomes empty, stop with
    nothing.
-3. The application is **awarded with S** when S is not empty and `level(S)` is not below
-   `level(B)`. Otherwise it waits, and nothing is taken from any pool.
+3. The application is **awarded with S** when S is not empty and `level(S)` is above 0 (the
+   fallback award: rule 16 as amended on 2026-11-25,
+   [spec](../superpowers/specs/2026-11-25-funding-award-rule-design.html)). S may be below B: the
+   application is read as formed at award time from the pools that can pay. Otherwise it waits,
+   and nothing is taken from any pool.
 
 Why each part:
 
@@ -171,11 +182,13 @@ Why each part:
 - It ends: each round that does not stop removes at least one pool, and none returns. With the
   baseline there are at most 7 pools in a bundle (the five City pools with a programme, the state
   pool and the federal pool).
-- "Not below, with the tolerance": a certain application is awarded only with a certain set, so it
-  never starts as a partly covered project. A partly covered one may be awarded with a set whose
-  level is equal within 1e-9 or higher. Coverage above 1 (through loans and guarantees) counts as
-  1, so leaving out a loan that only pushed coverage past 1 does not stop the award.
-- An empty set is never awarded, even when B's coverage is 0. The lot keeps its ordinary start.
+- "Above level 0": a short pool is left out and the application is awarded on the pools that can
+  pay, at the level they give. A certain application whose set loses a pool starts as a partly
+  covered project unless the remaining set is still certain (coverage above 1 through loans and
+  guarantees counts as 1, so leaving out a loan that only pushed coverage past 1 keeps it certain).
+  Money in the other pools is never left idle because one pool is short.
+- An empty set, or a set at level 0 (a loan worth nothing as a grant-equivalent, alone or left
+  alone), is never awarded, whole or partial. The lot keeps its ordinary start.
 - Everything about the award comes from S's price: the commitments, the ledger, `funding.programmes`,
   the dollars, the certainty and the stage rule. Pools outside S are not touched.
 
@@ -191,21 +204,26 @@ allows"):
 - **City short, bond share 0.5: awarded.** The City programme leaves. The bond, alone in its tier,
   pays `min(430,762.5, 300,027)` = 300,027: coverage 1, awarded, certain, and the bond pool commits
   300,027 a home (the City's part, not its 430,762.5 share).
-- **City short, bond share 0.2: waits.** The bond alone pays its full share, 172,305; S covers
-  (443,108 + 118,390 + 172,305) ÷ 861,525 ≈ 0.852, below 1. The project waits and nothing is taken.
+- **City short, bond share 0.2: awarded, not certain.** The bond alone pays its full share,
+  172,305; S covers (443,108 + 118,390 + 172,305) ÷ 861,525 ≈ 0.852. The project is awarded on the
+  federal, state and bond grants at 0.852 and is not certain.
 - **Bond short.** The bond leaves; the City grant, alone in its tier, pays its full share again:
   awarded, certain.
 
 ### The monotonicity argument
 
-Within one pass the pools only lose money, and a larger project asks more. The award test is
-monotone in both: if it fails with available money a it fails with any smaller amount, pool by
+Within one pass the pools only lose money, and a larger project asks more. The award test ("the
+left set is not empty, and its level is above 0") is monotone in both: if it fails with available money a it fails with any smaller amount, pool by
 pool, and if it fails at `units` it fails at any larger size with the same bundle and prototype.
 The proof rests on two `fundBundle` properties that [finance-model.md](finance-model.md) states and
 tests: leaving an item out never lowers any remaining grant's `granted`, and a loan's `lent`, a
 guarantee's `guaranteed` and its reserve do not depend on the set; and a subset's grant-equivalent
 is never above the set's. So every pool left in a smaller set is asked as much or more, the set
-left under less money is a subset of the set left under more, and its level is not higher.
+left under less money is a subset of the set left under more, and its level is not higher, so if
+it is empty or at level 0, so is the smaller one. The same two properties give the property the
+fallback award is for: adding a programme on its own pool never turns an award into a wait, and
+never lowers the awarded level (`funding.spec.ts`, "adding a programme never turns an award into
+a wait (property)", 500 random cases).
 Termination needs none of it: pools leave and never return. This is exact in real arithmetic; in
 floating point a difference of one ulp could move a rounded dollar. The definition of serving below
 is a single scan, so no award depends on monotonicity to the dollar; only the grouped line uses it
@@ -240,18 +258,19 @@ nothing and no money returned.
 **Leaving the line**: awarded; the lot started by another route (its other kind's award, or its
 ordinary start); lapsed; or the horizon.
 
-### The known limit
+### A short pool
 
-An application waits for a pool that is short even when no more money is due to it. A spent pool with
-no later inflow counts as short every day; if the other programmes cannot make up its share, the
-application waits until the horizon, until its programme ends or its pool is switched off (a
-re-pricing that empties or shrinks its bundle), or until its lot starts otherwise. The engine does
-not look ahead at inflows to retire such a programme. The results show each pool's balance, and the
-user ends the programme to release its applicants. A test pins this
-(`engine-finance-repricing.spec.ts`, "the known limit: an application waits on a spent pool"): the
-second application in line is never awarded, never lapses and stays to the horizon, and ending the
-City programme later lapses it on `to + 1` and redraws it as a new spell on the federal and state
-shares. A later change to this behaviour is deliberate.
+A pool that is short for an application, a spent pool with no later inflow included, is left out
+of its award: the application is awarded at once on the pools that can pay, at their level, and
+waits only when nothing is left or what is left is at level 0. So no application waits on one
+spent pool while others hold money. Before 2026-11-25 such an application waited (the old known
+limit, OD-F10's "a pool that is on but short keeps them waiting"); that is superseded. Tests:
+`engine-finance-repricing.spec.ts`, "a spent pool is left out of the award", and in the world
+engine `funded.spec.ts`, "rule 16 as amended".
+
+### Monotonicity check
+
+More public money must never build fewer homes. `scripts/money-monotone.ts` runs every subset of the offered funding presets on a dataset and fails when adding a preset costs a set more than 5 homes on net, funded or affordable homes at a deadline year. A change under the funding paths runs it by hand before signoff and records its last line in the PR (rule and paths in [pipeline.md](pipeline.md), "Changes on the funding paths"; the check in [testing.md](testing.md), "The money monotonicity check"). It does not pass yet and is not a gate: today's drops come from the all-or-nothing certainty of an award at level 1 ([finance-data.md](finance-data.md), "What current law builds against the check").
 
 ### Known limit: a partly covered application keeps its month's first-day bundle (ruling R24)
 
@@ -379,7 +398,8 @@ carries no project id.
 ## The funded project
 
 On award day D the lot leaves every line and `startSimulated` builds the project. It is **certain**
-when `level(S) = 1`, which the award rule allows exactly when its bundle B was certain.
+when `level(S) = 1`; a certain bundle awarded without a short pool is certain, one awarded after a
+short pool left is certain only when what is left still reaches level 1.
 
 - **Stream and id**: the attempt's stream, so later draws are those the attempt's ordinary start
   would have used; `projectId` is `sim:<parcel id>:<k>`.
@@ -526,14 +546,17 @@ homes 47,471, at least 50 homes 33,505, at least 100 homes 19,005. `simulateNet`
 was 9.1 to 10.5 ms in the design's measurement (budget 15 ms).
 
 **What the baseline adds** (`minHomes` 70 for every baseline programme, every affordable bundle
-certain): every candidate that can reach 70 homes in some view draws its size, and those at 70 or
-more apply on the first day (inferred 15,000 to 25,000 for the live baseline).
+certain): every candidate that can reach 70 homes in some view draws its size, and in the old
+engine those at 70 or more apply on the first day (inferred 15,000 to 25,000 for the live
+baseline). The world engine has no first-day rule: they apply at the ordinary odds at full
+coverage.
 
 **The shortcuts** (all exact, held by tests that compare runs with them on and off,
 `EngineOpts.noShortcuts`): a per-input eligible list (a lot whose largest level never meets any
 `minHomes` of a kind has no latent of that kind); a per-input bound on attempt 0's INIT draw for
 the market kind, and the same for the affordable draw, built as `skipAbove` from the lowest rate any
-bundle can give (`Infinity` where some bundle is certain), so a lot above both is passed over on one
+bundle can give (`Infinity` where some bundle is certain: the old engine's rule, which the world
+engine does not have), so a lot above both is passed over on one
 draw without a lot record (`fundedRunStats().passedOver`); canonical bundle arrays so the price
 memo and the line find a bundle by identity; one day's new applications sorted once by a 64-bit
 float composite key; the grouped line.
@@ -580,7 +603,8 @@ to load the engine, not data): two pools, three programmes, one of them certain.
   years, leverage 1;
 - pool `bench-fund`: `generalRevenue`, yearly 50,000,000 from `asOf`, leverage 1;
 - programme `bench-certain`: grant share 1, reach `market`, `minHomes` 25, on `bench-bond` (certain:
-  every lot of 25 homes or more applies on the first day, the heaviest case);
+  in the old engine every lot of 25 homes or more applies on the first day, the heaviest case; in
+  the world engine they start at the ordinary odds at full coverage);
 - programme `bench-loan`: loan `costShare` 0.6, rate 0.04, reach `market`, `minHomes` 0, on
   `bench-fund` (partial);
 - programme `bench-afford`: grant share 0.25, reach `affordable`, `minHomes` 0, on `bench-fund`.
@@ -718,7 +742,7 @@ text, validation, levels, `isOff`, `available`, the award rule and its monotonic
 (scan against grouped on random inputs), `engine-finance.spec.ts` (no public money, conservation,
 determinism, the queue, certain projects, grouped serving), `engine-finance-stack.spec.ts` (a bond
 on the baseline, a short pool, `funding.programmes`), `engine-finance-repricing.spec.ts` (a
-programme opening or ending, a pool off, the known limit, regimes), plus `card.spec.ts`,
+programme opening or ending, a pool off, a spent pool left out of the award, regimes), plus `card.spec.ts`,
 `input.spec.ts` and `simulate.property.spec.ts`.
 
 The mini fixture (`miniFinance()`, `fixtures/mini-finance.ts`) has three pools: `m-city`, yearly

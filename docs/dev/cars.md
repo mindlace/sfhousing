@@ -122,6 +122,9 @@ Dataset `2026-11-25-76c90397`, current law, goal 82,069 homes by Oct 2066:
 
 Cars move the goal one month earlier, all of it through the parking link.
 
+The funding award rule (2026-11-25) moves current law's goal, cars on, to Oct 2061 (fill 3.5 s) on the
+same dataset ([finance-data.md](finance-data.md), "What current law builds against the check").
+
 ## Measured cost
 
 2026-11-25, live build `2026-11-25-76c90397`, `level2-check`'s fill line (two worlds, 480 months,

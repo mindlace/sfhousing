@@ -1,6 +1,5 @@
 // Fixtures for the world-funding tests: the mini city with public money, and its money as frames.
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
-import { buildFinance } from '$lib/sim/levers/finance';
 import {
   benchBaselineFunding,
   benchFundingLevers,
@@ -10,12 +9,12 @@ import {
 import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/scenario/types';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
-import { monthFirstDay, monthLastDay, monthOfDay } from '../../months';
+import { monthFirstDay, monthLastDay } from '../../months';
 import { inForceAt, moneyLeversOf } from '../../policy/combine';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline } from '../../policy/frame';
 import { createMoneyTrack } from '../../policy/money';
@@ -132,72 +131,6 @@ export function withBaselineMoney(base: SimInput): SimInput {
       terms: resolveTerms(MARKET_TERMS)
     }
   };
-}
-
-/**
- * Today's engine's money for `input` under `doc` held constant: the levers in force on month 1's
- * first day built on `input.finance` (`buildFinance`), as the world's money track builds them.
- */
-export function oldFinanceOf(input: SimInput, doc: SimPolicy4): SimInput['finance'] {
-  return buildFinance(
-    input.finance,
-    moneyLeversOf(inForceAt(doc, monthFirstDay(input.asOf, 1))),
-    input.asOf
-  );
-}
-
-/** What the tolerance test compares on a day. */
-export interface Metrics {
-  net: number;
-  awards: number;
-  fundedHomes: number;
-}
-
-/**
- * By `day`: completed net homes (−existing at a construction start after `asOf`, + final units
- * at completion, as `score.ts` `addNet` counts them, pipeline and simulated together), awards
- * (funded schedules whose first revision is on or before `day`) and funded homes (their first
- * revision's units).
- */
-export function metricsAt(schedules: readonly Schedule[], asOf: Day, day: Day): Metrics {
-  let net = 0;
-  let awards = 0;
-  let fundedHomes = 0;
-  for (const sc of schedules) {
-    const c = sc.entered.construction;
-    if (c !== undefined && c > asOf && c <= day) net -= sc.existingUnits;
-    if (sc.end.kind === 'complete' && sc.end.day <= day)
-      net += sc.revisions[sc.revisions.length - 1].units;
-    if (sc.funding !== undefined && sc.revisions[0].day <= day) {
-      awards++;
-      fundedHomes += sc.revisions[0].units;
-    }
-  }
-  return { net, awards, fundedHomes };
-}
-
-/**
- * T3: the funded schedules of `mine` whose `projectId` is an ordinary (unfunded) start in `old`
- * whose first revision falls in the same model month.
- */
-export function sameMonthOrdinary(
-  mine: readonly Schedule[],
-  old: readonly Schedule[],
-  asOf: Day
-): number {
-  const ordinary = new Map<string, Schedule>();
-  for (const s of old)
-    if (s.origin === 'simulated' && s.funding === undefined) ordinary.set(s.projectId, s);
-  let n = 0;
-  for (const s of mine) {
-    if (s.funding === undefined) continue;
-    const o = ordinary.get(s.projectId);
-    const sameMonth =
-      o !== undefined &&
-      monthOfDay(asOf, o.revisions[0].day) === monthOfDay(asOf, s.revisions[0].day);
-    if (sameMonth) n++;
-  }
-  return n;
 }
 
 /**

@@ -22,7 +22,7 @@ import {
 } from './card';
 import { dayOf } from './dates';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniCalibrationWithRoutes, miniFinance } from './fixtures/mini-finance';
+import { miniCalibrationWithRoutes, miniFinance, withFederalYearly } from './fixtures/mini-finance';
 import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
 import {
   MINI_AS_OF,
@@ -1080,7 +1080,9 @@ describe('projectCard: kind and funding (finance-engine spec 4.12, section 6 tes
   const fin: SimInput = {
     ...input,
     calibration: miniCalibrationWithRoutes(),
-    finance: miniFinance(AS_OF)
+    // a federal pool of 20,000,000 a year: the affordable line waits, so market and ordinary
+    // starts happen too
+    finance: withFederalYearly(miniFinance(AS_OF), AS_OF, 20_000_000)
   };
   // seed 4: both certain affordable and partly covered market funded starts
   const run = simulateDetailed(fin, 4, MINI_HORIZON);
