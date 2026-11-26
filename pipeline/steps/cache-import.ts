@@ -1,8 +1,10 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   rmdirSync,
   statSync
@@ -193,14 +195,35 @@ export async function cacheImport(
     lidarWork: { moved: 0, duplicate: 0, partial: 0 },
     boxesIndex: null
   };
-  const root = resolve(to.root);
+  const real = (p: string): string => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  };
   if (!isDir(from)) {
     err(`${from} is not a directory`);
     return { code: 2, report };
   }
-  if (from === root || from.startsWith(root + sep)) {
-    err(`${from} is the shared cache; give an old pipeline/.cache`);
+  const realFrom = real(from);
+  const root = real(to.root);
+  if (realFrom === root || realFrom.startsWith(root + sep) || root.startsWith(realFrom + sep)) {
+    err(`${from} and the shared cache ${to.root} overlap; give an old pipeline/.cache`);
     return { code: 2, report };
+  }
+  const pairs: [string, string][] = [
+    ['raw', to.raw],
+    ['ept', to.ept],
+    ['lidar-work', to.lidarWork]
+  ];
+  for (const [d, shared] of pairs) {
+    const local = join(from, d);
+    if (!existsSync(local) && !lstatSync(local, { throwIfNoEntry: false })) continue;
+    if (lstatSync(local).isSymbolicLink() || real(local) === real(shared)) {
+      err(`${local} is a symlink or is the shared ${d}; nothing moved`);
+      return { code: 2, report };
+    }
   }
 
   report.raw = await moveRaw(join(from, 'raw'), to.raw, err);

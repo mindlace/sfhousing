@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -178,5 +186,26 @@ describe('cache import', () => {
     }
     expect(readFileSync(join(shared.raw, sha('A')), 'utf8')).toBe('A');
     expect((await run({ from: join(dir, 'missing') })).code).toBe(2);
+  });
+
+  it('refuses a from that aliases the shared cache', async () => {
+    put(join(shared.raw, sha('A')), 'A');
+    put(join(shared.ept, 'ept.json'), '{}');
+    const alias = join(dir, 'alias');
+    symlinkSync(shared.root, alias);
+    expect((await run({ from: alias })).code).toBe(2);
+    expect(existsSync(join(shared.raw, sha('A')))).toBe(true);
+    expect(existsSync(join(shared.ept, 'ept.json'))).toBe(true);
+  });
+
+  it.each([
+    ['raw', (s: SharedCache) => s.raw, sha('A')],
+    ['ept', (s: SharedCache) => s.ept, 'ept.json']
+  ])('refuses a symlinked %s that is the shared one', async (d, pick, file) => {
+    put(join(pick(shared), file), 'A');
+    symlinkSync(pick(shared), join(from, d));
+    const r = await run();
+    expect(r.code).toBe(2);
+    expect(existsSync(join(pick(shared), file))).toBe(true);
   });
 });
