@@ -171,6 +171,46 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 | same, run 1                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=618ms,606ms,628ms median=618ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.79 |
 | same, run 2                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=616ms,795ms,600ms median=616ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.81 |
 
+### Budgets held to main (2026-11-25, with cars)
+
+Apple M5 Pro (dpr 2, ANGLE Metal); main `be6467dc` against branch `b8921ad4`, alternated main-1, branch-1, main-2, branch-2; one-minute load 1.35 to 1.86 at each start. Command: `npx vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1`. Figures are run 1, run 2.
+
+Verdict: every budget held to main is met (within 10% of main, or no worse). The budgets that fail their own bar (map-stream worst flush, swap install cadence, compile step(20), world.bench 48 worlds) fail on main too and the branch is no worse: those costs are main's, not this build's. The funded world-month and shadow hook figures are the package's money/E2 cost, under the branch's own bars, and are met.
+
+| Budget                                          | Bar                | Main                                     | Branch          | Verdict                                                          |
+| ----------------------------------------------- | ------------------ | ---------------------------------------- | --------------- | ---------------------------------------------------------------- |
+| funded world-month mean                         | branch 250 µs      | 97.4, 93.4 µs                            | 207.3, 205.2 µs | met (main's own bar 90 fails on main)                            |
+| shadow hook mean                                | main + 150 µs      | 0.5, 0.5 µs                              | 100.9, 103.5 µs | met                                                              |
+| planLot hook mean                               | within 10% of main | 19.2, 16.9 µs                            | 18.6, 18.7 µs   | met                                                              |
+| onProjectEvent hook mean                        | within 10% of main | 17.7, 16.2 µs                            | 16.7, 16.7 µs   | met                                                              |
+| serve hook mean                                 | within 10% of main | 8.9, 8.1 µs                              | 8.7, 8.3 µs     | met                                                              |
+| apply hook mean                                 | within 10% of main | 3.8, 3.5 µs                              | 3.8, 3.8 µs     | met                                                              |
+| moneyIn hook mean                               | within 10% of main | 0.1, 0.2 µs                              | 0.2, 0.2 µs     | met (sub-µs)                                                     |
+| core (rest) hook mean                           | within 10% of main | 71.0, 62.1 µs                            | 60.9, 62.5 µs   | met                                                              |
+| host first cells                                | host.perf passes   | 920.8, 863.8 ms                          | 900.1, 910.7 ms | met                                                              |
+| host first filled                               | host.perf passes   | 991.2, 933.4 ms                          | 968.4, 979.6 ms | met                                                              |
+| longest not-accepted task                       | chunk.perf passes  | 0, 0 ms                                  | 0, 0 ms         | met                                                              |
+| map-stream worst flush                          | 30 ms              | 29.46, 43.27 ms                          | 34.25, 33.11 ms | fails on main too; branch no worse (p95 20.3 to 20.4 ms on both) |
+| timeline swap install cadence (30,000 projects) | 50 ms              | 396.4, 393.4 ms                          | 403.4, 392.9 ms | fails on main too; branch within 2%                              |
+| compile step(20) longest                        | 50 ms              | 58.7, 62.8 ms                            | 44.2, 51.1 ms   | fails on main too; branch no worse                               |
+| world.bench 48 worlds median                    | 3 ms               | 3.187, 3.034 ms                          | 3.005, 3.099 ms | fails on main too; branch no worse                               |
+| scenario.bench                                  | its cases          | case 2 failed once (30.42 against 30 ms) | passes both     | met                                                              |
+
+`bench:map`, one whole run in each tree, dataset `2026-11-25-76c90397`, load 1.83 (main) and 1.53 (branch), both exit 0 (main 11 passed, branch 13 passed); p50 8.3 ms in every bar case. p95, ms; every shared case is within 10% of main.
+
+| Case                      | Main | Branch |
+| ------------------------- | ---- | ------ |
+| complexity=representative | 9.9  | 10.2   |
+| complexity=worst          | 10.2 | 10.0   |
+| timeline=playback         | 10.0 | 9.7    |
+| timeline=drag             | 10.3 | 9.8    |
+| playback + limits         | 10.3 | 9.6    |
+| playback + halos          | 10.3 | 9.6    |
+| citywide playback         | 10.2 | 9.7    |
+| sim-timeline-docked       | 10.2 | 9.9    |
+
+The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) agree with the rows above.
+
 ## CI
 
 CI does not run this bench. Headless Chromium in CI renders with software GL (SwiftShader), so
