@@ -68,4 +68,10 @@ describe('localCacheNotice', () => {
     writeFileSync(join(local, 'raw/x'), 'x');
     expect(localCacheNotice(local, local)).toBeNull();
   });
+
+  it('treats a shared dir that is a file as absent', () => {
+    const local = tmp();
+    writeFileSync(join(local, 'raw'), 'not a dir');
+    expect(localCacheNotice(local, '/c')).toBeNull();
+  });
 });

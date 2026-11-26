@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join, resolve } from 'node:path';
 import { BOXES } from '../boxes-config';
 import { BBOX } from '../config';
+import { sharedCache } from '../lib/cache-root';
 import { openDuck, type Duck } from '../lib/duck';
 import { run as realRun } from '../lib/exec';
 import { encodeLidarTile, lidarTileName, tilesForBbox } from '../lib/lidar/tile';
@@ -32,9 +33,6 @@ export const LIDAR_LOCK = {
   live: join(ROOT, 'pipeline/lidar.lock.json'),
   fixture: join(ROOT, 'pipeline/test/fixtures/mini/lidar.lock.json')
 };
-
-const CACHE = join(ROOT, 'pipeline/.cache');
-export const EPT_CACHE = join(CACHE, 'ept');
 
 /** 'CA_SanFrancisco_1_B23 sfhl/1 res=0.25 ground=1 tile=500 pad=20 veg=0.35' from BOXES. */
 export function lidarUpstreamVersion(): string {
@@ -134,6 +132,8 @@ export interface LidarOpts {
   jobs?: number;
   dryRun?: boolean;
   workDir?: string;
+  /** The EPT download cache; default the shared cache's `ept`. */
+  eptDir?: string;
 }
 
 /**
@@ -158,9 +158,10 @@ export async function fetchLidar(
     }
   }
   const hash8 = createHash('sha256').update(upstream).digest('hex').slice(0, 8);
-  const workDir = opts.workDir ?? join(CACHE, 'lidar-work', hash8);
+  const workDir = opts.workDir ?? join(sharedCache().lidarWork, hash8);
+  const eptDir = opts.eptDir ?? sharedCache().ept;
   mkdirSync(workDir, { recursive: true });
-  mkdirSync(EPT_CACHE, { recursive: true });
+  mkdirSync(eptDir, { recursive: true });
   const args = [
     'python',
     '-m',
@@ -182,7 +183,7 @@ export async function fetchLidar(
     '--ept',
     EPT_URL,
     '--cache',
-    EPT_CACHE,
+    eptDir,
     '--jobs',
     String(opts.jobs ?? 1)
   ];

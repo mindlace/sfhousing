@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 
@@ -43,7 +43,7 @@ export function localCacheNotice(
   if (resolve(local) === resolve(root)) return null;
   const held = SHARED_DIRS.filter((d) => {
     const p = join(local, d);
-    return existsSync(p) && readdirSync(p).length > 0;
+    return existsSync(p) && statSync(p).isDirectory() && readdirSync(p).length > 0;
   });
   if (held.length === 0) return null;
   return `${local} holds ${held.join(', ')}: move them to ${root} with npm run pipeline -- cache import ${local}`;
