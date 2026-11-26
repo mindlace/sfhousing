@@ -1,0 +1,87 @@
+<article>
+  <header>
+    <h1>Money-wait cost fix plan</h1>
+    <p>Brings the funding system's <code>shadow</code> hook back within <code>money-wait</code>'s cost bars by counting the homes waiting without the line index.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> <code>waitingHomes</code> returns the same values at a cost of a few µs per funded world-month, so the <code>shadow</code> hook is at most 10 µs mean above <code>main</code>'s and the funded world-month mean at most 10% above <code>main</code>'s.</li>
+      <li><strong>Architecture:</strong> Measured (timing logs <code>08-test-perf-rerun.log:144</code> vs <code>main-perf-2.log:92</code>): <code>shadow</code> mean 903.4 µs on the branch, 0.5 µs on <code>main</code>; <code>serve</code> stays near 10 µs on both. The only change to <code>shadow</code> is <code>recordWaiting</code> → <code>waitingHomes</code>, which calls <code>lineIndex(line)</code> (<code>src/lib/sim/world/funding/system.ts:37</code>). That call rebuilds the whole index (a <code>prototypeFor</code> call and a string key per market row, segment trees) whenever its version is stale (<code>line-index.ts:43-51</code>); unverified that it is stale every month, but nothing else in the month accounts for ~900 µs. The fix replaces the walk of <code>byLot</code> with one linear pass over the line's columns, deduplicating a lot's two applications with module-level scratch typed arrays stamped per call: no index, no sort, no allocation per lot or per month (only when the scratch grows).</li>
+      <li><strong>Tech Stack:</strong> TypeScript, Vitest (<code>server</code> and <code>perf</code> projects).</li>
+      <li><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-24-money-wait-design.html</code> §sec-design-count, §sec-design-cost, §sec-tests (read from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>); <code>closing</code> §sec-design-checks (a budget held to <code>main</code>: the funded month is <code>money-wait</code>'s).</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Writes: <code>src/lib/sim/world/funding/system.ts</code> (<code>waitingHomes</code>, <code>recordWaiting</code>), <code>src/lib/sim/world/funding/columns.ts</code> (<code>waitingAt</code>, the record's fields) only; no spec, perf spec or document is edited.</li>
+      <li>"On a machine where <code>main</code> itself is over 90 µs, this unit is held to <code>main</code>: the funding system's <code>shadow</code> hook costs at most 10 µs mean per funded world-month more than on <code>main</code>, and the funded world-month mean is at most 10% above <code>main</code>'s, both measured in the same session on the same quiet machine, <code>main</code> and this branch run one after the other."</li>
+      <li>"The count reads the same values whatever makes it cheap: a walk that rebuilds the line index, sorts or allocates per lot each month is replaced by one that does not, and every test of the count, the record and the chunk passes unchanged."</li>
+      <li>The counting rule (§sec-design-count): a row marked <code>gone</code> is not counted; a lot with two applications counts once, by the larger <code>units</code> (a lot's count starts at 0); a row whose lot has a lot row in a state other than <code>LOT_FREE</code> is not counted; a row whose lot has no lot row is counted; 0 for a world without funding columns.</li>
+      <li>Imported names used per call are bound once at module top (<code>system.ts:24-29</code>). No <code>Math</code> function the determinism rule forbids and no <code>**</code> (<code>eslint.config.js:65-125</code>).</li>
+      <li>"If a bar fails, the implementer stops and reports the numbers to the conductor; the counting rule is not changed to meet it."</li>
+      <li>Conventional Commits; no Claude attribution anywhere.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ul>
+      <li>A lot id at or beyond the scratch arrays' length: the scratch grows (doubling) before it is indexed; a typed-array write past the end is silently dropped, which would miscount.</li>
+      <li>A lot with two live rows where the smaller comes first on the line: the sum must add only the difference when the larger arrives (covered by <code>system.spec.ts</code> "counts 30, whichever comes first").</li>
+      <li>A clone and its original share the module scratch: the stamp must make each call independent of the one before (covered by the clone cases in <code>system.spec.ts</code>).</li>
+      <li>The stamp's wrap: at the Int32 limit the stamp array is cleared and the stamp restarts at 1, so a stale stamp never matches.</li>
+      <li>The cost moves rather than vanishes: no other hook's mean (<code>serve</code>, <code>apply</code>, <code>onProjectEvent</code>) rises against <code>main</code> because the index is no longer built in <code>shadow</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Count the homes waiting in one pass over the line</h2>
+    <p>Delivers row E2 within its cost bars.</p>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/funding/system.ts:17-51</code> (<code>waitingHomes</code> and the module's bound imports)</li>
+      <li>Test (unchanged, must pass): <code>src/lib/sim/world/funding/system.spec.ts</code>, <code>src/lib/sim/world/funding/columns.spec.ts</code>, <code>src/lib/sim/world/score/chunk.spec.ts</code>, <code>src/lib/sim/world/score/money.spec.ts</code>, <code>src/lib/sim/world/score/view.spec.ts</code>, <code>src/lib/sim/world/host.spec.ts</code>, <code>src/lib/sim/world/host.edit.spec.ts</code>, <code>src/lib/sim/world/runner/ensemble.spec.ts</code>, <code>src/lib/sim/world/funding/closing.spec.ts</code>, <code>determinism.lint.spec.ts</code></li>
+    </ul>
+    <ul>
+      <li>Consumes: <code>FundLine</code> columns <code>n</code>, <code>lot</code>, <code>gone</code>, <code>units</code> (<code>columns.ts</code>); <code>lotRow(lots, lot): number</code> (<code>../columns</code>); <code>LOT_FREE</code>.</li>
+      <li>Produces: <code>waitingHomes(world: World): number</code> and <code>recordWaiting(world: World, month: number): void</code>, signatures and values unchanged.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Set up the worktree per <code>CLAUDE.md</code> Setup (<code>npm install</code>, <code>.dev.vars</code>, <code>npm run data:fixture</code>, <code>npm run db:migrate</code>), then record the baseline: <code>uptime</code>, then <code>main</code> and this branch back to back, twice each, alternating. Keep each run's "funded month, synthCity baseline … per world-month" line and its "funded month by hook" table.
+        <pre><code data-lang="sh">uptime
+npm --prefix /Users/mindlace/Projects/sfhousing run test:unit -- --project perf src/lib/sim/world/funding/funded-month.perf.spec.ts
+npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts</code></pre>
+        Expected before the change: branch <code>shadow</code> mean in the hundreds of µs, <code>main</code>'s under 1 µs.</li>
+      <li id="t1-s2"><input type="checkbox"> Run the count's tests and see them pass before the change (they are the referee; none is edited).
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/funding/system.spec.ts src/lib/sim/world/funding/columns.spec.ts src/lib/sim/world/score/money.spec.ts src/lib/sim/world/score/chunk.spec.ts src/lib/sim/world/score/view.spec.ts</code></pre></li>
+      <li id="t1-s3"><input type="checkbox"> Rewrite <code>waitingHomes(world: World): number</code> in <code>system.ts</code> as one pass over rows <code>0..line.n-1</code> with no call to <code>lineIndex</code> or <code>rowOfSeq</code>. Drop the <code>lineIndex</code>/<code>rowOfSeq</code> import and bindings if nothing else in the file uses them. Keep the two existing comments (the lazy guard; a lot counts once, by the larger). The scratch, at module level:
+        <pre><code data-lang="ts">// Per-lot scratch for waitingHomes, outside any world: `seenAt[lot] === stamp` marks a lot met in
+// this call, `bestOf[lot]` its largest units so far. Grown (doubling) only when a lot id is past
+// the end, so a month allocates nothing.
+let seenAt = new Int32Array(0);
+let bestOf = new Int32Array(0);
+let stamp = 0;
+
+// per call: stamp++; at 0x7fffffff clear seenAt and set stamp to 1.
+// per row i (skip gone[i] === 1; skip when lotRow(lots, lot) >= 0 and its state !== LOT_FREE):
+//   u = units[i] > 0 ? units[i] : 0
+//   first row of the lot this call: seenAt[lot] = stamp, bestOf[lot] = u, sum += u
+//   later row with u > bestOf[lot]: sum += u - bestOf[lot], bestOf[lot] = u</code></pre>
+        Grow both arrays together to at least <code>lot + 1</code> (doubling, at least 1024), copying the old contents, before indexing <code>lot</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the tests of step 2 and see them pass unchanged; then the world-equality and host tests:
+        <pre><code data-lang="sh">npx vitest --run --project server src/lib/sim/world/host.spec.ts src/lib/sim/world/host.edit.spec.ts src/lib/sim/world/runner/ensemble.spec.ts src/lib/sim/world/funding/closing.spec.ts src/lib/sim/world/determinism.lint.spec.ts</code></pre>
+        Expected: all pass. (Find <code>determinism.lint.spec.ts</code>'s path with Glob if it is elsewhere.)</li>
+      <li id="t1-s5"><input type="checkbox"> Measure again exactly as step 1 (<code>uptime</code>, then <code>main</code> and the branch alternating, twice each), plus once each of the other two bar files on the branch:
+        <pre><code data-lang="sh">npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts src/lib/sim/world/score/chunk.perf.spec.ts src/lib/sim/world/host.perf.spec.ts</code></pre>
+        Pass: branch <code>shadow</code> mean minus <code>main</code>'s at most 10 µs; branch funded world-month mean at most 1.10 × <code>main</code>'s; no other hook's mean clearly above <code>main</code>'s. Another perf unit shares the machine, so these are ballpark; if a bar fails, stop and report the numbers (do not change the counting rule). Write every run's lines, with the <code>uptime</code> output, to <code>$SDD_DIR/task-1-timing.md</code> (the workspace dir the brief names) with the Write tool.</li>
+      <li id="t1-s6"><input type="checkbox"> <code>npm run check</code>, <code>npx eslint src/lib/sim/world/funding/system.ts</code>, <code>npx prettier --check src/lib/sim/world/funding/system.ts</code>, then commit and run the timing check:
+        <pre><code data-lang="sh">git add src/lib/sim/world/funding/system.ts
+git commit -m "perf(funding): count homes waiting in one pass over the line"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
+</article>
