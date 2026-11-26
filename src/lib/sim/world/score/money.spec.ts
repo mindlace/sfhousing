@@ -11,7 +11,6 @@ import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
 import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import { benchFunded } from '../funding/test/cities.node';
-import { createFundingSystem } from '../funding';
 import { fundOf, waitingAt } from '../funding/columns';
 import {
   CLOSE_POOL,
