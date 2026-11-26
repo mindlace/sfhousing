@@ -3,12 +3,14 @@
 // the tiles are locked in pipeline/lidar.lock.json, never in sources.lock.json.
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { BOXES } from '../boxes-config';
 import { BBOX } from '../config';
+import { tempSibling } from '../lib/atomic';
 import { sharedCache } from '../lib/cache-root';
 import { openDuck, type Duck } from '../lib/duck';
 import { run as realRun } from '../lib/exec';
+import { withKeyLock, type KeyLockDeps } from '../lib/key-lock';
 import { encodeLidarTile, lidarTileName, tilesForBbox } from '../lib/lidar/tile';
 import { uvRun } from '../lib/lidar/python';
 import {
@@ -145,7 +147,7 @@ export interface LidarOpts {
 export async function fetchLidar(
   rawDir: string,
   opts: LidarOpts = {},
-  deps: { run: typeof realRun; db?: Duck } = { run: realRun }
+  deps: { run: typeof realRun; db?: Duck; lock?: KeyLockDeps } = { run: realRun }
 ): Promise<LockEntry | null> {
   const upstream = lidarUpstreamVersion();
   let tiles = opts.tiles;
@@ -160,6 +162,25 @@ export async function fetchLidar(
   const hash8 = createHash('sha256').update(upstream).digest('hex').slice(0, 8);
   const workDir = opts.workDir ?? join(sharedCache().lidarWork, hash8);
   const eptDir = opts.eptDir ?? sharedCache().ept;
+  // One run per settings key at a time: the work dir is shared across worktrees.
+  return withKeyLock(
+    `${workDir}.lock`,
+    () => fetchLocked(rawDir, opts, deps, { tiles, upstream, workDir, eptDir }),
+    {
+      onWait: (h) =>
+        console.log(`lidar: waiting for pid ${h.pid} on ${h.host} (${basename(workDir)})`),
+      ...deps.lock
+    }
+  );
+}
+
+async function fetchLocked(
+  rawDir: string,
+  opts: LidarOpts,
+  deps: { run: typeof realRun },
+  ctx: { tiles: [number, number][]; upstream: string; workDir: string; eptDir: string }
+): Promise<LockEntry | null> {
+  const { tiles, upstream, workDir, eptDir } = ctx;
   mkdirSync(workDir, { recursive: true });
   mkdirSync(eptDir, { recursive: true });
   const args = [
@@ -226,7 +247,7 @@ export async function fetchLidar(
       groundCm,
       veg
     });
-    const tmp = join(workDir, `.${tx}_${ty}.sfhl.tmp`);
+    const tmp = tempSibling(join(workDir, `.${tx}_${ty}.sfhl`));
     writeFileSync(tmp, bytes);
     try {
       files.push(await storeFile(rawDir, lidarTileName(tx, ty), EPT_URL, tmp));
