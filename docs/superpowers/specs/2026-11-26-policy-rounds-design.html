@@ -227,14 +227,17 @@
           player plays or drags to the goal month. Reaching the goal on or before the legal
           deadline is the first win. Seeing current law before any policy is the comparison
           everything later is read against. Accepted by the owner (2026-11-26).</li>
-        <li><strong>Seen.</strong> A month counts as seen when the playhead has landed on it or
-          passed over it, by Play, drag or keys, since the policy last changed. The game keeps
-          this check itself. The ruler's own "seen" zone is not enough: it never falls behind the
-          playhead, so a player parked past the target would win the moment they switched a
-          policy on, without watching (P12). After a change they press "Play from" or drag
-          back.</li>
+        <li><strong>A change resets the timeline.</strong> When a policy is switched on or off, or
+          edited, playback pauses and the playhead goes to the first month the change takes
+          effect, or to today if that is later (the owner's rule, 2026-11-26). Everything after
+          that point is unseen again. So a player parked past the target cannot win by switching
+          a policy on without watching (P12); they press Play or drag forward from the reset
+          point.</li>
+        <li><strong>Seen.</strong> A month is seen when the playhead has landed on it or passed
+          over it, by Play, drag or keys, since the last change. With the reset above, this is
+          the ruler's "seen" zone.</li>
         <li><strong>A win.</strong> The forecast is current, its goal month is earlier than the
-          target, and that month has been seen. The playhead stays where it is. Then:
+          target, and that month has been seen. A win does not move the playhead. Then:
           <ul>
             <li>the goal month becomes the target (P7);</li>
             <li>every fixed policy that was on becomes editable (P9);</li>
@@ -525,6 +528,9 @@
       <li>Switching on a round-1 policy and seeing the goal month wins, moves the target to that
         month, and makes that policy editable; setting its reach to any allowed value holds.</li>
       <li>Editing an older policy for an earlier date wins with no new policy on.</li>
+      <li>Switching a policy on with the playhead at the end of the timeline pauses playback and
+        moves the playhead to today, or to the policy's start if later; no win is given until
+        the goal month is reached again.</li>
       <li>With every fixed policy tried and no earlier date, the round completes as no gain.</li>
       <li>A game saved before this change opens with its policies and plan intact.</li>
       <li>The reach check passes on the current dataset under its new rules.</li>
