@@ -225,11 +225,16 @@
       <ol>
         <li><strong>The baseline comes first.</strong> After Start no policy is offered. The
           player plays or drags to the goal month. Reaching the goal on or before the legal
-          deadline is the first win. (Proposal, not yet put to the owner: seeing current law
-          before any policy is the comparison everything later is read against.)</li>
+          deadline is the first win. Seeing current law before any policy is the comparison
+          everything later is read against. Accepted by the owner (2026-11-26).</li>
+        <li><strong>Seen.</strong> A month counts as seen when the playhead has landed on it or
+          passed over it, by Play, drag or keys, since the policy last changed. The game keeps
+          this check itself. The ruler's own "seen" zone is not enough: it never falls behind the
+          playhead, so a player parked past the target would win the moment they switched a
+          policy on, without watching (P12). After a change they press "Play from" or drag
+          back.</li>
         <li><strong>A win.</strong> The forecast is current, its goal month is earlier than the
-          target, and the playhead has seen that month under the current policy (the ruler's
-          "seen" zone; an edit makes later months unseen again, as it did before #158). Then:
+          target, and that month has been seen. The playhead stays where it is. Then:
           <ul>
             <li>the goal month becomes the target (P7);</li>
             <li>every fixed policy that was on becomes editable (P9);</li>
@@ -238,16 +243,19 @@
         </li>
         <li><strong>Any means count.</strong> A win needs no new policy on. Editing an older
           policy for an earlier date wins the round (P11).</li>
-        <li><strong>Tried.</strong> A fixed policy is tried once the playhead, under a current
-          forecast with that policy on, has seen the goal month or the target month, whichever
-          comes first.</li>
-        <li><strong>No gain.</strong> When every fixed policy on offer has been tried and none of
-          those plays was a win, the round completes anyway: those policies become editable, the
-          target stays, and the next round is offered. The page says the policies added nothing
-          on top of what the player has (P13).</li>
-        <li><strong>The end.</strong> When the last round has completed, the whole tool opens:
-          every limit <code>finished</code> lifts today, plus adding policies of any kind. The
-          target keeps tracking the player's best date.</li>
+        <li><strong>Tried.</strong> A fixed policy is tried once, with that policy on and the
+          forecast current, the goal month or the target month has been seen, whichever comes
+          first. The tried set is emptied when a round is offered.</li>
+        <li><strong>No gain.</strong> "Fixed policies on offer" means every policy that is still
+          fixed: this round's and any left off in earlier rounds. When all of them have been
+          tried and none of those plays was a win, the round completes anyway: all of them
+          become editable, the target stays, and the next round is offered. Switching every
+          fixed policy on and playing once is enough. The page says the policies added nothing on
+          top of what the player has (P13).</li>
+        <li><strong>The end.</strong> When the last round has completed, the game is finished:
+          the limits are those <code>finished</code> gives today, and "+" offers every kind of
+          policy. The brush stays in the opening. The target keeps tracking the player's best
+          date.</li>
       </ol>
       <p>Nothing is ever taken away. A later forecast that is worse changes nothing; the target is
         the best date reached. Wins and editable policies are not undone by Undo.</p>
@@ -284,9 +292,10 @@
           policy's timings, as custom timings. Money: the policy's funding editor. All: the dates
           it is in force.</li>
         <li><strong>Adding and removing.</strong> During the rounds "+" offers only the levers
-          that are free today (the two measures that switch money off, and category protections),
-          under the same conditions as today. An offered policy cannot be removed, only switched
-          off. After the end "+" offers everything.</li>
+          that are free today: the two measures that switch money off, once any money policy has
+          been offered, and category protections, once any transit rule has been offered. An
+          offered policy cannot be removed, only switched off. After the end "+" offers
+          everything.</li>
         <li><strong>Offering.</strong> When a round is offered its policies are added to the
           document, off, in force from today. This is not an undo step.</li>
       </ul>
@@ -447,7 +456,8 @@
       <h3>State and saved games</h3>
       <p><code>GameState</code> version 3 holds: the round offered so far, the target, the set of
         editable policies, the set of fixed policies tried since the last round was offered, the
-        list of wins (goal month and when), and whether the game is finished. It no longer holds
+        list of wins (goal month, when, and the dataset version), and whether the game is
+        finished. It no longer holds
         units, <code>bought</code>, the last run's result, side goals, the rung or the run count.
         <code>limitsOf</code> derives the limits from this state.</p>
       <p>A version 2 game is upgraded where it is parsed, in the browser and on the server, and
@@ -457,9 +467,16 @@
         <li>a game with no run played starts at the baseline; any other game has rounds 1 to
           rung + 1 offered, capped at the last round;</li>
         <li>the target is the deadline of the last rung met, or the legal deadline;</li>
-        <li>a permitting or money policy the game had bought is editable; the old shared transit
-          rule stays in the document as the player's own editable rule, beside the new ones.</li>
+        <li>every policy in the document that ran before the upgrade keeps running and is
+          editable: bought presets, the old shared transit rule, and anything the player added
+          (other transit rules, protections, custom timings, edited measures). The old shared
+          transit rule sits beside the new ones as the player's own;</li>
+        <li>a game that had met every deadline is finished.</li>
       </ul>
+      <p><strong>A new dataset.</strong> The target is a month from one dataset's forecast. It is
+        kept when the dataset changes; it is not re-based. If the new forecast beats it, that is
+        a win like any other. If the target is now out of reach, the no-gain rule still moves
+        the rounds on.</p>
       <p>The <code>game_save</code> columns <code>phase</code> and <code>rung</code> list a
         game's progress. Whether <code>rung</code> is renamed by a generated migration or reused
         for the round is left to the plan; no migration is hand-edited.</p>
@@ -473,6 +490,9 @@
         goal earlier than the round before. So a player who edits nothing can win every round. A
         report script prints each policy's effect alone and each round's, replacing
         <code>tree-balance</code>. My call.</p>
+      <p>The rounds are being measured with their fixed values now. If a round does not beat the
+        one before, the fix is to reorder the rounds or change a fixed value, and the owner
+        chooses; the check is not relaxed.</p>
     </section>
   </section>
 
