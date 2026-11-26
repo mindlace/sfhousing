@@ -10,12 +10,20 @@
   import type { ManifestSources } from '$lib/data/manifest';
   import ProvenanceBody from '$lib/fzp/ProvenanceBody.svelte';
   import { fetchCalibration } from '$lib/fzp/load';
-  import { modelSections, type ProvSection } from '$lib/fzp/provenance';
+  import { CARS_SECTION_ID, modelSections, type ProvSection } from '$lib/fzp/provenance';
   import Message from '$lib/shell/Message.svelte';
   import { BUTTON_QUIET, TARGET } from '$lib/shell/ui';
   import { onMount, untrack } from 'svelte';
   import { focusLanding } from './land';
-  import { ABOUT_ID, ASSUMPTIONS_FAILED, ASSUMPTIONS_SHOW, PART_HEADING } from './copy';
+  import {
+    ABOUT_ID,
+    ASSUMPTIONS_FAILED,
+    ASSUMPTIONS_SHOW,
+    CARS_ABOUT,
+    CARS_DETAILS,
+    CARS_HEADING,
+    PART_HEADING
+  } from './copy';
 
   interface Props {
     level: 2 | 3;
@@ -35,6 +43,13 @@
 
   const fzp = $derived(manifest?.scenarios?.fzp ?? null);
   const bodyLevel = $derived((level + 1) as 3 | 4);
+  /**
+   * The Cars section shows with car data: live, when the run's sections hold the car model; on the
+   * page, when the manifest names cars.bin (its calibration then carries the model).
+   */
+  const hasCars = $derived(
+    live ? live.sections.some((s) => s.id === CARS_SECTION_ID) : !!fzp?.cars
+  );
 
   /** Not bound: `bind:open` would close a disclosure pressed before hydration. */
   let details = $state<HTMLDetailsElement | null>(null);
@@ -123,6 +138,19 @@
   <svelte:element this={`h${level}`} class="text-lg font-semibold"
     >{PART_HEADING.assumptions}</svelte:element
   >
+  {#if hasCars}
+    <svelte:element this={`h${bodyLevel}`} class="mt-3 font-semibold">{CARS_HEADING}</svelte:element
+    >
+    {#each CARS_ABOUT as line, i (i)}
+      <p class="mt-2">
+        {line}{#if i === CARS_ABOUT.length - 1}
+          <a
+            class="{TARGET} ml-1 inline-flex items-center underline"
+            href="/about#{CARS_SECTION_ID}">{CARS_DETAILS}</a
+          >{/if}
+      </p>
+    {/each}
+  {/if}
   {#if live}
     <ProvenanceBody
       bind:this={body}

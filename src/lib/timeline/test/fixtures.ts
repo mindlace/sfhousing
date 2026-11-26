@@ -75,12 +75,13 @@ export function poolRow(id: string, k: number, base = 0): MoneyRow['pools'][numb
 
 /**
  * Months `from` to `from + n - 1`. `base` shifts every value; with `pools`, the plan world's money with
- * one row per pool (funded homes above displaced ones, so per added home is a number).
+ * one row per pool (funded homes above displaced ones, so per added home is a number); with
+ * `cars`, the plan world's cars.
  */
 export function chunk(
   from: number,
   n: number,
-  opts: { pools?: string[]; base?: number } = {}
+  opts: { pools?: string[]; base?: number; cars?: boolean } = {}
 ): SeriesChunk {
   const base = opts.base ?? 0;
   const ks = Array.from({ length: n }, (_, i) => from + i);
@@ -98,7 +99,17 @@ export function chunk(
           publicSpent: base + 100 * (k + 1)
         }))
       : null,
-    tiers: null
+    tiers: null,
+    // With `cars`: 1,000 households, 1,200 cars less one a month, two zones (the second empty).
+    cars: opts.cars
+      ? ks.map((k) => ({
+          households: 1000,
+          cars: 1200 - k,
+          carless: 300,
+          spacesPerHome: null,
+          zones: new Float32Array([(1200 - k) / 1000, Number.NaN])
+        }))
+      : null
   };
 }
 
@@ -112,7 +123,15 @@ export function cut(view: TimelineView, n: number): TimelineView {
     planEffect: view.planEffect.slice(0, k),
     targets: view.targets.slice(0, k),
     tierTargets: view.tierTargets?.slice(0, k) ?? null,
-    tiers: view.tiers?.slice(0, k) ?? null
+    tiers: view.tiers?.slice(0, k) ?? null,
+    cars: view.cars && {
+      households: view.cars.households.slice(0, k),
+      cars: view.cars.cars.slice(0, k),
+      carless: view.cars.carless.slice(0, k),
+      perHousehold: view.cars.perHousehold.slice(0, k),
+      spacesPerHome: view.cars.spacesPerHome.slice(0, k),
+      zones: view.cars.zones.slice(0, k)
+    }
   };
 }
 

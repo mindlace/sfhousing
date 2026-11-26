@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { Lock } from '../lib/lock';
-import { GROSS_BIN } from '../lib/scenario-files';
+import { CARS_BIN, CAR_ZONES_JSON, GROSS_BIN } from '../lib/scenario-files';
 import type { ChunkOut } from './chunks';
 
 /** Overture contributing datasets (spec §4.8, §4.12) -> SPDX licence. */
@@ -30,6 +30,8 @@ export function buildManifest(a: {
   policy?: boolean;
   /** The build wrote `scenarios/fzp/gross.bin`; only emitted with `scenarios`. */
   gross?: boolean;
+  /** The build wrote `scenarios/fzp/cars.bin` and `car-zones.json`; only emitted with `scenarios`. */
+  cars?: boolean;
   warn?: (msg: string) => void;
 }): Manifest {
   const v = a.datasetVersion;
@@ -82,7 +84,10 @@ export function buildManifest(a: {
               projects: `${base}/scenarios/fzp/projects.json`,
               calibration: `${base}/scenarios/fzp/calibration.json`,
               ...(a.policy ? { policy: `${base}/scenarios/fzp/policy.bin` } : {}),
-              ...(a.gross ? { gross: `${base}/${GROSS_BIN}` } : {})
+              ...(a.gross ? { gross: `${base}/${GROSS_BIN}` } : {}),
+              ...(a.cars
+                ? { cars: `${base}/${CARS_BIN}`, carZones: `${base}/${CAR_ZONES_JSON}` }
+                : {})
             }
           }
         }

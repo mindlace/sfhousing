@@ -25,6 +25,8 @@ import { SFBOS_EXEMPTIONS_ID, SFBOS_EXEMPTIONS_LABEL } from '../../../sources/sf
 import { GTFS_FEEDS } from '../../../transit-config';
 import { every, tripTables, type TripSpec } from '../../gtfs-builder';
 import { synthTile, type SynthScene } from '../../lidar-synth';
+import { CENSUS_SOURCES } from '../../../census-config';
+import { censusPages } from './census-raw';
 import { MOHCD_RAW, PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
@@ -937,6 +939,33 @@ for (const src of pages) {
     license: src.license,
     label: src.label,
     homepage: src.homepage
+  });
+}
+
+// The mini city's Census population (car-ownership plan Task 7; census-raw.ts): invented test data
+// in the census fetchers' layouts, so the build runs the car step.
+for (const page of await censusPages()) {
+  const spec = CENSUS_SOURCES[page.id];
+  const file = path.join(rawDir, page.name);
+  fs.writeFileSync(file, page.body);
+  const sha256 = await sha256File(file);
+  entries.push({
+    id: page.id,
+    files: [
+      {
+        url: `https://fixture.invalid/${page.name}`,
+        sha256,
+        bytes: page.body.length,
+        archiveKey: archiveKeyFor(sha256, page.name),
+        name: page.name
+      }
+    ],
+    retrievedAt: '2026-10-10T00:00:00.000Z',
+    upstreamVersion: 'fixture',
+    rowCount: page.rowCount,
+    license: spec.license,
+    label: spec.label,
+    homepage: spec.homepage
   });
 }
 

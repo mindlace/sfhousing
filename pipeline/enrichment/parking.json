@@ -1,0 +1,65 @@
+{
+  "costPerSpace": {
+    "surface": null,
+    "podium": {
+      "value": 28700,
+      "dollarsYear": 2012,
+      "sources": [
+        {
+          "label": "Seifel Consulting for the Mayor's Office of Housing, \"Inclusionary Housing Financial Analysis\", December 2012, Figure 3 \"Comparison of 2012 Parking Costs Per Unit, City of San Francisco\" (source line: TAC, developer pro formas, general contractors, Seifel)",
+          "url": "https://sfmohcd.org/sites/default/files/FileCenter/Documents/6976-IH%20Financial%20Analysis%202012_042913.pdf",
+          "page": "report p. 15 (PDF p. 18), Figure 3, bars \"Podium Parking\"",
+          "accessed": "2026-11-24",
+          "sf": true
+        }
+      ],
+      "method": "Hard construction cost per space, 2012 dollars. Figure 3 is a bar chart of cost per unit at 0.75 and 1.0 spaces per unit; the bar tops were measured from the embedded chart image against its $10,000 gridlines (pixel scale 272.4 px per $10,000): podium $21,531 per unit at 0.75 and $28,689 at 1.0, so $28,708 and $28,689 per space; rounded to $28,700 (about +/- $200 from the measurement). Kept in 2012 dollars here; the build brings it to the finance prototypes' 2026 dollars (Controller cost index, then SF CPI-U; docs/dev/cars-data.md, Dollars-year rule)."
+    },
+    "belowGrade": {
+      "value": 80000,
+      "dollarsYear": 2016,
+      "sources": [
+        {
+          "label": "Strategic Economics for the San Francisco Planning Department, memo \"Analysis of Inclusionary Housing and Community Facilities District for Hub Properties\", 2017-01-18, Appendix A, Figure 16 \"Hard Cost Assumptions\" (Source: Strategic Economics, 2016)",
+          "url": "https://default.sfplanning.org/plans-and-programs/in-your-neighborhood/hub/Inclusionary_Housing_Community_Facilities_Analysis.pdf",
+          "page": "pp. 20-21 (PDF pp. 20-21): text \"an across-the-board cost assumption of $80,000 per space. This cost reflects the fact that most or all parking would be located underground\"; Figure 16 row \"Parking, Per space, $80,000\"",
+          "accessed": "2026-11-24",
+          "sf": true
+        }
+      ],
+      "method": "Hard construction cost per space as stated, 2016 dollars (Figure 16's source line). The memo models a subterranean garage, conventional or with stackers, from interviews with four SF developers and an automated-parking vendor. Kept in 2016 dollars here; the build brings it to the finance prototypes' 2026 dollars (Controller cost index, then SF CPI-U; docs/dev/cars-data.md, Dollars-year rule)."
+    }
+  },
+  "supplyOverUse": {
+    "value": 1.4,
+    "tier": 3,
+    "sources": [
+      {
+        "label": "King County Metro, \"Right Size Parking Final Report\", August 2015 (VIA Architecture), reproduced as Appendix A14 of the City of San Diego TPA Multifamily Residential Parking Standards Study, Appendix A",
+        "url": "https://www.sandiego.gov/sites/default/files/appendix_a_-_tpa_multifamily_residential_parking_standards_study.pdf",
+        "page": "RSP Final Report p. 7 (PDF p. 173): \"parking is supplied at 1.4 spaces per dwelling unit but is only used at about 1 space/unit\"; p. i: \"supply 40% more parking than is actually utilized\"",
+        "accessed": "2026-11-24"
+      }
+    ],
+    "method": "Literature (tier 3): 1.4 spaces supplied per 1.0 used, the King County average over about 200 multifamily buildings. SF per-project supply counts exist (Planning Department Records - Projects, data.sf.gov qvu5-m3a2, parking_spaces_prop by record) but no SF per-project count of spaces used was found, so no SF ratio (tier 0-2) can be formed here; see docs/dev/cars-data.md."
+  },
+  "searched": [
+    "Controller, Inclusionary Housing Triennial Review of Economic Feasibility 2026 (media.api.sf.gov Triennial_Economic_Feasibilty_Report_2026.final.pdf), p. 11: parking hard cost per GSF only ($245-$360/GSF; at grade and below grade), no cost per space",
+    "Controller, TAC meeting 2 presentation 2026-02-11 (TBD Consultants hard cost summaries), slides 7-8: parking $/GSF only",
+    "Controller, Triennial Economic Feasibility Report 2023 (sf.gov 2023-06): parking $/GSF only ($198-$328)",
+    "Controller, Inclusionary TAC meeting 2 presentation 2023-01-06 (sf.gov 2023-04): parking $/GSF only",
+    "Controller, Inclusionary TAC meeting 2 presentation 2022-12 (sf.gov 2022-12): parking ratios only",
+    "Controller, Inclusionary Housing Working Group final report February 2017 (sfcontroller.org): no parking cost",
+    "Controller and Planning, Inclusionary Housing Analysis of Divisadero and Fillmore rezoning 2018-03-19: no parking cost",
+    "Planning Commission packet 2025-06-26, Family Zoning Plan (2021-005878CWP), Century Urban feasibility Exhibit B: parking hard cost $225-$617/GSF; condo parking sale price $75,000 per space (a price, not a cost)",
+    "Seifel Consulting for Planning, Financial Analysis of San Francisco's Central SoMa Plan, December 2016: underground parking $140-$160/GSF of parking area, stackers $15,000 per space, about 400 sq ft of building area per space (2015 dollars)",
+    "Planning, Transportation Sustainability Fee economic feasibility study, spring 2015: stacker cost $15,000 per space only",
+    "Planning, SB 9 financial feasibility summary memo; TIA guidelines parking memo: no cost per space",
+    "Seifel Consulting for MOH, Inclusionary Housing Financial Analysis, December 2012, Figure 3: podium, podium with stackers, underground, underground with stackers (used for podium)",
+    "Strategic Economics for Planning, Hub inclusionary and CFD memo, 2017-01-18, Figure 16: $80,000 per space underground (used for belowGrade)",
+    "Planning staff (Paul Chasan) overview and FAQ on removing parking minimums, via SPUR (2020-05 upload): $38,000 underground and $29,000 above ground per space cited to Curbed SF 2016 (a news source), and staff's anecdotal $70,000-$80,000 per space with no source: not used",
+    "SFCTA Parking Supply final report 2016-11-29: parking fees and pricing, no construction cost per space",
+    "Web searches for SF cost per parking space (Planning, Controller, SFMTA, Housing Element): only national rules of thumb and news, not used",
+    "No figure found for surface parking in a San Francisco source; surface is null"
+  ]
+}

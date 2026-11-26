@@ -56,7 +56,9 @@ Fetch the file when working in the relevant area:
 - **Funding levers (`FinanceLevers`, `buildFinance`, `off` spans, the twin, the worker's guard, the finance warm task)** — [docs/dev/finance-levers.md](docs/dev/finance-levers.md)
 - **Homes by income tier and public money in the results (`TimelineScore.tiers` and `money`, `tiersOf`, the ledger series and their identities, per added home, limit statements)** — [docs/dev/finance-score.md](docs/dev/finance-score.md)
 - **World core (the world, the step and its systems, the due list, the readers, the funding hook)** — [docs/dev/world-core.md](docs/dev/world-core.md)
-- **Scores from the step engine (WorldSeries, chunks, homes waiting for money, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
+- **Scores from the step engine (WorldSeries, chunks, cars, homes waiting for money, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
+- **Car ownership (zones and households, the choice, moves and fills, the car hook, parking into start odds, the back-cast, current law with and without cars, measured cost)** — [docs/dev/cars.md](docs/dev/cars.md)
+- **Car ownership data sources (ACS, PUMS, SF3 2000, crosswalks, DMV, archived GTFS, parking counts and cost per space, AMI), each verified** — [docs/dev/cars-data.md](docs/dev/cars-data.md)
 - **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, homes waiting, the tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Ensemble runner (the simulation's timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **The game (the page and its phases, the game's state, units, the tree, tuning, grants, limits and the runnable document, the ladder and side goals, a run, drops, the ring and sound, the screens and header parts, the store, saved games and storage, the open game, publishing, the e2e seams and journeys, the reach check)** — [docs/dev/game.md](docs/dev/game.md)
@@ -106,7 +108,7 @@ Shell: the root layout renders the skip link, header and `<main>`, and the foote
 
 - All work happens in git worktrees under `.claude/worktrees/`.
 - Conventional Commits.
-- PRs merge only with the `chreode/signoff` commit status. Run `npm run signoff` ([chreode](https://github.com/mindlace/chreode); config in `chreode.config.ts`): it merges `origin/main`, runs only the steps the changes since the last signoff need (a path no rule matches runs everything), pushes, and posts the status; do not `git push` first. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step. Signoff is the only required check. One workflow runs on pull requests, `pipeline.yml`: the pipeline tests and the fixture byte check, for changes under the paths it lists.
+- PRs merge only with the `chreode/signoff` commit status. Run `npm run signoff` ([chreode](https://github.com/mindlace/chreode); config in `chreode.config.ts`): it merges `origin/main`, runs only the steps the changes since the last signoff need (a path no rule matches runs everything), pushes, and posts the status; do not `git push` first. `npm run signoff -- --dry-run` prints the plan; `-- --full` runs every step. Signoff is the only required check; no workflow runs on pull requests.
 - A branch that changes the dataset version uploads its dataset before signoff: see [docs/dev/pipeline.md](docs/dev/pipeline.md) (Finishing a branch that changes the dataset).
 - A dataset is uploaded only after `npx tsx scripts/reach-check.ts pipeline/out/<v>` exits 0 (D1: current law meets the first deadline; the full tree meets the last).
 - Schema change: edit `src/lib/server/db/schema/` → `npm run db:generate` → `npm run db:migrate`. Never hand-edit migrations.

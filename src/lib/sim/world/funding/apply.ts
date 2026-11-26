@@ -113,12 +113,49 @@ export function fundableAny(ctx: StepCtx, r: number, kind: ProjectKind, lot: num
   const { timeline, month } = ctx;
   const first = Math.min(monthOfDay(ctx.statics.asOf, r + 1), month);
   if (canFund(timeline, first, kind, lot)) return true;
-  for (const c of timeline.changes()) {
+  for (const c of fundingChanges(timeline)) {
     if (c <= first) continue;
     if (c > month) break;
     if (canFund(timeline, c, kind, lot)) return true;
   }
   return false;
+}
+
+const fundingChangesMemo = new WeakMap<
+  PolicyTimeline,
+  { array: number[]; months: number[]; out: number[] }
+>();
+
+/** True when `a` and `b` hold the same months. */
+function sameMonths(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * The changes `canFund` can see: those whose frame has another view, or other money (`sameMoney`),
+ * than the month before. A change that moves neither (a parking-only change, `world/cars`) gives
+ * every lot the answer of the frame before it, so `fundableAny` and the rowless memo's key skip it
+ * exactly. Memoised per timeline while its changes stay the same.
+ */
+function fundingChanges(timeline: PolicyTimeline): number[] {
+  const all = timeline.changes();
+  const hit = fundingChangesMemo.get(timeline);
+  // A timeline may hand out a new array each call: then the months are compared.
+  if (hit !== undefined && (hit.array === all || sameMonths(hit.months, all))) {
+    hit.array = all;
+    return hit.out;
+  }
+  const out: number[] = [];
+  for (const c of all) {
+    if (c <= 1) continue;
+    const g = timeline.frameAt(c);
+    const before = timeline.frameAt(c - 1);
+    if (g.view !== before.view || !sameMoney(g, before, timeline)) out.push(c);
+  }
+  fundingChangesMemo.set(timeline, { array: all, months: [...all], out });
+  return out;
 }
 
 /** `fundableAny`'s test on the frame of model month `m`. */
@@ -187,7 +224,7 @@ function rowlessTable(ctx: StepCtx): Uint8Array {
     return memo.table;
   const first = Math.min(monthOfDay(asOf, asOf + 1), month);
   let last = first;
-  for (const c of timeline.changes()) {
+  for (const c of fundingChanges(timeline)) {
     if (c <= first) continue;
     if (c > month) break;
     last = c;

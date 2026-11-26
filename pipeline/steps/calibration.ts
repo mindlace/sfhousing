@@ -8,6 +8,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
+import type { CarModel } from '../../src/lib/sim/cars';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
 import { parseFundingFile, type FundingFile } from '../enrichment/funding-schema';
@@ -151,6 +152,12 @@ export async function writeCalibration(o: {
   lock: Lock;
   rawDir: string;
   byName: boolean;
+  /** The car step's model (written as `cars`; null until it is complete) */
+  cars?: CarModel | null;
+  /** The car step's report lines: section 14 (none, no section) */
+  carsReport?: string[];
+  /** The car back-cast's report lines: section 15 (none, no section) */
+  carsBackcast?: string[];
 }): Promise<{ warnings: string[]; checks: InvariantResult[] }> {
   const marketPath = o.marketPath ?? MARKET_JSON;
   const market = {
@@ -187,7 +194,8 @@ export async function writeCalibration(o: {
     datasetVersion: o.datasetVersion,
     market,
     funding,
-    mohcd
+    mohcd,
+    cars: { model: o.cars ?? null, report: o.carsReport ?? [], backcast: o.carsBackcast ?? [] }
   };
   const a = await calibrate(input, o.cal);
   const b = await calibrate(input, o.cal);

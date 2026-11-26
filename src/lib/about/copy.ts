@@ -119,3 +119,12 @@ export const RUN_SHORTCUTS: readonly { keys: string; action: string }[] = [
 export const WORKED_OUT = 'How this is worked out';
 export const ASSUMPTIONS_SHOW = 'Show the assumptions';
 export const ASSUMPTIONS_FAILED = "The assumptions couldn't load.";
+
+/** Assumptions' Cars section (car-ownership Task 12), shown when the dataset has car data. */
+export const CARS_HEADING = 'Cars';
+export const CARS_ABOUT: readonly string[] = [
+  "Each household's cars (none to three or more) come from a choice model fitted to Census data: household records (PUMS) and block-group car counts (ACS table B25044).",
+  'New homes take the kinds of households that recently moved into new buildings, and their parking follows the cars those households are expected to own.'
+];
+/** The link after the sentences, to the car model's figures and sources in the assumptions. */
+export const CARS_DETAILS = 'Details';

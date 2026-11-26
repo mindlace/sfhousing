@@ -205,6 +205,7 @@ describe('tiers, funded mini', () => {
         into.stepped(m);
         if (m === mid) into = createWorldSeries(c.score, structuredClone(into.data()));
       },
+      created: (c) => into.created(c),
       finalThrough: () => into.finalThrough(),
       rows: (a, b) => into.rows(a, b),
       data: () => into.data()

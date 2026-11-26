@@ -44,7 +44,9 @@ const sent = new Map<string, number>();
 const sentOf = (type: string) => sent.get(type) ?? 0;
 
 /** `createTimelineHost`, counting the requests handed to it by type. */
+const carsSeen: (string | undefined)[] = [];
 const countingHost: typeof createTimelineHost = (deps) => {
+  carsSeen.push(deps.cars);
   const host = createTimelineHost(deps);
   return {
     handle(req: TimelineHostRequest) {
@@ -98,6 +100,25 @@ describe('openEngine on the fixture', () => {
     const before = sentOf('setPolicy');
     await engine.view(DEFAULT_POLICY4);
     expect(sentOf('setPolicy')).toBe(before);
+  });
+
+  it('the host gets cars on by default', () => {
+    expect(carsSeen).toEqual(['on']);
+  });
+
+  it(
+    'the host gets cars off when asked',
+    async () => {
+      const before = carsSeen.length;
+      const off = await openEngine({ dir: FIXTURE }, { createHost: countingHost, cars: 'off' });
+      off.close();
+      expect(carsSeen.slice(before)).toEqual(['off']);
+    },
+    FILL_HOOK_MS
+  );
+
+  it('the opening fill took some time', () => {
+    expect(engine.fillMs).toBeGreaterThan(0);
   });
 });
 
@@ -356,7 +377,7 @@ describe('parseReachArgs', () => {
 
 /** An `open` that answers with `e`, its `close` a no-op so the shared engine stays open. */
 const openWith =
-  (e: Pick<Engine, 'datasetVersion' | 'asOf' | 'cal' | 'view'>): typeof openEngine =>
+  (e: Pick<Engine, 'datasetVersion' | 'asOf' | 'cal' | 'view' | 'fillMs'>): typeof openEngine =>
   async () => ({ ...e, close: () => {} });
 
 /** The command's io, recording what it prints and writes. */
@@ -405,6 +426,7 @@ describe('runReach', () => {
         datasetVersion: engine.datasetVersion,
         asOf: engine.asOf,
         cal: engine.cal,
+        fillMs: engine.fillMs,
         view: async () => empty
       })
     );
@@ -460,6 +482,7 @@ describe('runReach', () => {
       datasetVersion: engine.datasetVersion,
       asOf: engine.asOf,
       cal: engine.cal,
+      fillMs: engine.fillMs,
       view: async () => empty
     };
     const r = await measureReach({ ...stub, close: () => {} }, 1);
@@ -498,6 +521,7 @@ describe('runReach', () => {
       datasetVersion: engine.datasetVersion,
       asOf: engine.asOf,
       cal: engine.cal,
+      fillMs: engine.fillMs,
       view: async () => empty,
       close: () => {
         closed += 1;

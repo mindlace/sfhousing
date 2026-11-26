@@ -22,6 +22,7 @@ import {
   SAVED_GAMES,
   YOUR_PLANS
 } from './copy';
+import { carsNotice } from './credits';
 
 const text = () => (document.body.textContent ?? '').replace(/\s+/g, ' ');
 
@@ -191,6 +192,31 @@ describe('AboutData', () => {
     await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
     expect(text()).not.toContain('Housing project records');
     expect(text()).not.toContain('Street centerlines');
+  });
+
+  it('data: the Census sources are one row; the car notice follows the manifest (P13)', async () => {
+    const census = ['census-acs5-bg-2024', 'census-pums5-2024', 'census-tiger-bg-2020'].map(
+      (id) => ({ ...source, id, license: 'Public domain (U.S. Census Bureau)' })
+    );
+    const cars = {
+      fzp: {
+        ...scenarios.fzp,
+        cars: '/data/fixture-0/scenarios/fzp/cars.bin',
+        carZones: '/data/fixture-0/scenarios/fzp/car-zones.json'
+      }
+    };
+    const r = await renderData({ ...manifest, sources: [source, ...census], scenarios: cars });
+    const label = 'U.S. Census Bureau (ACS, PUMS, TIGER/Line), 2020–2024';
+    await expect
+      .element(page.getByRole('link', { name: label }))
+      .toHaveAttribute('href', 'https://www.census.gov/');
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
+    const notice = carsNotice(census)!;
+    expect(text()).toContain(notice);
+    await r.unmount();
+    renderData({ ...manifest, sources: [source, ...census], scenarios });
+    await expect.element(page.getByText('Map data ©')).toBeInTheDocument();
+    expect(text()).not.toContain('Households and cars');
   });
 
   it('data: the Overture notice comes from the manifest; "the ODbL" and "CC BY 4.0" link their licences', async () => {

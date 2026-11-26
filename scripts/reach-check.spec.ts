@@ -12,14 +12,23 @@ import type { TimelineView } from '../src/lib/sim/world/score/types';
 import type { Day } from '../src/lib/timelapse/time';
 import { DEFAULT_POLICY4 } from '../src/lib/timeline/policy4';
 import { openEngine, type Engine } from './reach-measure';
-import { main, reachExit, reachLines, readReach, type CheckIo, type Reach } from './reach-check';
+import {
+  fillLine,
+  main,
+  parseCheckArgs,
+  reachExit,
+  reachLines,
+  readReach,
+  type CheckIo,
+  type Reach
+} from './reach-check';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 /** Enough for one fill of the fixture's window; a hook argument, not a wait. */
 const FILL_HOOK_MS = 600_000;
 const USAGE =
   'reach-check: usage: npx tsx scripts/reach-check.ts <datasetDir> | --version <v> ' +
-  '[--from <origin>] [--amount <homes>]';
+  '[--from <origin>] [--amount <homes>] [--cars on|off]';
 
 const temps: string[] = [];
 
@@ -140,7 +149,44 @@ describe('reachLines', () => {
   });
 });
 
+describe('fillLine', () => {
+  it('names the seconds to one decimal and the switch', () => {
+    expect(fillLine(12_340, 'on')).toBe('Filled in 12.3 s (cars on)');
+    expect(fillLine(900, 'off')).toBe('Filled in 0.9 s (cars off)');
+  });
+});
+
+describe('parseCheckArgs --cars', () => {
+  it('defaults to on', () => {
+    expect(parseCheckArgs([FIXTURE])).toEqual({ src: { dir: FIXTURE }, cars: 'on' });
+  });
+
+  it.each(['on', 'off'] as const)('accepts %s', (cars) => {
+    expect(parseCheckArgs([FIXTURE, '--cars', cars, '--amount', '5'])).toEqual({
+      src: { dir: FIXTURE },
+      amount: 5,
+      cars
+    });
+  });
+
+  it('refuses another value', () => {
+    expect(parseCheckArgs([FIXTURE, '--cars', 'maybe'])).toEqual({
+      error: '--cars must be on or off, got maybe'
+    });
+  });
+});
+
 describe('main refuses', () => {
+  it.each([
+    [[FIXTURE, '--cars', 'maybe'], 'maybe'],
+    [[FIXTURE, '--cars'], 'nothing']
+  ])('%j is exit 2 with the cars line', async (argv, got) => {
+    const { io, out, err } = recorder();
+    expect(await main(argv, io)).toBe(2);
+    expect(err).toEqual([`reach-check: --cars must be on or off, got ${got}`]);
+    expect(out).toEqual([]);
+  });
+
   const emptyDir = () => {
     const dir = mkdtempSync(join(tmpdir(), 'reach-check-'));
     temps.push(dir);
@@ -189,12 +235,27 @@ describe('main refuses', () => {
 });
 
 describe('main runs', () => {
-  it('amount 1 prints four lines and exits 0', async () => {
+  it('amount 1 prints four lines and the fill line, and exits 0', async () => {
     const { io, out, err } = recorder();
     expect(await main([FIXTURE, '--amount', '1'], io)).toBe(0);
-    expect(out).toHaveLength(4);
+    expect(out).toHaveLength(5);
     expect(out[0]).toBe('Dataset fixture-0');
+    expect(out[4]).toMatch(/^Filled in \d+\.\d s \(cars on\)$/);
     expect(err).toEqual([]);
+  });
+
+  it.each([
+    [[], 'on'],
+    [['--cars', 'off'], 'off']
+  ] as const)('%j passes cars %s to open', async (extra, cars) => {
+    const seen: (string | undefined)[] = [];
+    const { io, out } = recorder(async (_src, opts) => {
+      seen.push(opts?.cars);
+      return { ...engine, close: () => {} };
+    });
+    expect(await main([FIXTURE, '--amount', '1', ...extra], io)).toBe(0);
+    expect(seen).toEqual([cars]);
+    expect(out[4]).toBe(fillLine(engine.fillMs, cars));
   });
 });
 
@@ -204,6 +265,7 @@ it('a view that rejects is exit 2 and the engine is closed', async () => {
     datasetVersion: engine.datasetVersion,
     asOf: engine.asOf,
     cal: engine.cal,
+    fillMs: engine.fillMs,
     view: () => Promise.reject(new Error('boom')),
     close: () => {
       closed += 1;

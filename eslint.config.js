@@ -71,7 +71,9 @@ export default defineConfig(
       'src/lib/timelapse/**',
       'src/lib/sim/scenario/**',
       'src/lib/sim/world/**',
-      'pipeline/lib/fzp-cal/**'
+      'src/lib/sim/cars/**',
+      'pipeline/lib/fzp-cal/**',
+      'pipeline/lib/cars/**'
     ],
     rules: {
       'no-restricted-properties': [

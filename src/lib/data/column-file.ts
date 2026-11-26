@@ -4,7 +4,7 @@
 // 8-aligned. Pure TS and worker-safe: no zod, no node: imports.
 import { fnv1a32 } from '../generator/seed';
 
-export type ColType = 'u8' | 'u16' | 'u32' | 'i32';
+export type ColType = 'u8' | 'u16' | 'u32' | 'i32' | 'f64';
 export interface ColumnIn {
   name: string;
   type: ColType;
@@ -16,12 +16,12 @@ export interface ColumnFile {
     name: string,
     type: ColType,
     length: number
-  ): Uint8Array | Uint16Array | Uint32Array | Int32Array;
+  ): Uint8Array | Uint16Array | Uint32Array | Int32Array | Float64Array;
 }
 
 const PRELUDE = 12;
-const SIZE: Record<ColType, number> = { u8: 1, u16: 2, u32: 4, i32: 4 };
-const RANGE: Record<ColType, [number, number]> = {
+const SIZE: Record<ColType, number> = { u8: 1, u16: 2, u32: 4, i32: 4, f64: 8 };
+const RANGE: Record<Exclude<ColType, 'f64'>, [number, number]> = {
   u8: [0, 0xff],
   u16: [0, 0xffff],
   u32: [0, 0xffffffff],
@@ -40,6 +40,14 @@ function put(
   values: ArrayLike<number>,
   fail: (msg: string) => never
 ): void {
+  if (type === 'f64') {
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (!Number.isFinite(v)) fail(`${name}[${i}] = ${v} does not fit f64`);
+      dv.setFloat64(offset + i * 8, v, true);
+    }
+    return;
+  }
   const [lo, hi] = RANGE[type];
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
@@ -153,6 +161,11 @@ export function openColumnFile(
       if (spec!.type !== type) fail(`column ${name} has type ${String(spec!.type)}, want ${type}`);
       if (length * SIZE[type] !== byteLength)
         fail(`column ${name} is ${byteLength} bytes, want ${length * SIZE[type]}`);
+      if (type === 'f64') {
+        const f = new Float64Array(length);
+        for (let i = 0; i < length; i++) f[i] = dv.getFloat64(offset + i * 8, true);
+        return f;
+      }
       const out =
         type === 'u8'
           ? new Uint8Array(length)

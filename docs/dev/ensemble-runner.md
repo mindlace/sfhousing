@@ -10,7 +10,7 @@
 | `src/lib/sim/world/host.ts`            | Sessions, checks, the shared requests                                                                          |
 | `src/lib/sim/world/runner/runner.ts`   | Compiles, ensembles, slices, posts, edits, heights                                                             |
 | `src/lib/sim/world/runner/ensemble.ts` | One ensemble: units, feed logs, copies (`COPY_MONTHS`)                                                         |
-| `src/lib/sim/world/runner/dataset.ts`  | Chunk set, load, `MassingCtx`, `CompileCtx` and its `YieldSource`                                              |
+| `src/lib/sim/world/runner/dataset.ts`  | Chunk set, load, car system and world core, `MassingCtx`, `CompileCtx` and its `YieldSource`                   |
 | `src/lib/sim/world/runner/lookups.ts`  | Brushes, outlines, preview, `lotAt`, lid lots, card deps                                                       |
 | `src/lib/sim/world/runner/warm.ts`     | Warm-ahead queue: one (row, revision) massing per unit (D12)                                                   |
 | `src/lib/sim/router.ts`                | Routes `openTimeline`, `setPolicy`, `viewMonth`, `resyncMap` to the timeline host                              |
@@ -37,13 +37,17 @@ Heights first: the city build of the zoning at the last `viewMonth`, then a want
 
 A compile is stalled (it waits for `chunkArrived`) only when `step` returned false within its budget with neither `readyThrough()` nor `progress().done` moved. This supersedes plan Appendix A row 22 ("done did not move"): the view job's twin, resolve, apply and precompute units move neither count and can each spend the whole budget.
 
+### The world core and the car system
+
+Both ensembles step with the dataset's world core, `Dataset.core = withFunding(createFundingSystem(), cars)`, built once per dataset load (`loadDataset`): `cars` is `Dataset.cars = carSystemOf(loaded, { off })` (`world/cars/dataset.ts`), which needs cars.bin (`Loaded.cars`, fetched only when the manifest names `scenarios.fzp.cars`; `car-zones.json` is the page's) and `calibration.cars`, and is null otherwise: an older dataset runs as before, `cars: null` in every chunk. Both worlds run on seed 1, so the comparison's twin pairing holds; the parking link is on iff the model's `parking.costPerSpace` is set. `TimelineHostDeps.cars: 'off'` (`reach-check --cars off`) loads no cars.bin and builds no system.
+
 ### Finality and posting
 
 A calendar month is final when each ensemble's world has stepped the model month holding its last day. After a slice: `compiling` if the progress changed; `compiled` when the plan's compile finished; at most one `filled` for the months final in both ensembles and not yet posted (`chunkOf`); `lookups` if the permitting in view changed; a city build if the zoning or limit attribution in view changed.
 
 ### The series gate (D2, D3)
 
-`createWorldSeries` needs `ScoreStatics`, which `scoreStaticsOf` gives only for a fully compiled timeline. Each world keeps a feed log (events and `stepped` marks); `feed` units drain it into the series once its ensemble's statics exist. Each ensemble uses its own statics (the comparison's tier table matches its frames). An edit closes the gate (`setStatics(null)`), and the new statics reopen it, re-creating each series from its `data()`.
+`createWorldSeries` needs `ScoreStatics`, which `scoreStaticsOf` gives only for a fully compiled timeline. Each world keeps a feed log (events and `stepped` marks); `feed` units drain it into the series once its ensemble's statics exist. The plan's log (`snapshotCars`) also holds its car state at creation (`created`) and gives each mark the world's `carSnapshotOf` after that month (null without a car system), so the chunks in `filled` carry `cars` from month 0 (null without one); the comparison takes no snapshots, since no chunk reads its cars. Copies keep the log, so a restore feeds the same snapshots. Each ensemble uses its own statics (the comparison's tier table matches its frames). An edit closes the gate (`setStatics(null)`), and the new statics reopen it, re-creating each series from its `data()`.
 
 ### `MoneyFeed` (D9)
 

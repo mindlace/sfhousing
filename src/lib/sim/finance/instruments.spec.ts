@@ -9,12 +9,13 @@ import {
   missingTerms,
   oddsShift,
   projectDollars,
+  signedOddsShift,
   termsNeeded,
   validateInstrument
 } from './instruments';
 import { MARKET_TERMS } from './terms';
 import { B, SLOPE_FIXTURE, TERMS, TERMS_CUT } from './test/fixtures';
-import { AFFORDABLE } from './prototypes';
+import { AFFORDABLE, PROTOTYPES } from './prototypes';
 
 const GRANT_MSG = 'A grant pays more than 0% and at most 100% of the uncovered cost.';
 const COST_MSG = 'A loan or guarantee covers more than 0% and at most 100% of the cost.';
@@ -90,6 +91,33 @@ describe('oddsShift and coverage', () => {
   });
   it('computes coverage unrounded', () => {
     expect(coverage(217000, 'market', B)).toBe(1);
+  });
+});
+
+describe('signedOddsShift', () => {
+  const A = PROTOTYPES[0];
+  it('is oddsShift for a saving and its negative for a cost', () => {
+    for (const p of PROTOTYPES) {
+      expect(signedOddsShift(1000, 'market', p, SLOPE_FIXTURE)).toBe(
+        oddsShift(1000, 'market', p, SLOPE_FIXTURE)
+      );
+    }
+    expect(signedOddsShift(-1000, 'market', A, SLOPE_FIXTURE)).toBe(
+      -signedOddsShift(1000, 'market', A, SLOPE_FIXTURE)
+    );
+    expect(signedOddsShift(-1000, 'market', A, SLOPE_FIXTURE)).toBeLessThan(0);
+    expect(signedOddsShift(0, 'market', A, SLOPE_FIXTURE)).toBe(0);
+  });
+  it('throws for a non-finite amount or slope', () => {
+    for (const g of [NaN, Infinity, -Infinity]) {
+      expect(() => signedOddsShift(g, 'market', A, SLOPE_FIXTURE)).toThrow(RangeError);
+      expect(() => signedOddsShift(1000, 'market', A, g)).toThrow(RangeError);
+    }
+  });
+  it('leaves oddsShift rejecting negatives', () => {
+    expect(() => oddsShift(-1000, 'market', A, SLOPE_FIXTURE)).toThrow(
+      'grant-equivalent must be a finite number of 0 or more; got -1000'
+    );
   });
 });
 

@@ -84,7 +84,8 @@ describe('/p/[id] map layers', () => {
     expect(stub.props.view).toEqual({
       transitStops: false,
       transitAccess: true,
-      heightLimits: false
+      heightLimits: false,
+      carsPerHousehold: false
     });
     await layersToggle().click();
     await expect.element(page.getByRole('group', { name: 'Map layers' })).toBeVisible();
@@ -94,8 +95,18 @@ describe('/p/[id] map layers', () => {
     await page.getByRole('checkbox', { name: 'Transit stops' }).click();
     await expect
       .poll(() => stub.props.view)
-      .toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
-    expect(stored()).toEqual({ transitStops: true, transitAccess: true, heightLimits: false });
+      .toEqual({
+        transitStops: true,
+        transitAccess: true,
+        heightLimits: false,
+        carsPerHousehold: false
+      });
+    expect(stored()).toEqual({
+      transitStops: true,
+      transitAccess: true,
+      heightLimits: false,
+      carsPerHousehold: false
+    });
   });
 });
 

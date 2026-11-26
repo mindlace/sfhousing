@@ -20,7 +20,7 @@ release-please runs with a GitHub App token (`actions/create-github-app-token`),
 
 There is no automated staging-to-prod interlock (as in planafoot): do not merge a release PR over a red staging deploy.
 
-`npm run signoff` is the only required check, and it runs locally. One workflow runs on pull requests, `pipeline.yml`: the pipeline tests and the fixture byte check, for changes under the paths it lists.
+`npm run signoff` is the only required check, and it runs locally. No workflow runs on pull requests.
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 

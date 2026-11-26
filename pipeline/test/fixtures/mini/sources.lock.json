@@ -35,6 +35,96 @@
     {
       "files": [
         {
+          "archiveKey": "sources/d7e0d57316e90401e88bb87d9fdc61d4bd5f22fb0835e183afd66be118db98a9.csv",
+          "bytes": 4333,
+          "name": "census-acs5-bg-2024.csv",
+          "sha256": "d7e0d57316e90401e88bb87d9fdc61d4bd5f22fb0835e183afd66be118db98a9",
+          "url": "https://fixture.invalid/census-acs5-bg-2024.csv"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-2024",
+      "label": "ACS 2020-2024 5-year block-group tables (B25044, B25046, B25009, B19001, B25002, B08301)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 159,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f990f7427d825c6e4a89b76406b944f37faef0c2e311703517a7d49c254b5f0e.csv",
+          "bytes": 1234,
+          "name": "census-acs5-bg-moe-2024.csv",
+          "sha256": "f990f7427d825c6e4a89b76406b944f37faef0c2e311703517a7d49c254b5f0e",
+          "url": "https://fixture.invalid/census-acs5-bg-moe-2024.csv"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/data/summary-file.html",
+      "id": "census-acs5-bg-moe-2024",
+      "label": "ACS 2020-2024 5-year block-group margins of error (B25044)",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 45,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/2e54532c2135f6acbaef640b068a392791eb7059a68caa9cd12f7d4ea673857a.csv",
+          "bytes": 29,
+          "name": "census-puma-2020.csv",
+          "sha256": "2e54532c2135f6acbaef640b068a392791eb7059a68caa9cd12f7d4ea673857a",
+          "url": "https://fixture.invalid/census-puma-2020.csv"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/reference-files/time-series/geo/relationship-files.html",
+      "id": "census-puma-2020",
+      "label": "Census 2020 tract to 2020 PUMA relationship",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 1,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/8b9f6091983d3479c0a429651bff7de33b438f3e4f2174e47dad5d0af2b08fc2.csv",
+          "bytes": 8885,
+          "name": "census-pums5-2024.csv",
+          "sha256": "8b9f6091983d3479c0a429651bff7de33b438f3e4f2174e47dad5d0af2b08fc2",
+          "url": "https://fixture.invalid/census-pums5-2024.csv"
+        }
+      ],
+      "homepage": "https://www.census.gov/programs-surveys/acs/microdata.html",
+      "id": "census-pums5-2024",
+      "label": "ACS 2020-2024 5-year PUMS, San Francisco households",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 160,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/f1de59483cdd62c8d9598002172d475384f0cb3be8b50c73eb74216a4da0a1e6.zip",
+          "bytes": 962,
+          "name": "census-tiger-bg-2020.zip",
+          "sha256": "f1de59483cdd62c8d9598002172d475384f0cb3be8b50c73eb74216a4da0a1e6",
+          "url": "https://fixture.invalid/census-tiger-bg-2020.zip"
+        }
+      ],
+      "homepage": "https://www.census.gov/geographies/mapping-files/time-series/geo/tiger-line-file.html",
+      "id": "census-tiger-bg-2020",
+      "label": "TIGER/Line 2020 block groups",
+      "license": "Public domain (U.S. Census Bureau)",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 3,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/77ff3a8709c5583a0e768b944110b5d7bdff6a6ee47400a36d45f4982917220a.csv",
           "bytes": 3469,
           "name": "datasf-assessor-roll.page-000.csv",

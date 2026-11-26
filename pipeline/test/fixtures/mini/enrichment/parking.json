@@ -1,0 +1,33 @@
+{
+  "costPerSpace": {
+    "surface": null,
+    "podium": {
+      "value": 30000,
+      "dollarsYear": 2016,
+      "tier": 4,
+      "invented": true,
+      "method": "Invented test data for the mini fixture (tier 4, no source), so fixture-0 has the parking link on and e2e covers it. Never a San Francisco figure; the live file is pipeline/enrichment/parking.json."
+    },
+    "belowGrade": {
+      "value": 70000,
+      "dollarsYear": 2016,
+      "tier": 4,
+      "invented": true,
+      "method": "Invented test data for the mini fixture (tier 4, no source), so fixture-0 has the parking link on and e2e covers it. Never a San Francisco figure; the live file is pipeline/enrichment/parking.json."
+    }
+  },
+  "supplyOverUse": {
+    "value": 1.4,
+    "tier": 3,
+    "sources": [
+      {
+        "label": "King County Metro, \"Right Size Parking Final Report\", August 2015 (VIA Architecture), reproduced as Appendix A14 of the City of San Diego TPA Multifamily Residential Parking Standards Study, Appendix A",
+        "url": "https://www.sandiego.gov/sites/default/files/appendix_a_-_tpa_multifamily_residential_parking_standards_study.pdf",
+        "page": "RSP Final Report p. 7 (PDF p. 173)",
+        "accessed": "2026-11-24"
+      }
+    ],
+    "method": "The live file's literature ratio (tier 3), copied for the mini fixture."
+  },
+  "searched": ["Mini fixture: test data, nothing searched beyond the live file's list"]
+}

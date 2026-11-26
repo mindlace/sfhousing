@@ -3,21 +3,30 @@
 //
 // The world sends its events and `stepped` marks to a feed log. While the series gate is open
 // (`setStatics`), `feed` units drain the log into the world's `WorldSeries` (a buffered feed
-// gives the same series, docs/dev/world-score.md "Feeding a series").
+// gives the same series, docs/dev/world-score.md "Feeding a series"). With `snapshotCars` (the
+// plan: only its cars reach the chunks) the log also holds the world's car state at creation (a
+// `created` entry) and each `stepped` mark carries the snapshot after that month (`carSnapshotOf`,
+// null without a car system); otherwise no snapshot is taken.
+//
+// The world core (`withFunding(funding, cars)`) is the dataset's (`Dataset.core`): the car system
+// is built per dataset load, so the core is too.
 import type { LedgerEvent } from '$lib/sim/scenario/money';
-import * as fundingModule from '../funding';
+import * as carsModule from '../cars/columns';
+import type { CarSnapshot } from '../cars/columns';
 import type { MapStream } from '../map-stream';
 import type { PolicyTimeline } from '../policy/frame';
 import * as scoreModule from '../score';
 import type { ScoreStatics, WorldSeries, WorldSeriesData } from '../score';
 import type { Statics } from '../statics';
 import type { Due, StepSink, World, WorldEvent } from '../types';
-import * as worldModule from '../world';
+import type { withFunding } from '../world';
 
 // Imports are bound once, here, as world-core's hot modules do (docs/dev/world-core.md, Cost).
-const { createFundingSystem } = fundingModule;
+const { carSnapshotOf } = carsModule;
 const { createWorldSeries } = scoreModule;
-const { createWorld, step, planDue } = worldModule.withFunding(createFundingSystem());
+
+/** A world core: `withFunding(funding, cars)`'s `createWorld`, `step` and `planDue`. */
+export type WorldCore = ReturnType<typeof withFunding>;
 
 /** The model months after which the world is copied (S16). The one place the schedule lives. */
 export const COPY_MONTHS: readonly number[] = [0];
@@ -25,10 +34,21 @@ export const COPY_MONTHS: readonly number[] = [0];
 /** The seed of both sides' world. */
 export const SEED = 1;
 
-/** One entry of the world's feed log: an event, or the model month just stepped. */
-export type FeedEntry = { e: WorldEvent } | { stepped: number };
+/**
+ * One entry of the world's feed log: an event, the world's car state at creation, or the model
+ * month just stepped with the world's car snapshot after it (null without a car system or
+ * without `snapshotCars`).
+ */
+export type FeedEntry =
+  | { e: WorldEvent }
+  | { created: CarSnapshot | null }
+  | { stepped: number; cars: CarSnapshot | null };
 
 export interface EnsembleOpts {
+  /** The dataset's world core (`Dataset.core`). */
+  core: WorldCore;
+  /** Feed the series the world's car snapshots (the plan; default false). */
+  snapshotCars?: boolean;
   statics: Statics;
   timeline: PolicyTimeline;
   /** Filling stops at this model month; the due list is planned through it. */
@@ -101,6 +121,8 @@ interface Copy {
 
 export function createEnsemble(o: EnsembleOpts): Ensemble {
   const { statics, months } = o;
+  const { createWorld, step, planDue } = o.core;
+  const snapshotCars = o.snapshotCars === true;
   const copyMonths = new Set(o.copyMonths);
   const map = o.map ?? null;
   const ledger: LedgerEvent[] | null = map ? [] : null;
@@ -193,6 +215,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     } finally {
       quietNow = false;
     }
+    if (snapshotCars) log.push({ created: carSnapshotOf(w) });
     due = planDue(w, statics, timeline, SEED, months);
     if (scoreStatics !== null && series === null) series = seriesOf(scoreStatics, data);
     month = 0;
@@ -227,8 +250,9 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     while (i < log.length) {
       const f = log[i++];
       if ('e' in f) s.add(f.e, w, statics);
+      else if ('created' in f) s.created(f.created);
       else {
-        s.stepped(f.stepped);
+        s.stepped(f.stepped, f.cars);
         break;
       }
     }
@@ -246,7 +270,7 @@ export function createEnsemble(o: EnsembleOpts): Ensemble {
     } finally {
       quietNow = false;
     }
-    log.push({ stepped: w.month });
+    log.push({ stepped: w.month, cars: snapshotCars ? carSnapshotOf(w) : null });
     month++;
   }
 

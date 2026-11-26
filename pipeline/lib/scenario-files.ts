@@ -11,6 +11,11 @@ export const POLICY_BIN = 'scenarios/fzp/policy.bin';
 /** sfh-gross/1 per-lot gross units by story count, in parcels.bin row order (pipeline/steps/gross.ts). */
 export const GROSS_BIN = 'scenarios/fzp/gross.bin';
 
+/** sfh-cars/1 car zones and start households, lotZone in parcels.bin row order (steps/cars.ts). */
+export const CARS_BIN = 'scenarios/fzp/cars.bin';
+/** GeoJSON of the car zones (block groups), property `z` the zone index (steps/cars.ts). */
+export const CAR_ZONES_JSON = 'scenarios/fzp/car-zones.json';
+
 /** Inflate and decode a written parcels.bin; throws an Error naming the file if it fails. */
 export function readParcelsBin(file: string): ScenarioParcels {
   try {

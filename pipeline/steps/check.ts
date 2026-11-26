@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync, inflateRawSync } from 'node:zlib';
+import { decodeCarData, type CarData } from '../../src/lib/data/cars-codec';
+import { CAR_LEVELS } from '../../src/lib/sim/cars';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
@@ -33,7 +35,8 @@ import { CALIBRATION_JSON } from './calibration';
 import { checkPolicy } from './check-policy';
 import { checkV36 } from './check-gross';
 import { PROJECTS_JSON } from './projects';
-import { PARCELS_BIN } from '../lib/scenario-files';
+import { CARS_BIN, CAR_ZONES_JSON, PARCELS_BIN } from '../lib/scenario-files';
+import { startTotal, zoneHomes } from '../lib/cars/population';
 import { z12TileBytes } from './tiles';
 
 export interface InvariantResult {
@@ -65,8 +68,9 @@ export interface CheckExtras {
   calibrationChecks?: InvariantResult[];
   /**
    * V17: the freeway-land catalog's parcels (`readFreewayLandSet`), scenario-ineligible while their
-   * freeway stands. A standalone `check` reads today's catalog of the version's kind, so an older
-   * out dir checked against a newer catalog can fail. Absent: no freeway land.
+   * freeway stands, and never eligible in the parcel chunks (Paint cannot build on them). A
+   * standalone `check` reads today's catalog of the version's kind, so an older out dir checked
+   * against a newer catalog can fail. Absent: no freeway land.
    */
   freewayLand?: ReadonlySet<ParcelId>;
 }
@@ -352,8 +356,8 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V36 (gross.bin) and
- * V37 (render boxes). Never throws.
+ * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V36 (gross.bin),
+ * V37 (render boxes), V38 (cars.bin) and V39 (car-zones.json). Never throws.
  */
 export async function checkDataset(
   outDir: string,
@@ -670,7 +674,7 @@ export async function checkDataset(
   // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
   // flags that disagree with its own uncapped yields. Eligibility is flags bit 5, which must equal
   // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units,
-  // and is 0 on freeway land (`extras.freewayLand`).
+  // and is 0 on freeway land (`extras.freewayLand`), whose chunk records are never eligible.
   {
     const clamped = c['scenario.yield.clamped'];
     const nonlp = c['scenario.yield.nonlp_base_mismatch'];
@@ -708,6 +712,13 @@ export async function checkDataset(
         if (p.hostableBase[i] ? !canB : mustB) badB++;
         hostable += p.hostable[i];
       }
+      const chunkEligible = [...(extras.freewayLand ?? [])].filter(
+        (id) => recById.get(id)?.eligible === true
+      );
+      if (chunkEligible.length > 0)
+        problems.push(
+          `freeway-land lot(s) ${chunkEligible.slice(0, 5).join(', ')}${chunkEligible.length > 5 ? ', …' : ''} are eligible in the chunks`
+        );
       if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
       if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and yield`);
       if (badE)
@@ -855,7 +866,118 @@ export async function checkDataset(
 
   // V37 the render boxes, when the build had a building-boxes artifact.
   out.push(checkV37(c, extras.skipTiles ?? !existsSync(join(outDir, 'buildings.pmtiles'))));
+
+  // V38 cars.bin and V39 car-zones.json, when the build had Census data.
+  out.push(...checkCars(outDir, m, p));
   return out;
+}
+
+/**
+ * V38 and V39, the car model's files (docs/dev/pipeline.md, Car zones). Without cars.bin,
+ * car-zones.json and their manifest keys both pass as `no car data`. V38: the manifest names
+ * cars.bin (under the version) whenever the file exists and vice versa; it inflates and decodes
+ * against parcels.bin's row count (so `lotZone` aligns); every zone holds round(occupied x homes)
+ * households, homes the existingUnits of its lots; a file with no zones, or with no households
+ * while its zones hold homes, fails. V39: the manifest names car-zones.json; it is
+ * a FeatureCollection with one feature per cars.bin zone, feature z having property `z` = z.
+ * Never throws.
+ */
+export function checkCars(
+  outDir: string,
+  m: Manifest | null,
+  p: ScenarioParcels | null
+): InvariantResult[] {
+  const fzp = m?.scenarios?.fzp;
+  const named = (key: 'cars' | 'carZones', file: string, problems: string[]) => {
+    const present = existsSync(join(outDir, file));
+    const url = fzp?.[key];
+    if (present && url === undefined) problems.push(`${file} is not named in the manifest`);
+    else if (!present && url !== undefined) problems.push(`the manifest names ${file}, missing`);
+    else if (url !== undefined && m && url !== `/data/${m.datasetVersion}/${file}`)
+      problems.push(`manifest ${key} ${url} is not ${file} under the version`);
+    return present;
+  };
+  const verdict38 = (problems: string[], ok: string): InvariantResult => ({
+    id: 'V38',
+    ok: problems.length === 0,
+    detail: problems.length === 0 ? ok : problems.join('; ')
+  });
+  const p38: string[] = [];
+  const hasBin = named('cars', CARS_BIN, p38);
+  const p39: string[] = [];
+  const hasZones = named('carZones', CAR_ZONES_JSON, p39);
+  if (!hasBin && !hasZones && p38.length === 0 && p39.length === 0)
+    return [
+      { id: 'V38', ok: true, detail: 'no car data' },
+      { id: 'V39', ok: true, detail: 'no car data' }
+    ];
+
+  let d: CarData | null = null;
+  let ok38 = '';
+  if (!hasBin) p38.push(`${CARS_BIN} is missing`);
+  else if (!p) p38.push(`no parcels.bin to align ${CARS_BIN} with`);
+  else {
+    try {
+      const payload = new Uint8Array(inflateRawSync(readFileSync(join(outDir, CARS_BIN))));
+      d = decodeCarData(payload, p.count);
+    } catch (e) {
+      p38.push(`${CARS_BIN} does not decode: ${(e as Error).message}`);
+    }
+  }
+  if (d && p) {
+    const Z = d.zones.length;
+    const cells = d.types * CAR_LEVELS;
+    const homes = zoneHomes(d.lotZone, p.existingUnits, Z);
+    let bad = 0;
+    let first = '';
+    let total = 0;
+    for (let z = 0; z < Z; z++) {
+      let sum = 0;
+      for (let j = 0; j < cells; j++) sum += d.households[z * cells + j];
+      total += sum;
+      const want = startTotal(d.occupied[z], homes[z]);
+      if (sum !== want) {
+        if (bad++ === 0) first = `zone ${z} (${d.zones[z]}) has ${sum} households, want ${want}`;
+      }
+    }
+    if (bad > 0) p38.push(`${bad} zone(s) off round(occupied x homes): ${first}`);
+    if (Z === 0) p38.push(`${CARS_BIN} has no zones`);
+    let homesTotal = 0;
+    for (let z = 0; z < Z; z++) homesTotal += homes[z];
+    if (homesTotal > 0 && total === 0) p38.push(`0 households on ${homesTotal} homes`);
+    let noZone = 0;
+    for (const z of d.lotZone) if (z < 0) noZone++;
+    ok38 = `${Z} zones, ${total} households, ${noZone} lots in no zone`;
+  }
+
+  let ok39 = '';
+  if (!hasZones) p39.push(`${CAR_ZONES_JSON} is missing`);
+  else {
+    try {
+      const fc = JSON.parse(readFileSync(join(outDir, CAR_ZONES_JSON), 'utf8')) as {
+        type?: unknown;
+        features?: { properties?: { z?: unknown } }[];
+      };
+      if (fc.type !== 'FeatureCollection' || !Array.isArray(fc.features))
+        p39.push(`${CAR_ZONES_JSON} is not a FeatureCollection`);
+      else {
+        const n = fc.features.length;
+        if (d && n !== d.zones.length)
+          p39.push(`${CAR_ZONES_JSON} has ${n} features, want ${d.zones.length}`);
+        const wrong = fc.features.findIndex((f, z) => f?.properties?.z !== z);
+        if (wrong >= 0)
+          p39.push(`feature ${wrong} has z ${String(fc.features[wrong]?.properties?.z)}`);
+        if (!d && hasBin) p39.push(`no decoded ${CARS_BIN} to count zones against`);
+        ok39 = `${n} features`;
+      }
+    } catch (e) {
+      p39.push(`${CAR_ZONES_JSON} is not JSON: ${(e as Error).message}`);
+    }
+  }
+  return [
+    verdict38(p38, ok38),
+    { id: 'V39', ok: p39.length === 0, detail: p39.length === 0 ? ok39 : p39.join('; ') }
+  ];
 }
 
 /**

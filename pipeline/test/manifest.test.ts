@@ -146,6 +146,28 @@ describe('buildManifest', () => {
   });
 });
 
+describe('buildManifest cars', () => {
+  it('names cars.bin and car-zones.json only with scenarios and cars', () => {
+    const at = (scenarios: boolean, cars: boolean) =>
+      buildManifest({
+        datasetVersion: 'fixture-3',
+        builtAt: '2026-10-10T00:00:00.000Z',
+        lock: { sources: [] },
+        chunks: [],
+        overtureContrib: [],
+        scenarios,
+        cars
+      });
+    expect(at(true, true).scenarios?.fzp.cars).toBe('/data/fixture-3/scenarios/fzp/cars.bin');
+    expect(at(true, true).scenarios?.fzp.carZones).toBe(
+      '/data/fixture-3/scenarios/fzp/car-zones.json'
+    );
+    expect('cars' in at(true, false).scenarios!.fzp).toBe(false);
+    expect('carZones' in at(true, false).scenarios!.fzp).toBe(false);
+    expect('scenarios' in at(false, true)).toBe(false);
+  });
+});
+
 describe('the mini manifest', () => {
   it('the manifest lists building-boxes', () => {
     for (const f of [

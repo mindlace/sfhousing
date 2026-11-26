@@ -1,0 +1,35 @@
+{
+  "seriesId": "CUURS49BSA0",
+  "annual": {
+    "2005": 202.7,
+    "2006": 209.2,
+    "2007": 216.048,
+    "2008": 222.767,
+    "2009": 224.395,
+    "2010": 227.469,
+    "2011": 233.39,
+    "2012": 239.65,
+    "2013": 245.023,
+    "2014": 251.985,
+    "2015": 258.572,
+    "2016": 266.344,
+    "2017": 274.924,
+    "2018": 285.55,
+    "2019": 295.004,
+    "2020": 300.084,
+    "2021": 309.721,
+    "2022": 327.06,
+    "2023": 339.05,
+    "2024": 348.417,
+    "2025": 356.005
+  },
+  "sources": [
+    {
+      "label": "U.S. Bureau of Labor Statistics, Consumer Price Index for All Urban Consumers (CPI-U), San Francisco-Oakland-Hayward, CA, all items, not seasonally adjusted, 1982-84 = 100 (series CUURS49BSA0)",
+      "url": "https://data.bls.gov/timeseries/CUURS49BSA0",
+      "page": "annual averages (period M13), read from the BLS flat file https://download.bls.gov/pub/time.series/cu/cu.data.2.Summaries; 2024 and 2025 also checked against the BLS public API v1 (api.bls.gov/publicAPI/v1/timeseries/data/CUURS49BSA0)",
+      "accessed": "2026-11-25"
+    }
+  ],
+  "method": "Annual averages as BLS publishes them, 2005 to 2025 (the cost index's years and after). The 2026 annual average is not yet published (bimonthly values through October 2026 only), so 2025 is the latest full year."
+}
