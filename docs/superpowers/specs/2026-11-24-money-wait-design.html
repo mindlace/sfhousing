@@ -337,6 +337,8 @@ return { from, rows, planEffect, money: moneyRows, tiers, waiting };</code></pre
         <li>The record adds 4 bytes per model month to each world: under 2 KB for a 480-month window.</li>
         <li>The bars it must stay under, unchanged: one funded world-month at most 90 µs mean (<code>funded-month.perf.spec.ts</code>); no slice over 50 ms, first cells and first filled within 3 s, the whole window within 480 × 9 ms on the live city (<code>host.perf.spec.ts</code>); one month's scoring for a pair within 1 ms at the median (<code>chunk.perf.spec.ts</code>).</li>
         <li>The implementer runs these on a quiet machine once the code is in. If a bar fails, the implementer stops and reports the numbers to the conductor; the counting rule is not changed to meet it.</li>
+        <li>On a machine where <code>main</code> itself is over 90 µs, this unit is held to <code>main</code>: the funding system's <code>shadow</code> hook costs at most 10 µs mean per funded world-month more than on <code>main</code>, and the funded world-month mean is at most 10% above <code>main</code>'s, both measured in the same session on the same quiet machine, <code>main</code> and this branch run one after the other.</li>
+        <li>The count reads the same values whatever makes it cheap: a walk that rebuilds the line index, sorts or allocates per lot each month is replaced by one that does not, and every test of the count, the record and the chunk passes unchanged.</li>
       </ul>
       <pre><code data-lang="sh">npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts src/lib/sim/world/score/chunk.perf.spec.ts src/lib/sim/world/host.perf.spec.ts</code></pre>
     </section>
