@@ -255,27 +255,32 @@
 
     <section id="sec-policies">
       <h3>The policies and their rounds</h3>
-      <p>Thirteen policies, down from 23 nodes. The three "hands" nodes go with the points. The
-        eleven zoning increments become four transit rules, one per stop type, each its own
-        policy in the document with its own switch (P10). Permitting and money policies are the
+      <p>Twelve policies, down from 23 nodes. The three "hands" nodes go with the points. The
+        eleven zoning increments become three transit rules, one per class of transit, each its
+        own policy in the document with its own switch (P10). The classes are the owner's: heavy
+        rail (BART and Caltrain), light rail (Muni Metro), and bus (rapid and frequent together).
+        The bus rule holds the app's two bus stop types. Permitting and money policies are the
         presets the tree already used.</p>
       <table id="tbl-rounds">
-        <caption>Proposed rounds: one zoning, one permitting and one money policy each</caption>
+        <caption>Rounds: three policies each</caption>
         <thead>
           <tr><th scope="col">Round</th><th scope="col">Zoning</th><th scope="col">Permitting</th><th scope="col">Money</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row">1</th><td>Taller near regional rail</td><td>SB 423 clock</td><td>Housing bond</td></tr>
+          <tr><th scope="row">1</th><td>Taller near BART and Caltrain</td><td>SB 423 clock</td><td>Housing bond</td></tr>
           <tr><th scope="row">2</th><td>Taller near Muni Metro</td><td>Benchmark permits</td><td>General revenue</td></tr>
-          <tr><th scope="row">3</th><td>Taller near rapid bus</td><td>No discretionary review</td><td>Revolving fund, federal support</td></tr>
-          <tr><th scope="row">4</th><td>Taller near frequent bus</td><td></td><td>Public bank, state-double</td></tr>
+          <tr><th scope="row">3</th><td>Taller near bus</td><td></td><td>Revolving fund, federal support</td></tr>
+          <tr><th scope="row">4</th><td></td><td>No discretionary review</td><td>Public bank, state-double</td></tr>
         </tbody>
       </table>
+      <p>Every round holds at least one policy that moves the date even for a player who has
+        edited everything: a transit rule in rounds 1 to 3, and no discretionary review in
+        round 4 (17 months at the margin of the full tree).</p>
       <ul>
         <li><strong>A fixed zoning policy includes height.</strong> A stop type at 4 stories does
           nothing, so each transit rule arrives with a height and a reach.</li>
         <li><strong>What "editable" covers.</strong> Zoning: stories, reach and bands, and the
-          dates. The stop type is what the policy is, so it stays until the end. Permitting: the
+          dates. The class of transit is what the policy is, so its stop types stay until the end. Permitting: the
           policy's timings, as custom timings. Money: the policy's funding editor. All: the dates
           it is in force.</li>
         <li><strong>Adding and removing.</strong> During the rounds "+" offers only the levers
@@ -286,15 +291,14 @@
           document, off, in force from today. This is not an undo step.</li>
       </ul>
       <table id="tbl-transit-fixed">
-        <caption>Proposed fixed values of the four transit rules</caption>
+        <caption>Fixed values of the three transit rules</caption>
         <thead>
-          <tr><th scope="col">Policy</th><th scope="col">Within 402 m</th><th scope="col">402 to 805 m</th><th scope="col">Source</th></tr>
+          <tr><th scope="col">Policy</th><th scope="col">Inner band</th><th scope="col">Outer band</th><th scope="col">Source</th></tr>
         </thead>
         <tbody>
-          <tr><th scope="row">Taller near regional rail (BART, Caltrain)</th><td>75 ft</td><td>65 ft</td><td>SB 79 Tier 1</td></tr>
-          <tr><th scope="row">Taller near Muni Metro</th><td>65 ft</td><td>55 ft</td><td>SB 79 Tier 2</td></tr>
-          <tr><th scope="row">Taller near rapid bus</th><td>65 ft</td><td>55 ft</td><td>SB 79 Tier 2 (bus with dedicated lanes)</td></tr>
-          <tr><th scope="row">Taller near frequent bus</th><td>55 ft within 300 m</td><td>45 ft from 300 to 600 m</td><td>No enacted source; distances are the owner's</td></tr>
+          <tr><th scope="row">Taller near BART and Caltrain (heavy rail)</th><td>75 ft within 402 m</td><td>65 ft from 402 to 805 m</td><td>SB 79 Tier 1</td></tr>
+          <tr><th scope="row">Taller near Muni Metro (light rail)</th><td>65 ft within 402 m</td><td>55 ft from 402 to 805 m</td><td>SB 79 Tier 2</td></tr>
+          <tr><th scope="row">Taller near bus (rapid and frequent)</th><td>55 ft within 300 m</td><td>45 ft from 300 to 600 m</td><td>No enacted source; distances are the owner's</td></tr>
         </tbody>
       </table>
       <ul>
@@ -305,9 +309,9 @@
         <li>San Francisco adopted an alternative plan in May 2026, so SB 79's defaults bind no
           parcel in the city. These policies are "what if the default tiers applied", and their
           one-line descriptions say so.</li>
-        <li>SB 79 does not cover ordinary frequent bus. That rule goes beyond enacted law. Its
-          bands are 300 m and 600 m, the owner's choice; its heights (one step below Tier 2) are
-          my call.</li>
+        <li>SB 79 covers bus only where it has dedicated lanes, in Tier 2. The bus rule here
+          takes in all rapid and frequent bus, so it goes beyond enacted law. Its bands are 300 m
+          and 600 m, the owner's choice; its heights (one step below Tier 2) are my call.</li>
       </ul>
       <aside data-kind="decision"><strong>Decision</strong> The owner accepted the round table,
         the fixed values, what "editable" covers and the rule for adding and removing
@@ -336,8 +340,8 @@
           long tail of measured walks to rail; 800 m for rapid and frequent bus, the legal half
           mile and well above the measured 524 m. The app measures in a straight line, as SB 79
           does, so the real walk is longer.</li>
-        <li><strong>Rules with several stop types.</strong> In the rounds every transit policy has
-          one stop type, so its maximum is that type's. A rule can hold several only outside the
+        <li><strong>Rules that mix classes.</strong> In the rounds every transit policy is one
+          class, so its maximum is that class's. A rule can mix rail and bus only outside the
           rounds: after the end, and in documents already stored. Such a rule takes the shortest
           maximum among its stop types.</li>
         <li><strong>Default for a new rule:</strong> SB 79's two bands, 402 m and 805 m, which the
