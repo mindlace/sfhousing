@@ -1,5 +1,5 @@
 import * as scenarioCodecModule from '$lib/data/scenario-codec';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import * as typesModule from './types';
 import type { LotColumns, ProjectColumns, World } from './types';
@@ -155,7 +155,7 @@ export function addProject(p: ProjectColumns): number {
 }
 
 /**
- * Records a revision on `row` with today's same-day merge (`pushRevision`, scenario/engine.ts):
+ * Records a revision on `row` with today's same-day merge (`pushRevision`):
  * a revision due on the last entry's day replaces that entry's units and stories; if the merged
  * entry then equals its predecessor it is removed. The first entry is never removed. A day before
  * the last entry's throws.

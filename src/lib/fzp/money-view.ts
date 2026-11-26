@@ -5,7 +5,7 @@
  * The per-home figures are `finance-score`'s `perAddedHome`: nothing here divides.
  */
 import { DISPLACEMENT_RANGE } from '$lib/sim/finance';
-import { marketLevel } from '$lib/sim/scenario/market';
+import { marketLevel } from '$lib/sim/world/input/market';
 import {
   CITY_POOL_KINDS,
   cityOf,
@@ -13,7 +13,7 @@ import {
   owedAt,
   perAddedHome,
   type Money
-} from '$lib/sim/scenario/finance-score';
+} from '$lib/sim/world/score/finance';
 import type { TimelineScore } from '$lib/sim/protocol';
 import type { MoneyView } from '$lib/sim/world/score/types';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
@@ -28,7 +28,7 @@ import {
   type Provenance
 } from '$lib/timelapse/types';
 import { isNoCeiling } from '$lib/timelapse/model';
-import { addMonths } from '$lib/sim/scenario/dates';
+import { addMonths } from '$lib/sim/world/dates';
 import type { Day } from '$lib/timelapse/time';
 import {
   formatDollars,

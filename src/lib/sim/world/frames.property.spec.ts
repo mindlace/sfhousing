@@ -5,9 +5,9 @@
 import { isDeepStrictEqual } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
-import { precomputeOf } from '$lib/sim/scenario/input';
-import { seedHash } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf } from '$lib/sim/world/input/build';
+import { seedHash } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import type { Stage } from '$lib/timelapse/types';
 import { emptyWorld, ensureLot, lotRow } from './columns';

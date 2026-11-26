@@ -1,8 +1,8 @@
 // One world's calendar-month series from its events (world-score rules 1, 3 and 5). Each event
-// files the deltas `shownSeries` (scenario/score.ts) files for the same schedule part, so the
+// files the deltas `shownSeries` files for the same schedule part, so the
 // prefix sums equal `shownSeries` month for month. The series keeps every per-row fact that
 // changes in its own state, because `createWorld` sends events before the world exists.
-import { TIER_FIELDS, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
+import { TIER_FIELDS, tiersOf, type TierCtx } from '$lib/sim/world/score/finance';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage, type TierUnits } from '$lib/timelapse/types';
 import { waitingAt } from '../funding/columns';

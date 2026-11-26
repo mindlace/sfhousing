@@ -1,16 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
 import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
-import { revisionRatio, scaledTransition } from '$lib/sim/scenario/engine';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { revisionRatio } from '$lib/sim/world/rules/stages';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { sampleAdvance } from '$lib/timelapse/model';
-import {
-  EXIT_ORDER,
-  PATHWAYS,
-  STAGE_ORDER,
-  type Calibration,
-  type Stage
-} from '$lib/timelapse/types';
+import { PATHWAYS, STAGE_ORDER, type Calibration, type Stage } from '$lib/timelapse/types';
 import { addProject, emptyWorld, pushRev, revisionsOf } from './columns';
 import { monthFirstDay, monthOfDay } from './months';
 import { dueMonthOf } from './pipeline';
@@ -71,53 +65,6 @@ describe('speedOf', () => {
 
 describe.each(PATHWAYS.map((p, i) => [p, i] as const))('the stage clock on %s', (pathway, pi) => {
   const { name, i, t } = stageWith(pathway);
-
-  it('a fresh stage ends where today’s stage step does', () => {
-    for (const s of [1, 0.5, 1.7]) {
-      const sc = { ...IDENTITY, [pathway]: { [name]: s } };
-      const f = { ...frame, speed: sc };
-      for (let e = 0; e < streams.length; e++) {
-        const { w, row } = rowOn(pi, streams[e]);
-        enterStage(w, row, i, 1000 + e, 0, f);
-        const r = scaledTransition(
-          t,
-          drawOn(streams[e], P.STAGE, i),
-          drawOn(streams[e], P.STAGE_TIME, i),
-          0,
-          s
-        );
-        expect(w.projects.leave[row]).toBe(1000 + e + r.days);
-        expect(w.projects.outcome[row]).toBe(
-          r.kind === 'advance' ? 0 : 1 + EXIT_ORDER.indexOf(r.kind)
-        );
-        expect(w.projects.anchor[row]).toBe(1000 + e);
-        expect(w.projects.speed[row]).toBe(s);
-      }
-    }
-  });
-
-  it('a stage in flight on the dataset date is drawn given the days survived', () => {
-    const asOf = 5000;
-    for (const s of [1, 0.5, 1.7]) {
-      const f = { ...frame, speed: { ...IDENTITY, [pathway]: { [name]: s } } };
-      for (let e = 0; e < streams.length; e++) {
-        const entered = asOf - 40;
-        const survived = asOf + 1 - entered;
-        const { w, row } = rowOn(pi, streams[e]);
-        enterStage(w, row, i, entered, survived, f);
-        const r = scaledTransition(
-          t,
-          drawOn(streams[e], P.STAGE, i),
-          drawOn(streams[e], P.STAGE_TIME, i),
-          survived,
-          s
-        );
-        expect(w.projects.leave[row]).toBe(entered + r.days);
-        expect(w.projects.used[row]).toBe(survived);
-        expect(w.projects.anchor[row]).toBe(entered + survived);
-      }
-    }
-  });
 
   it('a certain row advances on sampleAdvance and never reads the stage draw', () => {
     let exits = 0;

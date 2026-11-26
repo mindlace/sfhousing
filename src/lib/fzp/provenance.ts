@@ -18,10 +18,10 @@ import {
   type ResolvedTerms,
   type TermKey
 } from '$lib/sim/finance';
-import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
-import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
-import { marketLevel } from '$lib/sim/scenario/market';
-import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { MONEY_SOURCES } from '$lib/sim/world/score/finance';
+import { PIPELINE_FUNDED } from '$lib/sim/world/rules/funding';
+import { marketLevel } from '$lib/sim/world/input/market';
+import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 import { noSourcedValueText, termTitle, typedTermText } from '$lib/sim-page/funding-copy';
 import type { TimelineScore } from '$lib/sim/protocol';

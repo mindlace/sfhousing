@@ -4,7 +4,7 @@ import { describe, expect, it, vi, type Mock } from 'vitest';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';
 import type { ChunksResponse } from '$lib/sim/protocol';
-import { scenarioUrls } from '$lib/sim/scenario/load';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
 import { compileTimeline } from '../policy/compile';
 import { staticsOf } from '../statics';
@@ -46,7 +46,7 @@ async function fixture(over: Partial<DatasetDeps> = {}): Promise<Dataset> {
   const chunks = createChunkSet(manifest, deps);
   const ds = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     chunks,
     deps,
     createLru<string, GeneratedBuilding | null>(1000),
@@ -94,7 +94,7 @@ describe('loadDataset', () => {
     const deps = depsOf({ load: async () => ({ code: 'scenario-invalid', message: 'bad' }) });
     const r = await loadDataset(
       manifest,
-      scenarioUrls(manifest)!,
+      simInputUrls(manifest)!,
       createChunkSet(manifest, deps),
       deps,
       createLru(10),

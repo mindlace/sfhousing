@@ -2,7 +2,7 @@
 import { lookupsOf, type LeverLookups } from '$lib/sim/levers/apply';
 import type { StageScale } from '$lib/sim/levers/timers';
 import { MAX_SCALE, MIN_SCALE, type TimedStage } from '$lib/sim/levers/types';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { PolicyFrame } from './frame';
 
 const ROUTES = ['discretionary', 'streamlined', 'permitOnly'] as const;

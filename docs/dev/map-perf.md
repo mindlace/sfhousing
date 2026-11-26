@@ -206,6 +206,8 @@ Apple M5 Pro; main `083fb7ae` against branch `dd688b51`, alternated main-1, bran
 | scenario.bench rev0 bench funding                    | 10130 ms                            | 24143, 24277 ms   | 24370, 24735 ms   | fails on both trees; branch within 10%                            |
 | declutter far setup                                  | 30 ms                               | 30.3 ms once      | none              | main fails once; branch met                                       |
 
+The `scenario.bench` rows are a dated measurement of a file since removed.
+
 Main's own engine misses these bars: the funded world-month, the scenario bench cases, host.perf's no-slice check (once on each tree), the swap install cadence, compile step(20), world.bench 48 worlds and declutter far setup (once). Finding for the owner: #154 (`083fb7ae`) made main miss them. Before it, main at `be6467dc` read 97.4 and 93.4 µs for the funded month; it now reads 337.6 and 327.7 µs, about 3.5 times slower, and the scenario bench is up to about 5 times slower than before #154. These are main's costs, recorded with main's figures and the bar; they are not this build's, and their tests are left failing on both trees (`funded-month.perf.spec.ts` keeps its 250 µs bar, its comment and its test name).
 
 The map-stream worst flush is an intermittent spike: one branch run of two went over the bar (38.35 ms at month 348, 71 cells; p95 20.3 ms on both trees). It is recorded as a budget that failed once, not restated. Before #154 the spike was seen on main too (34.9 and 43.27 ms).

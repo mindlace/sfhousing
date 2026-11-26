@@ -1,13 +1,13 @@
 // A fake timeline worker behind the real TimelineClient: records every request, emits responses on
 // demand and crashes through `onerror`, as a real Worker would. Plus message builders over the
 // hand-built chunks of `fixtures.ts` (test values, not data).
-import type { ScenarioWorkerLike } from '$lib/sim/scenario-client';
-import type { WorkerRequest } from '$lib/sim/scenario/types';
+import type { WorkerLike } from '$lib/sim/timeline-client';
 import type {
   TimelineErrorCode,
   TimelineHostRequest,
   TimelineHostResponse,
-  TimelineResponse
+  TimelineResponse,
+  WorkerRequest
 } from '$lib/sim/timeline-protocol';
 import type { ScoreStatics } from '$lib/sim/world/score/types';
 import type { TimelineUpdate } from '$lib/map/types';
@@ -16,10 +16,10 @@ import { chunk } from './fixtures';
 type Req = TimelineHostRequest;
 type Of<T extends TimelineResponse['type']> = Extract<TimelineResponse, { type: T }>;
 
-export class FakeTimelineWorker implements ScenarioWorkerLike {
+export class FakeTimelineWorker implements WorkerLike {
   posts: Req[] = [];
   terminated = false;
-  onmessage: ScenarioWorkerLike['onmessage'] = null;
+  onmessage: WorkerLike['onmessage'] = null;
   onerror: ((e: ErrorEvent) => void) | null = null;
   onmessageerror: ((e: MessageEvent) => void) | null = null;
 

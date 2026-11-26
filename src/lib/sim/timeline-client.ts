@@ -1,6 +1,5 @@
 // Main-thread client for the timeline host (ensemble-runner rule 22): the rev floors on policy
-// edits and opens, crash and restart (re-opening with the last policy), and the lookups of ScenarioClient
-// unchanged. Mirrors ScenarioClient's crash handling (scenario-client.ts), which it leaves alone.
+// edits and opens, crash and restart (re-opening with the last policy), and the lookups.
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { BBox } from '$lib/plan';
@@ -9,21 +8,35 @@ import type { Day } from '$lib/timelapse/time';
 import type { BrushCatalog, BrushQuery } from './levers/brushes';
 import { LookupRequests } from './lookup-requests';
 import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev } from './protocol';
+import type { WorkerLike as SimWorkerLike } from './client';
 import type {
   BrushLotsResult,
   HeightLidsResult,
   LotAtResult,
   LotOutlinesResult,
   PreviewResult,
-  ScenarioResponse,
-  WorkerRequest
-} from './scenario/types';
-import type { ScenarioWorkerInput, ScenarioWorkerLike } from './scenario-client';
-import type {
+  SharedResponse,
   TimelineHostRequest,
   TimelineHostResponse,
-  TimelineResponse
+  TimelineResponse,
+  WorkerRequest
 } from './timeline-protocol';
+
+export interface WorkerLike {
+  postMessage(msg: WorkerRequest): void;
+  onmessage: ((e: { data: TimelineHostResponse }) => void) | null;
+  /** A script error or failed module load in the worker (a real Worker has both). */
+  onerror?: ((e: ErrorEvent) => void) | null;
+  onmessageerror?: ((e: MessageEvent) => void) | null;
+  terminate(): void;
+}
+
+/**
+ * What the constructor and `restart` take. `spawnSimWorker()` returns the editor's `WorkerLike`,
+ * whose `onmessage` is typed for `SimResponse` and is not assignable to this `WorkerLike`'s
+ * (contravariance); it is the same real Worker, so it is accepted here without a cast.
+ */
+export type WorkerInput = WorkerLike | SimWorkerLike;
 
 /** The window, in model months (40 years). */
 export const WINDOW_MONTHS = 480;
@@ -50,7 +63,7 @@ export interface TimelineClientEvents {
   /** Every error, whatever its rev: the caller compares `rev` with what it sent. */
   onError?(m: Of<'error'>): void;
   onChunks?(c: ChunksResponse): void;
-  onHeights?(m: Extract<ScenarioResponse, { type: 'heights' }>): void;
+  onHeights?(m: Extract<SharedResponse, { type: 'heights' }>): void;
   /** The worker crashed. Retry is `restart(spawnSimWorker())`, which re-opens the timeline. */
   onCrash?(e: Event): void;
 }
@@ -69,7 +82,7 @@ export interface TimelineClientEvents {
  * timeline was opened.
  */
 export class TimelineClient {
-  #worker: ScenarioWorkerLike;
+  #worker: WorkerLike;
   #events: TimelineClientEvents;
   #lookups: LookupRequests;
   #rev = 0;
@@ -83,8 +96,8 @@ export class TimelineClient {
   #disposed = false;
   #crashed = false;
 
-  constructor(worker: ScenarioWorkerInput, events: TimelineClientEvents) {
-    this.#worker = worker as ScenarioWorkerLike;
+  constructor(worker: WorkerInput, events: TimelineClientEvents) {
+    this.#worker = worker as WorkerLike;
     this.#events = events;
     this.#lookups = new LookupRequests((msg) => this.#worker.postMessage(msg));
     this.#attach(this.#worker);
@@ -184,12 +197,12 @@ export class TimelineClient {
    * Replaces a crashed (or any) worker with a fresh one and, when a timeline was open, re-opens it
    * with the last policy and lots at a new rev, so older answers stay stale.
    */
-  restart(worker: ScenarioWorkerInput): void {
+  restart(worker: WorkerInput): void {
     if (this.#disposed) return;
     this.#detach();
     this.#crashed = false;
     this.#lookups.closed = false;
-    this.#worker = worker as ScenarioWorkerLike;
+    this.#worker = worker as WorkerLike;
     this.#attach(this.#worker);
     if (this.#manifest !== null && this.#policy !== null) this.#sendOpen();
   }
@@ -201,7 +214,7 @@ export class TimelineClient {
     this.#detach();
   }
 
-  #attach(worker: ScenarioWorkerLike): void {
+  #attach(worker: WorkerLike): void {
     worker.onmessage = (e) => this.#receive(e.data as TimelineHostResponse);
     worker.onerror = (e) => this.#crash(worker, e);
     worker.onmessageerror = (e) => this.#crash(worker, e);
@@ -216,7 +229,7 @@ export class TimelineClient {
     this.#lookups.resolveAll();
   }
 
-  #crash(worker: ScenarioWorkerLike, e: Event): void {
+  #crash(worker: WorkerLike, e: Event): void {
     if (this.#disposed || worker !== this.#worker || this.#crashed) return;
     console.error('[sim] worker crashed', e);
     this.#crashed = true;

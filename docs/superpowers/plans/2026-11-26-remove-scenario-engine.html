@@ -1,0 +1,485 @@
+<article>
+  <header>
+    <h1>Remove the scenario engine implementation plan</h1>
+    <p>Deletes the old Monte Carlo engine, its worker mode and every test that compared the step engine with it, and moves what the step engine still calls into <code>src/lib/sim/world/</code>, without changing a single simulated number.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd><code>src/lib/sim/scenario/</code> and <code>src/lib/sim/scenario-client.ts</code> no longer exist, no test compares the step engine with the old engine, and the live remainder sits under <code>src/lib/sim/world/</code>.</dd>
+      <dt>Architecture</dt>
+      <dd>Four cuts, each ending green: the parity tests outside <code>scenario/</code>; the worker side (the <code>'scenario'</code> router mode, the scenario host and client, the scenario message types); the run side (<code>simulate.ts</code>, <code>engine.ts</code> pruned to four functions, the funded pass, the old treasury and line); then one move of what is left into <code>world/</code> by a scripted import rewrite. Docs and a dataset upload close the branch. The step engine's own byte-for-byte pins (<code>world.golden.*</code>, <code>funding/funded.golden.*</code>) and the fixture reach check prove nothing moved.</dd>
+      <dt>Tech Stack</dt>
+      <dd>TypeScript, SvelteKit 2, Vitest (server, client, pipeline projects), a throwaway Node codemod in the session scratchpad, <code>git mv</code>, <code>perl -pi</code> for word renames, ripgrep for the gates.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-26-remove-scenario-engine-design.html</code></dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>"Anti-goal: a change in what the game shows. Every simulation number, map frame and card stays as it is today." Proof used throughout: <code>src/lib/sim/world/world.golden.*</code> and <code>src/lib/sim/world/funding/funded.golden.*</code> pass, and their JSON fixtures (<code>world/fixtures/world-events-mini-seed1.json</code>, <code>world/funding/fixtures/funded-events-mini-seed1.json</code>) show no diff against <code>main</code>.</li>
+      <li>"Non-goal: rewriting the borrowed rules in the world's own style, or changing any model behaviour." Code moves verbatim; only imports, names in the rename table and comments change.</li>
+      <li>"Dataset keys and the manifest's on-disk field names do not change." Also unchanged (builder's call, they name data or wire values, not the engine): <code>$lib/data/scenario-codec</code> and <code>ScenarioParcels</code>, <code>scenario-yield</code>, <code>manifest.scenarios</code>, <code>MINI_SCENARIO_URLS</code>, the pipeline's <code>scenario</code> step, the error codes <code>'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal'</code> and the page phase <code>'no-scenario'</code>.</li>
+      <li>"Specs and plans under <code>docs/superpowers/</code> are history and stay as they are."</li>
+      <li>Hot-path world modules bind imports once through <code>import * as xModule</code> and a destructure (<code>stage.ts:15-25</code>, docs/dev/world-core.md "Cost"). Keep that pattern for every moved import in those files.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>: every kept or new test calls <code>expect</code>.</li>
+      <li>No new dependencies. Never compound <code>cd ... &amp;&amp; cmd</code>; run every command from the worktree root. Conventional Commits, no attribution trailers.</li>
+      <li>Port 4173 may belong to another session: never kill a process on it; e2e runs go through signoff.</li>
+      <li>Baselines and scratch outputs go in <code>.superpowers/remove-scenario/</code> (gitignored, <code>.gitignore:3</code>).</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A <code>vi.mock</code> path that stops matching after the move.</strong> Vitest then mocks nothing and the test may pass for the wrong reason (<code>host.perf.spec.ts:199-207</code>, <code>remedies.spec.ts:28</code>, <code>provenance.spec.ts:51</code>). Expected: every mock names the moved module. Pinned in Task 4 step <code>t4-s7</code>.</li>
+      <li><strong>The page bundle pulling in worker code.</strong> <code>SimPage.svelte:67</code> imports <code>PREVIEW_MAX_LOTS</code>; its new home must import nothing. Pinned by the import-free assertion in Task 2 step <code>t2-s1</code>.</li>
+      <li><strong>Lookups before any <code>openTimeline</code>.</strong> In editor mode a brush, outline, preview, lid or lot-at request must still be answered <code>no-session</code> (catalog <code>null</code>), and <code>prefetch</code>, <code>retryChunks</code> and <code>parcelSummary</code> must still reach the editor. Pinned in the rewritten <code>worker-router.spec.ts</code> (Task 2).</li>
+      <li><strong>The browser engine.</strong> Moved modules must still give byte-identical events in the browser: Task 4 runs the client-project goldens (<code>world.golden.svelte.spec.ts</code>, <code>funded.golden.svelte.spec.ts</code>).</li>
+      <li><strong>The pipeline's import walk.</strong> <code>pipeline/lib/cars/backcast.ts:21</code> reaches <code>rng.ts</code>; <code>pipeline/test/version-paths.test.ts</code> must pass with the new <code>PATHS</code> entry, and a change to the moved file must still move the code hash. Pinned in Task 4 step <code>t4-s1</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <section id="sec-layout">
+      <h3>Layout inside <code>world/</code></h3>
+      <aside data-kind="decision"><strong>Builder's call</strong> Pure model rules the world borrows go in <code>world/rules/</code>; the <code>SimInput</code> and how it is built and loaded go in <code>world/input/</code>; the score helpers join <code>world/score/</code>; the rest sits beside its one consumer. Reason: each folder then names what its files are, and no file name collides with an existing world file.</aside>
+      <table id="tbl-moves">
+        <caption>Where each live module goes (Task 4)</caption>
+        <thead>
+          <tr><th scope="col">From <code>src/lib/sim/scenario/</code></th><th scope="col">To <code>src/lib/sim/world/</code></th><th scope="col">What survives</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>engine.ts</code></th><td><code>rules/stages.ts</code></td><td><code>nextStage</code>, <code>isSkipped</code>, <code>revisionRatio</code>, <code>pathwayFrom</code> (engine.ts:93, 644, 401, 910), after Task 3</td></tr>
+          <tr><th scope="row"><code>rng.ts</code></th><td><code>rules/rng.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>funding.ts</code></th><td><code>rules/funding.ts</code></td><td>all but <code>checkFinance</code>, <code>newPoolState</code>; plus <code>lineKey</code> and <code>NEVER_KEY_DAY</code> from <code>funded.ts</code></td></tr>
+          <tr><th scope="row"><code>types.ts</code></th><td><code>input/types.ts</code></td><td><code>Schedule</code>, <code>SimInput</code>, <code>Massing</code>, <code>ProjectCard</code>, <code>TimelineScore</code>, <code>TargetProgressAt</code></td></tr>
+          <tr><th scope="row"><code>input.ts</code></th><td><code>input/build.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>load.ts</code></th><td><code>input/load.ts</code></td><td>all but the <code>initScenario</code> checks</td></tr>
+          <tr><th scope="row"><code>policy.ts</code></th><td><code>input/policy.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>market.ts</code></th><td><code>input/market.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>dates.ts</code></th><td><code>dates.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>massing.ts</code></th><td><code>massing.ts</code></td><td>all but <code>massingsFor</code></td></tr>
+          <tr><th scope="row"><code>lot-at.ts</code></th><td><code>runner/lot-at.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>card.ts</code></th><td><code>score/project-card.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>score.ts</code></th><td><code>score/targets.ts</code></td><td>what production calls (Task 3)</td></tr>
+          <tr><th scope="row"><code>finance-score.ts</code></th><td><code>score/finance.ts</code></td><td>what production calls (Task 3)</td></tr>
+          <tr><th scope="row"><code>test/money-identities.ts</code></th><td><code>score/test/money-identities.ts</code></td><td>all</td></tr>
+          <tr><th scope="row"><code>fixtures/*</code> still imported</th><td><code>fixtures/*</code> (same file names)</td><td>orphans deleted (Task 3 step <code>t3-s8</code>)</td></tr>
+          <tr><th scope="row">each <code>X.spec.ts</code> / <code>X.property.spec.ts</code> of a moved module</th><td>beside it, renamed after it (<code>input.spec.ts</code> → <code>input/build.spec.ts</code>, <code>footprint.spec.ts</code> → <code>massing.footprint.spec.ts</code>)</td><td>kept cases</td></tr>
+        </tbody>
+      </table>
+      <p>Deleted outright: <code>simulate.ts</code> (<code>Master</code> moves to <code>world/read.ts</code>), <code>scenario-host.ts</code>, <code>preview.ts</code>, <code>band.ts</code>, <code>geometry.ts</code>, <code>line.ts</code>, <code>funded.ts</code>, <code>money.ts</code> (<code>LedgerEvent</code> moves to <code>world/types.ts</code>), the golden suites and their builders, and <code>src/lib/sim/scenario-client.ts</code>. The worker's budgets move to <code>world/runner/budget.ts</code> (Task 2).</p>
+    </section>
+
+    <section id="sec-renames">
+      <h3>Renames</h3>
+      <aside data-kind="decision"><strong>Builder's call</strong> Symbols that name the old engine, mode, client or host are renamed; symbols that name the dataset's <code>scenarios/</code> files are not (see Global Constraints). Reason: the spec's goal is about the engine, and the data names are on disk.</aside>
+      <table id="tbl-renames">
+        <caption>Symbol renames</caption>
+        <thead>
+          <tr><th scope="col">Old</th><th scope="col">New</th><th scope="col">Where it ends up</th><th scope="col">Task</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>ScenarioWorkerInput</code></th><td><code>WorkerInput</code></td><td><code>src/lib/sim/timeline-client.ts</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>ScenarioWorkerLike</code></th><td><code>WorkerLike</code></td><td><code>src/lib/sim/timeline-client.ts</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>ScenarioErrorCode</code></th><td><code>LoadErrorCode</code> (same five values)</td><td><code>scenario/load.ts</code>, then <code>world/input/load.ts</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>ScenarioRequest</code> (the shared part)</th><td><code>SharedRequest</code> (already exists, now self-contained)</td><td><code>src/lib/sim/timeline-protocol.ts</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>ScenarioResponse</code> (the shared part)</th><td><code>SharedResponse</code></td><td><code>src/lib/sim/timeline-protocol.ts</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>WorkerRequest</code>, <code>WorkerResponse</code></th><td>same names, new members</td><td><code>src/lib/sim/timeline-protocol.ts</code></td><td>2</td></tr>
+          <tr><th scope="row"><code>loadScenario</code></th><td><code>loadSimInput</code></td><td><code>world/input/load.ts</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>scenarioUrls</code> / <code>ScenarioUrls</code></th><td><code>simInputUrls</code> / <code>SimInputUrls</code></td><td><code>world/input/load.ts</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>ScenarioInputError</code></th><td><code>SimInputError</code></td><td><code>world/input/build.ts</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>engineModule</code> (namespace alias)</th><td><code>stagesModule</code></td><td><code>world/{stage,world,pipeline,holds}.ts</code></td><td>4</td></tr>
+          <tr><th scope="row"><code>goldenInput</code></th><td><code>miniFzpInput</code></td><td><code>world/test/mini.ts</code></td><td>1</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sec-oracles">
+      <h3>Score oracles</h3>
+      <aside data-kind="decision"><strong>Default, pending Q2</strong> <code>shownSeries</code> (score.ts:183), <code>tierSeries</code> (finance-score.ts:239) and <code>moneyOf</code> (finance-score.ts:496) lose their last production caller with the scenario host, but six world score specs use them to fold the world's own rows over the whole history and compare that with the world's incremental chunks. They move to <code>world/score/test/oracles.ts</code> and those cases stay. Cases that compare the world with an old engine <em>rule</em> or <em>run</em> (<code>scaledTransition</code>, <code>ordinaryMonth</code>, <code>runOf</code>, the funded latents, <code>Treasury</code>, <code>simulateDetailed</code>) go. Reason: a fold over the world's own rows checks the world against itself and does not limit the model.</aside>
+    </section>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="question"><strong>Q1, the dataset version (blocks Task 6 and merge)</strong> The spec's anti-goal "Moving code must not change <code>codeTreeHash</code>" cannot hold. <code>PATHS</code> (pipeline/lib/version.ts:41-53) hashes the whole <code>pipeline</code> directory and <code>src/lib/data</code>, <code>src/lib/timelapse</code>, <code>src/lib/sim/cars</code>, as git blob listings with paths. This branch must edit files there: <code>pipeline/lib/version.ts</code> itself (its <code>PATHS</code> names <code>src/lib/sim/scenario/rng.ts</code>), <code>pipeline/lib/cars/backcast.ts:21</code> (imports that <code>rng.ts</code>), <code>pipeline/test/{fixture-funding,simulate-replay,version}.test.ts</code>, <code>pipeline/test/fzp-cal/funding.test.ts</code>, <code>pipeline/test/enrichment/market-json.test.ts</code>, <code>pipeline/test/helpers/temp-repo.ts</code>, <code>src/lib/data/gross-table.test.ts</code>, <code>src/lib/timelapse/model.test.ts</code> and <code>src/lib/sim/cars/purposes.spec.ts</code>. docs/dev/pipeline.md:118 says any such change, "a pipeline test, a refactor, a comment", needs a build and upload. <strong>Recommendation:</strong> accept a new dataset version and run Task 6, which proves every data file is byte-identical to <code>main</code>'s version apart from <code>manifest.json</code> and <code>report.json</code>, and that the reach check reads the same. The only other way keeps <code>scenario/rng.ts</code>, <code>scenario/funding.ts</code>, <code>scenario/score.ts</code>, the mini fixtures and <code>simulate.ts</code> in place, which defeats the spec's first goal.</aside>
+    <aside data-kind="question"><strong>Q2, score oracles</strong> Keep the fold oracles as test support (the default above), or delete them and the cases that use them, about 15 cases across <code>world/score/{series,tiers,lapse,award-order,money,limits}.spec.ts</code> and <code>world/funding/funded.spec.ts</code>? <strong>Recommendation:</strong> keep them (see <a href="#sec-oracles">Score oracles</a>). To delete instead: in Task 3 step <code>t3-s5</code>, delete the three functions and every case that calls them, rather than moving them.</aside>
+    <aside data-kind="question"><strong>Q3, the spec's grep gate</strong> "a grep for … <code>referee</code> or <code>golden</code> … finds nothing" would also hit code the spec keeps: the step engine's own pins <code>world.golden.*</code> and <code>funding/funded.golden.*</code> (the proof of the anti-goal), <code>src/lib/generator</code> and <code>src/lib/timelapse</code> goldens, <code>pipeline/test/golden.test.ts</code> and the fixture golden directory. <strong>Recommendation:</strong> keep those, and use the narrower gate in Task 5 step <code>t5-s3</code>. The plan renames <code>world/funding/referee-ledger.spec.ts</code> (identity checks, no old engine) to <code>ledger-identities.spec.ts</code>, so <code>referee</code> does disappear.</aside>
+  </section>
+
+  <section id="sec-file-structure">
+    <h2>File Structure</h2>
+    <ul>
+      <li><strong>Create</strong> <code>src/lib/sim/world/runner/budget.ts</code>: the worker's time and size budgets and its cancel token, imported by the world host, the runner and the page. It imports nothing.</li>
+      <li><strong>Create</strong> <code>src/lib/sim/world/test/mini-dataset.ts</code>: the mini city's dataset bodies by URL and its manifest. This is the data half of <code>scenario/test/host-harness.ts</code>, Node-only.</li>
+      <li><strong>Create</strong> <code>src/lib/sim/world/score/test/oracles.ts</code>: whole-history folds the score specs compare with.</li>
+      <li><strong>Create</strong> <code>src/lib/sim/world/rules/</code>, <code>src/lib/sim/world/input/</code>: see the moves table above.</li>
+      <li><strong>Modify</strong> <code>src/lib/sim/timeline-protocol.ts</code>: becomes the one worker protocol beside the editor's (<code>protocol.ts</code>).</li>
+      <li><strong>Modify</strong> <code>src/lib/sim/router.ts</code>, <code>worker.ts</code>, <code>timeline-client.ts</code>, <code>lookup-requests.ts</code>, <code>protocol.ts</code>, <code>src/lib/timeline/{session.svelte.ts,TimelineMode.svelte,test/fake-timeline-worker.ts}</code>.</li>
+      <li><strong>Modify</strong> <code>pipeline/lib/version.ts</code>, <code>pipeline/test/{version.test.ts,helpers/temp-repo.ts,fixture-funding.test.ts}</code>, <code>chreode.config.ts</code>, <code>eslint.config.js</code>.</li>
+      <li><strong>Delete</strong> <code>src/lib/sim/scenario/</code>, <code>src/lib/sim/scenario-client.ts</code> and its spec, <code>scripts/profile-sim-load.mjs</code> (it drives <code>initScenario</code>/<code>setLevers</code>, which no page sends), and the parity tests listed in Task 1.</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Baselines, then the parity tests out</h2>
+    <p>Every test outside <code>scenario/</code> that holds the world to an old engine rule or run goes. After this, nothing outside <code>scenario/</code> needs <code>simulate.ts</code>, the engine's run, the funded latents or <code>Treasury</code>, except production code and fixtures.</p>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li>Delete: <code>src/lib/sim/world/{referee.spec.ts,referee.variants.spec.ts,pipeline.referee.spec.ts,frames.referee.spec.ts,map-stream.equality.spec.ts}</code>, <code>src/lib/sim/world/score/series.referee.spec.ts</code>, <code>pipeline/test/simulate-replay.test.ts</code>, <code>src/lib/sim/levers/pairing.spec.ts</code>, <code>src/lib/sim/levers/display-engine.spec.ts</code>, <code>src/lib/sim/scenario/simulate.golden.{shared.ts,test.ts,svelte.spec.ts}</code>, <code>src/lib/sim/scenario/simulate.finance.golden.{shared.ts,test.ts,svelte.spec.ts}</code>, <code>src/lib/sim/scenario/fixtures/{build-golden.ts,build-finance-golden.ts,golden-seed1.json,golden-finance-seed1.json}</code></li>
+      <li>Modify (cases out): see the table below</li>
+      <li>Modify: <code>src/lib/sim/world/test/mini.ts</code>, <code>src/lib/sim/world/statics.spec.ts:3</code>, <code>src/lib/sim/world/test/timeline.ts:107-129</code> (<code>OldOpts</code>, <code>oldInputOf</code> out)</li>
+      <li>Rename: <code>src/lib/sim/world/funding/referee-ledger.spec.ts</code> → <code>ledger-identities.spec.ts</code>, and drop its header sentence about the retired tolerance referee</li>
+      <li>Rewrite: <code>pipeline/test/fixture-funding.test.ts</code></li>
+    </ul>
+    <table id="tbl-t1-cases">
+      <caption>Cases to delete: every <code>it</code> or <code>describe</code> that calls one of these names, then the imports and helpers left unused</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Names</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/sim/levers/apply.spec.ts</code></th><td><code>simulateDetailed</code>, <code>simulateNet</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/pipeline.spec.ts</code></th><td><code>simulateDetailed</code>, <code>oldInputOf</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/score/series.spec.ts</code></th><td><code>simulateDetailed</code>, <code>oldInputOf</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/stage.spec.ts</code></th><td><code>scaledTransition</code> (<code>revisionRatio</code> stays live)</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/rates.spec.ts</code></th><td><code>ordinaryMonth</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/clocks.spec.ts</code></th><td><code>runOf</code>, <code>drawsOf</code>, <code>financePreOf</code>, <code>kindLatentInto</code>, <code>latentsWith</code>, <code>newKindOut</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/pools.spec.ts</code>, <code>src/lib/sim/world/policy/money.spec.ts</code></th><td><code>Treasury</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/host.heights.spec.ts</code></th><td><code>createScenarioHost</code> (the case at :316)</td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/runner/lookups.spec.ts</code></th><td>the <code>describe('differential against the old host')</code> at :161 and its helpers <code>oldSession</code>, <code>ask</code>, <code>oldSummary</code>. <code>createBrushService files</code> stays; it moves off the harness in Task 2.</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Interfaces:</strong></p>
+    <ul>
+      <li>Consumes: <code>runFunded(statics, timeline, seed, through, opts?) → { world, events, ledger }</code> and <code>oneMoneyTimeline(input, fin)</code> (<code>world/funding/test/fixtures.ts:416, 171</code>); <code>staticsOf</code> (<code>world/statics.ts</code>); <code>horizonMonth(asOf)</code> (<code>world/test/run.ts:19</code>).</li>
+      <li>Produces: <code>miniFzpInput(): SimInput</code> in <code>src/lib/sim/world/test/mini.ts</code>, the body of <code>goldenInput</code> (<code>simulate.golden.cases.ts:23-30</code>) verbatim, finance included. <code>miniInput()</code> becomes <code>miniFzpInput()</code> without <code>finance</code>, memoised as before. <code>simulate.golden.cases.ts</code> and <code>simulate.finance.golden.cases.ts</code> stay until Task 3: scenario specs still import them.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Record the baselines. Expected: a dataset version line, the reach-check report and its exit code, saved.
+        <pre><code data-lang="sh">mkdir -p .superpowers/remove-scenario
+npm run pipeline -- version &gt; .superpowers/remove-scenario/version-before.txt
+npx tsx scripts/reach-check.ts e2e/fixtures/data/fixture-0 &gt; .superpowers/remove-scenario/reach-fixture-before.txt; echo "exit $?" &gt;&gt; .superpowers/remove-scenario/reach-fixture-before.txt</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Rewrite <code>pipeline/test/fixture-funding.test.ts</code> on the step engine. It keeps its name, header and 120 s timeout. Build <code>input</code> as today, then:
+        <pre><code data-lang="ts">it('runs with finance and funds at least one start on seed 1', () => {
+  // ... input as today
+  expect(input.finance).toBeDefined();
+  const { ledger } = runFunded(
+    staticsOf(input),
+    oneMoneyTimeline(input, input.finance!),
+    1,
+    horizonMonth(input.asOf)
+  );
+  expect(ledger.some((e) =&gt; e.kind === 'commit')).toBe(true);
+}, 120_000);</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Check that the test can fail: temporarily pass <code>{ ...input.finance!, pools: [] }</code> (or the nearest empty finance the type allows), run it and see FAIL, then restore.
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/fixture-funding.test.ts</code></pre>
+        Expected after restoring: PASS.</li>
+      <li id="t1-s4"><input type="checkbox"> Add <code>miniFzpInput</code> to <code>world/test/mini.ts</code> and point <code>miniInput</code> and <code>world/statics.spec.ts</code> at it.</li>
+      <li id="t1-s5"><input type="checkbox"> Delete the files listed above, delete the cases in <code>tbl-t1-cases</code>, drop <code>OldOpts</code>/<code>oldInputOf</code>, and rename <code>referee-ledger.spec.ts</code>. A file whose last case went is deleted.</li>
+      <li id="t1-s6"><input type="checkbox"> Delete test helpers nothing imports any more. For each file under <code>src/lib/sim/world/**/test/</code> and <code>src/lib/sim/levers/</code> test helpers, check its importers; delete it if there are none and no script uses it. Expected candidates: none besides the two symbols above, since <code>test/map-stream-equal.ts</code> still serves <code>map-stream.spec.ts</code> and <code>map-stream.rewind.spec.ts</code>.
+        <pre><code data-lang="sh">rg -l "map-stream-equal|same\.node|map-stream-deps|map-stream-cities" src scripts</code></pre>
+      </li>
+      <li id="t1-s7"><input type="checkbox"> Run the gates. Expected: no output from rg; check, lint and the suites PASS; <code>git diff main --stat -- src/lib/sim/world/fixtures src/lib/sim/world/funding/fixtures</code> empty.
+        <pre><code data-lang="sh">rg -l "simulateDetailed|simulateNet|createScenarioHost|\bTreasury\b|\brunOf\b|ordinaryMonth|scaledTransition|latentsWith|oldInputOf" src pipeline scripts -g '!src/lib/sim/scenario/**'
+npm run check
+npm run lint
+npx vitest run --project server src/lib/sim src/lib/fzp src/lib/timeline
+npx vitest run --project client src/lib/sim/world
+npx vitest run --project pipeline pipeline/test/fixture-funding.test.ts</code></pre>
+      </li>
+      <li id="t1-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src/lib/sim pipeline/test
+git commit -m "test: remove the tests that held the step engine to the scenario engine"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The worker without the scenario mode</h2>
+    <p>The router knows two modes, <code>'editor'</code> and <code>'timeline'</code>. The scenario host, its client and its messages are gone. The timeline protocol carries the lookups' shapes itself.</p>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li>Create: <code>src/lib/sim/world/runner/budget.ts</code>, <code>src/lib/sim/world/runner/budget.spec.ts</code>, <code>src/lib/sim/world/test/mini-dataset.ts</code></li>
+      <li>Modify: <code>src/lib/sim/timeline-protocol.ts</code>, <code>router.ts</code>, <code>worker.ts</code>, <code>worker-router.spec.ts</code>, <code>timeline-client.ts</code>, <code>timeline-client.spec.ts</code>, <code>timeline-client.host.spec.ts</code>, <code>lookup-requests.ts</code>, <code>protocol.ts:104-105</code>; <code>src/lib/timeline/{session.svelte.ts,TimelineMode.svelte,test/fake-timeline-worker.ts}</code>; <code>src/lib/sim-page/SimPage.svelte:67</code>; <code>src/lib/sim/world/{host.ts,runner/runner.ts,runner/lookups.spec.ts}</code>; <code>src/lib/map/height/height.bench.spec.ts:9</code>; <code>src/lib/sim/scenario/{types.ts,load.ts}</code>; every other importer of the moved types (TypeScript will list them)</li>
+      <li>Delete: <code>src/lib/sim/scenario-client.ts</code>, <code>scenario-client.spec.ts</code>, <code>src/lib/sim/scenario/{scenario-host.ts,scenario-host.*.spec.ts,scenario.bench.spec.ts,preview.ts,band.ts,band.spec.ts,geometry.ts,test/host-harness.ts,test/funded-calibration.ts}</code>, <code>scripts/profile-sim-load.mjs</code></li>
+    </ul>
+    <p><strong>Interfaces:</strong></p>
+    <ul>
+      <li>Produces, <code>world/runner/budget.ts</code>, no imports:
+        <pre><code data-lang="ts">export const SLICE_MS = 50;
+export const SLICE_PLAN_MS = SLICE_MS - 5;
+export const MEMO_CAP = 60_000;
+export const PREVIEW_MAX_LOTS = 300;
+export interface Token { readonly cancelled: boolean; later(fn: () =&gt; void, ms: number): unknown; cancel(): void; }
+export function createToken(deps: {
+  setTimeout(fn: () =&gt; void, ms: number): unknown;
+  clearTimeout(h: unknown): void;
+}): Token; // body verbatim from scenario-host.ts:211-235</code></pre>
+        Doc comments come from scenario-host.ts:203-254 and preview.ts:1-9, without the references to bands, twins and <code>scenario.bench.spec.ts</code>.</li>
+      <li>Produces, <code>src/lib/sim/timeline-protocol.ts</code>, the shapes moved verbatim from <code>scenario/types.ts</code>:
+        <ul>
+          <li><code>HeightLidsResult</code>, <code>LotAtResult</code>, <code>PreviewResult</code>, <code>LotOutlinesResult</code>, <code>BrushLotsResult</code> (types.ts:182-218);</li>
+          <li><code>SharedRequest</code>: the nine request shapes it lists today (<code>prefetch</code>, <code>retryChunks</code>, <code>parcelSummary</code> with <code>day</code> and optional <code>projectId</code>, <code>resolveBrush</code>, <code>brushCatalog</code>, <code>lotOutlines</code>, <code>previewBuildings</code>, <code>heightLids</code>, <code>lotAt</code>), written out rather than extracted from <code>ScenarioRequest</code>;</li>
+          <li><code>SharedResponse</code>: <code>ScenarioResponse</code> less <code>error</code>, <code>timeline</code>, <code>ranks</code>, <code>levers</code>, that is <code>ReadyResponse | ChunksResponse</code> and the <code>parcelSummary</code>, <code>brushLots</code>, <code>brushCatalog</code>, <code>lotOutlines</code>, <code>previewBuildings</code>, <code>heights</code>, <code>heightLids</code> and <code>lotAt</code> answers;</li>
+          <li><code>TimelineErrorCode = LoadErrorCode | 'timeline'</code>, with <code>TimelineHostResponse = TimelineResponse | SharedResponse</code>;</li>
+          <li><code>WorkerRequest = SimRequest | TimelineHostRequest</code> and <code>WorkerResponse = SimResponse | TimelineHostResponse</code>.</li>
+        </ul></li>
+      <li>Produces, <code>scenario/load.ts</code> (moved in Task 4): <code>export type LoadErrorCode = 'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal'</code>, used by <code>LoadFailure.code</code>. Deleted: <code>InitRequest</code>, <code>seedProblem</code>, <code>leversProblem</code>, <code>validateInitRequest</code>, <code>SEED_END</code> (load.ts:26, 74-112).</li>
+      <li>Produces, <code>scenario/types.ts</code>: left with <code>Schedule</code>, <code>SimInput</code>, <code>Simulate</code> (gone in Task 3), <code>Massing</code>, <code>ProjectCard</code>, <code>TimelineScore</code>, <code>TargetProgressAt</code>. <code>protocol.ts:105</code> <code>export type *</code> becomes <code>export type { ProjectCard, TimelineScore } from './scenario/types'</code>, the two names 16 files import through it.</li>
+      <li>Produces, <code>timeline-client.ts</code>: <code>WorkerInput</code> and <code>WorkerLike</code>, the bodies of <code>ScenarioWorkerInput</code>/<code>ScenarioWorkerLike</code> from scenario-client.ts.</li>
+      <li>Produces, <code>world/test/mini-dataset.ts</code>: <code>miniDataset(opts?: { policy?: boolean; gross?: boolean }): { bodies: Map&lt;string, unknown&gt;; manifest(): Manifest }</code>, the bodies and manifest of host-harness.ts:132-150 and its <code>manifest()</code>, together with <code>MINI_POLICY_URL</code>, <code>MINI_TRANSIT_URL</code>, <code>MINI_NEIGHBORHOODS_URL</code>, <code>MINI_FRONTAGE_URL</code>, <code>binOf</code> and <code>grossBinOf</code>. It drops the host, the clock, the posts and the failure injection.</li>
+      <li>Router: <code>RouterDeps</code> loses <code>createScenario</code>. <code>post</code> takes <code>SimResponse | TimelineHostResponse</code> and <code>handle</code> takes <code>WorkerRequest</code>. Routing is what timeline mode and editor mode do today, minus <code>initScenario</code>, <code>reroll</code> and <code>setLevers</code>. The <code>no-session</code> messages read "… needs a timeline session" (<strong>builder's call</strong>: the old text names a removed mode, and nothing displays it).</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write <code>world/runner/budget.spec.ts</code>:
+        <pre><code data-lang="ts">it('imports nothing, so the page can take PREVIEW_MAX_LOTS', () =&gt; {
+  const src = readFileSync(new URL('./budget.ts', import.meta.url), 'utf8');
+  expect(src).not.toMatch(/^\s*import\s/m);
+});
+it('a cancelled token clears its timers and drops later calls', () =&gt; {
+  // fake setTimeout/clearTimeout recording handles
+  // later(fn, 10) twice → 2 timers; cancel() → both cleared; later after cancel → undefined, no timer
+  // fn never runs after cancel
+});
+it('keeps the budgets', () =&gt; {
+  expect([SLICE_MS, SLICE_PLAN_MS, MEMO_CAP, PREVIEW_MAX_LOTS]).toEqual([50, 45, 60_000, 300]);
+});</code></pre>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run it and see it fail (module not found).
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/runner/budget.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Create <code>budget.ts</code>, then point <code>world/host.ts:28-29</code>, <code>runner/runner.ts:74</code>, <code>SimPage.svelte:67</code>, <code>runner/lookups.spec.ts:21</code> and <code>height.bench.spec.ts:9</code> at it. Run the spec again. Expected: PASS.</li>
+      <li id="t2-s4"><input type="checkbox"> Rewrite <code>worker-router.spec.ts</code> against the two-mode router. Drop every case about the scenario host. Keep the timeline-mode cases, and keep the editor-mode cases with <code>createScenario</code> gone. They must cover: editor requests go to the editor and never create the timeline host; <code>prefetch</code>, <code>retryChunks</code> and <code>parcelSummary</code> (sent in the editor's shape) reach the editor before any <code>openTimeline</code> and after a later <code>init</code>; each lookup in editor mode answers <code>no-session</code> (<code>brushCatalog</code> <code>null</code>); <code>heightLots</code> answers <code>result: null</code> in timeline mode; <code>openTimeline</code> disposes the editor and creates the timeline host once; <code>init</code> disposes it; <code>setPolicy</code> outside timeline mode is <code>bad-request</code>; <code>viewMonth</code> and <code>resyncMap</code> outside it post nothing; an unknown message posts nothing. Run it and see it fail to compile against the old <code>RouterDeps</code>.
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/worker-router.spec.ts</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Move the types into <code>timeline-protocol.ts</code> and <code>load.ts</code> as in Interfaces. Cut <code>router.ts</code> and <code>worker.ts</code> (no <code>createScenarioHost</code>). Add <code>WorkerInput</code>/<code>WorkerLike</code> to <code>timeline-client.ts</code> and repoint its importers (session, TimelineMode, the fake worker, both timeline-client specs). Repoint <code>lookup-requests.ts</code>, and fix the comments there that name <code>ScenarioClient</code>. Delete the files listed. Run the router spec. Expected: PASS.</li>
+      <li id="t2-s6"><input type="checkbox"> Create <code>world/test/mini-dataset.ts</code> and move <code>runner/lookups.spec.ts</code>'s <code>createBrushService files</code> and <code>newDataset</code> onto it (<code>miniDataset({ policy: true })</code> in place of <code>makeScenarioHarness({ policy: true })</code>).
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/world/runner/lookups.spec.ts</code></pre>
+        Expected: PASS.</li>
+      <li id="t2-s7"><input type="checkbox"> Gates. Expected: rg prints nothing; everything else PASS.
+        <pre><code data-lang="sh">rg -n "scenario-client|scenario-host|ScenarioWorker|ScenarioRequest|ScenarioResponse|ScenarioErrorCode|initScenario|createScenario|'reroll'|'setLevers'" src scripts e2e
+npm run check
+npm run lint
+npx vitest run --project server src/lib/sim src/lib/timeline src/lib/sim-page src/lib/fzp src/lib/map
+npx vitest run --project client src/lib/sim src/lib/timeline src/lib/sim-page</code></pre>
+      </li>
+      <li id="t2-s8"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src scripts
+git commit -m "refactor(sim): remove the scenario worker mode, host and client"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The run loop out</h2>
+    <p><code>simulate.ts</code> goes, and so does everything only it reached. <code>engine.ts</code> keeps the four functions the world calls. Still in place under <code>scenario/</code>; the move is Task 4.</p>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li>Create: <code>src/lib/sim/world/score/test/oracles.ts</code> (Q2 default)</li>
+      <li>Modify: <code>src/lib/sim/scenario/{engine.ts,funding.ts,score.ts,finance-score.ts,types.ts,massing.ts,card.ts,load.ts}</code>, <code>src/lib/sim/world/{read.ts,types.ts,test/run.ts,score/card.ts,score/card.spec.ts}</code>, the world score specs that import the oracles, and every importer of <code>LedgerEvent</code> from <code>scenario/money</code> or <code>scenario/finance-score</code></li>
+      <li>Delete: <code>src/lib/sim/scenario/{simulate.ts,simulate.spec.ts,simulate.property.spec.ts,simulate.incidence.property.spec.ts,simulate.golden.cases.ts,simulate.finance.golden.cases.ts,engine-*.spec.ts,initiation.property.spec.ts,multiphase.spec.ts,pairing.property.spec.ts,funded.ts,funded.spec.ts,money.ts,money.spec.ts,line.ts,line.spec.ts,test/finance-harness.ts}</code>, after moving the <code>lineKey</code> cases out of <code>funded.spec.ts</code></li>
+    </ul>
+    <p><strong>Interfaces:</strong></p>
+    <ul>
+      <li>Consumes: <code>miniFzpInput</code> (Task 1) wherever a kept scenario spec used <code>goldenInput</code>.</li>
+      <li>Produces: <code>export interface Master</code> in <code>world/read.ts</code>, verbatim from simulate.ts:13-17. <code>card.ts</code>, <code>score.ts</code>, <code>world/score/card.ts</code>, <code>world/score/card.spec.ts</code> and <code>world/test/run.ts</code> import it from there.</li>
+      <li>Produces: <code>export type LedgerEvent = { day: Day; pool: string; programme: string | null; kind: 'in' | 'commit' | 'release' | 'spend' | 'repay' | 'loss'; dollars: Dollars }</code> in <code>world/types.ts</code>, the shape of engine.ts:70-76 (<code>Dollars</code> from the import engine.ts uses). <code>finance-score.ts:44</code> re-exports it from there.</li>
+      <li>Produces: <code>engine.ts</code> exporting only <code>nextStage</code>, <code>isSkipped</code>, <code>revisionRatio</code> and <code>pathwayFrom</code>, with their doc comments and the private <code>Histogram</code> type, and imports only what they use. The header comment becomes one line naming the four rules.</li>
+      <li>Produces: <code>funding.ts</code> gains <code>NEVER_KEY_DAY</code>, <code>lineKey(keyDay: Day, rank: number, kind: ProjectKind): number</code> and their private constants <code>RANK_LIMIT</code>, <code>KEY_DAY_SCALE</code> (funded.ts:62-65, 1053-1061). It loses <code>checkFinance</code> and <code>newPoolState</code>, and <code>available</code> and <code>PoolState</code> unless funding.ts still uses them. <code>world/funding/{apply,clocks,policy,serve,shadow}*.ts</code> import from <code>scenario/funding</code>.</li>
+      <li>Produces, <code>world/score/test/oracles.ts</code>: <code>shownSeries</code>, <code>tierSeries</code> and <code>moneyOf</code> with today's signatures, moved with the private helpers only they use (<code>addNet</code>, <code>NetAcc</code>, <code>Acc</code>, <code>addMaster</code>, and the rest TypeScript asks for). <code>score.ts</code> loses those and <code>NetSeries</code>, <code>netOf</code>, <code>planEffectOf</code>, <code>assembleScore</code>; <code>finance-score.ts</code> loses <code>tierSeries</code> and <code>moneyOf</code>. A type a production file still uses stays where it is.</li>
+      <li>Produces: <code>types.ts</code> without <code>Simulate</code>; <code>massing.ts</code> without <code>massingsFor</code>.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Move the <code>lineKey</code>/<code>NEVER_KEY_DAY</code> cases of <code>scenario/funded.spec.ts</code> into <code>scenario/funding.spec.ts</code>, importing from <code>./funding</code>. Run and see them fail (not exported).
+        <pre><code data-lang="sh">npx vitest run --project server src/lib/sim/scenario/funding.spec.ts</code></pre>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Move <code>lineKey</code> and <code>NEVER_KEY_DAY</code> into <code>funding.ts</code> and repoint the world's importers. Run again. Expected: PASS.</li>
+      <li id="t3-s3"><input type="checkbox"> Move <code>Master</code> into <code>world/read.ts</code> and <code>LedgerEvent</code> into <code>world/types.ts</code>, and repoint their importers.</li>
+      <li id="t3-s4"><input type="checkbox"> In the kept scenario specs (<code>card</code>, <code>footprint</code>, <code>policy</code>, <code>score</code>, <code>finance-score</code>, <code>finance-score.property</code>, <code>funding</code>, <code>input</code>, <code>massing</code>), delete every case that calls <code>simulate</code>, <code>simulateDetailed</code>, <code>runEngine</code>, <code>runEngineWith</code>, <code>runOf</code>, <code>goldenRun</code>, <code>runCollect</code>, <code>checkLedger</code>, <code>Treasury</code> or <code>fundedPass</code>, or that reads <code>simulate.golden.cases</code> or <code>simulate.finance.golden.cases</code> for anything but an input. Replace <code>goldenInput()</code> with <code>miniFzpInput()</code>. A file whose last case went is deleted.</li>
+      <li id="t3-s5"><input type="checkbox"> Create <code>world/score/test/oracles.ts</code>, and point the world score specs and <code>world/funding/funded.spec.ts</code> at it. Kept scenario-spec cases that test those functions on hand-built inputs import them from there too. (Under Q2 = delete: delete the functions and their cases instead.)</li>
+      <li id="t3-s6"><input type="checkbox"> Prune <code>engine.ts</code>, <code>funding.ts</code>, <code>score.ts</code>, <code>finance-score.ts</code>, <code>types.ts</code> and <code>massing.ts</code> as in Interfaces, then delete the files listed.</li>
+      <li id="t3-s7"><input type="checkbox"> Check the moved modules for dead exports. For every export left in <code>src/lib/sim/scenario/*.ts</code>, count callers outside its own file and its own spec. A name with none is deleted with its cases, unless it is a fixture or test support.
+        <pre><code data-lang="sh">rg -o --no-filename "^export (?:async )?(?:function|const|class|interface|type) (\w+)" -r '$1' src/lib/sim/scenario/*.ts | sort -u &gt; .superpowers/remove-scenario/exports.txt
+while read n; do c=$(rg -lw "$n" src scripts pipeline e2e -g '!src/lib/sim/scenario/**' | wc -l); echo "$c $n"; done &lt; .superpowers/remove-scenario/exports.txt | sort -n | head -40</code></pre>
+        Expected: every name at 0 is either used inside its own module (keep) or deleted now.</li>
+      <li id="t3-s8"><input type="checkbox"> Delete orphaned fixtures. For each file in <code>src/lib/sim/scenario/fixtures/</code> and <code>scenario/test/</code>, check its importers; delete it if there are none. Expected survivors include <code>mini-parcels</code>, <code>mini-projects</code>, <code>mini-calibration.json</code>, <code>mini-finance</code>, <code>mini-market</code>, <code>mini-policy</code>, <code>mini-brushes</code>, <code>mini-bin</code>, <code>mini-gross</code>, <code>synth-city</code>, <code>bench-finance</code>, <code>tiny-queue</code>, <code>select-rows</code> and <code>test/money-identities</code>.
+        <pre><code data-lang="sh">for f in src/lib/sim/scenario/fixtures/* src/lib/sim/scenario/test/*; do b=$(basename "$f"); b=${b%.ts}; echo "$(rg -l "/$b['.]" src scripts pipeline e2e | rg -v "^$f$" | wc -l) $f"; done | sort -n</code></pre>
+      </li>
+      <li id="t3-s9"><input type="checkbox"> Gates. Expected: rg prints nothing; the world goldens PASS with no fixture diff; the rest PASS.
+        <pre><code data-lang="sh">rg -n "scenario/(simulate|funded|money|line|band|geometry)\b|simulateDetailed|runEngine|fundedPass" src scripts pipeline e2e
+npm run check
+npm run lint
+npx vitest run --project server src/lib/sim src/lib/fzp src/lib/timeline src/lib/sim-page src/lib/data src/lib/timelapse
+npx vitest run --project client src/lib/sim
+npx vitest run --project pipeline pipeline/test/fixture-funding.test.ts pipeline/test/fzp-cal/funding.test.ts pipeline/test/enrichment/market-json.test.ts
+git diff main --stat -- src/lib/sim/world/fixtures src/lib/sim/world/funding/fixtures</code></pre>
+      </li>
+      <li id="t3-s10"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src
+git commit -m "refactor(sim): remove the scenario run loop and prune the engine to the rules the world calls"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: Move what is left into <code>world/</code></h2>
+    <p>One scripted move per <code>tbl-moves</code>, the renames of <code>tbl-renames</code>, the hash paths, the configs and a comment sweep. After this, <code>src/lib/sim/scenario/</code> does not exist.</p>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li>Move: every file left under <code>src/lib/sim/scenario/</code>, per <code>tbl-moves</code></li>
+      <li>Modify: every importer in <code>src</code>, <code>scripts</code>, <code>pipeline</code>, <code>e2e</code> (the codemod); <code>pipeline/lib/version.ts:51</code>; <code>pipeline/test/version.test.ts:107-116</code>; <code>pipeline/test/helpers/temp-repo.ts:60, 73</code>; <code>chreode.config.ts:19-50</code>; <code>eslint.config.js:72</code>; <code>pipeline/lib/fzp-cal/funding.ts:188</code> (comment); the world comments that cite old files</li>
+      <li>Scratch (not committed): <code>.superpowers/remove-scenario/moves.json</code>, <code>.superpowers/remove-scenario/move.mjs</code></li>
+    </ul>
+    <p><strong>Interfaces:</strong></p>
+    <ul>
+      <li>Consumes: the state after Task 3.</li>
+      <li>Produces: the paths of <code>tbl-moves</code> and the names of <code>tbl-renames</code>. In <code>PATHS</code>, <code>'src/lib/sim/world/rules/rng.ts'</code> replaces <code>'src/lib/sim/scenario/rng.ts'</code>.</li>
+      <li>Codemod contract, <code>node .superpowers/remove-scenario/move.mjs .superpowers/remove-scenario/moves.json</code>. <code>moves.json</code> maps repo-relative file paths, old to new, one entry per file, specs and fixtures included. The script:
+        <ol>
+          <li>reads every <code>.ts</code>, <code>.svelte</code>, <code>.js</code> and <code>.mjs</code> file under <code>src</code>, <code>scripts</code>, <code>pipeline</code> and <code>e2e</code>;</li>
+          <li>finds each module specifier in <code>from '…'</code>, <code>import '…'</code>, <code>import('…')</code> (type positions included) and <code>vi.mock('…'</code>;</li>
+          <li>resolves it (<code>$lib/</code> → <code>src/lib/</code>, or relative to the importer's <em>old</em> path), trying the bare path, <code>.ts</code>, <code>.js</code> → <code>.ts</code>, <code>.svelte.ts</code> and <code>/index.ts</code>;</li>
+          <li>when the target or the importer is in the map, writes the specifier for the new locations: <code>$lib/…</code> if it was <code>$lib/…</code>, otherwise relative to the importer's <em>new</em> directory with a leading <code>./</code> or <code>../</code>, keeping the original's extension form (none, <code>.js</code> or <code>.json</code>);</li>
+          <li>then runs <code>git mv</code> for each entry.</li>
+        </ol>
+        It leaves non-specifier strings alone.</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> In <code>pipeline/test/version.test.ts</code>, change the "ignores" case's path from <code>src/lib/sim/scenario/engine.ts</code> to <code>src/lib/sim/world/rules/stages.ts</code> (and <code>temp-repo.ts</code>'s directory and file to match). Add a case that does not touch <code>tempRepo()</code>'s initial files, since the fixed hash of <code>'treeHash refactor'</code> depends on them:
+        <pre><code data-lang="ts">it('codeTreeHash covers src/lib/sim/world/rules/rng.ts', async () =&gt; {
+  const { dir, git } = tempRepo();
+  mkdirSync(join(dir, 'src/lib/sim/world/rules'), { recursive: true });
+  writeFileSync(join(dir, 'src/lib/sim/world/rules/rng.ts'), 'export const r = 1;\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'rng');
+  const before = await codeTreeHash(dir);
+  writeFileSync(join(dir, 'src/lib/sim/world/rules/rng.ts'), 'export const r = 2;\n');
+  git('commit', '-q', '-am', 'rng 2');
+  expect(await codeTreeHash(dir)).not.toBe(before);
+});</code></pre>
+        Run it and see the new case fail.
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/version.test.ts</code></pre>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Write <code>moves.json</code> from <code>tbl-moves</code>, covering every file still under <code>src/lib/sim/scenario/</code>, and run the codemod. Expected: <code>ls src/lib/sim/scenario</code> fails (no such directory); <code>git status</code> shows renames.
+        <pre><code data-lang="sh">find src/lib/sim/scenario -type f | sort
+node .superpowers/remove-scenario/move.mjs .superpowers/remove-scenario/moves.json
+ls src/lib/sim/scenario</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Apply the Task 4 renames of <code>tbl-renames</code> as whole words in <code>src</code>, <code>scripts</code>, <code>pipeline</code> and <code>e2e</code>, one name at a time:
+        <pre><code data-lang="sh">rg -lw loadScenario src scripts pipeline e2e | xargs perl -pi -e 's/\bloadScenario\b/loadSimInput/g'</code></pre>
+        Do the same for <code>scenarioUrls</code>, <code>ScenarioUrls</code>, <code>ScenarioInputError</code> and <code>engineModule</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Set <code>PATHS</code> to <code>'src/lib/sim/world/rules/rng.ts'</code>. In <code>chreode.config.ts</code>, add <code>'src/lib/sim/world/rules/rng.ts'</code> to the PATHS rule and replace <code>'src/lib/sim/scenario/**'</code> in the pipeline-tests rule with <code>'src/lib/sim/world/**'</code> (<strong>builder's call</strong>: the ported fixture-funding test reaches most of <code>world/</code>). Remove <code>'src/lib/sim/scenario/**'</code> from <code>eslint.config.js</code>, since <code>world/**</code> is already listed. Run both version tests. Expected: PASS.
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/version.test.ts pipeline/test/version-paths.test.ts</code></pre>
+      </li>
+      <li id="t4-s5"><input type="checkbox"> Sweep the comments that cite the old engine. In each hit, delete the citation ("(scenario-host.ts:474-483)", "engine.ts:825"), or turn "as the old host" or "today's engine" into a plain statement of the rule. Leave the data names of Global Constraints alone.
+        <pre><code data-lang="sh">rg -n -i "scenario-host|scenario/|scenario-client|ScenarioClient|old host|old engine|scenario engine|simulate\.ts|engine\.ts|simulateDetailed|initScenario|referee" src scripts pipeline e2e</code></pre>
+        Expected after the sweep: no output.</li>
+      <li id="t4-s6"><input type="checkbox"> Type check and lint. Fix any import the codemod could not resolve by hand.
+        <pre><code data-lang="sh">npm run check
+npm run lint</code></pre>
+      </li>
+      <li id="t4-s7"><input type="checkbox"> Check that every <code>vi.mock</code> names a file that exists. Expected: no output.
+        <pre><code data-lang="sh">rg -o --no-filename "vi\.mock\('(\\\$lib/[^']+)'" -r '$1' src | sort -u | sed 's#^\$lib/#src/lib/#' | while read p; do ls "$p.ts" "$p.svelte.ts" "$p/index.ts" "$p" 2&gt;/dev/null | head -1 | grep -q . || echo "missing $p"; done</code></pre>
+      </li>
+      <li id="t4-s8"><input type="checkbox"> Run the full unit suite and the pipeline tests that do not build tiles. Expected: PASS, and no diff in the golden fixtures.
+        <pre><code data-lang="sh">npm run test:unit
+npx vitest run --project client src/lib/sim/world/world.golden.svelte.spec.ts src/lib/sim/world/funding/funded.golden.svelte.spec.ts
+npx vitest run --project pipeline pipeline/test/version.test.ts pipeline/test/version-paths.test.ts pipeline/test/fixture-funding.test.ts pipeline/test/fzp-cal pipeline/test/enrichment pipeline/test/cars
+git diff main --stat -- src/lib/sim/world/fixtures src/lib/sim/world/funding/fixtures e2e/fixtures</code></pre>
+      </li>
+      <li id="t4-s9"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A src scripts pipeline e2e chreode.config.ts eslint.config.js
+git commit -m "refactor(sim): move the rules the step engine borrows into world/"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Docs and the final gates</h2>
+    <p><strong>Files:</strong></p>
+    <ul>
+      <li>Modify: <code>CLAUDE.md</code> (the world-funding index line names the retired tolerance referee), <code>docs/dev/{ensemble-runner,finance-engine,finance-levers,finance-score,map-stream,market,pipeline,policy-timeline,sim-levers,sim-page,testing,timeline-ui,world-core,world-funding,world-score}.md</code> and any other file the gate below finds. In <code>pipeline.md</code>, "Changes on the funding paths" (:78) names <code>src/lib/sim/world/rules/funding.ts</code> in place of the two scenario paths. Do not touch its generated Data quality section.</li>
+    </ul>
+    <p><strong>Interfaces:</strong> none. Docs only state what exists: drop a paragraph about the scenario engine, a referee or the old golden suites, and fix a moved path, rather than describing the removal.</p>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Find every mention. Rewrite or delete each one.
+        <pre><code data-lang="sh">rg -n -i "sim/scenario|scenario/|scenario-host|scenario-client|scenario engine|old engine|old host|simulateDetailed|simulateNet|simulate\.ts|engine\.ts|initScenario|referee|golden suite|simulate\.golden|ScenarioClient|ScenarioHost" CLAUDE.md docs/dev</code></pre>
+        Expected after: only hits that are dataset paths (<code>scenarios/fzp/…</code>) remain.</li>
+      <li id="t5-s2"><input type="checkbox"> Run the docs checks. Expected: PASS.
+        <pre><code data-lang="sh">npx prettier --check CLAUDE.md docs/dev
+npx vitest run --project server scripts/docs-index.spec.ts
+npx vitest run --project pipeline pipeline/test/quality.test.ts</code></pre></li>
+      <li id="t5-s3"><input type="checkbox"> The narrowed gate (Q3). Expected: both commands print nothing.
+        <pre><code data-lang="sh">ls src/lib/sim/scenario src/lib/sim/scenario-client.ts 2&gt;/dev/null
+rg -n "sim/scenario|scenario-host|scenario-client|simulateDetailed|simulateNet|initScenario|referee|simulate\.golden|ScenarioHost|ScenarioClient|ScenarioWorker|loadScenario|scenarioUrls" src scripts pipeline e2e docs/dev CLAUDE.md chreode.config.ts eslint.config.js</code></pre>
+      </li>
+      <li id="t5-s4"><input type="checkbox"> The fixture reach check equals the baseline. Expected: <code>diff</code> prints nothing.
+        <pre><code data-lang="sh">npx tsx scripts/reach-check.ts e2e/fixtures/data/fixture-0 &gt; .superpowers/remove-scenario/reach-fixture-after.txt; echo "exit $?" &gt;&gt; .superpowers/remove-scenario/reach-fixture-after.txt
+diff .superpowers/remove-scenario/reach-fixture-before.txt .superpowers/remove-scenario/reach-fixture-after.txt</code></pre>
+      </li>
+      <li id="t5-s5"><input type="checkbox"> The whole local suite. The pipeline project needs <code>tippecanoe</code> and <code>pmtiles</code>; e2e may wait on port 4173 (never kill it). Expected: PASS.
+        <pre><code data-lang="sh">npm run check
+npm run lint
+npm run test:unit
+npm run test:pipeline</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add -A CLAUDE.md docs/dev
+git commit -m "docs: drop the scenario engine from the developer docs"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: The dataset for the new code hash (after Q1)</h2>
+    <p>Only once the partner has accepted Q1. This follows docs/dev/pipeline.md "Finishing a branch that changes the dataset" (:59-74), with a byte comparison added.</p>
+    <p><strong>Files:</strong> none committed. Outputs go in <code>pipeline/out/&lt;v&gt;/</code> and <code>.superpowers/remove-scenario/</code>.</p>
+    <p><strong>Interfaces:</strong></p>
+    <ul>
+      <li>Consumes: <code>version-before.txt</code> (Task 1), as <code>&lt;v0&gt;</code>, <code>main</code>'s version, served at <code>https://sfhousing-staging.mindlace.net/data/&lt;v0&gt;/</code>.</li>
+      <li>Scratch: <code>.superpowers/remove-scenario/compare.mjs &lt;outDir&gt; &lt;origin&gt; &lt;v0&gt;</code>. For every file under <code>outDir</code> except <code>manifest.json</code> and <code>report.json</code>, it fetches <code>&lt;origin&gt;/data/&lt;v0&gt;/&lt;relative path&gt;</code> and compares sha256. It prints each mismatch or missing file and exits 1 if there is any.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Merge, restore the cache, build, and note the new version <code>&lt;v&gt;</code>. Expected: the build passes every invariant without <code>--skip-tiles</code>.
+        <pre><code data-lang="sh">git merge origin/main
+npm run pipeline -- fetch --restore
+npm run pipeline -- build
+npm run pipeline -- version</code></pre>
+      </li>
+      <li id="t6-s2"><input type="checkbox"> Compare the bytes with <code>main</code>'s dataset. Expected: exit 0. Any mismatch stops the task and goes to the partner.
+        <pre><code data-lang="sh">node .superpowers/remove-scenario/compare.mjs pipeline/out/&lt;v&gt; https://sfhousing-staging.mindlace.net &lt;v0&gt;</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Run the reach check on the new build and on <code>main</code>'s published version. Expected: both exit 0 with the same report lines. Record the last line of the money monotonicity report (a report, not a gate).
+        <pre><code data-lang="sh">npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;
+npx tsx scripts/reach-check.ts --version &lt;v0&gt;
+npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code></pre>
+      </li>
+      <li id="t6-s4"><input type="checkbox"> Upload and verify. Expected: both succeed.
+        <pre><code data-lang="sh">npm run pipeline -- upload &lt;v&gt;
+npm run pipeline -- verify &lt;v&gt; --origin https://sfhousing-staging.mindlace.net</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Sign off. Expected: <code>chreode/signoff</code> posts. If <code>origin/main</code> moved meanwhile, the dataset step fails and the loop returns to <code>t6-s1</code>.
+        <pre><code data-lang="sh">npm run signoff</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage.</strong> Design 1 (parity tests first) is Task 1, with the scenario-internal golden suites. Design 2 (entry points, worker names) is Task 2. Design 3 (prune <code>engine.ts</code>, delete what nothing calls) is Task 3. Design 4 (rewrite imports, delete the folder) is Task 4. Design 5 (dataset version) is Task 4 for the paths and Task 6, pending Q1. Design 6 (docs) is Task 5. Done-when: the gates in <code>t5-s3</code>, the suites in <code>t5-s5</code>, signoff in <code>t6-s5</code>, the version under Q1, and the reach check in <code>t5-s4</code> and <code>t6-s3</code>.</li>
+      <li><strong>Found beyond the spec's list.</strong> Parity cases in <code>levers/apply.spec.ts</code>, <code>levers/pairing.spec.ts</code>, <code>levers/display-engine.spec.ts</code>, <code>world/{pipeline,stage,rates,host.heights}.spec.ts</code>, <code>world/score/series.spec.ts</code>, <code>world/funding/{clocks,pools}.spec.ts</code>, <code>world/policy/money.spec.ts</code> and <code>world/runner/lookups.spec.ts</code>. Also <code>pipeline/test/fixture-funding.test.ts</code>, which is not a parity test, runs the old engine, so it is ported. The world's goldens are its own pins and stay. <code>scripts/profile-sim-load.mjs</code> drives the removed protocol.</li>
+      <li><strong>Names.</strong> <code>SharedRequest</code>, <code>SharedResponse</code>, <code>WorkerRequest</code>, <code>WorkerResponse</code>, <code>LoadErrorCode</code>, <code>WorkerInput</code>, <code>WorkerLike</code>, <code>miniFzpInput</code>, <code>miniDataset</code>, <code>Master</code> (world/read.ts), <code>LedgerEvent</code> (world/types.ts) and the <code>budget.ts</code> names are used the same way in every task.</li>
+    </ul>
+  </section>
+</article>

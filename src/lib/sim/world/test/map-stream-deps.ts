@@ -2,7 +2,7 @@
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru, type Lru } from '$lib/sim/lru';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { createMapStream, type MapStreamDeps } from '../map-stream';
 import type { PolicyTimeline } from '../policy/frame';
 import type { Statics } from '../statics';

@@ -4,7 +4,7 @@ import { TYPOLOGY_ORDER } from './types';
 import type { TimedPackedCell } from './types';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { ParcelId } from '$lib/data/parcel';
-import type { Massing, Schedule } from '$lib/sim/scenario/types';
+import type { Massing, Schedule } from '$lib/sim/world/input/types';
 import { OPEN_DAY } from '$lib/timelapse/time';
 import { PATHWAYS, STAGE_ORDER } from '$lib/timelapse/types';
 

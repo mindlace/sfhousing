@@ -6,7 +6,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import type { TimelineUpdate } from '$lib/map/types';
 import { createLru } from '$lib/sim/lru';
-import { scenarioUrls } from '$lib/sim/scenario/load';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
@@ -48,7 +48,7 @@ beforeAll(async () => {
   };
   const r = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     createChunkSet(manifest, deps),
     deps,
     createLru<string, GeneratedBuilding | null>(1000),

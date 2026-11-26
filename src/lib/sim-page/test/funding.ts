@@ -1,7 +1,7 @@
 /** Funding fixtures for the Funding tab and Results money rows specs. */
 import { fixtureMarketCalibration } from '$lib/fzp/fixtures/market';
 import { FIX_ASOF } from '$lib/fzp/fixtures/cards';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import type { Calibration, Day, Pool, PoolKind, Programme, Provenance } from '$lib/timelapse/types';
 import { DEFAULT_POLICY, type SimPolicy } from '../policy';

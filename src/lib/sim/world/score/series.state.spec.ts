@@ -1,6 +1,6 @@
 // `WorldSeries` state: `finalThrough` against the steps, saving and restoring, and the order checks.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { staticsOf, type Statics } from '../statics';
 import { benchInput, fixtureInput } from '../test/cities.node';
 import { horizonMonth } from '../test/run';

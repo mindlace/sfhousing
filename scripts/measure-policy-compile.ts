@@ -18,10 +18,10 @@ import {
   type BrushData
 } from '../src/lib/sim/levers/brushes';
 import { createYieldRecompute, type GrossCache } from '../src/lib/sim/levers/recompute';
-import { synthCity, synthPolicy } from '../src/lib/sim/scenario/fixtures/synth-city';
-import { buildSimInput } from '../src/lib/sim/scenario/input';
-import { loadScenario, scenarioUrls } from '../src/lib/sim/scenario/load';
-import type { SimInput } from '../src/lib/sim/scenario/types';
+import { synthCity, synthPolicy } from '../src/lib/sim/world/fixtures/synth-city';
+import { buildSimInput } from '../src/lib/sim/world/input/build';
+import { loadSimInput, simInputUrls } from '../src/lib/sim/world/input/load';
+import type { SimInput } from '../src/lib/sim/world/input/types';
 import { customQuery, queryKey, type CustomBrush } from '../src/lib/sim-page/policy';
 import {
   queriesOf4,
@@ -68,9 +68,9 @@ async function live(dir: string): Promise<World> {
   const manifest = parseManifest(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')));
   const prefix = `/data/${manifest.datasetVersion}/`;
   const pathOf = (url: string) => join(dir, url.slice(prefix.length));
-  const urls = scenarioUrls(manifest);
+  const urls = simInputUrls(manifest);
   if (!urls?.policy) throw new Error('manifest has no policy.bin');
-  const loaded = await loadScenario(
+  const loaded = await loadSimInput(
     {
       fetch: async (url) => ({
         ok: true,

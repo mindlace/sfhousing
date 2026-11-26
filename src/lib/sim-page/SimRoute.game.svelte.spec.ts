@@ -36,7 +36,7 @@ import { DRAFT_DISCARDED } from '$lib/sim-page/funding-copy';
 import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
 import { newOwnPool } from '$lib/sim-page/funding-edit';
 import { dateMeasure } from '$lib/sim-page/funding-presets';
-import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { BACK_TO_TREE, boughtLabel, restoredLabel } from '$lib/timeline/game-copy';
 import { fundingCalibration } from '$lib/sim-page/test/funding';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';

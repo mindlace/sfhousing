@@ -41,7 +41,7 @@ import {
   TIER_SOURCES,
   tierBaselineLabel,
   type Money
-} from '$lib/sim/scenario/finance-score';
+} from '$lib/sim/world/score/finance';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { ResolvedTerms } from '$lib/timelapse/types';
 import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chunk-log';
@@ -53,9 +53,9 @@ import {
   scoreOfView
 } from '$lib/timeline/results';
 import { calendarMonths, chunk, statics } from '$lib/timeline/test/fixtures';
-import { tierTargetsOf } from '$lib/sim/scenario/score';
+import { tierTargetsOf } from '$lib/sim/world/score/targets';
 import type { TimelineView } from '$lib/sim/world/score/types';
-import type { TimelineScore } from '$lib/sim/scenario/types';
+import type { TimelineScore } from '$lib/sim/world/input/types';
 import { TODAY, defaultGoal, goalStep, readGoal, type Goal } from '$lib/goal/goal';
 import { indexOfDay } from '$lib/timeline/playhead';
 

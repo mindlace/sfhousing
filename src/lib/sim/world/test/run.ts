@@ -1,8 +1,8 @@
 // Test support: running a world to a month, recording its events, and reading every row as
-// today's engine lists them. Browser-safe.
+// the world lists them. Browser-safe.
 import { HORIZON } from '$lib/fzp/time';
-import type { Master } from '$lib/sim/scenario/simulate';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Master } from '$lib/sim/world/read';
+import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import { planDue } from '../due';
 import { monthOfDay } from '../months';
@@ -66,7 +66,7 @@ export function runWorld(
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Every row read on `day`, ordered as `simulateDetailed` orders them (simulate.ts:49-52). */
+/** Every row read on `day`: pipeline (phases included) then simulated, each sorted by id. */
 export function readAll(
   world: World,
   statics: Statics,

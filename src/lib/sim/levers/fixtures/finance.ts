@@ -1,8 +1,8 @@
 // Funding fixtures for the lever specs: a four-pool baseline in the shape of the live one, and
 // funding levers at the smallest and at the largest size the parser accepts. Tier 4 values.
 import { resolveTerms } from '$lib/sim/finance';
-import type { SimInput } from '$lib/sim/scenario/types';
-import { dayOf } from '$lib/sim/scenario/dates';
+import type { SimInput } from '$lib/sim/world/input/types';
+import { dayOf } from '$lib/sim/world/dates';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Calibration, Day, Pool, Programme, TermKey } from '$lib/timelapse/types';
 import type { FinanceLevers } from '../types';

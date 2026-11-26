@@ -9,7 +9,7 @@ import type { CarData } from '$lib/data/cars-codec';
 import * as carsModule from '$lib/sim/cars';
 import type { CarDraw, CarModel } from '$lib/sim/cars';
 import * as tiersModule from '$lib/sim/finance/tiers';
-import * as rngModule from '$lib/sim/scenario/rng';
+import * as rngModule from '$lib/sim/world/rules/rng';
 import type { Statics } from '../statics';
 import * as typesModule from '../types';
 import type { CarSystem, World } from '../types';

@@ -7,10 +7,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Day } from '$lib/timelapse/time';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
-import type { ScenarioWorkerLike } from './scenario-client';
-import type { WorkerRequest } from './scenario/types';
-import { TimelineClient } from './timeline-client';
-import type { TimelineHostRequest, TimelineHostResponse } from './timeline-protocol';
+import { TimelineClient, type WorkerLike } from './timeline-client';
+import type { TimelineHostRequest, TimelineHostResponse, WorkerRequest } from './timeline-protocol';
 import { createTimelineHost } from './world/host';
 import { span, timingSet } from './world/policy/test/fixtures';
 import { datasetFetch, fakeClock } from './world/runner/test/harness';
@@ -113,7 +111,7 @@ function delayedWorker() {
     retryDelaysMs: [],
     warn: () => {}
   });
-  const w: ScenarioWorkerLike = {
+  const w: WorkerLike = {
     onmessage: null,
     postMessage(msg: WorkerRequest) {
       const req = msg as unknown as TimelineHostRequest;

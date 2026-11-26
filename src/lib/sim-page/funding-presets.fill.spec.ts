@@ -11,8 +11,8 @@ import {
 } from '$lib/sim/finance';
 import { baselineFixture, FIXTURE_AS_OF } from '$lib/sim/levers/fixtures/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Pool, Programme } from '$lib/timelapse/types';
 import { addPreset, fundingPresets } from './funding-presets';

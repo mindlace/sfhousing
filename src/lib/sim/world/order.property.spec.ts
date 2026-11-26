@@ -4,8 +4,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HORIZON } from '$lib/fzp/time';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import { precomputeOf } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { monthFirstDay, monthLastDay } from './months';
 import type { PolicyTimeline } from './policy/frame';
 import { staticsOf, type Statics } from './statics';

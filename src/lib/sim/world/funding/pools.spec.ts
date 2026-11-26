@@ -1,10 +1,10 @@
 // world-funding Task 5: pools, arrivals and money events (spec rules 12, 13, 14, 16).
 import { describe, expect, it } from 'vitest';
 import type { BundleFunding, ItemFunding } from '$lib/sim/finance';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { financeIndexOf, inflowArrivals, type Award } from '$lib/sim/scenario/funding';
-import { Treasury, type LedgerEvent } from '$lib/sim/scenario/money';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { inflowArrivals, type Award } from '$lib/sim/world/rules/funding';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';
@@ -16,7 +16,7 @@ import { staticsOf, type Statics } from '../statics';
 import { benchInput } from '../test/cities.node';
 import { NO_DAY, type StepCtx, type StepSink, type World, type WorldEvent } from '../types';
 import { withFunding } from '../world';
-import { fundOf, moneyRowsOf, poolRowOf, type FundPools } from './columns';
+import { fundOf, moneyRowsOf, poolRowOf } from './columns';
 import { frameMoney } from './frame-money';
 import { availableOf, commitAward, moneyOnEvent } from './pools';
 import { createFundingSystem } from './system';
@@ -103,26 +103,6 @@ const ENTER_MONTH = 5;
 const END_MONTH = 20;
 const dayIn = (m: number, d: number): Day => monthFirstDay(input.asOf, m) + d;
 
-/** Today's ledger for one awarded project: `Treasury.award`, then `settle` on each event day. */
-function treasuryLedger(entered: Day | undefined, end: Schedule['end']) {
-  const events: LedgerEvent[] = [];
-  const t = new Treasury(
-    financeIndexOf(fin),
-    input.asOf,
-    input.asOf + 100_000,
-    LAMBDA,
-    (e) => events.push(e),
-    () => {}
-  );
-  const s = { entered: entered === undefined ? {} : { construction: entered }, end };
-  t.award(dayIn(AWARD_MONTH, 4), AWARD, UNITS, s as unknown as Schedule);
-  const days = new Set<Day>();
-  if (entered !== undefined) days.add(entered);
-  if (end.kind !== 'open') days.add(end.day);
-  for (const d of [...days].sort((a, b) => a - b)) t.settle(d);
-  return { events, state: t.state };
-}
-
 /**
  * The same project in a world: `commitAward`, then (when it enters construction) the `'enter'`,
  * then the `'end'`, each through `moneyOnEvent` in its own month.
@@ -145,27 +125,6 @@ function worldLedger(entered: Day | undefined, how: 'complete' | 'exit', withLed
   const end: WorldEvent = { kind: 'end', row, day: dayIn(END_MONTH, 9), how };
   moneyOnEvent(ctxOf(world, END_MONTH, out), end);
   return { events, world, row, rowsAfterAward };
-}
-
-/** The pool counters of `pools` by pool id, as `PoolState`s. */
-function statesOf(pools: FundPools) {
-  return Object.fromEntries(
-    Array.from({ length: pools.n }, (_, q) => [
-      pools.id[q],
-      {
-        received: pools.received[q],
-        committed: pools.committed[q],
-        spentGrant: pools.spentGrant[q],
-        outLoan: pools.outLoan[q],
-        lostLoan: pools.lostLoan[q],
-        lostGuarantee: pools.lostGuarantee[q]
-      }
-    ])
-  );
-}
-
-function treasuryStates(state: { received: number }[]) {
-  return Object.fromEntries(fin.pools.map((p, q) => [p.id, state[q]]));
 }
 
 describe('rule 12 on the bench city (synthCity, bench baseline money)', () => {
@@ -314,8 +273,6 @@ describe('pools, arrivals and money events', () => {
     const C = dayIn(ENTER_MONTH, 2);
     const E = dayIn(END_MONTH, 9);
     const ours = worldLedger(C, 'complete');
-    const today = treasuryLedger(C, { kind: 'complete', day: E });
-    expect(ours.events).toEqual(today.events);
 
     // Explicitly: G spent on the construction day, P spent then repaid, H released.
     const G0 = Math.round(12_345.67 * UNITS);
@@ -334,7 +291,6 @@ describe('pools, arrivals and money events', () => {
     ]);
 
     const { pools } = fundOf(ours.world);
-    expect(statesOf(pools)).toEqual(treasuryStates(today.state));
     // The award made one money row per programme; the end dropped them.
     expect(ours.rowsAfterAward[1] - ours.rowsAfterAward[0]).toBe(4);
     expect(moneyRowsOf(pools, ours.row)).toEqual([0, 0]);
@@ -351,14 +307,6 @@ describe('pools, arrivals and money events', () => {
     const C = dayIn(ENTER_MONTH, 2);
     const E = dayIn(END_MONTH, 9);
     const ours = worldLedger(C, 'exit');
-    const today = treasuryLedger(C, {
-      kind: 'exit',
-      stage: 'construction',
-      reason: 'cancelled',
-      day: E
-    });
-    expect(ours.events).toEqual(today.events);
-    expect(statesOf(fundOf(ours.world).pools)).toEqual(treasuryStates(today.state));
 
     const G0 = Math.round(12_345.67 * UNITS);
     const G1 = Math.round(50_000.3 * UNITS);
@@ -379,13 +327,6 @@ describe('pools, arrivals and money events', () => {
 
     // Before construction: every commitment is released, nothing spent or lost.
     const before = worldLedger(undefined, 'exit');
-    const todayBefore = treasuryLedger(undefined, {
-      kind: 'exit',
-      stage: 'filed',
-      reason: 'withdrawn',
-      day: E
-    });
-    expect(before.events).toEqual(todayBefore.events);
     expect(before.events.filter((e) => e.day === E).map((e) => e.kind)).toEqual([
       'release',
       'release',
@@ -393,7 +334,6 @@ describe('pools, arrivals and money events', () => {
       'release'
     ]);
     const pools = fundOf(before.world).pools;
-    expect(statesOf(pools)).toEqual(treasuryStates(todayBefore.state));
     for (let q = 0; q < pools.n; q++) expect(pools.committed[q]).toBe(0);
   });
 

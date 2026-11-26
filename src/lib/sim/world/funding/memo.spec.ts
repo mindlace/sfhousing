@@ -10,9 +10,9 @@
 // against `fundableAny` and lots with a row are seen to take the unchanged path.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { miniCalibrationWithRoutes } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import { miniCalibrationWithRoutes } from '$lib/sim/world/fixtures/mini-finance';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Effect, Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Pool, Programme, ProjectKind } from '$lib/timelapse/types';

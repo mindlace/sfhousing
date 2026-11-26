@@ -2,7 +2,7 @@
 // /s/[id] (plan 5, Task 6; timeline-ui Task 15; game-shell Task 6): a published policy, read-only
 // on the timeline. The data comes through the real chain: the server codec's `load` (the stored
 // text), then the universal load (opens it on the calibration). The banner names it and links
-// Your game; there is no Remix. A fake timeline worker stands in for the scenario worker; SimMap
+// Your game; there is no Remix. A fake timeline worker stands in for the real one; SimMap
 // is a stub.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'svelte';

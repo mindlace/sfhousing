@@ -3,7 +3,7 @@
 // series the page receives; its path in a bar's box; the words in the bar's name; and the set the
 // page builds once per view.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
 import { yearsAfter } from '$lib/sim-page/funding-presets';

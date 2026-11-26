@@ -3,13 +3,14 @@
 // its own month (today counts them when the funded project completes), and money in a chunk is
 // the plan world's alone.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import { displacedShare, moneyOf, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { monthIndexer, monthsOf } from '$lib/sim/scenario/score';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { addMonths, firstOfMonth } from '$lib/sim/world/dates';
+import { displacedShare, perAddedHome, poolSeries } from '$lib/sim/world/score/finance';
+import { moneyOf } from './test/oracles';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import { monthIndexer, monthsOf } from '$lib/sim/world/score/targets';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 import { benchFunded } from '../funding/test/cities.node';
 import { fundOf, waitingAt } from '../funding/columns';
 import {

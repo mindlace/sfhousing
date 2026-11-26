@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import { debtService } from '$lib/sim/finance';
-import { checkMoneyIdentities } from '$lib/sim/scenario/test/money-identities';
+import { checkMoneyIdentities } from '$lib/sim/world/score/test/money-identities';
 import { INCOME_TIERS, type Pool } from '$lib/timelapse/types';
 import { FIX_ASOF, TIMELINE_SCORE, TIMELINE_SCORE_MONEY } from './timeline-score';
 

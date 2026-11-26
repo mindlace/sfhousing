@@ -4,8 +4,8 @@ import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { applyLevers, twinInput } from '$lib/sim/levers/apply';
 import { allNeeds, fillNeeds, resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, LeverFormatError } from '$lib/sim/levers/types';
-import { MINI_HORIZON as H } from '$lib/sim/scenario/fixtures/mini-projects';
-import { precomputeOf, type Precompute } from '$lib/sim/scenario/input';
+import { MINI_HORIZON as H } from '$lib/sim/world/fixtures/mini-projects';
+import { precomputeOf, type Precompute } from '$lib/sim/world/input/build';
 import type { ZoningLevers } from './combine';
 import type { ZoningView } from './frame';
 import {

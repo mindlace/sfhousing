@@ -6,9 +6,9 @@ Public money in the month-step engine: `src/lib/sim/world/funding/`. It plugs in
 served once a month, and each money event of an awarded project is written at the project's own
 stage event. Spec:
 [2026-11-13-world-funding-design.md](../superpowers/specs/2026-11-13-world-funding-design.md)
-(rules 1 to 21). The old engine's code (`scenario/funded.ts`, `line.ts`, `funding.ts`, `money.ts`)
-is imported, never changed; rules defined by unexported code (`segValue`, `fundingOf`, `remake`,
-`respell`) are written again here and held by the tests.
+(rules 1 to 21). The shared rules (the award rule, the line key, the pool state) are in
+`src/lib/sim/world/rules/funding.ts`; the rest of the funded step is written here and held by the
+tests.
 
 ## Files
 
@@ -90,7 +90,7 @@ writing**, or the index goes stale silently (a write without a bump is not detec
   (kind, bundle, market prototype) the largest passing size H, then the earliest member at most H
   in line order, confirmed with `awardPasses`; every H is dropped after an award.
 - **Award rule** (rule 16 as amended 2026-11-25): `awardSet` and `awardPasses`
-  (`scenario/funding.ts`) leave every programme of a short pool out, in rounds, and award what is
+  (`rules/funding.ts`) leave every programme of a short pool out, in rounds, and award what is
   left when it is not empty and its level is above 0, so a spent or short pool never keeps an
   application waiting while other pools can pay ([finance-engine.md](finance-engine.md), The award
   rule).
@@ -102,7 +102,7 @@ writing**, or the index goes stale silently (a write without a bump is not detec
   (`policy/money.ts`) makes arrivals for every pool of the frame, and a release or repayment to
   any pool of the frame is returned money (rule 10).
 - **Money events at stage events** (rule 13): `moneyOnEvent` writes spend and lend on entering
-  construction, repayment on completion, release or loss on dropping out, with today's amounts and
+  construction, repayment on completion, release or loss on dropping out, with the ledger's amounts and
   `LedgerEvent`s.
 - **Respell on the month's first day** (rule 18): a lapsed kind's spell starts on the month's first
   day on the same draws; its lot is planned again (`planAgain`).
@@ -229,13 +229,13 @@ edit after it keeps the history.
 false: `funded.spec.ts`'s rule 16 as amended, `policy.spec.ts`'s rule 16 case and random
 finances, `retained.spec.ts`'s six worlds and `apply.spec.ts`'s kind whose day fell in an applied
 month.
-`closing.spec.ts` holds closing itself; `referee-ledger.spec.ts` runs with closing on, since
+`closing.spec.ts` holds closing itself; `ledger-identities.spec.ts` runs with closing on, since
 closing moves no money.
 
 ## Rule 1's measurement (Task 1)
 
 Decision: **grouped serving** (8a); per-lot rate tables (8b) are not built. Measured 2026-11-13,
-quiet (lock held), seeds 1 to 5, months 1 to 480, from the old engine's kernels on its own runs.
+quiet (lock held), seeds 1 to 5, months 1 to 480, from the engine's kernels.
 Bench city = `synthCity` with the bench finance; live = `2026-11-10-6ee5a23d`.
 
 | µs per world-month, p90          | synthCity | live  |
@@ -307,7 +307,7 @@ answer is the same with and without it over a whole-city replan month (synthCity
 **Eligibility skip** (`apply.ts` `fundableAny`): a kind gets no clock when no frame its spell
 reads (the segments `kindClock` walks) has money offering the kind, gives the lot a chance
 (`logit` not -Infinity) and offers a least `minHomes` the lot's largest size in that view meets:
-today's `eligibleOf` (`funded.ts:232-256`) per frame, per lot, on offered programmes. Exact,
+the eligibility rule per frame, per lot, on offered programmes. Exact,
 since such a clock has no day and callers read only the day; `eligibility.spec.ts` holds it.
 
 ### Funded planning (the rowless memo, `bundleOf`, no per-call closures)
@@ -347,8 +347,7 @@ and 130 steps with every free lot replanned at month 120. On the mini city it ru
 timeline with a programme switched off and on, and a compiled timeline (`compileTimeline`) whose
 money changes three times and whose zoning changes at month 30 (a painted policy touching lots):
 events, ledger and world equal memo on and off, every memo answer agrees with `fundableAny`, and
-lots with a row and respelled rowless lots are both met. The 200-seed referee (retired on 2026-11-25,
-below) gave the table below unchanged.
+lots with a row and respelled rowless lots are both met. The table below is unchanged by it.
 
 2026-11-13, quiet (lock held), one process per row, Node v24 on an Apple M5 Pro; "bundle" is an
 esbuild bundle without `keepNames` (as a Vite build); "vitest" the perf project. The change month
@@ -419,53 +418,6 @@ All in `src/lib/sim/world/funding/`. Server project (signoff) unless noted.
 - **Golden**: `funded.golden.test.ts` (server) and `funded.golden.svelte.spec.ts` (client) against
   `fixtures/funded-events-mini-seed1.json`. Regenerate deliberately, never from signoff:
   `env -C <worktree> node_modules/.bin/tsx src/lib/sim/world/funding/fixtures/build-funded-golden.ts`.
-- **Ledger identities in signoff** `referee-ledger.spec.ts`: E1 to E7 after every step to month
+- **Ledger identities in signoff** `ledger-identities.spec.ts`: E1 to E7 after every step to month
   480, seeds 1 to 3, on synthCity (baseline money and the bench set) and fixture-0 (baseline).
-- **Tolerance referee**: retired on 2026-11-25 (below).
 - **Perf** `funded-month.perf.spec.ts` (above).
-
-## Tolerance referee (retired)
-
-Until 2026-11-25 `tolerance.referee.spec.ts` ran this engine and the old scenario engine
-(`scenario/funded.ts`) over seeds 1 to 200 to month 480 and compared net homes, awards and funded
-homes at years 5, 10, 20 and 40; `score/money.spec.ts` held a per-seed comparison of the two
-engines' money ("rule 12 against today's engine"). Both were retired with the fallback award
-(rule 16 as amended, [the spec](../superpowers/specs/2026-11-25-funding-award-rule-design.html)),
-by the owner's decision of 2026-11-25: the old engine no longer runs in production (`/sim` runs
-this engine; no client sends `initScenario`). Under the fallback award a partial award is not
-certain and may exit, and the two engines then differ by construction: this engine serves once a
-month with the month's arrivals in (rule 10, T17) and re-applies a lot freed after `apply` only
-from the next month, where the old engine serves and re-applies day by day. The measured residual
-before retiring: synthCity baseline net mean r 0.0134 at year 5 (tolerance 0.01); rule 12 equal
-money on 32 of 50 seeds (record 49). The old engine's own tests and goldens stay. The table of the
-last passing run (2026-11-13, before the fallback award) is kept for the record:
-
-| Case                | Year | net new  | net sd  | net old  | old sd  | mean r | sd r  | awards new | awards old | aw r  | funded new | funded old | fu r  |
-| ------------------- | ---- | -------- | ------- | -------- | ------- | ------ | ----- | ---------- | ---------- | ----- | ---------- | ---------- | ----- |
-| synthCity baseline  | 5    | 85201.8  | 3914.6  | 85203.0  | 3915.1  | 0.0000 | 0.000 | 24.64      | 24.59      | 0.002 | 4653.5     | 4653.1     | 0.000 |
-|                     | 10   | 196535.8 | 7447.0  | 196536.0 | 7446.9  | 0.0000 | 0.000 | 39.97      | 39.93      | 0.001 | 7770.2     | 7770.3     | 0.000 |
-|                     | 20   | 411972.3 | 11924.0 | 411982.1 | 11921.5 | 0.0000 | 0.000 | 78.14      | 78.09      | 0.001 | 15572.0    | 15572.5    | 0.000 |
-|                     | 40   | 814565.0 | 16162.0 | 814567.7 | 16160.2 | 0.0000 | 0.000 | 153.99     | 153.94     | 0.000 | 31171.7    | 31171.4    | 0.000 |
-| synthCity bench set | 5    | 85557.4  | 3957.4  | 85580.1  | 3911.1  | 0.0003 | 0.012 | 85.70      | 67.33      | 0.273 | 6875.0     | 6726.0     | 0.022 |
-|                     | 10   | 197837.0 | 7496.0  | 197834.0 | 7495.6  | 0.0000 | 0.000 | 128.25     | 108.34     | 0.184 | 10858.4    | 10673.5    | 0.017 |
-|                     | 20   | 414900.1 | 11969.2 | 414870.3 | 11970.0 | 0.0001 | 0.000 | 216.69     | 198.96     | 0.089 | 20631.3    | 20445.6    | 0.009 |
-|                     | 40   | 820533.4 | 16222.3 | 820542.3 | 16246.2 | 0.0000 | 0.001 | 389.04     | 375.16     | 0.037 | 40182.0    | 40005.0    | 0.004 |
-| live baseline       | 5    | 16552.0  | 3898.5  | 16552.0  | 3898.5  | 0.0000 | 0.000 | 25.39      | 25.38      | 0.001 | 4651.6     | 4651.3     | 0.000 |
-|                     | 10   | 36143.7  | 5364.8  | 36144.8  | 5364.6  | 0.0000 | 0.000 | 41.52      | 41.52      | 0.000 | 7772.0     | 7772.1     | 0.000 |
-|                     | 20   | 58564.9  | 5311.7  | 58569.4  | 5310.2  | 0.0001 | 0.000 | 81.67      | 81.68      | 0.000 | 15570.3    | 15570.4    | 0.000 |
-|                     | 40   | 86256.8  | 6061.7  | 86267.9  | 6073.8  | 0.0001 | 0.002 | 160.97     | 160.95     | 0.000 | 31167.6    | 31168.1    | 0.000 |
-
-T3 (funded here, ordinary there in the same month): synthCity baseline 8, bench set 2925, live 1.
-
-## Known differences from today
-
-- **T3**: within one month the world may fund a lot that today's engine starts ordinarily (or the
-  reverse), because the ordinary start and serving are ordered by system, not by day.
-- **R5**: two applications of one month are served in key order, not by day, so their order can
-  differ from today's.
-- **A month's first-day bundle**: the offer is read on the first day of the month (S5 `offered`);
-  today's engine reads each day.
-- **Replan cost**: every free lot's `planLot` runs in a frame-change month (see Cost).
-- **Spent pools**: both engines serve an application from the pools that still fit it under the
-  fallback award and close a pool only when no waiting application fits it (see Pool closing); the
-  step engine does so by month, today's engine by day.

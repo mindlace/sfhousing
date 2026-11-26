@@ -1,7 +1,7 @@
 // The timeline host (ensemble-runner spec S14, rules 2, 3, 18, 20, 21): one session per
-// `openTimeline`, checked and loaded as `initScenario` is today (scenario-host.ts:518-583,
-// 630-664), then filled by the runner (`runner/runner.ts`). Today's shared requests are answered
-// from the session's dataset (`runner/lookups.ts`) and the plan's frame at the last `viewMonth`;
+// `openTimeline`, checked and loaded, then filled by the runner (`runner/runner.ts`). The shared
+// requests are answered from the session's dataset (`runner/lookups.ts`) and the plan's frame at
+// the last `viewMonth`;
 // `heights` and `heightLids` come from the runner's staged builds for that frame's zoning (S14).
 //
 // A new `openTimeline` (or `dispose`) ends the session: its timers are cancelled, nothing of it is
@@ -19,14 +19,13 @@ import { createLru } from '$lib/sim/lru';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import type { ParcelSummary, Rev } from '$lib/sim/protocol';
 import {
-  scenarioUrls,
+  simInputUrls,
   type FetchBytesLike,
   type Loaded,
   type LoadFailure,
-  type ScenarioUrls
-} from '$lib/sim/scenario/load';
-import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
-import { createToken, MEMO_CAP, type Token } from '$lib/sim/scenario/scenario-host';
+  type SimInputUrls
+} from '$lib/sim/world/input/load';
+import { createToken, MEMO_CAP, PREVIEW_MAX_LOTS, type Token } from '$lib/sim/world/runner/budget';
 import {
   openTimelineProblem,
   setPolicyProblem,
@@ -75,8 +74,8 @@ export interface TimelineHostDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (default `loadScenario(…, { policy: true, cars: true })`). */
-  load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
+  /** Seam: the load itself (default `loadSimInput(…, { policy: true, cars: true })`). */
+  load?(urls: SimInputUrls): Promise<Loaded | LoadFailure>;
   /**
    * Default 'on': both worlds run the dataset's car system when it ships cars.bin and
    * `calibration.cars`. 'off': no car system at all (`reach-check --cars off`).
@@ -102,7 +101,7 @@ interface Opening {
 interface Session {
   rev: Rev;
   manifest: Manifest;
-  urls: ScenarioUrls;
+  urls: SimInputUrls;
   token: Token;
   chunks: ChunkSet;
   ds: Dataset | null;
@@ -113,7 +112,7 @@ interface Session {
   opening: Opening;
   /** A `viewMonth` before the runner exists. */
   view: number | null;
-  /** A `heightLids` before the runner exists: it waits for it (scenario-host.ts:1144-1156). */
+  /** A `heightLids` before the runner exists: it waits for it. */
   lids: { reqId: number; bbox: [number, number, number, number] } | null;
 }
 
@@ -127,8 +126,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
   const previewMaxLots = deps.previewMaxLots ?? PREVIEW_MAX_LOTS;
 
   // Valid within one datasetVersion (content keys hold no version): kept across sessions of the
-  // same version, cleared with the once-only log keys for another (scenario-host.ts:474-483,
-  // 530-534).
+  // same version, cleared with the once-only log keys for another.
   const memo = createLru<string, GeneratedBuilding | null>(deps.memoCap ?? MEMO_CAP);
   const logged = new Set<string>();
   let memoVersion: string | null = null;
@@ -187,7 +185,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     if (shape !== null) return error(rev, 'manifest-invalid', shape);
     const manifest = req.manifest;
     const version = manifest.datasetVersion;
-    const urls = scenarioUrls(manifest);
+    const urls = simInputUrls(manifest);
     if (urls === null) {
       return error(rev, 'scenario-missing', `dataset ${version} has no fzp scenario`);
     }

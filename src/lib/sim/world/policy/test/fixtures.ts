@@ -4,7 +4,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { BrushQuery, StopType } from '$lib/sim/levers/brushes';
 import { FIXTURE_AS_OF } from '$lib/sim/levers/fixtures/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
 import { queryKey, type CustomBrush, type TransitBand } from '$lib/sim-page/policy';
 import { OBSERVED_TIMING, type TimingSet } from '$lib/sim-page/timing';
 import type { Effect, Policy, Selector, SimPolicy4, Span } from '$lib/timeline/policy4';

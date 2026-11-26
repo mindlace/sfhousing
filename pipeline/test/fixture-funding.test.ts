@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { decodeScenarioPayload } from '../../src/lib/data/scenario-codec';
-import { HORIZON } from '../../src/lib/fzp/time';
-import { buildSimInput } from '../../src/lib/sim/scenario/input';
-import { simulateDetailed } from '../../src/lib/sim/scenario/simulate';
+import { buildSimInput } from '../../src/lib/sim/world/input/build';
+import { oneMoneyTimeline, runFunded } from '../../src/lib/sim/world/funding/test/fixtures';
+import { staticsOf } from '../../src/lib/sim/world/statics';
+import { horizonMonth } from '../../src/lib/sim/world/test/run';
 import { parseCalibration } from '../../src/lib/timelapse/model';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 
@@ -24,7 +25,12 @@ describe('fixture-0 funding', () => {
       calibration: parseCalibration(json('calibration.json'))
     });
     expect(input.finance).toBeDefined();
-    const { schedules } = simulateDetailed(input, 1, HORIZON);
-    expect(schedules.some((s) => s.funding !== undefined)).toBe(true);
+    const { ledger } = runFunded(
+      staticsOf(input),
+      oneMoneyTimeline(input, input.finance!),
+      1,
+      horizonMonth(input.asOf)
+    );
+    expect(ledger.some((e) => e.kind === 'commit')).toBe(true);
   }, 120_000);
 });

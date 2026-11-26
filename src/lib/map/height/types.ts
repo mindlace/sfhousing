@@ -1,6 +1,6 @@
 /**
  * Wire types for the height-limit lids and contours (worker to page). Types and constants only,
- * so the scenario worker and the page can both import this without pulling in a DOM.
+ * so the timeline worker and the page can both import this without pulling in a DOM.
  */
 
 /** Chain kinds: a limit step between two regions, or a boundary where the winning source changes. */

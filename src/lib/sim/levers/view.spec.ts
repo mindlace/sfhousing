@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parseCalibration } from '$lib/timelapse/model';
-import type { SimInput } from '../scenario/types';
-import { miniCity } from '../scenario/fixtures/mini-parcels';
-import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
-import { MINI_AS_OF } from '../scenario/fixtures/mini-projects';
-import { miniPolicy } from '../scenario/fixtures/mini-policy';
-import { precomputeOf } from '../scenario/input';
+import type { SimInput } from '../world/input/types';
+import { miniCity } from '../world/fixtures/mini-parcels';
+import miniCalibrationJson from '../world/fixtures/mini-calibration.json';
+import { MINI_AS_OF } from '../world/fixtures/mini-projects';
+import { miniPolicy } from '../world/fixtures/mini-policy';
+import { precomputeOf } from '../world/input/build';
 import { stockTable, type LayerCtx } from './layers';
 import { DEFAULT_LEVERS, type SimLevers } from './types';
 import { envelopeOp, localProgramColumn, parcelsView } from './view';

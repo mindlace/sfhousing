@@ -1,6 +1,6 @@
 /**
  * The staged lid build (height-lids plan, Task 7): glass lids for the loaded lots in a view.
- * Pure and worker-safe; the scenario worker steps it in slices.
+ * Pure and worker-safe; the timeline worker steps it in slices.
  *
  * Lots are rasterized at 2 m, labelled by piece: (city component, winning source). A lot with no
  * limit (stories 0, so no component) is BLOCK. Runs of up to 30 m of open ground between two

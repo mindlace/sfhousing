@@ -20,8 +20,8 @@ import { fullTree } from '../src/lib/game/catalogue/play';
 import { defaultGoal, readGoal, TODAY, type Goal } from '../src/lib/goal/goal';
 import type { FetchLike } from '../src/lib/sim/chunks';
 import { canonicalJson } from '../src/lib/sim-page/policy';
-import { loadScenario, scenarioUrls, type FetchBytesLike } from '../src/lib/sim/scenario/load';
-import type { BrushLotsResult } from '../src/lib/sim/scenario/types';
+import { loadSimInput, simInputUrls, type FetchBytesLike } from '../src/lib/sim/world/input/load';
+import type { BrushLotsResult } from '../src/lib/sim/timeline-protocol';
 import { WINDOW_MONTHS } from '../src/lib/sim/timeline-client';
 import type { TimelineHostRequest, TimelineHostResponse } from '../src/lib/sim/timeline-protocol';
 import { createTimelineHost } from '../src/lib/sim/world/host';
@@ -232,7 +232,7 @@ export async function openEngine(
   const { manifest, fetch, fetchBytes } = await openSource(src);
   const timers = trackedTimers();
 
-  const urls = scenarioUrls(manifest);
+  const urls = simInputUrls(manifest);
   if (urls === null) {
     timers.close();
     throw new Error(
@@ -240,7 +240,7 @@ export async function openEngine(
     );
   }
   // The host loads again and passes its own warnings on; this load's are the same, dropped.
-  const loaded = await loadScenario(
+  const loaded = await loadSimInput(
     { fetch, fetchBytes, setTimeout: timers.setTimeout, retryDelaysMs: [], warn: () => {} },
     urls,
     () => false

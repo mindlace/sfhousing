@@ -8,7 +8,7 @@
 <script lang="ts">
   import { formatCount, formatPercent } from '$lib/scoreboard/format';
   import { DISPLACEMENT_RANGE, MARKET_TERMS } from '$lib/sim/finance';
-  import { MONEY_SOURCES, TIER_SOURCES, tierBaselineLabel } from '$lib/sim/scenario/finance-score';
+  import { MONEY_SOURCES, TIER_SOURCES, tierBaselineLabel } from '$lib/sim/world/score/finance';
   import type { TimelineScore } from '$lib/sim/protocol';
   import SourceList from '$lib/sim-page/SourceList.svelte';
   import type { Day } from '$lib/timelapse/time';

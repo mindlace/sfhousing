@@ -3,7 +3,7 @@
 // whenever it holds one. The rule reads only the line's own columns, so a cloned world (cold
 // caches) compacts in the same months as the original and the worlds stay equal.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { emptyWorld } from '../columns';
 import { staticsOf } from '../statics';
 import { benchInput } from '../test/cities.node';
@@ -13,7 +13,7 @@ import { leaveLine } from './apply';
 import { KIND_AFFORDABLE, addLineRow, fundOf, initFunding, type FundLine } from './columns';
 import { COMPACT_MIN, compact, isWaiting } from './line-index';
 import { createFundingSystem } from './system';
-import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
+import { withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 import { benchMoney, oneMoneyTimeline, type MonthEvent } from './test/fixtures';
 
 /** A funded line of `n` rows, row i on lot i. */

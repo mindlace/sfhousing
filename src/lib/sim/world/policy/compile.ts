@@ -8,7 +8,7 @@ import type { LayerCtx } from '$lib/sim/levers/layers';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import { routeSharesOp, type StageScale } from '$lib/sim/levers/timers';
 import { LeverFormatError, type FinanceLevers } from '$lib/sim/levers/types';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { canonicalJson, PolicyFormatError } from '$lib/sim-page/policy';
 import { checkSpanDays } from '$lib/timeline/parse4';
 import type { SimPolicy4 } from '$lib/timeline/policy4';

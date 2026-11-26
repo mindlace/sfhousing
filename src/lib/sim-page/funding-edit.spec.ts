@@ -3,7 +3,7 @@
 // `parseFinanceLevers`.
 import { describe, expect, it } from 'vitest';
 import { parseFinanceLevers } from '$lib/sim/levers/finance';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { fundingPresets, nextFiscal } from './funding-presets';
 import { POOL_KIND_DEFAULTS } from './funding-sources';

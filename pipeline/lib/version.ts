@@ -48,11 +48,16 @@ export const PATHS: readonly string[] = [
   'src/lib/plan/types.ts',
   'src/lib/sim/finance',
   'src/lib/sim/cars',
-  'src/lib/sim/scenario/rng.ts',
+  'src/lib/sim/world/rules/rng.ts',
   'src/lib/transit'
 ];
-/** Inputs and outputs under `pipeline`, not code: never part of the code hash. */
-const EXCLUDE_PATHS = ['pipeline/sources.lock.json', 'pipeline/.cache', 'pipeline/out'];
+/** Inputs, outputs and tests under `pipeline`, not code that shapes the data: not in the code hash. */
+const EXCLUDE_PATHS = [
+  'pipeline/sources.lock.json',
+  'pipeline/.cache',
+  'pipeline/out',
+  'pipeline/test'
+];
 const exclusions = (excludes: string[]): string[] => excludes.map((e) => `:(exclude)${e}`);
 const EXCLUDES = exclusions(EXCLUDE_PATHS);
 
@@ -134,7 +139,7 @@ export async function treeHash(
 
 /**
  * Identifies the pipeline + data-schema code: the `treeHash` of PATHS minus
- * pipeline/sources.lock.json, .cache and out. The lock is hashed separately by
+ * pipeline/sources.lock.json, .cache, out and test. The lock is hashed separately by
  * computeDatasetVersion, so committing it does not change the version (spec AC-5, AC-7).
  * Uncommitted code produces a different datasetVersion than the committed tree.
  */

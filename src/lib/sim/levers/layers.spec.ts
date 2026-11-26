@@ -5,8 +5,8 @@ import {
   MINI_HISTORIC_ID,
   MINI_S207_ID,
   miniPolicy
-} from '../scenario/fixtures/mini-policy';
-import { miniCity } from '../scenario/fixtures/mini-parcels';
+} from '../world/fixtures/mini-policy';
+import { miniCity } from '../world/fixtures/mini-parcels';
 import { stockTable, type LayerCtx } from './layers';
 
 function ctx(): LayerCtx {

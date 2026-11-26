@@ -39,11 +39,11 @@ import {
   type YieldRecompute
 } from '../src/lib/sim/levers/recompute';
 import { decodeTransit } from '../src/lib/data/transit-codec';
-import { loadScenario, scenarioUrls, type Loaded } from '../src/lib/sim/scenario/load';
-import { massingFor } from '../src/lib/sim/scenario/massing';
-import { precomputeOf } from '../src/lib/sim/scenario/input';
-import type { LedgerEvent } from '../src/lib/sim/scenario/money';
-import type { SimInput } from '../src/lib/sim/scenario/types';
+import { loadSimInput, simInputUrls, type Loaded } from '../src/lib/sim/world/input/load';
+import { massingFor } from '../src/lib/sim/world/massing';
+import { precomputeOf } from '../src/lib/sim/world/input/build';
+import type { LedgerEvent } from '../src/lib/sim/world/types';
+import type { SimInput } from '../src/lib/sim/world/input/types';
 import { customQuery, queryKey, type CustomBrush } from '../src/lib/sim-page/policy';
 import {
   DEFAULT_POLICY4,
@@ -150,9 +150,9 @@ async function loadLive(dir: string, extra: string | null): Promise<Live> {
   const manifest = parseManifest(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')));
   const prefix = `/data/${manifest.datasetVersion}/`;
   const pathOf = (url: string) => join(dir, url.slice(prefix.length));
-  const urls = scenarioUrls(manifest);
+  const urls = simInputUrls(manifest);
   if (!urls?.policy) throw new Error(`no scenarios.fzp with policy.bin in ${dir}`);
-  const loaded = await loadScenario(
+  const loaded = await loadSimInput(
     {
       fetch: async (url) => ({
         ok: true,

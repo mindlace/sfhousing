@@ -4,7 +4,7 @@
  * want is dropped.
  */
 import type { ParcelId } from '$lib/data/parcel';
-import type { LotOutlinesResult } from '$lib/sim/scenario/types';
+import type { LotOutlinesResult } from '$lib/sim/timeline-protocol';
 
 type Outlines = Extract<LotOutlinesResult, { ok: true }>;
 

@@ -1,8 +1,8 @@
 /**
  * One zoning state's `ZoningView`, built as a sliced job with today's code (policy-timeline spec,
  * rules 18 and 20): `resolveEnvelopes`, the yield recompute of its Needs, `fillNeeds` and
- * `applyLevers`, then `precomputeOf`, in the order `leverStep` runs them
- * (`scenario/scenario-host.ts`). Each unit finishes before the budget is checked, so a call can
+ * `applyLevers`, then `precomputeOf`, in the order the lever step runs them.
+ * Each unit finishes before the budget is checked, so a call can
  * run past its budget by one whole unit: one recompute step, or a whole `applyLevers` or
  * `precomputeOf` (about 45 ms on the live city; accepted by conductor ruling Q7(a)). Today's
  * `precomputeOf` and recompute step sit behind their own seams (`precomputeView`,
@@ -23,8 +23,8 @@ import {
   type Resolution
 } from '$lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, LeverFormatError, type SimLevers } from '$lib/sim/levers/types';
-import { precomputeOf, type Precompute } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf, type Precompute } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { ZoningLevers } from './combine';
 import type { ZoningView } from './frame';
 import { murmur3x86_128, type ViewInfo } from './intern';

@@ -24,7 +24,8 @@ export default defineConfig({
         'src/lib/timelapse/**',
         'src/lib/plan/types.ts',
         'src/lib/plan/geometry.ts',
-        'src/lib/sim/finance/**'
+        'src/lib/sim/finance/**',
+        'src/lib/sim/world/rules/rng.ts'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
     },
@@ -32,7 +33,7 @@ export default defineConfig({
     // pipeline/test/): not in the dataset version, so no dataset step, but test:pipeline runs.
     {
       match: [
-        'src/lib/sim/scenario/**',
+        'src/lib/sim/world/**',
         'src/lib/sim/levers/**',
         'src/lib/scoreboard/**',
         'src/lib/fzp/time.ts',
@@ -48,6 +49,13 @@ export default defineConfig({
         'src/lib/view/prefs.ts'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline']
+    },
+    // pipeline/test/ is excluded from codeTreeHash (pipeline/lib/version.ts EXCLUDE_PATHS), so a
+    // change there needs test:pipeline but not the dataset step. Before the pipeline/** rule: the
+    // first matching rule wins.
+    {
+      match: ['pipeline/test/**'],
+      triggers: ['lint', 'check', 'unit', 'pipeline']
     },
     // The pipeline and the lock feed codeTreeHash/the version, so a change needs its dataset
     // published on staging (docs/dev/pipeline.md).

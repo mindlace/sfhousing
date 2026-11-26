@@ -2,7 +2,7 @@
 // the group editor's provenance (4.5 item 5).
 import { describe, expect, it } from 'vitest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import {
   addProgrammeName,
   affordableCostText,

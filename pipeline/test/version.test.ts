@@ -105,7 +105,7 @@ describe('codeTreeHash', () => {
     expect(committed).not.toBe(dirty);
   });
   it.each([
-    'src/lib/sim/scenario/engine.ts',
+    'src/lib/sim/world/rules/stages.ts',
     'src/lib/sim/levers/apply.ts',
     'src/lib/scoreboard/index.ts'
   ])('codeTreeHash ignores a change to %s', async (file) => {
@@ -114,6 +114,45 @@ describe('codeTreeHash', () => {
     writeFileSync(join(dir, file), 'export const changed = 1;\n');
     git('commit', '-q', '-am', 'change');
     expect(await codeTreeHash(dir)).toBe(clean);
+  });
+  it('codeTreeHash covers src/lib/sim/world/rules/rng.ts', async () => {
+    const { dir, git } = tempRepo();
+    mkdirSync(join(dir, 'src/lib/sim/world/rules'), { recursive: true });
+    writeFileSync(join(dir, 'src/lib/sim/world/rules/rng.ts'), 'export const r = 1;\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'rng');
+    const before = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'src/lib/sim/world/rules/rng.ts'), 'export const r = 2;\n');
+    git('commit', '-q', '-am', 'rng 2');
+    expect(await codeTreeHash(dir)).not.toBe(before);
+  });
+  it('codeTreeHash ignores pipeline/test, committed and uncommitted', async () => {
+    const { dir, git } = tempRepo();
+    const clean = await codeTreeHash(dir);
+    mkdirSync(join(dir, 'pipeline/test/helpers'), { recursive: true });
+    writeFileSync(join(dir, 'pipeline/test/helpers/t.ts'), 'export const t = 1;\n');
+    expect(await codeTreeHash(dir)).toBe(clean);
+    git('add', '.');
+    git('commit', '-q', '-m', 'test file');
+    expect(await codeTreeHash(dir)).toBe(clean);
+    writeFileSync(join(dir, 'pipeline/test/helpers/t.ts'), 'export const t = 2;\n');
+    expect(await codeTreeHash(dir)).toBe(clean);
+    git('commit', '-q', '-am', 'test file 2');
+    expect(await codeTreeHash(dir)).toBe(clean);
+    writeFileSync(join(dir, 'pipeline/a.ts'), 'export const a = 2;\n');
+    expect(await codeTreeHash(dir)).not.toBe(clean);
+  });
+  it('codeTreeHash covers pipeline/lib', async () => {
+    const { dir, git } = tempRepo();
+    mkdirSync(join(dir, 'pipeline/lib'), { recursive: true });
+    writeFileSync(join(dir, 'pipeline/lib/x.ts'), 'export const x = 1;\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'lib');
+    const before = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'pipeline/lib/x.ts'), 'export const x = 2;\n');
+    expect(await codeTreeHash(dir)).not.toBe(before);
+    git('commit', '-q', '-am', 'lib 2');
+    expect(await codeTreeHash(dir)).not.toBe(before);
   });
   it('does not cover other sim code', async () => {
     const { dir, git } = tempRepo();

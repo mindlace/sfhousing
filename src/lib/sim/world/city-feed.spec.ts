@@ -3,7 +3,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { validateCityDelta } from '$lib/map/city-delta';
 import { CITY_DAY, type CityDelta } from '$lib/map/types';
-import { cellAnchorParcel } from '$lib/sim/scenario/massing';
+import { cellAnchorParcel } from '$lib/sim/world/massing';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import { createCityFeed, type CityFeedDeps } from './city-feed';
 import { addProject, emptyWorld, pushRev } from './columns';
