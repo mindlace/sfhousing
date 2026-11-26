@@ -2,8 +2,8 @@
 -- boxes in build). Not in SQL_FILES: pipeline/steps/render-boxes.ts runs it after loading the
 -- locked building-boxes artifact into bx_boxes(bid, k, src, base_m, height_m, geom GEOMETRY, NULL
 -- = the whole footprint) and bx_roofs. Reads buildings, parcels, bx_boxes, bx_roofs. Writes
--- render_boxes, render_pieces, render_export and low_export (the z12-13 tiles' input); never touches pieces, parcel_out or
--- buildings_export, so the model's inputs do not move.
+-- render_boxes, render_pieces, render_export and low_export (the z12-13 tiles' input); never
+-- touches pieces, parcel_out or buildings_export, so the model's inputs do not move.
 --
 -- A building is drawn by its artifact rows; one with no row (a fallback, or a bid the artifact
 -- lacks) gets today's single box (src 'box', k 0) from buildings. Row absence decides it, not
