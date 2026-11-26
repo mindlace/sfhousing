@@ -1706,13 +1706,31 @@ describe('setMerged', () => {
     c.setMerged(true);
     c.setMerged(false);
     const after = deps.lastLayers;
+    // deck finalizes a layer that left its list: fresh instances, never the earlier ones.
     for (const l of after.filter((x) => TIMELINE_PART_LAYER.test(x.id)))
-      expect(l).toBe(before.find((x) => x.id === l.id));
+      expect(l).not.toBe(before.find((x) => x.id === l.id));
     const other = makeFakeTimelineDeps();
     ready(other);
     expect(after.map((l) => l.id)).toEqual(other.lastLayers.map((l) => l.id));
     after.forEach((l, i) => {
       if (TIMELINE_PART_LAYER.test(l.id)) expect(shape(l)).toEqual(shape(other.lastLayers[i]));
+    });
+  });
+
+  it('lock, unlock, lock again emits new merged instances with equal props', () => {
+    const c = ready();
+    c.setMerged(true);
+    const first = [byId(deps, RUN_SOLID), byId(deps, RUN_GHOST)];
+    c.setMerged(false);
+    c.setMerged(true);
+    const second = [byId(deps, RUN_SOLID), byId(deps, RUN_GHOST)];
+    second.forEach((l, i) => {
+      expect(l).not.toBe(first[i]);
+      // The trigger counter is the one prop that differs: each join is a new generation.
+      expect({ ...shape(l), updateTriggers: null }).toEqual({
+        ...shape(first[i]),
+        updateTriggers: null
+      });
     });
   });
 

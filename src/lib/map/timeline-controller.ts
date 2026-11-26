@@ -402,6 +402,9 @@ export class TimelineController {
     // Off: drop the join (a copy of every cell); per-cell layers are kept current while merged.
     this.mergedLayers = null;
     this.mergeDirty = true;
+    // deck finalizes a layer that leaves its list, so an instance is never emitted again after a
+    // merged emit replaced it: new per-cell instances from the held packs, no re-encode or re-pack.
+    if (!on) for (const cell of this.cells.values()) this.buildCellLayers(cell);
     if (this.lastRevision >= 0) this.emit();
   }
 
