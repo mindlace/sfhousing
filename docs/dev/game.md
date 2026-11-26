@@ -156,7 +156,7 @@ is flagged, and no goal is left out. Changes in `tuning.ts`: `funded-homes` (tar
 `affordable-homes` (20,000) are back; `funded-homes` and `building-homes` (6,000) are raised to
 1.25 times current law at Dec 2060 (16,262 and 4,430); prices `no-discretionary` 28,000,
 `taller-1` 8,000 and 16,000, `reach-1` 12,000, `stop-rapid` 26,000, `taller-2` 24,000 and 29,000,
-so the catalogue, zoning-first and hands-first plays keep their early pace and three purchases
+so the catalogue, zoning-first and hands-first plays regain their early pace and three purchases
 between deadlines, and `policy-homes-3` comes into view in time to be met.
 
 ## Grants and the policy document
