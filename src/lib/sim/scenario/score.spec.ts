@@ -2,7 +2,7 @@
 // Schedules and Masters with known days give exact per-month deltas for every series; the mini
 // fixture gives the phasing table.
 import { describe, expect, it } from 'vitest';
-import { M1_TARGETS } from '$lib/scoreboard';
+import { M1_TARGETS, RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import { dayOf, isoOf } from './dates';
@@ -544,6 +544,35 @@ describe('score: tier targets and baseline (finance-score spec 6 test 12)', () =
   const byTier = { veryLow: 100, low: 200, moderate: 300, aboveModerate: 634, unrecorded: 7 };
   const base = miniProjects().rhnaCompletedNet;
   const rhna = { ...base, units: 1241, byTier };
+
+  const shown = shownOf([P1, S2]);
+  const completed = shown.map((r) => ({
+    veryLow: 1,
+    low: 2,
+    moderate: 3,
+    aboveModerate: r.completedNet - 11,
+    unrecorded: 5
+  }));
+
+  it('adds four tier targets in RHNA_TIER_TARGETS order', () => {
+    const tiers = tierTargetsOf(byTier, completed);
+    expect(tiers.map((t) => t.target.id)).toEqual(RHNA_TIER_TARGETS.map((t) => t.id));
+    expect(tiers).toHaveLength(4);
+    for (const x of tiers) {
+      expect(x.deadline).toBe(d(2031, 1, 31));
+      const t = x.target.tier!;
+      expect(x.fraction).toEqual(completed.map((c) => (byTier[t] + c[t]) / x.target.units));
+    }
+  });
+
+  it('weights to the total less the unrecorded homes', () => {
+    const total = targetsOf(rhna.units, shown)[0];
+    const tiers = tierTargetsOf(byTier, completed);
+    for (const i of [0, 100, 290, N - 1]) {
+      const weighted = tiers.reduce((sum, x) => sum + x.fraction[i] * x.target.units, 0);
+      expect(Math.abs(weighted - (82069 * total.fraction[i] - 12))).toBeLessThan(1e-6);
+    }
+  });
 
   it('tierTargetsOf is uncapped and a negative aboveModerate gives a negative fraction', () => {
     const t = tierTargetsOf(T0, [{ ...T0, aboveModerate: -7 }]);

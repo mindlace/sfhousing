@@ -462,7 +462,8 @@ export function cardDepsOf(
 }
 
 /**
- * True when `s` has a T11 parcel and every T11 parcel's cell is loaded (`Geometry.allReady`): only then is it massed, as the map would draw it.
+ * True when `s` has a T11 parcel and every T11 parcel's cell is loaded (`Geometry.allReady`):
+ * only then is it massed, as the map would draw it.
  */
 export function scheduleReady(ds: Dataset, s: Schedule): boolean {
   const P = ds.massing.input.parcels;
