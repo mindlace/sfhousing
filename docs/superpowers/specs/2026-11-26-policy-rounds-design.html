@@ -332,9 +332,14 @@
         </tbody>
       </table>
       <ul>
-        <li><strong>Maximum: 1,200 m</strong>, one value for every stop type. It is the long tail
-          of measured walks to rail. The app measures in a straight line, as SB 79 does, so the
-          real walk is longer.</li>
+        <li><strong>Maximum by stop type:</strong> 1,200 m for regional rail and Muni Metro, the
+          long tail of measured walks to rail; 800 m for rapid and frequent bus, the legal half
+          mile and well above the measured 524 m. The app measures in a straight line, as SB 79
+          does, so the real walk is longer.</li>
+        <li><strong>Rules with several stop types.</strong> In the rounds every transit policy has
+          one stop type, so its maximum is that type's. A rule can hold several only outside the
+          rounds: after the end, and in documents already stored. Such a rule takes the shortest
+          maximum among its stop types.</li>
         <li><strong>Default for a new rule:</strong> SB 79's two bands, 402 m and 805 m, which the
           open editor already uses. A new rule never starts at the maximum.</li>
         <li><strong>Stored values are kept.</strong> A published policy or a saved game with a
@@ -343,10 +348,11 @@
           drop such a policy from its forecast (<code>within</code> in
           <code>limits.ts</code>); that must not happen.</li>
       </ul>
-      <aside data-kind="decision"><strong>Decision</strong> 1,200 m, one value for every stop
-        type; accepted by the owner (2026-11-26). The evidence is one survey's 85th percentile
-        for rail; the law stops at 805 m. A shorter maximum for bus would fit the evidence
-        better, but one rule can hold several stop types.</aside>
+      <aside data-kind="decision"><strong>Decision</strong> The owner accepted 1,200 m and
+        pointed out that stop types are separate policies, so the maximum can differ by type
+        (2026-11-26). The bus value of 800 m and the rule for several stop types are my calls.
+        The evidence for 1,200 m is one survey's 85th percentile for rail; the law stops at
+        805 m.</aside>
     </section>
 
     <section id="sec-height">
