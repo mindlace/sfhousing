@@ -384,8 +384,9 @@ export function leaveOut(
 }
 
 /**
- * The award rule (spec 4.6): leave out short pools, then award iff the set is not empty and its
- * level is not below the whole bundle's. Null means the application waits.
+ * The award rule (spec 4.6, amended 2026-11-25, R1): leave out short pools, then award what is
+ * left iff it is not empty and its level is above 0. The award may be below the whole bundle's
+ * level: the application is read as formed from the pools that can pay. Null means it waits.
  */
 export function awardSet(
   bundle: readonly number[],
@@ -397,9 +398,8 @@ export function awardSet(
 ): Award | null {
   const { set } = leaveOut(bundle, kind, protoId, units, avail, f);
   if (set.length === 0) return null;
-  const whole = f.price(kind, bundle, protoId);
   const priced = f.price(kind, set, protoId);
-  if (below(coverageLevel(priced.coverage), coverageLevel(whole.coverage))) return null;
+  if (!(coverageLevel(priced.coverage) > 0)) return null;
   return { set, priced, asks: asksOf(f, kind, set, protoId, units) };
 }
 
@@ -425,8 +425,8 @@ function subsetOf(bundle: readonly number[], mask: number): number[] {
 }
 
 /**
- * Exactly `awardSet(...) !== null`, without building the award: the serving probe of the grouped
- * line's bisection. Each round sums a pool's ask over the set in the order `asksOf` does (so the
+ * Exactly `awardSet(...) !== null` (the kept set is not empty and its level is above 0), without
+ * building the award: the serving probe of the grouped line's bisection. Each round sums a pool's ask over the set in the order `asksOf` does (so the
  * sums are the same doubles), and the left-out sets are memoised by the bundle array and the kept
  * positions, so a call allocates nothing once its sets are known.
  */
@@ -447,8 +447,7 @@ export function awardPasses(
     passAsk = new Float64Array(P);
     passShort = new Uint8Array(P);
   }
-  const full = (1 << n) - 1;
-  let mask = full;
+  let mask = (1 << n) - 1;
   let set = bundle;
   for (;;) {
     const priced = f.price(kind, set, protoId);
@@ -483,8 +482,6 @@ export function awardPasses(
     if (mask === 0) return false;
     set = subsetOf(bundle, mask);
   }
-  if (mask === full) return true;
-  const whole = f.price(kind, bundle, protoId);
-  const priced = f.price(kind, set, protoId);
-  return !below(coverageLevel(priced.coverage), coverageLevel(whole.coverage));
+  // the kept set, whole or partial, is awarded when its level is above 0
+  return coverageLevel(f.price(kind, set, protoId).coverage) > 0;
 }

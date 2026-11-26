@@ -138,14 +138,23 @@ describe('a bond stacked on the baseline adds homes (spec 6 test 4)', () => {
       let both = 0;
       let bondOnly = 0;
       for (const seed of seeds(20)) {
-        const homes = (r: Run) => r.awards.reduce((n, s) => n + s.revisions[0].units, 0);
+        // the awards that draw on the City tier (the City pool or the bond)
+        const onCity = (r: Run) =>
+          r.awards.filter((s) =>
+            s.funding!.programmes.some((p) => p === 't-city' || p === 't-bond-grant')
+          );
+        const homes = (r: Run) => onCity(r).reduce((n, s) => n + s.revisions[0].units, 0);
         const without = run(k.input(false), seed);
         const withBond = run(k.input(true), seed);
         const H0 = homes(without);
         const H1 = homes(withBond);
-        // more applicants than money
-        expect(without.waiting, `seed ${seed}: someone waits without the bond`).toBeGreaterThan(0);
-        expect(withBond.waiting, `seed ${seed}: someone waits with the bond`).toBeGreaterThan(0);
+        // more applicants than City-tier money: some are awarded on the federal and state shares
+        // alone (rule 16 as amended: a short pool is left out of the award)
+        const partial = (r: Run) => r.awards.length - onCity(r).length;
+        expect(partial(without), `seed ${seed}: a partial award without the bond`).toBeGreaterThan(
+          0
+        );
+        expect(partial(withBond), `seed ${seed}: a partial award with the bond`).toBeGreaterThan(0);
         expect(H0 * CITY).toBeLessThanOrEqual(k.C);
         expect(k.C - H0 * CITY).toBeLessThan(2 * CITY * without.largest);
         expect(H1 * CITY).toBeLessThanOrEqual(k.C + k.B);
@@ -153,17 +162,21 @@ describe('a bond stacked on the baseline adds homes (spec 6 test 4)', () => {
         expect(H1, `seed ${seed}: the bond adds homes`).toBeGreaterThan(H0);
 
         for (const r of [without, withBond]) {
+          const city = onCity(r);
           for (const s of r.awards) {
             const u = s.revisions[0].units;
             expect(s.kind).toBe('affordable');
-            expect(s.funding!.certain).toBe(true);
+            expect(s.funding!.certain).toBe(city.includes(s));
             expect(s.funding!.granted).toBeLessThanOrEqual(projectDollars(TOTAL, u));
+            if (!city.includes(s)) expect(s.funding!.programmes).toEqual(['t-fed', 't-state']);
           }
         }
-        for (const s of without.awards) {
+        for (const s of onCity(without)) {
           expect(s.funding!.programmes).toEqual(['t-fed', 't-state', 't-city']);
         }
+        const withBondCity = onCity(withBond);
         withBond.awards.forEach((s, n) => {
+          if (!withBondCity.includes(s)) return;
           const u = s.revisions[0].units;
           const cs = withBond.commits[n];
           const ps = s.funding!.programmes;
@@ -206,13 +219,23 @@ describe('a short pool is made up by another only as far as its share allows (sp
       logOdds: NEVER
     });
 
-  it('bond share 0.2: the application waits and no pool has a commit that day', () => {
+  it("bond share 0.2: awarded the same day on the bond's share, not certain", () => {
     for (const seed of seeds(5)) {
       const r = run(input(0.2), seed);
-      expect(r.ledger.filter((e) => e.kind === 'commit' && e.day === asOf + 1)).toEqual([]);
-      expect(r.ledger.filter((e) => e.kind === 'commit')).toEqual([]);
-      expect(funded(r)).toEqual([]);
-      expect(r.waiting).toBe(5);
+      // the first day's awards, attempt 0 (a partial award can exit, and its lot apply again)
+      expect(r.awards.filter((s) => s.funding!.applied === asOf + 1).length).toBe(5);
+      r.awards.forEach((s, n) => {
+        if (s.funding!.applied !== asOf + 1) return;
+        const u = s.revisions[0].units;
+        expect(s.revisions[0].day).toBe(asOf + 1);
+        expect(s.funding!.applied).toBe(asOf + 1);
+        expect(s.funding!.certain).toBe(false);
+        expect(s.funding!.programmes).toEqual(['t-fed', 't-state', 't-bond-grant']);
+        expect(
+          Math.abs(commitOf(r.commits[n], 't-bond-grant')! - projectDollars(172305, u))
+        ).toBeLessThanOrEqual(u);
+      });
+      expect(r.waiting).toBe(0);
     }
   });
 

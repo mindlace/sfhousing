@@ -109,6 +109,22 @@ export function miniFinance(asOf: Day = MINI_AS_OF): Finance {
   };
 }
 
+/**
+ * `fin` with its `federal` pool on a yearly `dollarsPerYear` from `asOf` (test value): every
+ * pool of the certain affordable stack then runs short, so applications wait (rule 16 as amended
+ * awards on the federal grant alone while the federal pool can pay).
+ */
+export function withFederalYearly(fin: Finance, asOf: Day, dollarsPerYear: number): Finance {
+  return {
+    ...fin,
+    pools: fin.pools.map((p) =>
+      p.id === 'federal'
+        ? { ...p, inflows: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear }] }
+        : p
+    )
+  };
+}
+
 /** The mini calibration with tier 4 `affordableRoutes`. */
 export function miniCalibrationWithRoutes(): Calibration {
   const cal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);

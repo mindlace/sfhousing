@@ -246,7 +246,13 @@ const commitsTo = (ledger: readonly LedgerEvent[], pool: string) =>
 describe('rule 17: a change that leaves money and view alone', () => {
   const input = fundedMini();
   const s = staticsOf(input);
-  const base = oneMoneyTimeline(input, miniFinance(input.asOf));
+  // Every pool short until long after M (its money arrives in 100 years), so the line waits.
+  const fin = miniFinance(input.asOf);
+  const late: Inflow[] = [{ kind: 'once', day: input.asOf + 36_500, dollars: 1e12 }];
+  const base = oneMoneyTimeline(input, {
+    ...fin,
+    pools: fin.pools.map((p) => ({ ...p, inflows: late }))
+  });
   const M = 30;
   // The same frames with two stages twice as long from month M: a permitting change only.
   const slow = (() => {
@@ -434,29 +440,24 @@ describe('rule 16 continued: ending the spent programme', () => {
   const t = oneMoneyTimeline(tiny, tiny.finance!);
 
   it.each([1, 2, 3])(
-    'seed %i: lapses the waiting applications and redraws them on the other shares',
+    'seed %i: nothing waits on the spent pool; the programme ends with no commit after it',
     (seed) => {
-      // The wait on the spent pool is the older engine's: closing off keeps it.
-      const { sys, joined, changes } = spied(false);
+      // Rule 16 as amended: the spent City pool is left out of the award, not waited on.
+      const { sys, joined } = spied(false);
       const w = worldOf(sys, s, t, seed);
       w.stepTo(m - 1);
-      const was = waiting(fundOf(w.world).line);
-      expect(was.length).toBeGreaterThan(0);
+      const was = joined.filter((j) => j.month < m);
+      expect(was.length).toBeGreaterThan(1);
       for (const a of was) expect(a.bundle).toBe('t-fed,t-state,t-city');
+      // every application before m is awarded: none waits on t-city
+      expect(waiting(fundOf(w.world).line)).toEqual([]);
+      const awarded = w.events.filter((e) => e.kind === 'award').length;
+      expect(awarded).toBe(was.length);
+      // the City once inflow pays one award; the later ones are on 't-fed,t-state'
+      expect(commitsTo(w.ledger, 't-city').length).toBe(1);
+      expect(commitsTo(w.ledger, 't-fed').length).toBe(awarded);
+      expect(commitsTo(w.ledger, 't-state').length).toBe(awarded);
       w.stepTo(MONTHS);
-      const at = changes.find((c) => c.month === m)!;
-      expect(at).toBeDefined();
-      expect(waiting(at.after)).toEqual([]);
-      // Redrawn on the federal and state shares: they apply again and the state money awards them.
-      const again = joined.filter((j) => j.month >= m);
-      expect(again.length).toBeGreaterThan(0);
-      for (const j of again) {
-        expect(j.bundle).toBe('t-fed,t-state');
-        expect(was.some((a) => a.lot === j.lot)).toBe(true);
-      }
-      expect(
-        commitsTo(w.ledger, 't-state').filter((e) => e.day >= monthFirstDay(tAsOf, m)).length
-      ).toBeGreaterThan(0);
       expect(commitsTo(w.ledger, 't-city').filter((e) => e.day >= monthFirstDay(tAsOf, m))).toEqual(
         []
       );
