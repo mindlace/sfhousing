@@ -511,9 +511,11 @@ goal line into the header for the width checks.
 ## The reach check
 
 ```
-npx tsx scripts/reach-check.ts <datasetDir> [--amount <homes>]
-npx tsx scripts/reach-check.ts --version <datasetVersion> [--from <origin>] [--amount <homes>]
+npx tsx scripts/reach-check.ts <datasetDir> [--amount <homes>] [--cars on|off]
+npx tsx scripts/reach-check.ts --version <datasetVersion> [--from <origin>] [--amount <homes>] [--cars on|off]
 ```
+
+`--cars off` runs the worlds without the car system (default `on`, [cars.md](cars.md)).
 
 Two sources: a built dataset directory, or a published version fetched from an origin (`--from`,
 default production). Two questions, each reached or missed, at one amount (82,069 homes unless
@@ -522,22 +524,24 @@ default production). Two questions, each reached or missed, at one amount (82,06
 1. Does current law (the empty policy document) reach the goal by rung 0's deadline?
 2. Does the full tree (`fullTree`) reach it by the last rung's deadline?
 
-Four lines on stdout:
+Five lines on stdout:
 
 ```
 Dataset <datasetVersion>
 Goal: <amount> homes
 Current law by <Mon YYYY>: reached <Mon YYYY>, <n> months early
 Full tree by <Mon YYYY>: missed, <homes> homes, <short> short
+Filled in <s> s (cars on)
 ```
 
 Lines 3 and 4 each read "reached <month>, <n> months early" ("1 month early" for 1) or "missed,
-<homes> homes, <short> short". The first month on a line is the rung's deadline.
+<homes> homes, <short> short". The first month on a line is the rung's deadline. Line 5 is the
+opening fill's wall-clock time (`Engine.fillMs`) and the car switch.
 
 Exit 0 when both are reached; 1 when either is missed; 2 when the check could not run, with one
 stderr line, `reach-check: <reason>`, and nothing on stdout (no source, both a directory and
 `--version`, an unknown flag, `--from` without `--version`, an `--amount` that is not a whole
-number above 0, or the engine failing).
+number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
 
 It is run before every dataset upload, on the directory that is then uploaded, and must exit 0
 ([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`.

@@ -80,7 +80,7 @@ Cross-check, never used: the Controller's 2026 $/GSF × about 400 sq ft. $245/GS
 low end; below grade alone ($322-$360/GSF) gives about $128,800-$144,000. The escalated
 below-grade figure, $120,083 in 2026 dollars, is under that range by 7% to 17%.
 
-Off path: `costPerSpace` null, `{ link: false }`, or `level2-check --cars off` (no car system at
+Off path: `costPerSpace` null, `{ link: false }`, or `reach-check --cars off` (no car system at
 all). With the link off every event equals the run without cars.
 
 ## Series, Details, map, About
@@ -110,9 +110,10 @@ absolute error 6.03 pts, correlation 0.934. Possible follow-up: add the SF3 2000
 tables to the back-cast start, which today rakes each zone's PUMA records to its 2000 tenure by
 cars only.
 
-## Level 2 with and without cars
+## Current law with and without cars
 
-Dataset `2026-11-25-76c90397`, current law, goal 82,069 homes by Oct 2066:
+`npx tsx scripts/reach-check.ts <datasetDir> --cars on|off` (default on) runs both questions with or
+without the car system and ends with the opening fill's time. Measured on dataset `2026-11-25-76c90397` (current law, goal 82,069 homes by Oct 2066):
 
 | Run                       | Goal reached | Fill (s) |
 | ------------------------- | ------------ | -------- |
@@ -124,7 +125,7 @@ Cars move the goal one month earlier, all of it through the parking link.
 
 ## Measured cost
 
-2026-11-25, live build `2026-11-25-76c90397`, `level2-check`'s fill line (two worlds, 480 months,
+2026-11-25, live build `2026-11-25-76c90397`, the earlier level 2 check's fill line, now `reach-check`'s (two worlds, 480 months,
 baseline money), three runs each at load average 3.7-4.0 on 15 cores:
 
 - Cars off 2.3 s; cars on with the link off 3.5 s; cars on 3.9-4.0 s. The parking link adds about

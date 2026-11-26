@@ -1,8 +1,11 @@
-// `npx tsx scripts/reach-check.ts <datasetDir> | --version <v> [--from <origin>] [--amount <homes>]`:
-// asks one dataset two questions of the goal, reached or missed: does current law (the empty
-// policy document) reach it by the first rung's deadline, and does the full tree reach it by the
-// last rung's. Exits 0 when both are reached, 1 when either is missed, 2 when the check could not
-// run (one stderr line, `reach-check: {reason}`, nothing on stdout).
+// `npx tsx scripts/reach-check.ts <datasetDir> | --version <v> [--from <origin>] [--amount <homes>]
+// [--cars on|off]`: asks one dataset two questions of the goal, reached or missed: does current
+// law (the empty policy document) reach it by the first rung's deadline, and does the full tree
+// reach it by the last rung's. The last line says how long the opening fill took. `--cars off` runs
+// the worlds without the car system (default on: the dataset's car system, whose parking link
+// moves start odds when the model prices parking). Exits 0 when both are reached, 1 when either is
+// missed, 2 when the check could not run (one stderr line, `reach-check: {reason}`, nothing on
+// stdout).
 import { pathToFileURL } from 'node:url';
 import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { utcParts } from '../src/lib/fzp/time';
@@ -16,6 +19,7 @@ import {
   openEngine,
   parseAmount,
   parseSourceArgs,
+  type CarsSwitch,
   type DataSource,
   type Engine
 } from './reach-measure';
@@ -37,7 +41,7 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 
 const USAGE =
   'usage: npx tsx scripts/reach-check.ts <datasetDir> | --version <v> ' +
-  '[--from <origin>] [--amount <homes>]';
+  '[--from <origin>] [--amount <homes>] [--cars on|off]';
 
 /** Calendar months from `a`'s month to `b`'s. */
 function monthsBetween(a: Day, b: Day): number {
@@ -93,16 +97,30 @@ export function reachExit(r: readonly Reach[]): 0 | 1 {
   return r.some((x) => x.reachedOn === null) ? 1 : 0;
 }
 
+/** The line reporting the opening fill's wall-clock time. */
+export function fillLine(fillMs: number, cars: CarsSwitch): string {
+  return `Filled in ${(fillMs / 1000).toFixed(1)} s (cars ${cars})`;
+}
+
 /** The command's arguments, or the reason they are refused. */
 export function parseCheckArgs(
   argv: string[]
-): { src: DataSource; amount?: number } | { error: string } {
+): { src: DataSource; amount?: number; cars: CarsSwitch } | { error: string } {
   if (argv.length === 0) return { error: USAGE };
-  const parsed = parseSourceArgs(argv, { amount: 'value' });
-  if ('error' in parsed) return parsed;
+  const parsed = parseSourceArgs(argv, { amount: 'value', cars: 'value' });
+  if ('error' in parsed) {
+    return parsed.error === '--cars needs a value'
+      ? { error: '--cars must be on or off, got nothing' }
+      : parsed;
+  }
+  const given = parsed.flags.cars;
+  if (given !== undefined && given !== 'on' && given !== 'off') {
+    return { error: `--cars must be on or off, got ${given === true ? 'nothing' : given}` };
+  }
+  const cars: CarsSwitch = given ?? 'on';
   const amount = parseAmount(parsed.flags.amount);
   if (typeof amount === 'object') return amount;
-  return amount === undefined ? { src: parsed.src } : { src: parsed.src, amount };
+  return amount === undefined ? { src: parsed.src, cars } : { src: parsed.src, amount, cars };
 }
 
 export interface CheckIo {
@@ -128,14 +146,14 @@ export async function main(argv: string[], io: CheckIo = CONSOLE_IO): Promise<0 
   const warnings: string[] = [];
   let engine: Engine | null = null;
   try {
-    engine = await open(args.src, { warn: (msg) => warnings.push(msg) });
+    engine = await open(args.src, { warn: (msg) => warnings.push(msg), cars: args.cars });
     const current = await engine.view(DEFAULT_POLICY4);
     const full = await engine.view(fullTree(engine.cal).doc);
     const r = [
       readReach(current, engine.asOf, 'current', args.amount),
       readReach(full, engine.asOf, 'full', args.amount)
     ];
-    const lines = reachLines(engine.datasetVersion, r);
+    const lines = [...reachLines(engine.datasetVersion, r), fillLine(engine.fillMs, args.cars)];
     for (const w of warnings) io.err(w);
     for (const line of lines) io.out(line);
     return reachExit(r);

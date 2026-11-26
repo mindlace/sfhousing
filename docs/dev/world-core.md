@@ -204,8 +204,8 @@ held +64.1 MB and took 12 to 25 s.
 Speed: a month whose frame differs from the month before only in `parking`
 (`PolicyTimeline.parkingOnly`; funding's closing view keeps it when no pool opens or closes that
 month) replans only `touched(month)`, the changed zones' lots, even in a funded month, and calls no
-whole-city `skipBound`. Every other lot's clocks are unchanged. On the live build, `level2-check`'s
-fill (two funded worlds) takes 3.9-4.0 s with cars on, 3.5 s with the link off and 2.3 s without
+whole-city `skipBound`. Every other lot's clocks are unchanged. On the live build, `reach-check`'s
+fill line (two funded worlds) takes 3.9-4.0 s with cars on, 3.5 s with the link off and 2.3 s without
 cars (`docs/dev/cars.md`, Measured cost); it was 8.7 s with cars on before.
 
 ## Tests

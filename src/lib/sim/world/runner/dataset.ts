@@ -65,7 +65,7 @@ export interface DatasetDeps {
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
   /** Seam: the load itself (the bench city); default `loadScenario(…, { policy, cars })`. */
   load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
-  /** True: no car system, even with cars.bin (`level2-check --cars off`). */
+  /** True: no car system, even with cars.bin (`reach-check --cars off`). */
   carsOff?: boolean;
 }
 

@@ -39,7 +39,7 @@ A compile is stalled (it waits for `chunkArrived`) only when `step` returned fal
 
 ### The world core and the car system
 
-Both ensembles step with the dataset's world core, `Dataset.core = withFunding(createFundingSystem(), cars)`, built once per dataset load (`loadDataset`): `cars` is `Dataset.cars = carSystemOf(loaded, { off })` (`world/cars/dataset.ts`), which needs cars.bin (`Loaded.cars`, fetched only when the manifest names `scenarios.fzp.cars`; `car-zones.json` is the page's) and `calibration.cars`, and is null otherwise: an older dataset runs as before, `cars: null` in every chunk. Both worlds run on seed 1, so the comparison's twin pairing holds; the parking link is on iff the model's `parking.costPerSpace` is set. `TimelineHostDeps.cars: 'off'` (`level2-check --cars off`) loads no cars.bin and builds no system.
+Both ensembles step with the dataset's world core, `Dataset.core = withFunding(createFundingSystem(), cars)`, built once per dataset load (`loadDataset`): `cars` is `Dataset.cars = carSystemOf(loaded, { off })` (`world/cars/dataset.ts`), which needs cars.bin (`Loaded.cars`, fetched only when the manifest names `scenarios.fzp.cars`; `car-zones.json` is the page's) and `calibration.cars`, and is null otherwise: an older dataset runs as before, `cars: null` in every chunk. Both worlds run on seed 1, so the comparison's twin pairing holds; the parking link is on iff the model's `parking.costPerSpace` is set. `TimelineHostDeps.cars: 'off'` (`reach-check --cars off`) loads no cars.bin and builds no system.
 
 ### Finality and posting
 
