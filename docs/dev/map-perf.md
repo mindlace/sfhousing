@@ -164,10 +164,12 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 
 ### Results
 
-| Machine | Date | Dataset | Case              | Line                                                       | Label |
-| ------- | ---- | ------- | ----------------- | ---------------------------------------------------------- | ----- |
-| —       | —    | live    | run with drops    | pending: the conductor's run of record on the live dataset | —     |
-| —       | —    | live    | purchase to ready | pending: the conductor's run of record on the live dataset | —     |
+| Machine                                           | Date       | Dataset                    | Case              | Line                                                                                                                            | Label                                      |
+| ------------------------------------------------- | ---------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Apple M5 Pro (macOS 27.2.1), head 3a5d5f79, run 1 | 2026-11-25 | live `2026-11-14-09ca30c8` | run with drops    | `bench:map case=run dataset=2026-11-14-09ca30c8 frames=2383 dropped=73808 collected=29376 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load ~2                |
+| same, run 2                                       | 2026-11-25 | same                       | run with drops    | `bench:map case=run dataset=2026-11-14-09ca30c8 frames=2382 dropped=73808 collected=29378 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load ~2                |
+| same, run 1                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-14-09ca30c8 node=stop-rail samples=758ms,837ms,857ms median=837ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load ~2 |
+| same, run 2                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-14-09ca30c8 node=stop-rail samples=857ms,883ms,785ms median=857ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load ~2 |
 
 ## CI
 
