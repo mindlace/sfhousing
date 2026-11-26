@@ -10,7 +10,7 @@ From z14 the existing-buildings layer draws each building as a few boxes taken f
 | `boxes`                             | The raw cache of `sources.lock.json` (footprints, `overture-building-parts`, parcels, streets, neighborhoods) and the LiDAR tiles | `boxes.parquet`, `roofs.parquet` and `inputs.json`, stored in the raw cache and locked as the `building-boxes` entry of `sources.lock.json`. Never writes it when a box leaves its footprint. |
 | `build`                             | The `building-boxes` artifact only (never the tiles, never Python)                                                                | `render_boxes`, `render_pieces`, `render_export` beside `pieces`, and the z14+ tiles. See [pipeline.md](pipeline.md) "Building boxes in build".                                               |
 
-`upload` archives the artifact under `sources/<sha256>` like any locked file, so `fetch --restore` brings it back on another machine; only `boxes` needs the LiDAR tiles. `npm run pipeline -- boxes --fixture` derives the mini fixture's artifact (see `pipeline/test/fixtures/mini/README.md`).
+`upload` archives the artifact under `sources/<sha256>` like any locked file, so `fetch --restore` brings it back on another machine; only `boxes` needs the LiDAR tiles. `boxes` skips its derivation when an earlier run left the same artifact (see "The artifact and its recorded inputs"). `npm run pipeline -- boxes --fixture` derives the mini fixture's artifact (see `pipeline/test/fixtures/mini/README.md`).
 
 ## `src` values and fallbacks
 
@@ -75,6 +75,10 @@ The entry's `upstreamVersion` (`boxes/1 code=… config=… overture-buildings=�
 - **Gate** (`build` stops before writing anything, naming `npm run pipeline -- boxes`): `overture-buildings` and `overture-building-parts`. Boxes from other footprints would sit on the wrong buildings.
 - **Warn** (live builds only, in `report.warnings`): `usgs-lidar-sf` (from the LiDAR lock), `datasf-parcels`, `datasf-streets`, `datasf-neighborhoods`, the boxes code hash (`boxesCodeHash` over `BOXES_CODE_PATHS` in `pipeline/lib/version.ts`) and the `BOXES` config hash. The boxes are still valid footprint for footprint; they are just not the newest derivation.
 
+**Reuse.** The key is the sha256 of `inputs.json` as a run would write it (`boxesKey`: the canonical JSON of the recorded inputs plus a newline), so it covers the code hash, the config hash and every input sha256. `boxes` computes it from the locks before deriving anything; `<cache root>/boxes-index/<key>.json` ([pipeline.md](pipeline.md) "Shared cache") holds the `building-boxes` entry a full run locked for that key. The entry is reusable when its id is `building-boxes`, its `inputs.json` sha256 equals the key, and every file it names is in the shared `raw/` with its sha256. Then `boxes` writes the entry back into `sources.lock.json` (other entries kept) and prints `boxes: reused <key>`; nothing is derived and the LiDAR tiles are not read. Otherwise it runs in full and, when the run's `inputs.json` sha256 is the key, writes the record (a run that ends on another key prints `boxes: not indexed: the run's inputs <sha> are not <key>`). If the main or LiDAR files are missing from `raw/` it runs the command as before and lets it print its errors. `--fixture` never reads or writes the index. `--force` runs in full and rewrites the record.
+
+One lock per key (`boxes-index/<key>.lock`, created with the directory) lets two worktrees with the same key run one derivation: the second waits (`boxes: waiting for pid <pid> on <host> (<key12>)`), then reuses the result. A lock whose holder is dead on this host, or that cannot be parsed, is removed. Both source locks are read again after the wait; when the key changed, `boxes` runs in full. `cache import` writes the record for a lock entry whose files verify, so a machine's first `boxes` after the move reuses the old run.
+
 The boxes code stays under `pipeline/`, inside the dataset-version hash, although `build` never runs it. "Everything under `pipeline/` is hashed" needs no exclusion list; a misfiled exclusion could let code that `build` reads change without a version change, and `upload` would then refuse the rebuilt version (V13) while staging served the old bytes. The cost is that a boxes-only edit needs a dataset upload, which the tuning loop does anyway.
 
 ## Derived files
@@ -106,7 +110,7 @@ V37 "render boxes": without the artifact it is OK with `no boxes artifact`. Othe
 
 ## Tuning loop
 
-1. Once per machine: `npm run pipeline -- fetch --restore`, then `npm run pipeline -- fetch --restore --lidar`.
+1. Once per machine, not per worktree: `npm run pipeline -- fetch --restore`, then `npm run pipeline -- fetch --restore --lidar`. Both fill the shared cache and download only what is missing.
 2. Edit `BOXES` in `pipeline/boxes-config.ts`.
 3. `npm run pipeline -- boxes`. The `building-boxes` entry in `sources.lock.json` changes.
 4. Commit the config and the lock.
@@ -123,7 +127,7 @@ After any Overture refresh (`fetch` of `overture-buildings`), run `boxes` before
 
 The first city run, 2026-11-14, on one machine (15 cores). The build is dataset `2026-11-14-0135312a`, on Overture `2026-09-23.1`.
 
-**LiDAR fetch.** `fetch --only usgs-lidar-sf --dry-run` covers BBOX with 1,190 tiles. 1,056 of them touch EPT nodes over their padded area. Together they read 319,021 distinct nodes and 13,081,261,467 points, almost the whole EPT (13,088,433,078 points). Summed per tile, the padding counts shared nodes twice: 437,186 nodes and 17.9 billion points. The full fetch with `--jobs 16` took 68.5 minutes. It started from the spike's node cache, which held 3.4% of the points. It downloaded about 57 GB of EPT nodes (`pipeline/.cache/ept`, 59 GB in all). It wrote 648 tiles with points, 2,334,955,420 bytes in all (`pipeline/lidar.lock.json`). The rasterizer's work dir is 7.6 GB.
+**LiDAR fetch.** `fetch --only usgs-lidar-sf --dry-run` covers BBOX with 1,190 tiles. 1,056 of them touch EPT nodes over their padded area. Together they read 319,021 distinct nodes and 13,081,261,467 points, almost the whole EPT (13,088,433,078 points). Summed per tile, the padding counts shared nodes twice: 437,186 nodes and 17.9 billion points. The full fetch with `--jobs 16` took 68.5 minutes. It started from the spike's node cache, which held 3.4% of the points. It downloaded about 57 GB of EPT nodes (the shared `ept/`, 59 GB in all). It wrote 648 tiles with points, 2,334,955,420 bytes in all (`pipeline/lidar.lock.json`). The rasterizer's work dir is 7.6 GB.
 
 **Parts and boxes.** `overture-building-parts` at `2026-09-23.1` has 1,647 rows (345 KB). `boxes` took 54 minutes (3,240 s) on a busy machine, single-threaded, under the 60-minute bar for worker threads. The artifact is 21,507,477 bytes: `boxes.parquet` 11,887,785, `roofs.parquet` 9,618,995 and `inputs.json` 697. That is the whole addition to `fetch --restore`, since the LiDAR tiles stay out of `sources.lock.json`.
 
