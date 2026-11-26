@@ -16,6 +16,7 @@ import {
 } from './columns';
 import { lineIndex } from './line-index';
 import { fundedMini, oneMoneyTimeline } from './test/fixtures';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import { recordWaiting, waitingHomes } from './system';
 
 function lineWorld(): World {
@@ -137,7 +138,7 @@ function reference(w: World): number {
   return sum;
 }
 
-describe('the record on the funded mini', () => {
+describe('the record on the capped mini', () => {
   const mismatches: number[] = [];
   const changedEarlier: number[] = [];
   const cloneMismatch: number[] = [];
@@ -147,7 +148,11 @@ describe('the record on the funded mini', () => {
   beforeAll(() => {
     const input = fundedMini();
     const statics = staticsOf(input);
-    const timeline = oneMoneyTimeline(input, input.finance!);
+    // A federal pool of 20,000,000 a year (as apply.spec.ts): pools run short, so rows wait.
+    const timeline = oneMoneyTimeline(
+      input,
+      withFederalYearly(miniFinance(input.asOf), input.asOf, 20_000_000)
+    );
     const core = withFunding(createFundingSystem());
     const w = core.createWorld(statics, timeline, SEED, sink);
     const due = core.planDue(w, statics, timeline, SEED, MONTHS);

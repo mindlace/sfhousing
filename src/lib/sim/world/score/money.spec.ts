@@ -347,38 +347,6 @@ describe('plan world money, funded mini', () => {
     expect(chunkOf(a.series, b.series, null, 100, through).money).toBeNull();
   });
 
-  it('waiting: every entry equals waitingAt at finalTable', () => {
-    const r = runOf(1);
-    const through = r.series.finalThrough();
-    const table = finalTable(c.score);
-    const got = chunkOf(r.series, r.series, r.feed, 0, through).waiting!;
-    expect(got).toHaveLength(through + 1);
-    for (let k = 0; k <= through; k++) {
-      expect(got[k]).toBe(waitingAt(r.feed.world, table[k]));
-    }
-    expect(got.some((w) => w > 0)).toBe(true);
-    // This fixture's calendar months each end in their own model month, so no two entries share a
-    // table value here (the table is 1, 2, 3, ...); the monotone count is what the table orders.
-    for (let k = 1; k <= through; k++) expect(table[k]).toBeGreaterThanOrEqual(table[k - 1]);
-  });
-
-  it('waiting: two adjacent chunks equal one chunk over both', () => {
-    const r = runOf(1);
-    const through = r.series.finalThrough();
-    const whole = chunkOf(r.series, r.series, r.feed, 0, through).waiting!;
-    const a = chunkOf(r.series, r.series, r.feed, 0, 99).waiting!;
-    const b = chunkOf(r.series, r.series, r.feed, 100, through).waiting!;
-    expect([...a, ...b]).toEqual(whole);
-  });
-
-  it('waiting: the twin does not move it', () => {
-    const [a, b, d] = [runOf(1), runOf(2), runOf(3)];
-    const through = c.score.lastIndex;
-    const one = chunkOf(a.series, b.series, a.feed, 100, through).waiting;
-    expect(one).toEqual(chunkOf(a.series, d.series, a.feed, 100, through).waiting);
-    expect(one).toEqual(extrasOf(a.series).waiting(a.feed.world, 100, through));
-  });
-
   it('a restored series gives the same money and keeps filing', () => {
     const r = runOf(2);
     const through = r.series.finalThrough();
@@ -474,6 +442,51 @@ const cappedMini = (): SimInput => {
   const asOf = fundedMini().asOf;
   return fundedMini(withFederalYearly(miniFinance(asOf), asOf, 20_000_000));
 };
+
+describe('plan world money, capped mini', () => {
+  let c: City;
+  const runs = new Map<number, Run>();
+  const runOf = (seed: number) => {
+    let r = runs.get(seed);
+    if (r === undefined) runs.set(seed, (r = run(c, seed)));
+    return r;
+  };
+  beforeAll(() => {
+    c = cityOf(cappedMini(), 480);
+  });
+
+  it('waiting: every entry equals waitingAt at finalTable', () => {
+    const r = runOf(1);
+    const through = r.series.finalThrough();
+    const table = finalTable(c.score);
+    const got = chunkOf(r.series, r.series, r.feed, 0, through).waiting!;
+    expect(got).toHaveLength(through + 1);
+    for (let k = 0; k <= through; k++) {
+      expect(got[k]).toBe(waitingAt(r.feed.world, table[k]));
+    }
+    expect(got.some((w) => w > 0)).toBe(true);
+    // This fixture's calendar months each end in their own model month, so no two entries share a
+    // table value here (the table is 1, 2, 3, ...); the monotone count is what the table orders.
+    for (let k = 1; k <= through; k++) expect(table[k]).toBeGreaterThanOrEqual(table[k - 1]);
+  });
+
+  it('waiting: two adjacent chunks equal one chunk over both', () => {
+    const r = runOf(1);
+    const through = r.series.finalThrough();
+    const whole = chunkOf(r.series, r.series, r.feed, 0, through).waiting!;
+    const a = chunkOf(r.series, r.series, r.feed, 0, 99).waiting!;
+    const b = chunkOf(r.series, r.series, r.feed, 100, through).waiting!;
+    expect([...a, ...b]).toEqual(whole);
+  });
+
+  it('waiting: the twin does not move it', () => {
+    const [a, b, d] = [runOf(1), runOf(2), runOf(3)];
+    const through = c.score.lastIndex;
+    const one = chunkOf(a.series, b.series, a.feed, 100, through).waiting;
+    expect(one).toEqual(chunkOf(a.series, d.series, a.feed, 100, through).waiting);
+    expect(one).toEqual(extrasOf(a.series).waiting(a.feed.world, 100, through));
+  });
+});
 
 describe('plan world money, a pool that closes and opens', () => {
   it('closed and shut by month on a world that closes and opens a pool', () => {
