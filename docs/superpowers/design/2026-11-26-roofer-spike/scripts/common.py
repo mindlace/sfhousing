@@ -32,8 +32,8 @@ ROOFER = os.environ.get(
   '4a870fac-1a89-4e85-ac67-87da80271fe0/scratchpad/roofer-dl/bin/roofer'
 )
 OVERTURE = os.path.join(CACHE, 'raw', '0a8bca61efe49e2f3159606b7de6da114b2ca28ad5b06cd9d3bc5253de6e1a75')
-BOXES = os.path.join(CACHE, 'raw', '849943fe26ec09d91c7c4d5b0a9266a96672ac3c2aafc3c4381bdd3d852d713c')
-ROOFS = os.path.join(CACHE, 'raw', 'c12d536ed6562e85066422108c05de15fde83b144bc2c0bd643bf62dd0c13d1d')
+BOXES = os.environ.get('SFH_BOXES') or os.path.join(CACHE, 'raw', '849943fe26ec09d91c7c4d5b0a9266a96672ac3c2aafc3c4381bdd3d852d713c')
+ROOFS = os.environ.get('SFH_ROOFS') or os.path.join(CACHE, 'raw', 'c12d536ed6562e85066422108c05de15fde83b144bc2c0bd643bf62dd0c13d1d')
 os.makedirs(WORK, exist_ok=True)
 
 BASE = 'https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SanFrancisco_1_B23'

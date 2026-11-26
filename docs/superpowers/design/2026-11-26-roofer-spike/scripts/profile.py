@@ -20,26 +20,35 @@ import shapely  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import WORK  # noqa: E402
+import duckdb  # noqa: E402
+from common import ROOFS, WORK  # noqa: E402
 from compare import FIG, load_ours, load_points, load_roofer  # noqa: E402
 
 fp = gpd.read_file(os.path.join(WORK, 'salesforce', 'footprints.gpkg'))
 bid = fp.bid.iloc[0]
 poly = fp.geometry.iloc[0]
 ours = load_ours(fp)[bid]['mesh']
-raw = load_roofer('salesforce')[bid]['mesh']['2.2']
-top = load_roofer('salesforce_top')[bid]['mesh']['2.2']
-g = load_roofer('salesforce')[bid]['attrs']['rf_h_ground']
+# A roofer set with no out/ results is left out; the ground then comes from the roofs parquet.
+rf_raw, rf_top = load_roofer('salesforce').get(bid), load_roofer('salesforce_top').get(bid)
+if rf_raw:
+  g = rf_raw['attrs']['rf_h_ground']
+else:
+  g = duckdb.sql(f"select ground_m from read_parquet('{ROOFS}') where bid = '{bid}'").fetchall()[0][0]
 pts = load_points('salesforce')
 near = shapely.contains_xy(poly.buffer(3), pts[:, 0], pts[:, 1]) & (pts[:, 3] == 1) & (pts[:, 2] > g + 2)
 p = pts[near]
 c = np.array(poly.centroid.coords[0])
 
-models = [('ours: boxes', ours), ('roofer, all points', raw), ('roofer, top-filtered', top)]
+models = [('ours: boxes', ours)]
+if rf_raw:
+  models.append(('roofer, all points', rf_raw['mesh']['2.2']))
+if rf_top:
+  models.append(('roofer, top-filtered', rf_top['mesh']['2.2']))
 fig = plt.figure(figsize=(17, 9.5), dpi=120)
-gs = fig.add_gridspec(2, 5, width_ratios=[1, 1, 1, 1, 2.2])
+ncol = len(models) + 1
+gs = fig.add_gridspec(2, ncol + 1, width_ratios=[1] * ncol + [2.2])
 for row, (ax_i, name) in enumerate([(0, 'looking north'), (1, 'looking west')]):
-  for col in range(4):
+  for col in range(ncol):
     ax = fig.add_subplot(gs[row, col])
     if col == 0:
       s = p[np.random.default_rng(0).choice(len(p), min(len(p), 60000), replace=False)]
@@ -61,7 +70,7 @@ for row, (ax_i, name) in enumerate([(0, 'looking north'), (1, 'looking west')]):
       ax.set_ylabel('m above ground', fontsize=8)
 
 # Plan area by height
-ax = fig.add_subplot(gs[:, 4])
+ax = fig.add_subplot(gs[:, ncol])
 zs = np.arange(4, 336, 4.0)
 lid = []
 for z in zs:
@@ -72,7 +81,7 @@ x0, y0, x1, y1 = poly.bounds
 gx, gy = np.meshgrid(np.arange(x0 - 3, x1 + 3, 0.5), np.arange(y0 - 3, y1 + 3, 0.5))
 o = np.column_stack([gx.ravel(), gy.ravel(), np.full(gx.size, 2000.0)])
 d = np.tile([0, 0, -1.0], (len(o), 1))
-for (t, m), col in zip(models, ['tab:orange', 'tab:green', 'tab:purple']):
+for (t, m), col in zip(models, ['tab:orange', 'tab:green', 'tab:purple'][: len(models)]):
   loc, idx, _ = m.ray.intersects_location(o, d, multiple_hits=False)
   ztop = np.full(len(o), -np.inf)
   ztop[idx] = loc[:, 2] - g
