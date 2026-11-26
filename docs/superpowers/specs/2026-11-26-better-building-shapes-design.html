@@ -1,0 +1,157 @@
+<article>
+  <header>
+    <h1>Better building shapes, part 1: towers that taper, parts the LiDAR disputes, no Sutro pop</h1>
+    <p>Three pipeline changes to the existing-buildings boxes, landed with one dataset rebuild shared with the scenario-engine removal.</p>
+  </header>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <p>The LiDAR boxes (<code>docs/dev/building-boxes.md</code>) were a big step up from extruded footprints, but a few places are still clearly wrong, and the worst are landmarks people look for first:</p>
+    <ul>
+      <li><strong>Salesforce Tower</strong> renders as a fat block to 203.5 m with a thin core to 326 m. The real tower is full width to about 130 m and then narrows smoothly to about 1,040 m² at 320 m. Cause: Overture models the taper as 8 <code>skillion</code> parts (height 326, <code>roof_height</code> 245); <code>partBoxes</code> draws a non-tiered roof at mid-roof (<code>pipeline/lib/lidar/parts.ts:91-92</code>), and because the parts cover 99% of the footprint the LiDAR is never consulted (<code>pipeline/steps/boxes.ts:296-319</code>).</li>
+      <li><strong>Sutro Tower pops</strong> between z13 and z14: z12–13 draw its 757 m² ring footprint at 298 m (a solid slab, about 225,600 m³), z14 draws its 34 parts (about 7,800 m³). Towers on podiums with parts pop the same way, less visibly (Transamerica is the next worst).</li>
+      <li><strong>Tall tapering towers in general</strong> are limited to one split per component and 4 steps per building (<code>derive.ts:824-852</code>), so a taper can never be more than a couple of blocks.</li>
+    </ul>
+    <p>The roofer spike (<code>docs/superpowers/design/2026-11-26-roofer-spike/</code>, especially <code>fig/salesforce_profile.png</code>) measured the LiDAR's plan area by height for Salesforce and showed that the LiDAR itself, sliced into levels, is the closest available description of the tower. Roofer meshes help houses but need a new renderer; that is part 2 and out of scope here.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <section id="sec-goals-goals">
+      <h3>Goals</h3>
+      <ul>
+        <li>Salesforce reads as a tapering tower at z14+: plan-area error against the LiDAR above 130 m at most 350 m² on average (today 852 m²; roofer managed 262 m²), measured with the spike's profile script.</li>
+        <li>Parts that the LiDAR plainly contradicts stop overriding it, building by building, without breaking parts that are right (Sutro, 555 California, domes and spires).</li>
+        <li>Tall buildings whose roof rises a long way above the main roof render as a stack of terraces following the LiDAR, not at most 4 blocks.</li>
+        <li>Sutro and other parts buildings look the same shape at z13 and z14.</li>
+      </ul>
+    </section>
+    <section id="sec-goals-non">
+      <h3>Non-goals</h3>
+      <ul>
+        <li>Sloped roofs or meshes of any kind (part 2, renderer spike).</li>
+        <li>The z12–13 over-height of towers on podiums that have <em>no</em> parts.</li>
+        <li>Re-fetching Overture parts for <code>roof_direction</code>: the spike's profile shows Overture's wedges put the taper's foot at 81 m, below the LiDAR's 130 m, so even a faithful skillion rendering would be wrong.</li>
+        <li>345 California (tower parts without heights): noted, not fixed.</li>
+      </ul>
+    </section>
+    <section id="sec-goals-anti">
+      <h3>Anti-goals</h3>
+      <ul>
+        <li>Any change to the model: <code>buildings</code>, <code>pieces</code>, <code>parcel_out</code>, <code>buildings_export</code> and every scenario file stay byte-identical (their fingerprints in <code>render-boxes.test.ts</code> hold).</li>
+        <li>Sutro losing its lattice, or any landmark spire being replaced by LiDAR noise.</li>
+        <li>z14+ tile drops (V37) or a z12 budget failure (V11).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches considered</h2>
+    <table id="tbl-approaches">
+      <caption>Ways to fix the Salesforce class of failure</caption>
+      <thead>
+        <tr><th scope="col">Approach</th><th scope="col">Trade-off</th><th scope="col">Verdict</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">LiDAR overrides disputed parts; tall rises become terraces</th><td>Uses the derivation we already trust; needs a part-vs-LiDAR check and a slicing step for tall rises.</td><td>Chosen</td></tr>
+        <tr><th scope="row">Draw skillion parts as tiers along their slope</th><td>Needs <code>roof_direction</code> (not fetched: new fetch, new lock); Overture's own taper starts too low.</td><td>Rejected</td></tr>
+        <tr><th scope="row">Cap or ignore <code>roof_height</code></th><td>One line, but yields a fat prism at about 310–326 m.</td><td>Rejected</td></tr>
+        <tr><th scope="row">Roofer meshes</th><td>A third of our error for Salesforce, still no lower taper; needs a mesh renderer.</td><td>Part 2</td></tr>
+      </tbody>
+    </table>
+    <p>For the Sutro pop the choices were: draw parts buildings at z12–13 with a volume-preserving height (no bytes, but Sutro becomes a 10 m ring at low zoom), or draw the parts themselves at z12–13 (about +30 KB at z12, +40 KB at z13 measured by the diagnosis; continuity). Chosen: the parts themselves, with a measurement gate (<a href="#sec-low">below</a>).</p>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-dispute">
+      <h3>1. Parts the LiDAR disputes</h3>
+      <p>In <code>buildingBoxes()</code> (<code>pipeline/steps/boxes.ts</code>), before the parts are drawn, each counted part is checked against the LiDAR of its cluster window <code>w</code>, sampled at the part's shape moved by the cluster's registration shift (parts themselves stay unshifted when drawn, as today). Use the cluster window, not <code>buildingWindow</code>: parts may leave the footprint.</p>
+      <ul>
+        <li><strong>Checked parts:</strong> counted parts with area ≥ <code>stepMinAreaM2</code> whose roof shape is not in <code>partTierShapes</code>. Tiered parts (domes, spires) and small parts (Sutro's legs and masts) are always trusted.</li>
+        <li><strong>Raised cells:</strong> cells under the part that are finite, not vegetation, with <code>hag ≥ raisedHagM</code>. A part whose raised share is under <code>coverageMin</code> is trusted: the LiDAR sees through it (a lattice) or misses it.</li>
+        <li><strong>Disputed:</strong> otherwise, when the part's drawn top (today's rule: <code>height</code> or <code>height − rh/2</code>, relative to the building's ground) differs from the median raised height by more than <code>max(partTolM, partTolFrac × drawn top)</code>.</li>
+        <li><strong>Rejection:</strong> when disputed parts cover at least <code>partRejectShare</code> of the counted parts' area, the building ignores all its parts and takes the plain LiDAR derivation over its footprint (the no-parts path). Otherwise parts are used as today.</li>
+      </ul>
+      <p>Starting values (tier 4, tuned in the live round): <code>partTolM</code> 5, <code>partTolFrac</code> 0.1, <code>partRejectShare</code> 0.25. Recorded per building in <code>roofs.parquet</code>: <code>parts_checked</code>, <code>parts_disputed</code> (counts) and <code>parts_rejected</code> (boolean). The artifact schema moves to <code>boxes/2</code>.</p>
+      <aside data-kind="note"><strong>Note</strong> <code>hag</code> is Int16 centimetres and caps at 327.67 m; every SF building is under it.</aside>
+    </section>
+
+    <section id="sec-terraces">
+      <h3>2. Terraces for tall rises</h3>
+      <p>In <code>deriveBoxes</code> (<code>pipeline/lib/lidar/derive.ts</code>), after the main roof (<code>baseTop</code>) is found, a building whose raised cells reach at least <code>taperMinRiseM</code> above <code>baseTop</code> takes a <strong>sliced</strong> step stage instead of today's single median split. Every other building keeps today's step stage unchanged.</p>
+      <ul>
+        <li>Levels: <code>baseTop + k × band</code>, with <code>band = max(stepGapM, rise / taperTiers)</code>, up to the raised top's 99th percentile.</li>
+        <li>For each level, the region is the candidate cells (same masks as today: interior, non-vegetation, not rough) with height at least that level, opened and grown back as today, components under <code>stepMinAreaM2</code> dropped.</li>
+        <li>Each region becomes a box from its level's base to the next level's base (the top level to the median of its cells), so the boxes <strong>stack</strong>: <code>base_m</code> is the level below, not <code>baseTop</code>. Regions keep today's flush-face growth and clip to the shape; a region drawn at a level must lie inside the region of the level below, enforced by intersection.</li>
+        <li>Rough cells (<code>treeRoughM</code>) stay excluded; fronts lose to terraces as they lose to steps today.</li>
+      </ul>
+      <p>Starting values: <code>taperMinRiseM</code> 40, <code>taperTiers</code> 16. The terraces are <code>src: 'step'</code> boxes. The cap becomes per building: <code>stepCap</code> (4) for the median-split stage, <code>taperTiers × 2</code> for sliced buildings (two components per level at most before the cap applies, largest by area first). V37's step check, <code>check.ts:1000-1003</code>, compares each building's <code>n_step</code> with its own cap (a new <code>step_cap</code> column, or <code>sliced</code> boolean, in <code>roofs.parquet</code>).</p>
+    </section>
+
+    <section id="sec-low">
+      <h3>3. Parts at z12–13</h3>
+      <p>For buildings that have <code>part</code> render boxes, z12–13 draw the building's render boxes (parts and whatever LiDAR boxes cover the rest) instead of the single box. Every other building's z12–13 feature is unchanged.</p>
+      <ul>
+        <li>Built in <code>pipeline/sql/76_render_boxes.sql</code> as a new <code>low_export</code> table: <code>buildings_export</code> features of buildings with no part boxes, plus the render-export features of buildings with part boxes, with the four z12–13 properties only (<code>parcelId</code>, <code>heightM</code>, <code>baseM</code>, <code>hs</code>).</li>
+        <li><code>writeBuildingsTiles</code> reads <code>low_export</code> only when the artifact is present (<code>split</code>); without it, the input stays <code>buildings_export</code> and the archive stays byte-identical to <code>tiles-no-boxes/</code>.</li>
+        <li>Gate in the live build: V11 passes, the z12 buildings bytes grow by at most 60 KB, and the count of features tippecanoe drops at z12 does not grow by more than 1% (new report count <code>tiles.buildings.drops_z12_13</code>). If the gate fails, fall back to the volume-preserving height for parts buildings (same table, one column) and say so in the PR.</li>
+      </ul>
+      <p>Buildings whose parts are rejected (section 1) have no part boxes and keep today's z12–13 box.</p>
+    </section>
+
+    <figure id="fig-flow">
+      <svg class="diagram" viewBox="0 0 700 200" role="img" aria-labelledby="fig-flow-t">
+        <title id="fig-flow-t">Per-building path through boxes after this change</title>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+        <g class="node" id="n-parts"><rect x="10" y="70" width="130" height="50"/><text x="75" y="95">counted parts?</text></g>
+        <g class="node missing" id="n-check"><rect x="190" y="10" width="140" height="50"/><text x="260" y="35">LiDAR check</text></g>
+        <g class="node" id="n-partsdraw"><rect x="380" y="10" width="140" height="50"/><text x="450" y="35">parts + uncovered</text></g>
+        <g class="node" id="n-derive"><rect x="190" y="130" width="140" height="50"/><text x="260" y="155">deriveBoxes</text></g>
+        <g class="node missing" id="n-slice"><rect x="380" y="130" width="140" height="50"/><text x="450" y="155">sliced terraces</text></g>
+        <g class="node result" id="n-out"><rect x="560" y="70" width="130" height="50"/><text x="625" y="95">render boxes</text></g>
+        <g class="edge" data-from="n-parts" data-to="n-check"><path d="M140 85L188 40"/><text x="150" y="55">yes</text></g>
+        <g class="edge" data-from="n-parts" data-to="n-derive"><path d="M140 105L188 150"/><text x="150" y="140">no</text></g>
+        <g class="edge" data-from="n-check" data-to="n-partsdraw"><path d="M330 35H378"/><text x="354" y="27">trusted</text></g>
+        <g class="edge" data-from="n-check" data-to="n-derive"><path d="M260 60V128"/><text x="290" y="100">rejected</text></g>
+        <g class="edge" data-from="n-derive" data-to="n-slice"><path d="M330 155H378"/><text x="354" y="147">rise ≥ 40 m</text></g>
+        <g class="edge" data-from="n-partsdraw" data-to="n-out"><path d="M520 40L558 85"/></g>
+        <g class="edge" data-from="n-slice" data-to="n-out"><path d="M520 150L558 110"/></g>
+      </svg>
+      <figcaption>Figure 1. New steps (dashed) in the per-building path. Buildings under the rise threshold keep today's step stage.</figcaption>
+    </figure>
+  </section>
+
+  <section id="sec-constraints">
+    <h2>Constraints</h2>
+    <ul>
+      <li>Every threshold lives in <code>BOXES</code> (<code>pipeline/boxes-config.ts</code>) with its tier, and is documented in <code>docs/dev/building-boxes.md</code>.</li>
+      <li>Changing the boxes code or config changes the dataset version: <code>boxes</code> → commit lock → <code>build</code> → reach check → <code>upload</code> → signoff (pipeline.md, "Finishing a branch that changes the dataset").</li>
+      <li><strong>One rebuild:</strong> the <code>remove-scenario-engine</code> branch also needs a rebuild. Before running the live pipeline, confirm that branch is finished, merge it into this one, then run <code>boxes</code> and <code>build</code> once.</li>
+      <li>The mini fixture's artifact and golden report are regenerated (<code>boxes --fixture</code>, <code>fixture --update-golden</code>); the fixture should gain a synthetic disputed-parts building and a sliced tower so both paths are exercised end to end.</li>
+      <li>The LiDAR tiles for <code>boxes</code> come from <code>fetch --restore --lidar</code>; the 59 GB EPT cache in the <code>building-steps</code> worktree is only needed for the profile measurement.</li>
+    </ul>
+  </section>
+
+  <section id="sec-acceptance">
+    <h2>Acceptance</h2>
+    <ul>
+      <li>Salesforce (bid <code>626a57f8-…</code>): parts rejected, sliced, plan-area error above 130 m ≤ 350 m² (profile script from the spike, rerun on the new boxes); its top within 5 m of 326 m.</li>
+      <li>Sutro (bid <code>c5cbfced-…</code>): parts trusted, same 34 part boxes as today at z14+; at z13 its features are those parts (minus what tippecanoe drops), not the 298 m slab.</li>
+      <li>555 California, Transamerica and the 10 domed or spired buildings with the most part area: parts not rejected (listed in the PR with their check numbers).</li>
+      <li>Rejected-parts buildings citywide are listed in the PR (count, the 20 largest by area), with before/after captures of the top 5 from <code>scripts/building-review.ts</code>.</li>
+      <li>V11 and V37 pass; z14+ drops 0; z12 gate (<a href="#sec-low">section 3</a>) holds.</li>
+      <li>Model fingerprints unchanged; reach check exits 0.</li>
+    </ul>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>Exact shape of the slicing loop and how it shares the masks with today's step stage.</li>
+      <li>Whether <code>step_cap</code> or a <code>sliced</code> flag is the column V37 reads.</li>
+      <li>Threshold tuning within the live round, within the acceptance bars above.</li>
+    </ul>
+  </section>
+</article>
