@@ -534,7 +534,15 @@
       <ul>
         <li><strong>Round 1 together is worse than its rail rule alone.</strong> Taller near BART
           and Caltrain alone reaches the goal 29 months early; with the SB 423 clock and the
-          housing bond also on, 4 months. The cause is being investigated.</li>
+          housing bond also on, 4 months. The pair that does it is the rail rule with the housing
+          bond: no gain on current law, and 4,598 fewer homes by 2066 than the rail rule alone,
+          nearly all affordable. Only in that run, three fixed-amount money pools close in Oct
+          2031 with money left in them (about $44M of City bond money is never spent), and from
+          2032 affordable projects start later or never. The closing rule
+          (<code>closeSpent</code>, <code>src/lib/sim/world/funding/closing.ts</code>) calls a
+          pool spent when every waiting application asks for more than it holds. That reads as
+          an artefact, not a real mechanism. It belongs to the funding engine, outside this
+          design; round 1 still gains with it present.</li>
         <li><strong>Four policies move nothing where they are offered:</strong> the SB 423 clock,
           the revolving fund, the public bank and state-double. State-double gains 2 months
           once no discretionary review is on. The public bank changed nothing in any case
