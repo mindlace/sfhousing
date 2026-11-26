@@ -47,6 +47,10 @@ export interface RoofRecord {
   nFront: number;
   nStep: number;
   stepsCapped: boolean;
+  /** The raised cells' p95 - p5 reached taperMinRiseM: terraces replaced the roof and step stages. */
+  sliced: boolean;
+  /** This building's step cap: BOXES.stepCap, or BOXES.taperTiers * 2 when sliced. */
+  stepCap: number;
 }
 
 export interface DeriveInput {
@@ -620,7 +624,7 @@ function facesOf(shape: MultiPoly, footprint: MultiPoly): Face[] {
 
 // ---- the derivation ----
 
-function quantile(sorted: number[], p: number): number {
+function quantile(sorted: ArrayLike<number>, p: number): number {
   const x = p * (sorted.length - 1);
   const i = Math.floor(x);
   const f = x - i;
@@ -630,6 +634,170 @@ function quantile(sorted: number[], p: number): number {
 /** Polygons of a multipolygon that overlap `core`. */
 function touching(p: MultiPoly, core: MultiPoly): MultiPoly {
   return p.filter((poly) => area(intersect([poly], core)) > 1e-6);
+}
+
+// ---- regions ----
+
+/**
+ * A level's region mask: the candidates without rough cells, opened by one cell and grown back one
+ * cell into the candidates (the rough ring a wall edge leaves).
+ */
+function openRegions(cand: Uint8Array, rough: Uint8Array, nx: number, ny: number): Uint8Array {
+  const s0 = new Uint8Array(nx * ny);
+  for (let k = 0; k < s0.length; k++) s0[k] = cand[k] && !rough[k] ? 1 : 0;
+  const s1 = dilate3(erode3(s0, nx, ny), nx, ny);
+  const back = dilate3(s1, nx, ny);
+  const s2 = new Uint8Array(nx * ny);
+  for (let k = 0; k < s2.length; k++) s2[k] = s1[k] || (back[k] && cand[k]) ? 1 : 0;
+  return s2;
+}
+
+/** The 4-connected components of a mask, as cell lists in raster order. */
+function components(mask: Uint8Array, nx: number, ny: number): number[][] {
+  const { labels, n } = label4(mask, nx, ny);
+  const comps: number[][] = Array.from({ length: n }, () => []);
+  for (let k = 0; k < labels.length; k++) if (labels[k]) comps[labels[k] - 1].push(k);
+  return comps;
+}
+
+function medianAt(h: Float64Array, cells: number[]): number {
+  return median(Float64Array.from(cells, (k) => h[k]).sort());
+}
+
+interface Terrace {
+  shape: MultiPoly;
+  baseM: number;
+  heightM: number;
+}
+
+/**
+ * Terraces of a sliced building (spec "Terraces for tall rises"). Levels run from the base top in
+ * bands of max(stepGapM, (p99 - base) / taperTiers) up to the p99. A level's regions are the C
+ * cells at least taperSampleFrac of a band above it, without rough cells at taperRoughM, opened,
+ * grown back and shaped as steps are, and cut to the region of the level below they stand on (the
+ * shape for the first level). A region is a terrace from its level to the next; one with nothing
+ * on it ends at its cells' median. A region that is its parent's only child and keeps
+ * taperMergeShare of the parent's area extends the parent's terrace instead.
+ */
+function terraceStage(o: {
+  h: Float64Array;
+  cIdx: number[];
+  nx: number;
+  ny: number;
+  minCells: number;
+  baseTop: number;
+  p99: number;
+  clampH: (v: number) => number;
+  regionPoly: (m: Uint8Array) => MultiPoly;
+  shape: MultiPoly;
+}): { terraces: Terrace[]; cells: Uint8Array; union: MultiPoly; capped: boolean } {
+  const { h, cIdx, nx, ny, baseTop, clampH } = o;
+  const rough = roughMask(h, nx, ny, BOXES.taperRoughM);
+  const band = Math.max(BOXES.stepGapM, (o.p99 - baseTop) / BOXES.taperTiers);
+  interface Box extends Terrace {
+    area: number;
+    cells: number[];
+    order: number;
+  }
+  interface Region {
+    cells: number[];
+    poly: MultiPoly;
+    area: number;
+    parent: Region | null;
+    /** The terrace this region draws or extends; null for the shape (the base box). */
+    box: Box | null;
+    nChild: number;
+  }
+  const boxes: Box[] = [];
+  const root: Region = {
+    cells: [],
+    poly: o.shape,
+    area: area(o.shape),
+    parent: null,
+    box: null,
+    nChild: 0
+  };
+  let prev: Region[] = [];
+  let prevLabel = new Int32Array(0);
+  for (let k = 0; k === 0 || prev.length > 0; k++) {
+    const level = baseTop + k * band;
+    const cur: Region[] = [];
+    const curLabel = new Int32Array(nx * ny);
+    if (level <= o.p99) {
+      const cand = new Uint8Array(nx * ny);
+      const sample = level + BOXES.taperSampleFrac * band;
+      for (const c of cIdx) if (h[c] >= sample) cand[c] = 1;
+      for (const cells of components(openRegions(cand, rough, nx, ny), nx, ny)) {
+        if (cells.length < o.minCells) continue;
+        // The parent: the region of the level below holding most of these cells.
+        let parent = root;
+        if (k > 0) {
+          const votes = new Map<number, number>();
+          let best = 0;
+          let bestN = 0;
+          for (const c of cells) {
+            const p = prevLabel[c];
+            if (!p) continue;
+            const v = (votes.get(p) ?? 0) + 1;
+            votes.set(p, v);
+            if (v > bestN) {
+              bestN = v;
+              best = p;
+            }
+          }
+          if (!best) continue;
+          parent = prev[best - 1];
+        }
+        const m = new Uint8Array(nx * ny);
+        for (const c of cells) m[c] = 1;
+        const poly = intersect(o.regionPoly(m), parent.poly);
+        const a = area(poly);
+        if (!(a > 0.01)) continue;
+        parent.nChild++;
+        cur.push({ cells, poly, area: a, parent, box: null, nChild: 0 });
+        for (const c of cells) curLabel[c] = cur.length;
+      }
+    }
+    // The level below ends here where something stands on it, else at its cells' median. A merged
+    // child sets its shared terrace's top again at the next level.
+    for (const r of prev) r.box!.heightM = clampH(r.nChild > 0 ? level : medianAt(h, r.cells));
+    for (const r of cur) {
+      const p = r.parent!;
+      if (p.box && p.nChild === 1 && r.area >= BOXES.taperMergeShare * p.area) r.box = p.box;
+      else {
+        r.box = {
+          shape: r.poly,
+          baseM: clampH(level),
+          heightM: NaN,
+          area: r.area,
+          cells: r.cells,
+          order: boxes.length
+        };
+        boxes.push(r.box);
+      }
+    }
+    prev = cur;
+    prevLabel = curLabel;
+  }
+
+  // The cap keeps the taperTiers x 2 largest terraces overall. Builder's call (preflight F6): the
+  // spec's wording is two components per level at most before the cap; the plan keeps the largest
+  // overall with no per-level limit. A terrace is never larger than the one it stands on (ties go
+  // to the lower base), so keeping the largest never leaves one floating.
+  const cap = BOXES.taperTiers * 2;
+  const found = boxes.filter((b) => b.heightM > b.baseM);
+  const kept = [...found]
+    .sort((a, b) => b.area - a.area || a.baseM - b.baseM || a.order - b.order)
+    .slice(0, cap)
+    .sort((a, b) => a.baseM - b.baseM || b.area - a.area || a.order - b.order);
+  const cells = new Uint8Array(nx * ny);
+  for (const b of kept) for (const c of b.cells) cells[c] = 1;
+  return {
+    terraces: kept.map((b) => ({ shape: b.shape, baseM: b.baseM, heightM: b.heightM })),
+    cells,
+    union: kept.length ? union(kept.map((b) => b.shape)) : [],
+    capped: found.length > cap
+  };
 }
 
 /**
@@ -661,7 +829,9 @@ export function deriveBoxes(
     fallback: null,
     nFront: 0,
     nStep: 0,
-    stepsCapped: false
+    stepsCapped: false,
+    sliced: false,
+    stepCap: BOXES.stepCap
   };
   if (!(area(shape) > 0)) return { boxes: [], roof: rec };
   const fallback = (f: Fallback): { boxes: RenderBox[]; roof: RoofRecord } => ({
@@ -727,66 +897,74 @@ export function deriveBoxes(
     ch[q] = h[k];
   });
 
-  // Roof form.
+  // Roof form, unless the building is sliced: a rise of taperMinRiseM or more over the raised
+  // cells (p95 - p5) is drawn as terraces from the p5 instead of a main roof and steps (spec
+  // "Terraces for tall rises").
   const sortedH = Float64Array.from(ch).sort();
-  const flat = flatRoof(sortedH);
-  const verts = shape.flatMap((poly) => poly[0] ?? []);
-  const ox = verts.reduce((s, v) => s + v[0], 0) / verts.length;
-  const oy = verts.reduce((s, v) => s + v[1], 0) / verts.length;
-  const theta = minRectAngle(interior);
-  let fit = pitchFit(cx, cy, ch, theta, ox, oy);
-  if (fit) {
-    // One trimmed refit: cells a false front or more (frontRiseM) off the first fit are not roof
-    // surface (fronts, dormers, rooftop structures) and would drag the plane.
-    const first = fit;
-    const keep: number[] = [];
-    for (let q = 0; q < nC; q++)
-      if (Math.abs(ch[q] - fitAt(first, cx[q], cy[q])) <= BOXES.frontRiseM) keep.push(q);
-    if (keep.length < nC && keep.length * res * res >= BOXES.minInteriorM2)
-      fit = pitchFit(
-        Float64Array.from(keep, (q) => cx[q]),
-        Float64Array.from(keep, (q) => cy[q]),
-        Float64Array.from(keep, (q) => ch[q]),
-        theta,
-        ox,
-        oy
-      );
-  }
-  let top = flat.top;
-  let model: (x: number, y: number) => number = () => flat.top;
+  const p5 = quantile(sortedH, 0.05);
+  rec.sliced = quantile(sortedH, 0.95) - p5 >= BOXES.taperMinRiseM;
+  if (rec.sliced) rec.stepCap = BOXES.taperTiers * 2;
+  let top = p5;
+  let model: (x: number, y: number) => number = () => top;
   rec.roof = 'flat';
-  if (fit && fit.r2 >= BOXES.pitchMinR2 && Math.abs(fit.k) >= BOXES.pitchMinSlope) {
-    let eave = Infinity;
-    let ridge = -Infinity;
-    let uMin = Infinity;
-    let uMax = -Infinity;
-    for (const [x, y] of verts) {
-      const v = fitAt(fit, x, y);
-      eave = Math.min(eave, v);
-      ridge = Math.max(ridge, v);
-      const u = (x - ox) * fit.ex + (y - oy) * fit.ey;
-      uMin = Math.min(uMin, u);
-      uMax = Math.max(uMax, u);
+  if (!rec.sliced) {
+    const flat = flatRoof(sortedH);
+    const verts = shape.flatMap((poly) => poly[0] ?? []);
+    const ox = verts.reduce((s, v) => s + v[0], 0) / verts.length;
+    const oy = verts.reduce((s, v) => s + v[1], 0) / verts.length;
+    const theta = minRectAngle(interior);
+    let fit = pitchFit(cx, cy, ch, theta, ox, oy);
+    if (fit) {
+      // One trimmed refit: cells a false front or more (frontRiseM) off the first fit are not roof
+      // surface (fronts, dormers, rooftop structures) and would drag the plane.
+      const first = fit;
+      const keep: number[] = [];
+      for (let q = 0; q < nC; q++)
+        if (Math.abs(ch[q] - fitAt(first, cx[q], cy[q])) <= BOXES.frontRiseM) keep.push(q);
+      if (keep.length < nC && keep.length * res * res >= BOXES.minInteriorM2)
+        fit = pitchFit(
+          Float64Array.from(keep, (q) => cx[q]),
+          Float64Array.from(keep, (q) => cy[q]),
+          Float64Array.from(keep, (q) => ch[q]),
+          theta,
+          ox,
+          oy
+        );
     }
-    if (fit.kind === 'gable' && fit.u0 >= uMin && fit.u0 <= uMax) ridge = fit.r;
-    // A pitched fit must also explain all of C better than the flat levels do (capped loss): a
-    // podium and a tower spanning one axis fit a shed plane with R² up to 0.75.
-    let loss = 0;
-    for (let q = 0; q < nC; q++) loss += capped(ch[q] - fitAt(fit, cx[q], cy[q]));
-    if (
-      ridge - eave >= BOXES.pitchMinRiseM &&
-      loss < flat.loss &&
-      medianSlope(h, cIdx, nx, ny, res) >= BOXES.pitchSlopeShareMin * Math.abs(fit.k)
-    ) {
-      rec.roof = 'pitched';
-      rec.eaveM = round1(eave);
-      rec.ridgeM = round1(ridge);
-      // Round, then reduce: rounding 179.96 after the reduction would give 180.0.
-      const deg = round1((Math.atan2(-fit.ey, fit.ex) * 180) / Math.PI);
-      rec.ridgeDeg = (((deg % 180) + 180) % 180) + 0;
-      top = (eave + ridge) / 2;
-      const f = fit;
-      model = (x, y) => fitAt(f, x, y);
+    top = flat.top;
+    if (fit && fit.r2 >= BOXES.pitchMinR2 && Math.abs(fit.k) >= BOXES.pitchMinSlope) {
+      let eave = Infinity;
+      let ridge = -Infinity;
+      let uMin = Infinity;
+      let uMax = -Infinity;
+      for (const [x, y] of verts) {
+        const v = fitAt(fit, x, y);
+        eave = Math.min(eave, v);
+        ridge = Math.max(ridge, v);
+        const u = (x - ox) * fit.ex + (y - oy) * fit.ey;
+        uMin = Math.min(uMin, u);
+        uMax = Math.max(uMax, u);
+      }
+      if (fit.kind === 'gable' && fit.u0 >= uMin && fit.u0 <= uMax) ridge = fit.r;
+      // A pitched fit must also explain all of C better than the flat levels do (capped loss): a
+      // podium and a tower spanning one axis fit a shed plane with R² up to 0.75.
+      let loss = 0;
+      for (let q = 0; q < nC; q++) loss += capped(ch[q] - fitAt(fit, cx[q], cy[q]));
+      if (
+        ridge - eave >= BOXES.pitchMinRiseM &&
+        loss < flat.loss &&
+        medianSlope(h, cIdx, nx, ny, res) >= BOXES.pitchSlopeShareMin * Math.abs(fit.k)
+      ) {
+        rec.roof = 'pitched';
+        rec.eaveM = round1(eave);
+        rec.ridgeM = round1(ridge);
+        // Round, then reduce: rounding 179.96 after the reduction would give 180.0.
+        const deg = round1((Math.atan2(-fit.ey, fit.ex) * 180) / Math.PI);
+        rec.ridgeDeg = (((deg % 180) + 180) % 180) + 0;
+        top = (eave + ridge) / 2;
+        const f = fit;
+        model = (x, y) => fitAt(f, x, y);
+      }
     }
   }
   const clampH = (v: number): number =>
@@ -796,80 +974,89 @@ export function deriveBoxes(
   const baseTop = clampH(top);
   if (rec.roof === 'flat') model = () => baseTop;
 
-  // Steps: cells clearly above the roof model, without rough texture, opened by one cell and
-  // grown back one cell into the candidates (the rough ring a wall edge leaves).
-  const rough = roughMask(h, nx, ny, BOXES.treeRoughM);
-  const cand = new Uint8Array(nx * ny);
-  cIdx.forEach((k, q) => {
-    if (ch[q] - model(cx[q], cy[q]) >= BOXES.stepGapM) cand[k] = 1;
-  });
-  const s0 = new Uint8Array(nx * ny);
-  for (let k = 0; k < s0.length; k++) s0[k] = cand[k] && !rough[k] ? 1 : 0;
-  const s1 = dilate3(erode3(s0, nx, ny), nx, ny);
-  const back = dilate3(s1, nx, ny);
-  const s2 = new Uint8Array(nx * ny);
-  for (let k = 0; k < s2.length; k++) s2[k] = s1[k] || (back[k] && cand[k]) ? 1 : 0;
-
-  const { labels, n: nComp } = label4(s2, nx, ny);
-  const comps: number[][] = Array.from({ length: nComp }, () => []);
-  for (let k = 0; k < labels.length; k++) if (labels[k]) comps[labels[k] - 1].push(k);
-  const parts: { cells: number[]; level: number }[] = [];
-  const medianOf = (cells: number[]): number => {
-    const v = Float64Array.from(cells, (k) => h[k]).sort();
-    return median(v);
-  };
-  const minCells = BOXES.stepMinAreaM2 / (res * res);
-  for (const comp of comps) {
-    if (comp.length < minCells) continue;
-    const cut = medianOf(comp) + BOXES.stepGapM;
-    const high = comp.filter((k) => h[k] >= cut);
-    const pieces: number[][] = [];
-    if (high.length === 0) pieces.push(comp);
-    else
-      for (const sub of [comp.filter((k) => h[k] < cut), high]) {
-        const m = new Uint8Array(nx * ny);
-        for (const k of sub) m[k] = 1;
-        const l = label4(m, nx, ny);
-        const groups: number[][] = Array.from({ length: l.n }, () => []);
-        for (const k of sub) groups[l.labels[k] - 1].push(k);
-        pieces.push(...groups);
-      }
-    for (const cells of pieces) {
-      if (cells.length < minCells) continue;
-      const level = medianOf(cells);
-      if (level - baseTop >= BOXES.stepGapM) parts.push({ cells, level });
-    }
-  }
-  parts.sort(
-    (a, b) =>
-      b.cells.length * (b.level - baseTop) - a.cells.length * (a.level - baseTop) ||
-      b.level - a.level ||
-      a.cells[0] - b.cells[0]
-  );
-  rec.stepsCapped = parts.length > BOXES.stepCap;
-  const kept = parts
-    .slice(0, BOXES.stepCap)
-    .sort((a, b) => b.level - a.level || a.cells[0] - b.cells[0]);
-
-  // Flush faces: a step reaching the margin is grown out to the real edge, within the outer ring
-  // the interior's edge cells can leave (marginM + res).
+  // Region shaping shared by steps and terraces. Flush faces: a region reaching the margin is
+  // grown out to the real edge, within the outer ring the interior's edge cells can leave
+  // (marginM + res); the result is clipped to the shape.
   const edgeZone = difference(shape, inset(shape, BOXES.marginM + res));
-  const stepCells = new Uint8Array(nx * ny);
-  const steps: { shape: MultiPoly; level: number }[] = [];
-  let stepUnion: MultiPoly = [];
-  for (const p of kept) {
-    const m = new Uint8Array(nx * ny);
-    for (const k of p.cells) {
-      m[k] = 1;
-      stepCells[k] = 1;
-    }
+  const regionPoly = (m: Uint8Array): MultiPoly => {
     const core = cellsToPoly(sw, m, dx, dy);
     const flush = intersect(grow(core, BOXES.marginM + res), edgeZone);
-    let poly = touching(intersect(union([core, flush]), shape), core);
-    if (stepUnion.length) poly = difference(poly, stepUnion);
-    if (!(area(poly) > 0.01)) continue;
-    steps.push({ shape: poly, level: p.level });
-    stepUnion = union([stepUnion, poly]);
+    return touching(intersect(union([core, flush]), shape), core);
+  };
+  const minCells = BOXES.stepMinAreaM2 / (res * res);
+  const rough = roughMask(h, nx, ny, BOXES.treeRoughM);
+  let stepCells = new Uint8Array(nx * ny);
+  const steps: { shape: MultiPoly; level: number }[] = [];
+  let terraces: Terrace[] = [];
+  let stepUnion: MultiPoly = [];
+  if (rec.sliced) {
+    const t = terraceStage({
+      h,
+      cIdx,
+      nx,
+      ny,
+      minCells,
+      baseTop,
+      p99: quantile(sortedH, 0.99),
+      clampH,
+      regionPoly,
+      shape
+    });
+    terraces = t.terraces;
+    stepCells = t.cells;
+    stepUnion = t.union;
+    rec.stepsCapped = t.capped;
+  } else {
+    // Steps: cells clearly above the roof model, without rough texture, opened and grown back.
+    const cand = new Uint8Array(nx * ny);
+    cIdx.forEach((k, q) => {
+      if (ch[q] - model(cx[q], cy[q]) >= BOXES.stepGapM) cand[k] = 1;
+    });
+    const parts: { cells: number[]; level: number }[] = [];
+    for (const comp of components(openRegions(cand, rough, nx, ny), nx, ny)) {
+      if (comp.length < minCells) continue;
+      const cut = medianAt(h, comp) + BOXES.stepGapM;
+      const high = comp.filter((k) => h[k] >= cut);
+      const pieces: number[][] = [];
+      if (high.length === 0) pieces.push(comp);
+      else
+        for (const sub of [comp.filter((k) => h[k] < cut), high]) {
+          const m = new Uint8Array(nx * ny);
+          for (const k of sub) m[k] = 1;
+          const l = label4(m, nx, ny);
+          const groups: number[][] = Array.from({ length: l.n }, () => []);
+          for (const k of sub) groups[l.labels[k] - 1].push(k);
+          pieces.push(...groups);
+        }
+      for (const cells of pieces) {
+        if (cells.length < minCells) continue;
+        const level = medianAt(h, cells);
+        if (level - baseTop >= BOXES.stepGapM) parts.push({ cells, level });
+      }
+    }
+    parts.sort(
+      (a, b) =>
+        b.cells.length * (b.level - baseTop) - a.cells.length * (a.level - baseTop) ||
+        b.level - a.level ||
+        a.cells[0] - b.cells[0]
+    );
+    rec.stepsCapped = parts.length > BOXES.stepCap;
+    const kept = parts
+      .slice(0, BOXES.stepCap)
+      .sort((a, b) => b.level - a.level || a.cells[0] - b.cells[0]);
+
+    for (const p of kept) {
+      const m = new Uint8Array(nx * ny);
+      for (const k of p.cells) {
+        m[k] = 1;
+        stepCells[k] = 1;
+      }
+      let poly = regionPoly(m);
+      if (stepUnion.length) poly = difference(poly, stepUnion);
+      if (!(area(poly) > 0.01)) continue;
+      steps.push({ shape: poly, level: p.level });
+      stepUnion = union([stepUnion, poly]);
+    }
   }
 
   // False fronts: per street face, the frontPct quantile of h in the band from the margin to
@@ -908,8 +1095,8 @@ export function deriveBoxes(
       continue;
     fronts.push({ shape: intersect(bufferLine(face.path, BOXES.frontDepthM), shape), value });
   }
-  // Steps win over strips whatever their height (a step reaching the street face is the facade
-  // there); between strips the taller wins.
+  // Steps and terraces win over strips whatever their height (a step reaching the street face is
+  // the facade there); between strips the taller wins.
   fronts.sort((a, b) => b.value - a.value);
   const frontBoxes: { shape: MultiPoly; value: number }[] = [];
   let taken = stepUnion;
@@ -930,6 +1117,7 @@ export function deriveBoxes(
   };
   for (const f of frontBoxes) upper('front', f.shape, f.value);
   for (const s of steps) upper('step', s.shape, s.level);
+  for (const t of terraces) boxes.push({ bid: fp.bid, k: k0 + boxes.length, src: 'step', ...t });
   rec.nFront = boxes.filter((b) => b.src === 'front').length;
   rec.nStep = boxes.filter((b) => b.src === 'step').length;
   return { boxes, roof: rec };

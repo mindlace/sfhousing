@@ -36,6 +36,16 @@ export const BOXES = {
   stepGapM: 2.5,
   stepCap: 4,
   treeRoughM: 1.0,
+  // Terraces: a building whose raised cells' p95 - p5 reaches taperMinRiseM is sliced into
+  // stacked terraces instead of a main roof and steps. Levels start at the p5 and are
+  // max(stepGapM, rise / taperTiers) apart; a level samples cells taperSampleFrac of a band above
+  // it, without rough cells at taperRoughM. A level's region that is its parent's only child and
+  // keeps taperMergeShare of its area extends the parent's terrace. The cap is taperTiers x 2.
+  taperMinRiseM: 40,
+  taperTiers: 16,
+  taperMergeShare: 0.98,
+  taperRoughM: 1,
+  taperSampleFrac: 0.5,
   // Roofs.
   roofBinM: 0.5,
   roofMainShareMin: 0.25,

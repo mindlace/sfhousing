@@ -438,7 +438,10 @@ describe('deriveBoxes', () => {
         { ring: rect(104, 214, 110, 220), top: 36 }
       ]
     };
-    const { boxes } = run(s, fp, { streets: new StreetIndex([]) });
+    const { boxes, roof } = run(s, fp, { streets: new StreetIndex([]) });
+    // A rise under taperMinRiseM keeps today's steps.
+    expect(roof.sliced).toBe(false);
+    expect(roof.stepCap).toBe(BOXES.stepCap);
     const steps = bySrc(boxes, 'step');
     expect(steps.map((b) => b.heightM).sort((a, b) => a - b)).toEqual([30, 36]);
     for (const st of steps) expect(st.baseM).toBe(10);
@@ -822,5 +825,110 @@ describe('deriveBoxes', () => {
     expect(Math.abs(g.groundM - 23.6)).toBeLessThanOrEqual(0.15);
     expect(Math.abs(g.groundMinM - 20.6)).toBeLessThanOrEqual(0.1);
     expect(groundOf(null, fp, shiftOf())).toBeNull();
+  });
+});
+
+describe('terraces for tall rises', () => {
+  // Setbacks are at least 1 m per side (ruling F5): the rough mask at taperRoughM marks one cell
+  // each side of a jump, and the opening loses a ring narrower than 1.25 m between two jumps. The
+  // first setback is 1 m (the 12 m ring is not a terrace); the others are 2 m.
+  const cakeRing = rect(100, 200, 130, 220);
+  const cake: SynthScene = {
+    ground: flatGround,
+    boxes: [
+      { ring: cakeRing, top: 12 },
+      { ring: rect(101, 201, 129, 219), top: 24 }, // 504 m2
+      { ring: rect(103, 203, 127, 217), top: 36 }, // 336 m2
+      { ring: rect(105, 205, 125, 215), top: 48 }, // 200 m2
+      { ring: rect(107, 207, 123, 213), top: 60 } // 96 m2
+    ]
+  };
+  const inside = (upper: MultiPoly, lower: MultiPoly): boolean =>
+    area(difference(upper, grow(lower, 0.01))) < 0.01;
+
+  it('a wedding-cake tower is sliced into stacked terraces', () => {
+    const fp = fpOf([[cakeRing]]);
+    const { boxes, roof } = run(cake, fp, { streets: new StreetIndex([]) });
+    expect(roof.sliced).toBe(true);
+    expect(roof.stepCap).toBe(32);
+    expect(roof.roof).toBe('flat');
+    const base = bySrc(boxes, 'base');
+    expect(base).toHaveLength(1);
+    expect(base[0].heightM).toBe(12);
+    // Band 3 (rise 48 / 16 tiers), sampled half a band up: level 12 takes the 24 m tier and merges
+    // through 15, 18 and 21; each tier starts a terrace at its own level.
+    const steps = bySrc(boxes, 'step');
+    expect(steps).toHaveLength(4);
+    expect(roof.nStep).toBe(4);
+    expect(roof.stepsCapped).toBe(false);
+    const want = [
+      { heightM: 24, baseM: 12, area: 504 },
+      { heightM: 36, baseM: 24, area: 336 },
+      { heightM: 48, baseM: 36, area: 200 },
+      { heightM: 60, baseM: 48, area: 96 }
+    ];
+    steps.forEach((s, i) => {
+      expect(Math.abs(s.heightM - want[i].heightM)).toBeLessThanOrEqual(0.2);
+      expect(Math.abs(s.baseM - want[i].baseM)).toBeLessThanOrEqual(0.2);
+      expect(Math.abs(area(s.shape) / want[i].area - 1)).toBeLessThanOrEqual(0.1);
+      if (i > 0) expect(inside(s.shape, steps[i - 1].shape)).toBe(true);
+    });
+  });
+
+  it('a prism tower over a podium is one terrace box', () => {
+    const ring = rect(100, 200, 120, 220);
+    const fp = fpOf([[ring]]);
+    const s: SynthScene = {
+      ground: flatGround,
+      boxes: [
+        { ring, top: 10 },
+        { ring: rect(105, 205, 115, 215), top: 70 }
+      ]
+    };
+    const { boxes, roof } = run(s, fp, { streets: new StreetIndex([]) });
+    expect(roof.sliced).toBe(true);
+    // Sampled half a band up, the podium is not raised by a band: the base box tops at 10.
+    expect(bySrc(boxes, 'base')[0].heightM).toBe(10);
+    const steps = bySrc(boxes, 'step');
+    expect(steps).toHaveLength(1);
+    expect(Math.abs(area(steps[0].shape) / 100 - 1)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(steps[0].heightM - 70)).toBeLessThanOrEqual(0.2);
+    expect(steps[0].baseM).toBe(10);
+  });
+
+  it('the cap keeps the largest terraces and every kept terrace stands on another', () => {
+    // Three towers of 17 square tiers (the shared 5 m podium and 16 more from 13 m), each 2 m in
+    // per side and 3 m up. The band is 3.125 (rise 55 - 5 over 16 tiers), so the levels reach 15
+    // distinct tiers per tower: 45 terraces before the cap.
+    const ring = rect(100, 200, 310, 270);
+    const fp = fpOf([[ring]]);
+    const towers = [0, 1, 2].flatMap((i) =>
+      Array.from({ length: 16 }, (_, t) => {
+        const x0 = 100 + 70 * i;
+        const d = 2 * (t + 1);
+        return { ring: rect(x0 + d, 200 + d, x0 + 70 - d, 270 - d), top: 13 + 3 * t };
+      })
+    );
+    const { boxes, roof } = run({ ground: flatGround, boxes: [{ ring, top: 5 }, ...towers] }, fp, {
+      streets: new StreetIndex([])
+    });
+    expect(roof.sliced).toBe(true);
+    expect(roof.nStep).toBe(32);
+    expect(roof.stepsCapped).toBe(true);
+    const baseTop = bySrc(boxes, 'base')[0].heightM;
+    const steps = bySrc(boxes, 'step');
+    expect(steps).toHaveLength(32);
+    for (const s of steps) {
+      if (s.baseM <= baseTop) continue;
+      expect(steps.some((p) => p.heightM === s.baseM && inside(s.shape, p.shape))).toBe(true);
+    }
+  });
+
+  it("a sliced building's terraces win over a street front", () => {
+    // The default street lies 12 m in front of the south face; the 24 m tier stands 1 m in from
+    // it, inside the front band.
+    const { roof } = run(cake, fpOf([[cakeRing]]));
+    expect(roof.sliced).toBe(true);
+    expect(roof.nFront).toBe(0);
   });
 });

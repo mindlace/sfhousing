@@ -310,7 +310,9 @@ function buildingBoxes(
       fallback: null,
       nFront: 0,
       nStep: 0,
-      stepsCapped: false
+      stepsCapped: false,
+      sliced: false,
+      stepCap: BOXES.stepCap
     };
     return { boxes, roof, nParts: counted.length, coverage, dropped: 0 };
   }
