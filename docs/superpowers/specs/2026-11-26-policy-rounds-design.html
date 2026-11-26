@@ -186,7 +186,8 @@
       <dl>
         <dt>Goal</dt><dd>82,069 homes, as today.</dd>
         <dt>Goal month</dt><dd>The month the current forecast first reaches the goal.</dd>
-        <dt>Target</dt><dd>The month to beat. The first target is the legal deadline
+        <dt>Target</dt><dd>The month to beat: the player's best goal month so far. Before the
+          baseline has been seen there is none, and the header shows the legal deadline
           (<code>defaultGoal(asOf).deadline</code>, Oct 2066).</dd>
         <dt>Round</dt><dd>A set of policies offered together.</dd>
         <dt>Fixed</dt><dd>An offered policy whose only control is its switch.</dd>
@@ -224,9 +225,17 @@
       </figure>
       <ol>
         <li><strong>The baseline comes first.</strong> After Start no policy is offered. The
-          player plays or drags to the goal month. Reaching the goal on or before the legal
-          deadline is the first win. Seeing current law before any policy is the comparison
-          everything later is read against. Accepted by the owner (2026-11-26).</li>
+          player plays or drags to the baseline's goal month. Seeing it sets the first target and
+          offers round 1. Seeing current law before any policy is the comparison everything later
+          is read against. Accepted by the owner (2026-11-26).
+          <ul>
+            <li>Nothing depends on the baseline meeting the legal deadline. The owner's rule is
+              that the model follows realism wherever current law then lands, and the game is
+              re-derived from it. The deadline is a mark on the ruler for comparison.</li>
+            <li>If the baseline never reaches the goal in the window, seeing the end of the
+              window offers round 1, and the first forecast that reaches the goal is a win.</li>
+          </ul>
+        </li>
         <li><strong>A change resets the timeline.</strong> When a policy is switched on or off, or
           edited, playback pauses and the playhead goes to the first month the change takes
           effect, or to today if that is later (the owner's rule, 2026-11-26). Everything after
@@ -374,8 +383,9 @@
     <section id="sec-height">
       <h3>Height</h3>
       <p>On the rail rule, 40 stories gives fewer homes by 2066 than 12 (92,259 against 94,074),
-        and 20 stories reaches the goal later than 12. A height limit is a maximum, so a higher
-        one should never do worse (P15).</p>
+        and 20 stories reaches the goal later than 12 (P15). A counterintuitive result is fine
+        when its cause is real. This one looks like an artefact: a height limit is a maximum,
+        and the model treats it as the height to build.</p>
       <p>The cause, read from the code and not yet confirmed lot by lot: the engine builds to
         the limit instead of choosing the best building at or below it.</p>
       <ul>
@@ -389,7 +399,8 @@
           not rise steadily.</li>
       </ul>
       <p>The fix is a separate change to the engine: each lot takes the best building at or below
-        its limit, with a height check beside <code>scripts/money-monotone.ts</code>. It changes
+        its limit, with a height sweep beside <code>scripts/money-monotone.ts</code> as a
+        diagnostic. It changes
         the dataset version, so it gets its own design. This design does not wait for it: the
         fixed heights in <a href="#tbl-transit-fixed">the transit rules</a> are all below 13
         stories. A player who edits a rule above 12 stories will still meet the anomaly until
@@ -487,12 +498,21 @@
 
     <section id="sec-checks">
       <h3>The dataset check</h3>
-      <p><code>scripts/reach-check.ts</code> keeps its place before every upload with new rules:
-        the baseline under current law reaches the goal by the legal deadline, and each round,
-        with all its fixed policies on over the fixed policies of the rounds before, reaches the
-        goal earlier than the round before. So a player who edits nothing can win every round. A
-        report script prints each policy's effect alone and each round's, replacing
-        <code>tree-balance</code>. My call.</p>
+      <p>The rounds need almost nothing from a dataset. Targets come from the player's own
+        forecast and a round can complete with no gain, so no model result can block the game.
+        This follows the owner's rule (2026-11-26) that levers are judged by realism, and that
+        "more never builds fewer" is a diagnostic and not a gate.</p>
+      <ul>
+        <li><strong>The gate.</strong> <code>scripts/reach-check.ts</code> still runs before every
+          upload, with one rule: the goal is reached inside the window with every policy on at
+          its fixed values. Without that the game has no target to offer. It no longer requires
+          current law to meet a deadline.</li>
+        <li><strong>The report.</strong> The same script prints each policy's effect alone and in
+          its round, and each round's effect all on, replacing <code>tree-balance</code>. A round
+          that gains nothing, or a policy that loses homes, is printed for a person to judge:
+          a real mechanism stays, a model artefact gets fixed.</li>
+      </ul>
+      <p>My call.</p>
       <table id="tbl-rounds-measured">
         <caption>The rounds measured at their fixed values, all on, dataset 2026-11-25-76c90397, cars on</caption>
         <thead>
@@ -508,8 +528,9 @@
         </tbody>
       </table>
       <p>Heights use the app's rule of ten feet per story (<code>storiesFromFt</code>,
-        <code>pipeline/lib/heights.ts</code>). Every round beats the one before, so the check
-        passes with the rounds as proposed. Three findings need the owner's eye:</p>
+        <code>pipeline/lib/heights.ts</code>). These numbers are from one dataset and will move
+        as the model does; nothing in the design depends on them. Every round gains on the one
+        before. Three findings need a judgment of real mechanism or artefact:</p>
       <ul>
         <li><strong>Round 1 together is worse than its rail rule alone.</strong> Taller near BART
           and Caltrain alone reaches the goal 29 months early; with the SB 423 clock and the
@@ -522,8 +543,9 @@
           band to 1,200 m reaches the goal 12 months earlier but leaves 1,892 fewer homes by
           2066.</li>
       </ul>
-      <p>If a later dataset makes a round fail the check, the fix is to reorder the rounds or
-        change a fixed value, and the owner chooses; the check is not relaxed.</p>
+      <p>If a later dataset leaves a round with no gain for a player who edits nothing, the
+        report shows it. Reordering the rounds or changing a fixed value is then the owner's
+        choice.</p>
     </section>
   </section>
 
@@ -561,7 +583,10 @@
         the goal month is reached again.</li>
       <li>With every fixed policy tried and no earlier date, the round completes as no gain.</li>
       <li>A game saved before this change opens with its policies and plan intact.</li>
-      <li>The reach check passes on the current dataset under its new rules.</li>
+      <li>With a baseline that misses the legal deadline, the game still plays: the baseline's
+        goal month becomes the first target.</li>
+      <li>The reach check passes on the current dataset under its one rule and prints the
+        report.</li>
     </ul>
   </section>
 
