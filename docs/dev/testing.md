@@ -33,8 +33,8 @@ The engine's funded starts ([finance-engine.md](finance-engine.md)) have their o
 and bench cases.
 
 - **Finance golden.** `src/lib/sim/scenario/fixtures/golden-finance-seed1.json` holds the schedules
-  and ledger of the mini city with `miniCalibrationWithRoutes()` and `miniFinance()` for seeds 1 and
-  4 (horizon 2050-12-31), checked in Node (`simulate.finance.golden.test.ts`) and in the browser
+  and ledger of the mini city with `miniCalibrationWithRoutes()` and `miniFinance()`, its federal pool
+  capped at 20,000,000 a year (`withFederalYearly`), for seeds 1 and 4 (horizon 2050-12-31), checked in Node (`simulate.finance.golden.test.ts`) and in the browser
   (`simulate.finance.golden.svelte.spec.ts`). Its builder is
   `fixtures/build-finance-golden.ts`, run deliberately (`env -C <worktree> node_modules/.bin/tsx
 src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a changed file is an engine
@@ -43,9 +43,18 @@ src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a change
 - **Fixtures.** `fixtures/mini-finance.ts` (`miniFinance()`, `miniCalibrationWithRoutes()`: three
   pools, `m-city` yearly, `m-bank` with one inflow, and `federal` with a yearly
   `LEGACY_UNCAPPED_DOLLARS` that no test reaches; a certain affordable stack, a market loan, a
-  market guarantee, one `off` span) and `fixtures/tiny-queue.ts` (`tinyQueue()`, a five-lot city with hand-set hazards and
+  market guarantee, one `off` span; `withFederalYearly` caps any finance's `federal` pool) and
+  `fixtures/tiny-queue.ts` (`tinyQueue()`, a five-lot city with hand-set hazards and
   yields for exact queue cases; `tinyStack()`, a baseline-shaped affordable stack with an optional
-  bond). All values are test values, not data. `test/finance-harness.ts` checks the ledger
+  bond and optional federal inflows). Under the fallback award (rule 16 as amended, 2026-11-25) an
+  application waits only when every pool of its bundle is short, so a test about the waiting line
+  makes every pool short (empty, late or capped federal and state money), not one.
+- **Old-engine comparisons retired.** The tolerance referee (`tolerance.referee.spec.ts`) and
+  `score/money.spec.ts`'s "rule 12 against today's engine" compared the world engine with the old
+  scenario engine. They were retired on 2026-11-25 by the owner's decision: the old engine no
+  longer runs in production, and under the fallback award the two engines differ by construction
+  (monthly against daily serving and re-application; [world-funding.md](world-funding.md),
+  Tolerance referee). The old engine's own tests and goldens stay. All values are test values, not data. `test/finance-harness.ts` checks the ledger
   identities after every event (`checkLedger`) and collects a run (`runCollect`).
 - **Bench cases.** `scenario.bench.spec.ts`, run by `npm run test:perf` on an idle machine:
   `simulateNet` with the bench baseline and with `benchFunding()`, the host's 101 band pairs and
