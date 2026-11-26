@@ -1,0 +1,597 @@
+<article>
+  <header>
+    <h1>Better building shapes, part 1: implementation plan</h1>
+    <p>A LiDAR check on mapped parts, terraces for tall rises, parts drawn at z12–13, then one live rebuild shared with the scenario-engine removal.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <dl>
+      <dt>Goal</dt>
+      <dd>Salesforce reads as a tapering tower, parts the LiDAR plainly contradicts stop overriding it, tall rises render as stacked terraces, and Sutro (and every parts building) has the same shape at z13 as at z14.</dd>
+      <dt>Architecture</dt>
+      <dd>Three changes inside the existing <code>boxes</code> → artifact → <code>build</code> flow (<code>docs/dev/building-boxes.md</code>). (1) A new pure module <code>pipeline/lib/lidar/dispute.ts</code> checks each counted part against the cluster's raster window; <code>buildingBoxes()</code> (<code>pipeline/steps/boxes.ts:272-327</code>) takes the no-parts path when the disputed share is too high. (2) <code>deriveBoxes</code> (<code>pipeline/lib/lidar/derive.ts:642-936</code>) gains a sliced branch that replaces the roof and median-split step stages for buildings whose raised heights spread at least <code>taperMinRiseM</code>. (3) <code>76_render_boxes.sql</code> writes a <code>low_export</code> table that <code>writeBuildingsTiles</code> reads for z12–13 when the artifact is present. The artifact schema becomes <code>boxes/2</code> (five new <code>roofs.parquet</code> columns) and V37's step cap becomes per building. Code, fixture and tooling tasks come first; the last task runs the one live rebuild after the <code>remove-scenario-engine</code> branch is merged.</dd>
+      <dt>Tech stack</dt>
+      <dd>TypeScript (tsx), DuckDB spatial SQL, clipper geometry (<code>pipeline/geom.ts</code>), tippecanoe and <code>tile-join</code>; Vitest project <code>pipeline</code> (<code>pipeline/test/**/*.test.ts</code>) and project <code>server</code> for <code>scripts/**/*.spec.ts</code> (<code>vite.config.ts:57-81</code>); the roofer spike's Python scripts for the Salesforce profile.</dd>
+      <dt>Spec</dt>
+      <dd><code>docs/superpowers/specs/2026-11-26-better-building-shapes-design.html</code> (approved, including the thresholds and drawing parts at z12–13). Sections: <a href="#sec-dispute">§sec-dispute</a>, §sec-terraces, §sec-low, §sec-constraints, §sec-acceptance.</dd>
+    </dl>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li><strong>Model untouched.</strong> <code>buildings</code>, <code>pieces</code>, <code>parcel_out</code>, <code>buildings_export</code> and every scenario file stay byte-identical; the fingerprints in <code>pipeline/test/render-boxes.test.ts:38-84</code> hold. In every fixture regeneration, the golden diff under <code>golden/parcels/</code>, <code>golden/scenarios/</code>, <code>golden/derived/</code>, <code>neighborhoods.geojson</code> and <code>transit.json</code> must be empty (<code>docs/dev/pipeline.md</code>, Fixture).</li>
+      <li><strong>Thresholds.</strong> Every new value lives in <code>BOXES</code> (<code>pipeline/boxes-config.ts</code>) with a tier comment (tier 4 unless stated) and is documented in <code>docs/dev/building-boxes.md</code>. Spec starting values: <code>partTolM</code> 5, <code>partTolFrac</code> 0.1, <code>partRejectShare</code> 0.25, <code>taperMinRiseM</code> 40, <code>taperTiers</code> 16.</li>
+      <li><strong>Tiles.</strong> No z14+ tile drops (V37), V11 passes, and z12 buildings bytes grow by at most 60 KB with distinct z12 <code>parcelId</code>s falling by at most 1% against the same build without the change. Without the artifact <code>buildings.pmtiles</code> stays byte-identical to <code>pipeline/test/fixtures/mini/tiles-no-boxes/</code>.</li>
+      <li><strong>Mini fixture regeneration order</strong>, whenever a mini raw file, the boxes code or <code>BOXES</code> changes: <code>npx tsx pipeline/test/fixtures/mini/make-fixture.ts</code> (only when raw files change), then <code>npm run pipeline -- boxes --fixture</code>, then <code>npm run pipeline -- fixture --update-golden</code>. Never regenerate <code>tiles-no-boxes/</code>.</li>
+      <li><strong>Commands.</strong> Never compound <code>cd … &amp;&amp; cmd</code>; run from the worktree root <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/better-building-shapes</code>. Single pipeline test file: <code>npx vitest --run --project pipeline &lt;file&gt;</code>; script spec: <code>npx vitest --run --project server &lt;file&gt;</code>. Vitest runs with <code>expect.requireAssertions</code>: every test calls <code>expect</code>.</li>
+      <li><strong>Style.</strong> 2-space indent, single quotes, no trailing commas, 100 columns. Imports follow the file's existing style (<code>pipeline/lib/lidar/*</code> uses <code>.js</code> extensions).</li>
+      <li><strong>Commits.</strong> Conventional Commits, one per task, no Claude attribution of any kind (no Co-Authored-By, no "generated with").</li>
+      <li><strong>Shared machine.</strong> Port 4173 belongs to whichever session started it: never kill a process on it, wait. <code>scripts/building-review.ts</code> uses 4174. The EPT cache in <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/building-steps/pipeline/.cache/ept</code> is read-only. Signoff fails on server stderr, on timing crutches and on retried flakes.</li>
+      <li><strong>Dataset version.</strong> Every change under <code>pipeline/</code> changes the dataset version; only the final task builds and uploads it.</li>
+    </ul>
+    <h3 id="sec-builder-calls">Builder's calls made by this plan</h3>
+    <ul>
+      <li><strong>V37 reads <code>step_cap</code></strong> (and <code>roofs.parquet</code> also gets <code>sliced</code>): the per-building cap is then a plain <code>n_step &gt; step_cap</code> count with no config in the query; <code>sliced</code> is what the acceptance list and the review read.</li>
+      <li><strong>Ground reference for the parts check</strong> is <code>groundOf(w, fp, shift).groundM</code>, and the LiDAR height of a cell is <code>hag + ground − groundM</code>, exactly as <code>deriveBoxes</code> computes <code>h</code> (<code>derive.ts:705-709</code>): the part heights and the derived heights then share one datum.</li>
+      <li><strong>No check without a usable registration</strong>: a null window, a null shift, <code>shift.source</code> <code>'none'</code> or a null ground trusts every part (checked 0), mirroring <code>deriveBoxes</code>'s <code>unreliable</code> rule (<code>derive.ts:702</code>).</li>
+      <li><strong>Rejection share uses union areas</strong> (<code>area(∪ disputed) / area(∪ counted)</code>): parts overlap in plan, so summed areas could exceed 1.</li>
+      <li><strong>"Taller" for the seen area is by drawn top</strong> (<code>partTop</code>, strictly greater); parts with equal tops do not hide each other.</li>
+      <li><strong>A rejected building keeps <code>n_parts</code> and <code>parts_coverage</code></strong>; buildings without counted parts record <code>parts_checked</code> 0, <code>parts_disputed</code> 0, <code>parts_rejected</code> false (not null), so the counts are plain sums.</li>
+      <li><strong>Identical levels merge</strong> (new <code>BOXES.taperMergeShare</code> 0.98): a level whose single region keeps at least that share of its parent region's area extends the parent's box instead of starting a new one. Without it a prism tower over a podium becomes 16 identical stacked boxes, all in the downtown z14 tiles that already reach 680 KB of their 1 MB limit (V37). The rendered solid differs by under 2% of area.</li>
+      <li><strong>A region with no child at the next level tops at the median of its cells</strong> (the spec's "top level" rule applied per region): a lower tower beside a taller one is not drawn a band too tall.</li>
+      <li><strong>The slicing rough limit is its own value</strong>, <code>BOXES.taperRoughM</code> = 1 (equal to <code>treeRoughM</code>, so behaviour is the spec's), and the sampling offset is <code>BOXES.taperSampleFrac</code> = 0 (the spec's "at least that level"). Both exist so the live round can act on <a href="#sec-open">open questions 1 and 2</a> without code changes.</li>
+      <li><strong>The mini fixture's new paths use <code>bpier</code></strong> (already in <code>buildings</code>, outside parcels, today a <code>new_building</code> fallback with no LiDAR): adding a part and LiDAR to it moves no model input, whereas a new Overture building would change <code>pieces</code>, the chunks and <code>fixture-0</code>.</li>
+      <li><strong>The z12 gate's baseline</strong> is main's published <code>buildings.pmtiles</code> on staging: its z12–13 input is <code>buildings_export</code>, which this change does not touch.</li>
+      <li><strong>Tuning and acceptance tooling</strong>: <code>boxes --probe</code> (minutes, not the 55-minute full run), <code>building-review --bids</code> and <code>scripts/low-zoom-gate.ts</code> are added because the acceptance list names buildings and a gate the existing tools cannot report.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li><strong>A part that leaves the cluster window</strong> (Sutro's legs reach past the footprint): no cells under it must read as "LiDAR sees nothing", so the part is trusted and never disputed. Test: Task 1, <code>a part outside the window is trusted</code>.</li>
+      <li><strong>A rejected-parts building whose LiDAR derivation falls back</strong> (built after the flight): it must get no part rows and no LiDAR rows, so <code>build</code> draws today's box at every zoom, never parts at z12–13. Test: Task 3, <code>a rejected building whose LiDAR falls back stores no rows</code>.</li>
+      <li><strong>A sliced building over the cap</strong>: dropping terraces must never leave a kept box floating over a dropped one. Test: Task 2, <code>the cap keeps the largest terraces and every kept terrace stands on another</code>.</li>
+      <li><strong>A parts building whose uncovered area fell back</strong>: z12–13 draw its part rows only, never also today's full-height box. Test: Task 5, in <code>draws no box for a parts building whose uncovered area fell back</code>.</li>
+      <li><strong>A part whose <code>roof_height</code> exceeds its height</strong>: its drawn top must be the clamped box top (2.5 m), in the check as in the drawing. Test: Task 1, <code>partTop is the drawn top</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-files">
+    <h2>File structure</h2>
+    <table id="tbl-files">
+      <caption>Files created or changed, by responsibility</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Tasks</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>pipeline/boxes-config.ts</code></th><td>New thresholds</td><td>1, 2</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/lidar/parts.ts</code></th><td><code>partTop</code>, shared by drawing and checking</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/lidar/dispute.ts</code> (new)</th><td>The parts-vs-LiDAR check, pure</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/lidar/derive.ts</code></th><td>Export <code>subWindow</code>, <code>bboxOf</code>; the sliced branch; <code>RoofRecord.sliced</code>, <code>.stepCap</code></td><td>1, 2</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/boxes.ts</code></th><td>Rejection path, new roof columns, <code>--probe</code></td><td>2, 3, 6</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/lidar/artifact.ts</code></th><td><code>boxes/2</code>, new counts</td><td>3</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/check.ts</code></th><td>V37 per-building cap</td><td>3</td></tr>
+        <tr><th scope="row"><code>pipeline/test/fixtures/mini/make-fixture.ts</code>, <code>README.md</code></th><td><code>bpier</code>'s tower and disputed part</td><td>4</td></tr>
+        <tr><th scope="row"><code>pipeline/sql/76_render_boxes.sql</code></th><td><code>low_export</code></td><td>5</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/tiles.ts</code>, <code>pipeline/steps/build.ts</code></th><td>z12–13 input; <code>parcelIdsAtZoom</code>; z12/z13 parcel counts</td><td>5</td></tr>
+        <tr><th scope="row"><code>pipeline/cli.ts</code></th><td><code>boxes --probe</code></td><td>6</td></tr>
+        <tr><th scope="row"><code>scripts/building-review.ts</code>, <code>scripts/low-zoom-gate.ts</code> (new)</th><td>Captures of named buildings; the z12 gate and a z13 inspection</td><td>7</td></tr>
+        <tr><th scope="row"><code>docs/superpowers/design/2026-11-26-roofer-spike/scripts/{common,profile}.py</code></th><td>Profile against any artifact, without roofer outputs</td><td>7</td></tr>
+        <tr><th scope="row"><code>docs/dev/building-boxes.md</code>, <code>docs/dev/pipeline.md</code></th><td>Docs</td><td>8, 9</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The parts check</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/boxes-config.ts</code> (add <code>partTolM</code> 5, <code>partTolFrac</code> 0.1, <code>partRejectShare</code> 0.25, tier 4, in a "Parts the LiDAR disputes" group after <code>partTierShapes</code>)</li>
+      <li>Modify: <code>pipeline/lib/lidar/parts.ts:74-106</code> (<code>partTop</code>; <code>partBoxes</code> uses it for the non-tiered tops)</li>
+      <li>Modify: <code>pipeline/lib/lidar/derive.ts:65,82</code> (export <code>bboxOf</code> and <code>subWindow</code>, unchanged)</li>
+      <li>Create: <code>pipeline/lib/lidar/dispute.ts</code></li>
+      <li>Test: <code>pipeline/test/lidar-parts.test.ts</code>, create <code>pipeline/test/lidar-dispute.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>RasterWindow</code> (<code>mosaic.ts:8-20</code>: <code>hag</code> is Float32 metres, NaN = no data), <code>cellMask</code> (<code>raster.ts:10</code>), <code>groundOf</code> (<code>derive.ts:144</code>), <code>Footprint</code>, <code>Shift</code> (<code>register.ts</code>), <code>Part</code>, <code>countedParts</code> (<code>parts.ts</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// parts.ts: the top partBoxes draws: heightM; heightM - rh/2 for a non-tiered roof with rh &gt; 0;
+// heightM (the apex) for a tiered one. Clamped to heightRangeM and rounded to 0.1 like partBoxes.
+export function partTop(p: Part): number;
+
+// derive.ts (now exported, unchanged)
+export function bboxOf(p: MultiPoly): Bbox7131;
+export function subWindow(w: RasterWindow, b: Bbox7131): RasterWindow | null;
+
+// dispute.ts
+export interface PartVerdict {
+  id: string;
+  roofShape: string | null;
+  areaM2: number;          // area(part.shape)
+  topM: number;            // partTop
+  seenM2: number | null;   // null: not eligible (tiered, or under stepMinAreaM2)
+  raisedShare: number | null;
+  lidarM: number | null;   // median raised height; null when not compared
+  checked: boolean;
+  disputed: boolean;
+}
+export interface PartsCheck {
+  checked: number;
+  disputed: number;
+  rejected: boolean;
+  parts: PartVerdict[];    // in `counted` order
+}
+export function checkParts(
+  w: RasterWindow | null,
+  fp: Footprint,
+  shift: Shift | null,
+  counted: Part[]
+): PartsCheck;</code></pre>
+      </li>
+    </ul>
+    <h3>Rules <code>checkParts</code> implements</h3>
+    <ol>
+      <li>No usable registration (see <a href="#sec-builder-calls">builder's calls</a>): every verdict <code>checked: false</code>, <code>rejected: false</code>.</li>
+      <li>Eligible: <code>area ≥ stepMinAreaM2</code> and <code>roofShape</code> not in <code>partTierShapes</code>.</li>
+      <li>Seen area: <code>difference(shape, union(shapes of counted parts with partTop strictly greater))</code>; under <code>stepMinAreaM2</code> → trusted.</li>
+      <li>Cells: <code>cellMask(sub, seen, dx, dy)</code> over <code>subWindow(w, bboxOf(seen) moved by the shift, padded 1 m)</code> (parts stay unshifted; the mask samples at part + shift). Raised: finite <code>hag</code>, not <code>veg</code>, <code>hag ≥ raisedHagM</code>. <code>raisedShare</code> = raised / masked cells (0 when no cell); under <code>coverageMin</code> → trusted.</li>
+      <li>Compared (<code>checked: true</code>): <code>lidarM</code> = median of <code>hag + ground − groundM</code> over the raised cells; disputed when <code>|topM − lidarM| &gt; max(partTolM, partTolFrac × topM)</code>.</li>
+      <li><code>rejected</code> when at least one part is disputed and <code>area(∪ disputed) ≥ partRejectShare × area(∪ counted)</code>.</li>
+    </ol>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests. In <code>lidar-parts.test.ts</code>:
+        <pre><code data-lang="ts">it('partTop is the drawn top', () =&gt; {
+  expect(partTop(part('a', rect(0, 0, 10, 10), { heightM: 20 }))).toBe(20);
+  // Salesforce's skillion parts: height 326, roof_height 245, drawn at mid-roof.
+  expect(partTop(part('b', rect(0, 0, 10, 10), { heightM: 326, roofShape: 'skillion', roofHeightM: 245 }))).toBe(203.5);
+  expect(partTop(tower())).toBe(60);
+  // Review Focus: roof_height over height clamps like the box.
+  expect(partTop(part('c', rect(0, 0, 10, 10), { heightM: 10, roofShape: 'gabled', roofHeightM: 30 }))).toBe(2.5);
+  // partBoxes draws exactly partTop for a non-tiered part.
+  const [b] = partBoxes('b1', [part('b', rect(0, 0, 10, 10), { heightM: 326, roofShape: 'skillion', roofHeightM: 245 })], 0);
+  expect(b.heightM).toBe(203.5);
+});</code></pre>
+        In <code>lidar-dispute.test.ts</code> (copy the <code>rect</code>, <code>shiftOf</code>, <code>fpOf</code> helpers of <code>lidar-derive.test.ts:9-45</code>; flat ground 15; windows from <code>synthWindow</code> over the footprint padded 4 m; parts built like <code>lidar-parts.test.ts:23-31</code>):
+        <ul>
+          <li><code>a part the LiDAR agrees with is checked and trusted</code>: part 20 m over a 20 m box → <code>{ checked: 1, disputed: 0, rejected: false }</code>, <code>parts[0].lidarM</code> within 0.2 of 20.</li>
+          <li><code>a skillion part drawn at mid-roof over a lower roof is disputed and rejects the building</code>: footprint and part <code>rect(100, 200, 120, 208)</code>, part height 70, <code>skillion</code>, <code>roof_height</code> 50 (top 45), LiDAR 24 m → <code>disputed: 1</code>, <code>rejected: true</code>.</li>
+          <li><code>tiered and small parts are never checked</code>: a <code>pyramidal</code> part at 60 over LiDAR 10, and a 4 × 4 m part at 90 over LiDAR 10 → <code>checked: 0</code>, both verdicts <code>seenM2: null</code>.</li>
+          <li><code>a podium part sees only what the tower part leaves</code>: podium part 20 m over <code>rect(100, 200, 110, 212)</code>, tower part 60 m over <code>rect(102, 204, 108, 210)</code>; LiDAR the same → both checked, none disputed, podium <code>seenM2</code> within 0.5 of 84 and <code>lidarM</code> within 0.3 of 20.</li>
+          <li><code>a lattice the LiDAR sees through is trusted</code>: part 100 m over 200 m², LiDAR 100 m on 30% of it, hag 0 elsewhere → <code>checked: 0</code>, <code>raisedShare</code> below 0.5.</li>
+          <li><code>a disputed part under partRejectShare keeps the parts</code>: agreeing podium part 300 m², disputed part 30 m² → <code>disputed: 1</code>, <code>rejected: false</code>.</li>
+          <li><code>the tolerance is max(partTolM, partTolFrac × top)</code>: top 100 over LiDAR 91 → not disputed, over 89 → disputed; top 20 over LiDAR 24.5 → not, over 25.5 → disputed.</li>
+          <li><code>without a window, a shift, or with shift source none, every part is trusted</code>: <code>checked: 0, rejected: false</code> in all three.</li>
+          <li><code>a part outside the window is trusted</code> (Review Focus): a 30 m² part 50 m east of the window → <code>checked: 0</code>, <code>raisedShare</code> 0.</li>
+          <li><code>equal-top overlapping parts both see their own cells</code>: two 20 m parts overlapping by half → both checked, each <code>seenM2</code> equal to its own area.</li>
+          <li><code>samples at the shift, draws nothing</code>: LiDAR drawn with <code>shift: [1.0, -0.3]</code> and <code>shiftOf(1.0, -0.3)</code> → agreeing verdict as in the first test.</li>
+        </ul>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail (<code>partTop</code> and <code>dispute.ts</code> do not exist).
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/lidar-parts.test.ts pipeline/test/lidar-dispute.test.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Add the three <code>BOXES</code> values, <code>partTop</code> (and use it in <code>partBoxes</code>'s non-tiered branches, <code>parts.ts:89-92</code>), the two exports in <code>derive.ts</code>, and <code>checkParts</code> following the rules above.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the two files again, then every LiDAR test (nothing else may move; the artifact is not rewired yet):
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/lidar-parts.test.ts pipeline/test/lidar-dispute.test.ts pipeline/test/lidar-derive.test.ts pipeline/test/boxes-command.test.ts</code></pre>
+        Expected: all pass. <code>boxes-command.test.ts</code> "the committed mini artifact is current" still passes (no output row changed).</li>
+      <li id="t1-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/boxes-config.ts pipeline/lib/lidar/parts.ts pipeline/lib/lidar/derive.ts pipeline/lib/lidar/dispute.ts pipeline/test/lidar-parts.test.ts pipeline/test/lidar-dispute.test.ts
+git commit -m "feat(boxes): check mapped parts against the LiDAR"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Terraces for tall rises</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/boxes-config.ts</code> (a "Terraces" group: <code>taperMinRiseM</code> 40, <code>taperTiers</code> 16, <code>taperMergeShare</code> 0.98, <code>taperRoughM</code> 1, <code>taperSampleFrac</code> 0; all tier 4)</li>
+      <li>Modify: <code>pipeline/lib/lidar/derive.ts</code> (<code>RoofRecord</code> <code>:37-50</code>; the record literal <code>:653-665</code>; the sliced branch between the C cells <code>:731</code> and the base box <code>:923</code>)</li>
+      <li>Modify: <code>pipeline/steps/boxes.ts:302-314</code> (the parts-cover-all <code>RoofRecord</code> literal gains <code>sliced: false, stepCap: BOXES.stepCap</code>)</li>
+      <li>Test: <code>pipeline/test/lidar-derive.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the existing masks and helpers in <code>derive.ts</code> (<code>cIdx</code>, <code>h</code>, <code>roughMask</code>, <code>erode3</code>, <code>dilate3</code>, <code>label4</code>, <code>cellsToPoly</code>, the flush-face growth <code>:856-873</code>, <code>quantile</code> <code>:623</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface RoofRecord {
+  // ...existing fields
+  /** The raised cells' p95 - p5 reached taperMinRiseM: terraces replaced the roof and step stages. */
+  sliced: boolean;
+  /** This building's step cap: BOXES.stepCap, or BOXES.taperTiers * 2 when sliced. */
+  stepCap: number;
+}</code></pre>
+        Terraces are <code>src: 'step'</code> boxes; <code>nStep</code> counts them and <code>stepsCapped</code> is set when more than <code>stepCap</code> were found.</li>
+    </ul>
+    <h3>The sliced branch (decisions; the loop's shape is the builder's)</h3>
+    <ol>
+      <li>After C is built (<code>derive.ts:710-728</code>): <code>spread = quantile(sorted C heights, 0.95) − quantile(…, 0.05)</code>. Sliced iff <code>spread ≥ taperMinRiseM</code>; otherwise everything below runs exactly as today and the record gets <code>sliced: false, stepCap: BOXES.stepCap</code>.</li>
+      <li>Sliced: skip <code>flatRoof</code>, the pitch fit and the median-split step stage. <code>roof</code> <code>'flat'</code>, eave/ridge null. <code>baseTop = clampH(p5)</code> and the model is <code>() =&gt; baseTop</code> (fronts keep using it).</li>
+      <li><code>rise = p99 − base</code>, <code>band = max(stepGapM, rise / taperTiers)</code>, levels <code>L_k = base + k × band</code> for <code>k = 0, 1, …</code> while <code>L_k ≤ p99</code>.</li>
+      <li>Level k's candidates: C cells not rough at <code>taperRoughM</code> with <code>h ≥ L_k + taperSampleFrac × band</code>; opened and grown back one cell into the candidates as <code>:806-811</code> does; 4-connected components under <code>stepMinAreaM2</code> dropped.</li>
+      <li>Each region: <code>cellsToPoly</code>, flush growth and clip to <code>shape</code> as steps do (<code>:866-868</code>), then intersected with its parent (the region of level k−1 it overlaps; level 0's parent is <code>shape</code>), so each region lies inside the one below.</li>
+      <li>Boxes: a region is a box from <code>L_k</code> to <code>L_{k+1}</code>; a region with no child at level k+1 tops at the median <code>h</code> of its cells (skipped when that rounds to at or below its base). A region that is its parent's only child and keeps at least <code>taperMergeShare</code> of the parent's area extends the parent's box instead (<code>base_m</code> stays the parent's).</li>
+      <li>Cap: keep the <code>taperTiers × 2</code> largest boxes by area (ties: lower base first); <code>stepsCapped</code> when more. Order kept boxes by base, then area, for <code>k</code>.</li>
+      <li>Fronts: the existing front pass runs with the terraces' cells and union in place of the steps' (<code>stepNear</code>, <code>taken</code>), so fronts lose to terraces.</li>
+    </ol>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests in a <code>describe('terraces for tall rises')</code> block (use the file's <code>run</code> helper, which asserts every box stays inside the footprint, and <code>new StreetIndex([])</code>):
+        <ul>
+          <li><code>a wedding-cake tower is sliced into stacked terraces</code>: footprint <code>rect(100, 200, 120, 208)</code>; LiDAR 12 m over it, 24 over <code>rect(101, 201, 119, 207)</code>, 36 over <code>rect(102.5, 201.5, 117.5, 206.5)</code>, 48 over <code>rect(104, 202, 116, 206)</code>, 60 over <code>rect(106, 202.5, 114, 205.5)</code>. Expect <code>roof.sliced</code> true, <code>roof.stepCap</code> 32, the base box at 12; step heights <code>[15, 27, 39, 51, 60]</code> and bases <code>[12, 15, 27, 39, 51]</code> (each ±0.2); step areas within 10% of <code>[160, 108, 75, 48, 24]</code>; each step's shape inside the previous one (<code>area(difference(upper, grow(lower, 0.01))) &lt; 0.01</code>).</li>
+          <li><code>a prism tower over a podium is one terrace box</code>: podium 10 m over <code>rect(100, 200, 120, 220)</code>, tower 70 m over <code>rect(105, 205, 115, 215)</code>. Expect sliced, base box at 10, exactly one step box whose area is within 10% of 100 m² and whose top is within 0.2 of 70, and at most 2 step boxes in all.
+            <aside data-kind="note"><strong>Note</strong> With <code>taperSampleFrac</code> 0 the second (whole-footprint, 10 → 13.75 m) box is the podium raised by one band, the defect <a href="#sec-open">open question 1</a> asks about; the assertions hold either way.</aside></li>
+          <li><code>the cap keeps the largest terraces and every kept terrace stands on another</code> (Review Focus): one footprint holding three identical stepped towers of 17 square tiers each (side shrinking 1 m per tier, tiers 3 m apart) so more than 32 regions exist. Expect <code>nStep</code> 32, <code>stepsCapped</code> true, and every step whose <code>baseM</code> exceeds the base top lies inside some kept step whose <code>heightM</code> equals its <code>baseM</code>.</li>
+          <li><code>a rise under taperMinRiseM keeps today's steps</code>: extend <code>a tower with a penthouse splits once</code> (<code>:459-476</code>) with <code>expect(roof.sliced).toBe(false)</code> and <code>expect(roof.stepCap).toBe(BOXES.stepCap)</code>; it and <code>the step cap keeps the four tallest</code> keep their current expectations.</li>
+          <li><code>a sliced building's terraces win over a street front</code>: the wedding cake with <code>streetsFront</code> moved 12 m in front of its north face → <code>roof.nFront</code> 0.</li>
+        </ul>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run and see the new tests fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/lidar-derive.test.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Add the five <code>BOXES</code> values, the two <code>RoofRecord</code> fields (every literal, including <code>boxes.ts:302</code>), and the sliced branch.</li>
+      <li id="t2-s4"><input type="checkbox"> Run the LiDAR tests; then the boxes-command file, whose committed-artifact check must still pass (no mini building is sliced yet, and the roof columns are not yet written).
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/lidar-derive.test.ts pipeline/test/lidar-dispute.test.ts pipeline/test/lidar-parts.test.ts pipeline/test/boxes-command.test.ts</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/boxes-config.ts pipeline/lib/lidar/derive.ts pipeline/steps/boxes.ts pipeline/test/lidar-derive.test.ts
+git commit -m "feat(boxes): slice tall rises into stacked terraces"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Wire the check in, schema boxes/2, per-building cap</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/steps/boxes.ts</code> (<code>buildingBoxes</code> exported and its rejection path; <code>ROOF_COLUMNS</code> <code>:118-123</code>; <code>bx_roofs</code> select <code>:235-247</code>; <code>roofRow</code> <code>:329-362</code>)</li>
+      <li>Modify: <code>pipeline/lib/lidar/artifact.ts</code> (<code>SCHEMA</code> <code>:31</code>, <code>BoxesInputs.schema</code>, <code>boxesInputsOf</code>, <code>boxesCounts</code> <code>:220-268</code>)</li>
+      <li>Modify: <code>pipeline/steps/check.ts:983-1019</code> (<code>checkV37</code>)</li>
+      <li>Regenerate: <code>pipeline/test/fixtures/mini/raw/building-boxes/*</code>, <code>pipeline/test/fixtures/mini/sources.lock.json</code>, <code>pipeline/test/fixtures/mini/golden/</code>, <code>e2e/fixtures/data/fixture-0/</code></li>
+      <li>Test: <code>pipeline/test/boxes-command.test.ts</code>, <code>pipeline/test/invariants.test.ts:1237-1299</code>, <code>pipeline/test/doctor.test.ts:134</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>checkParts</code>, <code>PartsCheck</code> (Task 1); <code>RoofRecord.sliced</code>, <code>.stepCap</code> (Task 2).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export function buildingBoxes(
+  w: RasterWindow | null, fp: Footprint, shift: Shift | null, streets: StreetIndex, parts: Part[]
+): {
+  boxes: RenderBox[]; roof: RoofRecord; nParts: number; coverage: number | null; dropped: number;
+  check: PartsCheck | null;   // null without counted parts
+};</code></pre>
+        <code>roofs.parquet</code> gains, after <code>uncovered_dropped</code> and before <code>lng</code>: <code>parts_checked INTEGER</code>, <code>parts_disputed INTEGER</code>, <code>parts_rejected BOOLEAN</code>, <code>sliced BOOLEAN</code>, <code>step_cap INTEGER</code>. Upstream version prefix <code>boxes/2</code>, <code>BoxesInputs.schema</code> 2. New counts: <code>boxes.parts.checked</code> (sum), <code>boxes.parts.disputed</code> (sum), <code>boxes.parts.rejected</code> (buildings), <code>boxes.step.sliced</code> (buildings), <code>boxes.step.over_cap</code> (buildings with <code>n_step &gt; step_cap</code>).</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests.
+        <ul>
+          <li><code>boxes-command.test.ts</code>, in <code>the mini buildings get their boxes</code>: <code>b14</code> <code>{ parts_checked: 1, parts_disputed: 0, parts_rejected: false }</code> (p14a checked; p14b tiered; p14leg small); <code>b10</code> <code>{ parts_checked: 1, parts_disputed: 0, parts_rejected: false }</code>; every non-parts building <code>{ parts_checked: 0, parts_disputed: 0, parts_rejected: false, sliced: false, step_cap: 4 }</code>.</li>
+          <li><code>boxes-command.test.ts</code>, new <code>describe('buildingBoxes')</code> on a <code>synthWindow</code> scene: <code>a rejected building takes the plain LiDAR derivation</code> (the Task 1 skillion case on the Task 2 wedding cake → no <code>part</code> box, a <code>base</code> box, <code>check.rejected</code> true, <code>roof.sliced</code> true, <code>nParts</code> 1); <code>a rejected building whose LiDAR falls back stores no rows</code> (Review Focus: the same part over LiDAR reading ground → <code>boxes</code> <code>[]</code>, <code>roof.fallback</code> <code>'new_building'</code>, <code>check.rejected</code> true).</li>
+          <li><code>recorded inputs</code>: <code>i.schema</code> 2 and the version matches <code>/^boxes\/2 code=/</code>; <code>parseBoxesUpstreamVersion</code> of a <code>boxes/1 …</code> string throws <code>not boxes/2</code>, so <code>boxesLockProblem</code> names <code>npm run pipeline -- boxes</code>. Update <code>doctor.test.ts:134</code>'s literal to <code>boxes/2</code>.</li>
+          <li><code>invariants.test.ts</code> V37: replace the 5-steps case with <code>expect(fails(patched({ 'boxes.step.over_cap': 1 }))).toBe(`steps over their building's cap 1; ${FIXTURE_DETAIL}`)</code>; add <code>expect(checkV37(patched({ 'boxes.step.max_per_building': 32 }), true).ok).toBe(true)</code>.</li>
+        </ul>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/boxes-command.test.ts pipeline/test/invariants.test.ts pipeline/test/doctor.test.ts</code></pre>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Implement: in <code>buildingBoxes</code>, with counted parts run <code>checkParts(w, fp, shift, counted)</code> first; when <code>rejected</code>, return the no-parts path's result (<code>deriveBoxes(w, { fp, shift, streets })</code>, no boxes on a fallback) with <code>nParts = counted.length</code>, <code>coverage = partCoverage(...)</code>, <code>dropped</code> 0; otherwise today's path. Write the five columns in <code>roofRow</code>, <code>ROOF_COLUMNS</code> and the <code>bx_roofs</code> select. In <code>artifact.ts</code> move to <code>boxes/2</code> and add the five counts (document them in <code>boxesCounts</code>'s comment). In <code>checkV37</code> replace the <code>max_per_building &gt; BOXES.stepCap</code> problem with <code>`steps over their building's cap ${n}`</code> when <code>boxes.step.over_cap</code> &gt; 0; update its doc comment.</li>
+      <li id="t3-s4"><input type="checkbox"> Regenerate the mini artifact and the golden (no raw file changed).
+        <pre><code data-lang="sh">npm run pipeline -- boxes --fixture
+npm run pipeline -- fixture --update-golden
+git status --short</code></pre>
+        Expected: changes only under <code>pipeline/test/fixtures/mini/raw/building-boxes/</code>, <code>pipeline/test/fixtures/mini/sources.lock.json</code>, the golden and fixture-0 <code>report.json</code> (and <code>manifest.json</code> if it lists the lock), and fixture-0 <code>buildings.pmtiles</code> at most; nothing under <code>golden/parcels/</code>, <code>golden/scenarios/</code>, <code>golden/derived/</code>. The report gains the five counts (<code>boxes.parts.checked</code> 2, <code>.disputed</code> 0, <code>.rejected</code> 0, <code>boxes.step.sliced</code> 0, <code>.over_cap</code> 0).</li>
+      <li id="t3-s5"><input type="checkbox"> Run the whole pipeline project.
+        <pre><code data-lang="sh">npm run test:pipeline</code></pre>
+        Expected: all pass, including <code>the committed mini artifact is current</code>, <code>golden.test.ts</code> and the render-boxes fingerprints.</li>
+      <li id="t3-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/steps/boxes.ts pipeline/lib/lidar/artifact.ts pipeline/steps/check.ts pipeline/test e2e/fixtures/data/fixture-0
+git commit -m "feat(boxes): reject disputed parts, boxes/2 roof columns, per-building step cap"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The mini fixture's disputed, sliced tower</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/test/fixtures/mini/make-fixture.ts</code> (<code>overtureParts</code> <code>:578-587</code>; the LiDAR scene's <code>boxes</code> <code>:1085-1112</code>)</li>
+      <li>Modify: <code>pipeline/test/fixtures/mini/README.md</code> (Derived row counts <code>src_overture_parts</code> 6; Parts table; LiDAR table)</li>
+      <li>Regenerate: mini raw parts file, <code>sources.lock.json</code>, <code>lidar.lock.json</code> and its tile, the artifact, the golden, fixture-0</li>
+      <li>Test: <code>pipeline/test/boxes-command.test.ts</code>, <code>pipeline/test/render-boxes.test.ts</code>, <code>pipeline/test/invariants.test.ts</code> (<code>FIXTURE_DETAIL</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: Tasks 1–3.</li>
+      <li>Produces: the mini building <code>bpier</code> (footprint x[20,40] y[−40,−32], outside parcels) as Salesforce in small. Part <code>ppier</code>: building <code>bpier</code>, <code>polygon(rect(20, -40, 40, -32))</code>, height 70, <code>roof_shape</code> <code>skillion</code>, <code>roof_height</code> 50 (drawn top 45). LiDAR (local metres, like the others): 12 over <code>R(20, -40, 40, -32)</code>, 24 over <code>R(21, -39, 39, -33)</code>, 36 over <code>R(22.5, -38.5, 37.5, -33.5)</code>, 48 over <code>R(24, -38, 36, -34)</code>, 60 over <code>R(26, -37.5, 34, -34.5)</code>. Its median over the part is about 24, so the part is disputed (|45 − 24| &gt; 5) and rejected (100% of the parts' area), and the derivation is sliced (p95 − p5 = 48).</li>
+    </ul>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests: in <code>the mini buildings get their boxes</code>, <code>bpier</code>: roof <code>{ parts_checked: 1, parts_disputed: 1, parts_rejected: true, sliced: true, step_cap: 32, n_parts: 1, fallback: null }</code>; no <code>part</code> row; step heights <code>[15, 27, 39, 51, 60]</code> and bases <code>[12, 15, 27, 39, 51]</code> (±0.3); its <code>base</code> box at 12 (±0.2). In <code>render-boxes.test.ts</code> <code>composition</code>: <code>boxes.src.part</code> stays 9, <code>bpier</code> has no <code>part</code> and no <code>box</code> row.</li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/boxes-command.test.ts pipeline/test/render-boxes.test.ts</code></pre>
+      </li>
+      <li id="t4-s3"><input type="checkbox"> Add <code>ppier</code> and the five LiDAR boxes (with a comment naming them Salesforce in small), and update the README's three tables and the <code>## Parts</code> lead ("six parts").</li>
+      <li id="t4-s4"><input type="checkbox"> Regenerate in order.
+        <pre><code data-lang="sh">npx tsx pipeline/test/fixtures/mini/make-fixture.ts
+npm run pipeline -- boxes --fixture
+npm run pipeline -- fixture --update-golden
+git status --short</code></pre>
+        Expected: the mini raw parts file and tile, both locks, the artifact, report and fixture-0 <code>buildings.pmtiles</code> change; nothing under <code>golden/parcels/</code>, <code>golden/scenarios/</code>, <code>golden/derived/</code>, <code>neighborhoods.geojson</code> or <code>transit.json</code>. Report: <code>boxes.parts.rejected</code> 1, <code>boxes.step.sliced</code> 1, <code>boxes.fallback.new_building</code> one fewer. Update <code>FIXTURE_DETAIL</code> (<code>invariants.test.ts:1242</code>) and any count the README quotes from the new report.</li>
+      <li id="t4-s5"><input type="checkbox"> Run the whole pipeline project.
+        <pre><code data-lang="sh">npm run test:pipeline</code></pre>
+      </li>
+      <li id="t4-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/test e2e/fixtures/data/fixture-0
+git commit -m "test(boxes): mini fixture tower with a disputed skillion part"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: Parts buildings at z12–13</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/sql/76_render_boxes.sql</code> (append <code>low_export</code>; header comment names it)</li>
+      <li>Modify: <code>pipeline/steps/tiles.ts:77-129</code> (z12–13 input; new <code>parcelIdsAtZoom</code>)</li>
+      <li>Modify: <code>pipeline/steps/build.ts:405-417</code> (record the two counts with the artifact)</li>
+      <li>Regenerate: golden and fixture-0 (report and <code>buildings.pmtiles</code>)</li>
+      <li>Test: <code>pipeline/test/tiles.test.ts:179-300</code>, <code>pipeline/test/render-boxes.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>render_boxes</code>, <code>render_export</code> (<code>76_render_boxes.sql:13-69</code>), <code>buildings_export</code> (<code>70_export.sql:4-8</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="sql">-- Parts buildings at z12-13 are their render boxes; every other building is today's export.
+CREATE OR REPLACE TABLE low_export AS
+SELECT parcel_id, bid, 0 AS k, height_m, base_m, hs, geojson4326 FROM buildings_export
+WHERE bid NOT IN (SELECT bid FROM render_boxes WHERE src = 'part')
+UNION ALL
+SELECT parcel_id, bid, k, height_m, base_m, hs, geojson4326 FROM render_export
+WHERE bid IN (SELECT bid FROM render_boxes WHERE src = 'part')
+ORDER BY parcel_id NULLS LAST, bid, k;</code></pre>
+        <pre><code data-lang="ts">// tiles.ts: distinct parcelId values in the decoded `buildings` features of every z tile over bbox
+// (absent tiles add none).
+export async function parcelIdsAtZoom(pmtilesFile: string, z: number, bbox: typeof BBOX): Promise&lt;number&gt;;</code></pre>
+        With <code>split</code>, <code>writeBuildingsTiles</code> reads <code>SELECT parcel_id, height_m, base_m, hs, geojson4326 FROM low_export ORDER BY parcel_id NULLS LAST, bid, k</code> for <code>buildings.geojsonseq</code>; without it, <code>buildings_export</code> exactly as today. Report counts (with the artifact and tiles built, fixture and live): <code>tiles.buildings.z12_parcels</code>, <code>tiles.buildings.z13_parcels</code>.</li>
+    </ul>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests.
+        <ul>
+          <li><code>tiles.test.ts</code>: replace <code>z12-13 keep today's boxes</code> with <code>z12-13 draw a parts building as its render boxes, every other building as before</code>: at z13 on <code>LOT['3512014']</code> the features with <code>parcelId</code> 3512014 number 8, carry only <code>TODAY_FIELDS</code>, and their <code>heightM/baseM</code> pairs equal those of z15's <code>b14</code> features; at z12 and z13, <code>LOT['3512001']</code> and <code>LOT['3512015']</code> give the same features as <code>plainFile</code>; at z13 <code>LOT['3512010']</code> has a feature at <code>heightM</code> 18 and one at 26 (b10's part and its LiDAR step). Keep the no-artifact byte-identity test unchanged.</li>
+          <li><code>tiles.test.ts</code>: <code>parcelIdsAtZoom counts the decoded parcel ids</code>: on <code>splitFile</code> at 12 and 13 it equals the number of distinct <code>parcelId</code>s <code>tileFeatures</code> decodes from the tiles holding the <code>LOT</code> points (the fixture's buildings fit those tiles), and is greater than 0.</li>
+          <li><code>render-boxes.test.ts</code>: <code>low_export is today's export plus the parts buildings' render boxes</code>: its columns are exactly <code>parcel_id, bid, k, height_m, base_m, hs, geojson4326</code>; its rows of bids without part boxes equal <code>buildings_export</code>'s (same fingerprint over those bids); its <code>b14</code> rows equal <code>render_export</code>'s <code>b14</code> rows. In <code>draws no box for a parts building whose uncovered area fell back</code> (Review Focus) add: <code>low_export</code>'s <code>b14</code> rows are 8, <code>k</code> 0–7.</li>
+        </ul>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/tiles.test.ts pipeline/test/render-boxes.test.ts</code></pre>
+      </li>
+      <li id="t5-s3"><input type="checkbox"> Add <code>low_export</code>, switch the split input, add <code>parcelIdsAtZoom</code> (decode as <code>tiles.test.ts:120-131</code> does, with <code>PMTiles</code>, <code>NodeFileSource</code>, <code>VectorTile</code>, <code>Pbf</code>) and record the counts in <code>build.ts</code> next to <code>drops_z14plus</code>.</li>
+      <li id="t5-s4"><input type="checkbox"> Regenerate the golden and check the diff.
+        <pre><code data-lang="sh">npm run pipeline -- fixture --update-golden
+git status --short</code></pre>
+        Expected: report counts gain the two keys; fixture-0 <code>buildings.pmtiles</code> changes; no model directory changes.</li>
+      <li id="t5-s5"><input type="checkbox"> Run the whole pipeline project.
+        <pre><code data-lang="sh">npm run test:pipeline</code></pre>
+      </li>
+      <li id="t5-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/sql/76_render_boxes.sql pipeline/steps/tiles.ts pipeline/steps/build.ts pipeline/test e2e/fixtures/data/fixture-0
+git commit -m "feat(tiles): draw parts buildings as their boxes at z12-13"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: <code>boxes --probe</code></h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/steps/boxes.ts</code> (shared input loading; <code>probeBoxes</code>; <code>BoxesCommandOpts.probe</code>)</li>
+      <li>Modify: <code>pipeline/cli.ts:99-112</code> (<code>--probe &lt;bid,bid,…&gt;</code>, help text)</li>
+      <li>Test: <code>pipeline/test/boxes-command.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>buildingBoxes</code> and its <code>check</code> (Task 3).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface ProbeRow {
+  bid: string;
+  fallback: string | null;
+  nParts: number;
+  partsChecked: number;
+  partsDisputed: number;
+  partsRejected: boolean;
+  sliced: boolean;
+  nStep: number;
+  topM: number | null;     // the tallest stored box (clamped), null without rows
+  parts: PartVerdict[];    // [] without counted parts
+}
+/** Derive only the clusters holding `bids` (unknown bids are skipped and named on stderr). */
+export async function probeBoxes(a: { db: Duck; lidar: LidarMosaic | null; bids: string[] }): Promise&lt;ProbeRow[]&gt;;
+// BoxesCommandOpts gains `probe?: string[]`: after 50_clip, print one JSON line per ProbeRow
+// (in `bids` order) and return 0, writing no artifact and no lock.</code></pre>
+        <code>deriveBuildingBoxes</code> and <code>probeBoxes</code> share one helper that loads buildings, parts, streets and clusters (today's <code>boxes.ts:147-197</code>); <code>deriveBuildingBoxes</code>'s output is unchanged.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Write the failing test <code>boxesCommand --probe prints the named buildings and writes nothing</code>: on a copy of the mini fixture (as <code>boxesCommand</code>'s existing test does, <code>:349-420</code>) run with <code>probe: ['bpier', 'b14', 'nope']</code>; <code>out</code> gets two JSON lines: <code>bpier</code> with <code>partsRejected</code> true, <code>sliced</code> true, <code>topM</code> 60 (±0.3), one verdict <code>disputed</code> true; <code>b14</code> with three verdicts, <code>p14a</code> <code>checked</code> true; <code>err</code> names <code>nope</code>; the copy's <code>sources.lock.json</code> is byte-identical afterwards; exit code 0.</li>
+      <li id="t6-s2"><input type="checkbox"> Run and see it fail.
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/boxes-command.test.ts</code></pre>
+      </li>
+      <li id="t6-s3"><input type="checkbox"> Implement <code>probeBoxes</code>, the option and the CLI flag.</li>
+      <li id="t6-s4"><input type="checkbox"> Run the file again; then check that the committed artifact still matches a fresh derivation (it does when <code>deriveBuildingBoxes</code>'s output did not move).
+        <pre><code data-lang="sh">npx vitest --run --project pipeline pipeline/test/boxes-command.test.ts</code></pre>
+      </li>
+      <li id="t6-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add pipeline/steps/boxes.ts pipeline/cli.ts pipeline/test/boxes-command.test.ts
+git commit -m "feat(boxes): probe named buildings without writing the artifact"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-7">
+    <h2>Task 7: Review and acceptance tools</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>scripts/building-review.ts:327-410</code> (<code>--bids</code>); test <code>scripts/building-review.spec.ts</code></li>
+      <li>Create: <code>scripts/low-zoom-gate.ts</code>, test <code>scripts/low-zoom-gate.spec.ts</code></li>
+      <li>Modify: <code>docs/superpowers/design/2026-11-26-roofer-spike/scripts/common.py:32-33</code>, <code>profile.py:34-36,49,77</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>parcelIdsAtZoom</code> (Task 5), <code>z12TileBytes</code> (<code>tiles.ts:237</code>), <code>RoofRow</code> (<code>building-review.ts:61</code>).</li>
+      <li>Produces:
+        <pre><code data-lang="ts">// building-review.ts: the named buildings, in `bids` order; throws naming any bid not in roofs.
+export function pickBuildings(roofs: RoofRow[], bids: string[]): RoofRow[];
+// --bids a,b,c: those buildings are captured (zoom 17, pitch 65, as the sample) ahead of the sample.
+
+// low-zoom-gate.ts
+export interface LowZoomStats { z12Bytes: number; z12Parcels: number; z13Parcels: number }
+/** ok iff after.z12Bytes - before.z12Bytes &lt;= 60_000 and
+ *  before.z12Parcels - after.z12Parcels &lt;= 0.01 * before.z12Parcels; lines: one per measure. */
+export function lowZoomGate(before: LowZoomStats, after: LowZoomStats): { ok: boolean; lines: string[] };
+// CLI: npx tsx scripts/low-zoom-gate.ts --before &lt;pmtiles&gt; --after &lt;pmtiles&gt; [--inspect &lt;lng,lat&gt;]
+// prints the lines (exit 1 when not ok); --inspect prints the after archive's z13 features of the
+// tile holding the point: parcelId, heightM, baseM, one per line, then their count.</code></pre>
+        <code>common.py</code>: <code>BOXES</code> and <code>ROOFS</code> read <code>SFH_BOXES</code> / <code>SFH_ROOFS</code> when set (defaults unchanged). <code>profile.py</code>: a roofer model whose set has no <code>out/</code> results is left out of the plot and the printout, so <code>ours: boxes: mean |area - lidar| 130-330 m = … m2</code> prints without roofer.</li>
+    </ul>
+    <ol>
+      <li id="t7-s1"><input type="checkbox"> Write the failing specs: <code>pickBuildings</code> returns rows in <code>bids</code> order and throws <code>/unknown bid nope/</code>; <code>lowZoomGate</code> passes at exactly +60,000 B and a 1% drop (<code>{ z12Bytes: 0, z12Parcels: 1000, z13Parcels: 1000 }</code> → <code>{ z12Bytes: 60000, z12Parcels: 990, … }</code>), fails at +60,001 B, fails at 989 parcels, and passes when parcels rise.</li>
+      <li id="t7-s2"><input type="checkbox"> Run and see them fail.
+        <pre><code data-lang="sh">npx vitest --run --project server scripts/building-review.spec.ts scripts/low-zoom-gate.spec.ts</code></pre>
+      </li>
+      <li id="t7-s3"><input type="checkbox"> Implement the two scripts' changes and the two Python edits.</li>
+      <li id="t7-s4"><input type="checkbox"> Run the specs again (pass). Then check the profile reproduces the spike's baseline on the old artifact, read-only. Use <code>/private/tmp/claude-501/-Users-mindlace-Projects-sfhousing/4a870fac-1a89-4e85-ac67-87da80271fe0/scratchpad/venv/bin/python</code> if it exists; otherwise create a venv in your scratchpad with <code>duckdb geopandas laspy lazrs matplotlib numpy pyproj rtree shapely trimesh</code>, and if <code>$SPIKE_WORK/salesforce/pc</code> is missing run <code>prep.py</code> first (it reads the EPT cache read-only).
+        <pre><code data-lang="sh">&lt;python&gt; docs/superpowers/design/2026-11-26-roofer-spike/scripts/profile.py</code></pre>
+        Expected: <code>ours: boxes: mean |area - lidar| 130-330 m = 852 m2</code> (the spike's number). Do not commit the regenerated <code>fig/salesforce_profile.png</code>: <code>git checkout</code> it.</li>
+      <li id="t7-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add scripts/building-review.ts scripts/building-review.spec.ts scripts/low-zoom-gate.ts scripts/low-zoom-gate.spec.ts docs/superpowers/design/2026-11-26-roofer-spike/scripts/common.py docs/superpowers/design/2026-11-26-roofer-spike/scripts/profile.py
+git commit -m "feat(scripts): named-building captures, the low-zoom gate, profile any artifact"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-8">
+    <h2>Task 8: Docs</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>docs/dev/building-boxes.md</code>, <code>docs/dev/pipeline.md</code> (Building boxes in build <code>:171-181</code>; V37 in the Invariants paragraph <code>:184</code>)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: every name above.</li>
+      <li>Produces: no code.</li>
+    </ul>
+    <ol>
+      <li id="t8-s1"><input type="checkbox"> <code>building-boxes.md</code>: the opening paragraph (z12–13 now draw parts buildings as their boxes); <code>src</code> values (<code>step</code> also covers terraces, stacked with <code>base_m</code> the level below; <code>part</code> unless the LiDAR disputes the parts); a new section "Parts the LiDAR disputes" (the rules of Task 1 and the rejection); a new section "Terraces" (the rules of Task 2 and the merge); the <code>BOXES</code> table gains the eight values with what each controls; <code>roofs.parquet</code> lists the five columns and the schema reads <code>boxes/2</code>; Tiles (the <code>low_export</code> rule, the two parcel counts and the gate); Counts and V37 (the new counts, the per-building cap); Tuning loop (step 2b: <code>npm run pipeline -- boxes --probe &lt;bids&gt;</code> to try values on named buildings first); Review a round (<code>--bids</code>, <code>scripts/low-zoom-gate.ts</code>, the profile with <code>SFH_BOXES</code>/<code>SFH_ROOFS</code>).</li>
+      <li id="t8-s2"><input type="checkbox"> <code>pipeline.md</code>: Counts and Tiles bullets as above; the V37 sentence says each building's <code>n_step</code> is at most its <code>step_cap</code> (4, or 32 when sliced).</li>
+      <li id="t8-s3"><input type="checkbox"> Check the docs index and formatting.
+        <pre><code data-lang="sh">npx vitest --run --project server scripts/docs-index.spec.ts
+npx prettier --check docs/dev/building-boxes.md docs/dev/pipeline.md</code></pre>
+      </li>
+      <li id="t8-s4"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/building-boxes.md docs/dev/pipeline.md
+git commit -m "docs: parts check, terraces and z12-13 parts in building boxes"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-9">
+    <h2>Task 9: The live rebuild</h2>
+    <aside data-kind="warning"><strong>Warning</strong> This is the one rebuild for both branches. Do not start it until the <code>remove-scenario-engine</code> work is finished. Long commands (<code>boxes</code> about 55 minutes, <code>fetch --restore --lidar</code>) exceed the 10-minute foreground limit: start them with <code>run_in_background</code>, logging to a file under <code>pipeline/.cache/</code>, and wait with Monitor (an until-loop on the log or the process); never end your turn while one runs. Never touch port 4173.</aside>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/sources.lock.json</code> (the <code>building-boxes</code> entry), <code>pipeline/boxes-config.ts</code> only if tuning moves a value, <code>docs/dev/building-boxes.md</code> (a dated "Round 2" paragraph in Live build)</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: everything above.</li>
+      <li>Produces: dataset <code>&lt;v&gt;</code> uploaded; a merged PR.</li>
+    </ul>
+    <ol>
+      <li id="t9-s1"><input type="checkbox"> Check the other branch is finished.
+        <pre><code data-lang="sh">git fetch origin
+gh pr list --head worktree-remove-scenario-engine --state merged --json number,title,mergedAt</code></pre>
+        If no merged PR is listed, stop and report <strong>BLOCKED: remove-scenario-engine not merged</strong> to the controller. Proceed only on a listed PR, or when the controller's dispatch says that session reports done (then merge the local branch <code>worktree-remove-scenario-engine</code> instead of <code>origin/main</code> in the next step).</li>
+      <li id="t9-s2"><input type="checkbox"> Note main's dataset <code>&lt;base&gt;</code> (staging serves it), then merge.
+        <pre><code data-lang="sh">curl -s https://sfhousing-staging.mindlace.net/ | grep -o '/data/[0-9a-z-]*/' | head -1
+git merge origin/main
+npm install</code></pre>
+        Expected: a clean merge (resolve conflicts if any, keeping both sides' intent), and <code>&lt;base&gt;</code> recorded in your notes. If the grep prints nothing, ask the controller for <code>&lt;base&gt;</code>.</li>
+      <li id="t9-s3"><input type="checkbox"> Restore the caches (the second in the background, as warned).
+        <pre><code data-lang="sh">npm run pipeline -- fetch --restore
+npm run pipeline -- fetch --restore --lidar</code></pre>
+      </li>
+      <li id="t9-s4"><input type="checkbox"> Probe every parts building before the full run. The restored previous artifact (the lock's <code>building-boxes</code> entry still names it; its roofs file is <code>pipeline/.cache/raw/&lt;roofs sha256&gt;</code>) lists them:
+        <pre><code data-lang="sql">SELECT string_agg(bid, ',' ORDER BY bid) FROM read_parquet('pipeline/.cache/raw/&lt;roofs sha256&gt;') WHERE n_parts &gt; 0;</code></pre>
+        <pre><code data-lang="sh">npm run --silent pipeline -- boxes --probe &lt;that list&gt; &gt; pipeline/.cache/probe-round1.jsonl</code></pre>
+        From the output: Salesforce is bid <code>626a57f8-…</code> and Sutro <code>c5cbfced-fe3d-43ce-9d7a-63302127f0f9</code>; Transamerica (about −122.4028, 37.7952) and 555 California (about −122.4037, 37.7920) are the parts buildings whose roofs <code>lng/lat</code> lie nearest those points (confirm on the map in step 11); the ten tiered-parts buildings are those with the largest sum of <code>areaM2</code> over verdicts whose <code>roofShape</code> is in <code>partTierShapes</code>. Expected: Salesforce <code>partsRejected</code> true and <code>sliced</code> true; Sutro, Transamerica, 555 California and the ten <code>partsRejected</code> false. On a miss go to the tuning step (step 10), using the probe as the fast loop before the full run.</li>
+      <li id="t9-s5"><input type="checkbox"> Derive the artifact and commit the lock.
+        <pre><code data-lang="sh">npm run pipeline -- boxes
+git add pipeline/sources.lock.json
+git commit -m "chore(data): building boxes with the parts check and terraces"</code></pre>
+        Expected: <code>boxes.outside_footprint 0</code> and <code>wrote the building-boxes entry</code>.</li>
+      <li id="t9-s6"><input type="checkbox"> Build (foreground, timeout 600000 ms) and read <code>&lt;v&gt;</code> from its output.
+        <pre><code data-lang="sh">npm run pipeline -- build</code></pre>
+        Expected: every invariant passes, V11 and V37 included; <code>tiles.buildings.drops_z14plus</code> 0; <code>boxes.step.over_cap</code> 0.</li>
+      <li id="t9-s7"><input type="checkbox"> Reach check and the money report.
+        <pre><code data-lang="sh">npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;
+npx tsx scripts/money-monotone.ts pipeline/out/&lt;v&gt;</code></pre>
+        Expected: reach-check exits 0 (on 1, stop: the owner decides). Record money-monotone's last line (a report, not a gate).</li>
+      <li id="t9-s8"><input type="checkbox"> Model unchanged. If <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/remove-scenario-engine/pipeline/out/&lt;base&gt;/report.json</code> exists (read-only), compare every count outside <code>boxes.*</code>, <code>render.*</code>, <code>tiles.*</code> and <code>overture.contrib.*</code> with this build's: any difference is a stop. Otherwise record that the fixture goldens (Tasks 3–5) are the model check.</li>
+      <li id="t9-s9"><input type="checkbox"> Acceptance measurements, each recorded for the PR:
+        <ul>
+          <li><strong>Salesforce</strong>: <code>parts_rejected</code>, <code>sliced</code> and <code>max(height_m)</code> (within 5 m of 326) from the artifact; the profile on the new artifact (paths from the lock entry's <code>sha256</code>s under <code>pipeline/.cache/raw/</code>):
+            <pre><code data-lang="sh">SFH_BOXES=pipeline/.cache/raw/&lt;boxes sha&gt; SFH_ROOFS=pipeline/.cache/raw/&lt;roofs sha&gt; &lt;python&gt; docs/superpowers/design/2026-11-26-roofer-spike/scripts/profile.py</code></pre>
+            Bar: <code>ours: boxes … 130-330 m</code> at most 350 m². Keep the figure in the scratchpad; do not commit it.</li>
+          <li><strong>Sutro</strong>: <code>parts_rejected</code> false, 34 <code>part</code> rows; at z13:
+            <pre><code data-lang="sh">curl -s -o &lt;scratchpad&gt;/base-buildings.pmtiles https://sfhousing-staging.mindlace.net/data/&lt;base&gt;/buildings.pmtiles
+npx tsx scripts/low-zoom-gate.ts --before &lt;scratchpad&gt;/base-buildings.pmtiles --after pipeline/out/&lt;v&gt;/buildings.pmtiles --inspect -122.4528,37.7552</code></pre>
+            Bar: parcel <code>2724003</code>'s z13 features are its parts (several, heights up to about 298), not one 298 m slab. The same command's gate lines are the z12 gate: bytes +≤ 60,000 and z12 parcels −≤ 1%; exit 0.</li>
+          <li><strong>Landmarks</strong>: 555 California, Transamerica and the ten tiered-parts buildings not rejected; list each with its probe verdicts (top, LiDAR median, share).</li>
+          <li><strong>Rejected citywide</strong>: count and the 20 largest by area:
+            <pre><code data-lang="sql">SELECT r.bid, round(sum(p.area_m2)) AS a, r.parts_checked, r.parts_disputed, r.lng, r.lat
+FROM read_parquet('pipeline/.cache/derived/&lt;v&gt;/building-roofs.parquet') r
+JOIN read_parquet('pipeline/.cache/derived/&lt;v&gt;/render-pieces.parquet') p USING (bid)
+WHERE r.parts_rejected AND p.src = 'base' GROUP BY ALL ORDER BY a DESC LIMIT 20;</code></pre>
+            (The <code>base</code> box covers the footprint once; terraces would count it again.)</li>
+          <li><strong>Counts</strong>: <code>boxes.parts.*</code>, <code>boxes.step.sliced</code>, <code>.max_per_building</code>, V11 and V37 details, <code>tiles.buildings.bytes</code>, z12/z13 parcels.</li>
+        </ul>
+      </li>
+      <li id="t9-s10"><input type="checkbox"> Tuning, only on a missed bar. Change values in <code>BOXES</code> within the spec's knobs (<code>partTolM</code>, <code>partTolFrac</code>, <code>partRejectShare</code>, <code>taperMinRiseM</code>, <code>taperTiers</code>, <code>taperMergeShare</code>; <code>taperRoughM</code> and <code>taperSampleFrac</code> only as the owner ruled on the open questions), try them with <code>--probe</code> first, then repeat steps 5–9, committing config and lock together (<code>fix(boxes): tune …</code>). If the z12 gate fails, apply the spec's fallback instead of tuning: <code>low_export</code> keeps <code>buildings_export</code>'s rows for parts buildings with <code>height_m</code> replaced by their volume-preserving height (Σ area × (height − base) of their render pieces ÷ the footprint's area), add a render-boxes test for it, regenerate the golden, and say so in the PR. After three full rounds without meeting every bar, stop and report the numbers to the controller.</li>
+      <li id="t9-s11"><input type="checkbox"> Captures: put both versions in local R2, then run the review with the five largest rejected buildings, Salesforce and Sutro.
+        <pre><code data-lang="sh">npm run data:local -- &lt;base&gt; --from https://sfhousing-staging.mindlace.net
+npm run pipeline -- upload &lt;v&gt; --local
+npx tsx scripts/building-review.ts --before &lt;base&gt; --after &lt;v&gt; --bids &lt;top5&gt;,&lt;salesforce&gt;,&lt;sutro&gt;</code></pre>
+        Expected: <code>pipeline/.cache/review/&lt;v&gt;/index.html</code>. Look at the Salesforce, Sutro and Rincon Hill pairs yourself before going on (a podium raised by a band or a floating terrace is a stop).</li>
+      <li id="t9-s12"><input type="checkbox"> Record the round in <code>docs/dev/building-boxes.md</code> (a dated "Round 2" paragraph under Live build: the counts and acceptance numbers above) and commit.
+        <pre><code data-lang="sh">git add docs/dev/building-boxes.md
+git commit -m "docs: building boxes round 2 numbers"</code></pre>
+      </li>
+      <li id="t9-s13"><input type="checkbox"> Upload and verify.
+        <pre><code data-lang="sh">npm run pipeline -- upload &lt;v&gt;
+npm run pipeline -- verify &lt;v&gt; --origin https://sfhousing-staging.mindlace.net</code></pre>
+      </li>
+      <li id="t9-s14"><input type="checkbox"> Signoff, PR, merge. <code>npm run signoff</code> (it merges <code>origin/main</code>; if main moved, <code>&lt;v&gt;</code> changes and the loop returns to step 6). Write the PR body to a scratchpad file: the acceptance numbers, the landmark verdicts, the rejected list, the review path (<code>pipeline/.cache/review/&lt;v&gt;/</code>, local), the money-monotone line, and the z12 gate lines; no attribution lines.
+        <pre><code data-lang="sh">npm run signoff
+gh pr create --title "feat(boxes): better building shapes, part 1" --body-file &lt;scratchpad&gt;/pr-body.md
+gh pr merge --squash</code></pre>
+        Report the PR URL, <code>&lt;v&gt;</code> and the review path to the controller; the controller removes the worktree.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open">
+    <h2>Open questions</h2>
+    <ol>
+      <li><strong>Terrace sampling level (<code>taperSampleFrac</code>).</strong> The spec draws each region of cells "with height at least that level" from that level to the next. Since the base is the 5th percentile, about 95% of cells reach level 0, so every sliced tower on a podium has its whole podium raised by one band (rise / 16: 3–15 m downtown). Sampling at <code>L_k + band / 2</code> (cells drawn to their nearest level) removes the bias and keeps Salesforce's profile unbiased. <strong>Recommendation:</strong> set <code>taperSampleFrac</code> 0.5 before Task 2 runs (then Task 2's wedding-cake expectations shift: the implementer recomputes them from the same scene). The plan ships 0 as the spec reads.</li>
+      <li><strong>Rough cells on a smooth taper (<code>taperRoughM</code>).</strong> The spec keeps rough cells (<code>treeRoughM</code> 1 m) out of terraces. Seen from above, Salesforce's 130–250 m narrowing is a near-vertical facade: neighbouring 0.25 m cells can differ by several metres, which the rough mask marks, so its terraces could collapse toward the crown and miss the 350 m² bar. <strong>Recommendation:</strong> allow the live round to raise <code>taperRoughM</code> (it applies to sliced buildings only; trees on a 40 m-rise tower are rare and the vegetation mask still applies) if the Salesforce profile misses because of it. The plan ships 1 m, the spec's behaviour.</li>
+    </ol>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage:</strong> §sec-dispute → Tasks 1, 3; §sec-terraces → Tasks 2, 3 (cap, V37, <code>step_cap</code>); §sec-low → Task 5, gate in Tasks 7 and 9, fallback in step <a href="#t9-s10">t9-s10</a>; §sec-constraints → Global constraints, Tasks 3–5 (fixture), Task 9 (one rebuild); §sec-acceptance → step <a href="#t9-s9">t9-s9</a> and <a href="#t9-s11">t9-s11</a>; docs → Task 8.</li>
+      <li><strong>Names:</strong> <code>partTop</code>, <code>checkParts</code>, <code>PartsCheck</code>, <code>PartVerdict</code>, <code>RoofRecord.sliced</code>/<code>.stepCap</code>, <code>buildingBoxes(...).check</code>, <code>probeBoxes</code>/<code>ProbeRow</code>, <code>low_export</code>, <code>parcelIdsAtZoom</code>, <code>lowZoomGate</code>, <code>pickBuildings</code>, the five roof columns and five counts are used with the same spelling in every task.</li>
+    </ul>
+  </section>
+</article>
