@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
+import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';
@@ -59,6 +60,29 @@ function track(doc: SimPolicy4, n: number, finance: Finance = BASE()) {
     expect(r).not.toBeNull();
     return r!;
   });
+}
+
+/**
+ * 120 months of arrivals of `doc` (levers constant over the run) as `[day, pool id, dollars]`;
+ * each arrival lands inside its own month.
+ */
+function arrivalsOf(doc: SimPolicy4, base: Finance) {
+  const N = 120;
+  const rs = track(doc, N, structuredClone(base));
+  const got = rs.flatMap(({ frame }) =>
+    frame.arrivals
+      .filter((a) => a.dollars !== 0)
+      .map((a) => [a.day, frame.pools[a.pool].id, a.dollars])
+  );
+  expect(got.length).toBeGreaterThan(10);
+  rs.forEach(({ frame }, k) => {
+    const lo = k === 0 ? AS_OF : first(k + 1);
+    for (const a of frame.arrivals) {
+      expect(a.day).toBeGreaterThanOrEqual(lo);
+      expect(a.day).toBeLessThanOrEqual(monthLastDay(AS_OF, k + 1));
+    }
+  });
+  return got;
 }
 
 const progAt = (f: FinanceFrame, id: string) => f.programmes.findIndex((g) => g.id === id);
@@ -146,6 +170,38 @@ describe('offered (rule 7)', () => {
 });
 
 describe('arrivals', () => {
+  it('skip scale-0 baseline spans, month by month', () => {
+    const fo = fundingOnly();
+    const added = pool('u-pool-1', [
+      ...fo.pools[0].inflows,
+      { kind: 'yearly', from: AS_OF + 45, to: null, dollarsPerYear: 500_000 }
+    ]);
+    const doc = miniDoc(
+      baselinePolicy('b', [
+        ...fo.baselineScale,
+        { pool: 'city-b', from: AS_OF + 700, scale: 0 },
+        { pool: 'city-b', from: AS_OF + 1200, scale: 1 }
+      ]),
+      fund('f', added, fo.programmes)
+    );
+    const got = arrivalsOf(doc, BASE());
+    const cityB = got.filter(([d, p]) => p === 'city-b' && +d >= AS_OF + 700 && +d < AS_OF + 1200);
+    expect(cityB).toEqual([]);
+  });
+
+  it('skip the dataset off days (miniFinance)', () => {
+    const base = miniFinance(AS_OF);
+    base.off.push({ pool: 'm-bank', from: AS_OF + 390, to: AS_OF + 410 });
+    const doc = miniDoc(
+      baselinePolicy('b', [{ pool: 'm-city', from: AS_OF + 200, scale: 0.5 }]),
+      fund('f', pool('u-a', [{ kind: 'once', day: AS_OF + 30, dollars: 9 }]), []),
+      termsPolicy('t', { guaranteeRateCut: 0.01 }) // miniFinance's guarantee needs it
+    );
+    const got = arrivalsOf(doc, base);
+    expect(got.filter(([, p]) => p === 'm-bank')).toEqual([]);
+    expect(got.filter(([, p]) => p === 'u-a')).toEqual([[AS_OF + 30, 'u-a', 9]]);
+  });
+
   it('dataset-date inflow once, month 1', () => {
     const doc = miniDoc(
       fund('f', pool('u-d', [{ kind: 'once', day: AS_OF, dollars: 7_000 }]), [prog('u-pd', 'u-d')])
