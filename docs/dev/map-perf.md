@@ -175,7 +175,7 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 
 Apple M5 Pro (dpr 2, ANGLE Metal); main `be6467dc` against branch `b8921ad4`, alternated main-1, branch-1, main-2, branch-2; one-minute load 1.35 to 1.86 at each start. Command: `npx vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1`. Figures are run 1, run 2.
 
-Verdict: every budget held to main is met. The hook means are met as within 10% of main on the mean of the two runs against main's mean of two (moneyIn as an absolute sub-µs difference, 0.2 against 0.15 µs, not a ratio); the rest are met as their bars state. The budgets that fail their own bar (map-stream worst flush, swap install cadence, compile step(20), world.bench 48 worlds) fail on main too, and the branch fails them no more than main does (map-stream: main fails once, the branch twice, the branch's worse run below main's worse), so those are main's costs, not this build's. The funded world-month and shadow hook figures run under the branch's own bars (250 µs; main + 150 µs) and are met.
+Verdict: every budget held to main is met. The hook means are met as within 10% of main on the mean of the two runs against main's mean of two (moneyIn as an absolute sub-µs difference, 0.2 against 0.15 µs, not a ratio); the rest are met as their bars state. The budgets that fail their own bar (map-stream worst flush, swap install cadence, compile step(20), world.bench 48 worlds) fail on main too (map-stream fails once on main and twice on the branch), and each is within 10% of main on the mean of the two runs or better: map-stream worst flush 33.68 against 36.37 ms, swap install cadence 398.2 against 394.9 ms, compile step(20) 47.65 against 60.75 ms, world.bench 3.052 against 3.111 ms (branch against main), so those are main's costs, not this build's. The funded world-month and shadow hook figures run under the branch's own bars (250 µs; main + 150 µs) and are met.
 
 | Budget                                          | Bar                     | Main                                     | Branch          | Verdict                                                                                                                      |
 | ----------------------------------------------- | ----------------------- | ---------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -209,7 +209,7 @@ Verdict: every budget held to main is met. The hook means are met as within 10% 
 | citywide playback         | 10.2 | 9.7    |
 | sim-timeline-docked       | 10.2 | 9.9    |
 
-The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) agree with the run-bench rows of record in the game's runs Results table above (run p95 10.1 and 10.3 ms; buy-to-ready medians 618 and 616 ms).
+The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) are within 3% of the run-bench rows of record in the game's runs Results table above (run p95 10.1 and 10.3 ms; buy-to-ready medians 618 and 616 ms).
 
 ## CI
 
