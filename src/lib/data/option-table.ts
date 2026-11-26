@@ -6,6 +6,7 @@
 // ASCII datasetVersion, u32le row count, then per row u16le n, f32le locationValue and n options
 // of (u8 type, u8 form, u8 stories, u8 plates, LEB128 homes). Type and form are codes into
 // BUILDING_TYPES and BUILDING_FORMS; a row's options rise in stories.
+import { inflateRawBody } from './column-file';
 import type { ScenarioParcels } from './scenario-codec';
 import { BUILDING_FORMS, BUILDING_TYPES, type Option } from '../sim/choice/types';
 
@@ -217,34 +218,9 @@ export function decodeOptionPayload(bytes: Uint8Array): OptionTable {
   };
 }
 
-/** Inflate a deflate-raw body (as `readGrossTable` does) and decode it. */
+/** Inflate a deflate-raw body and decode it. */
 export async function readOptionTable(body: Uint8Array): Promise<OptionTable> {
-  const source = new ReadableStream<Uint8Array>({
-    start(c) {
-      c.enqueue(body);
-      c.close();
-    }
-  });
-  const inflate = new DecompressionStream('deflate-raw') as unknown as TransformStream<
-    Uint8Array,
-    Uint8Array
-  >;
-  const reader = source.pipeThrough(inflate).getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    total += value.length;
-  }
-  const bytes = new Uint8Array(total);
-  let at = 0;
-  for (const c of chunks) {
-    bytes.set(c, at);
-    at += c.length;
-  }
-  return decodeOptionPayload(bytes);
+  return decodeOptionPayload(await inflateRawBody(body));
 }
 
 /** Why `t` does not belong to `p` (a different row count or build), or null. */
