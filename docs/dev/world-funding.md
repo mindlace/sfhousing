@@ -40,7 +40,10 @@ affordable), `month` (model month applied, rule 9's first key), `applied` (day),
 (Int32, capped at `NEVER_KEY_DAY`), `key` (`lineKey`), `bundle`, `f`, `units`, `stories`,
 `level`, `viewMonth` (whose view gave the size), `gone` (1 = left the line), `seq` (ascending along
 the line, kept by compaction). Line scalars: `n`, `nextSeq`, `version`, `appliedThrough` (the last
-month whose `apply` ran). Side tables on the line: spells (`spellLot`, `spellKind`, `spellK`,
+month whose `apply` ran). Line record of the count of homes waiting (not per-row, so `grow` and
+`compactLine` never touch it): `waitHomes` (Int32, `[m]` = homes waiting at the end of model
+month m, `[0]` = 0) and `waitThrough` (the last month recorded). `waitingAt(world, m)` in
+`columns.ts` reads it. Side tables on the line: spells (`spellLot`, `spellKind`, `spellK`,
 `spellR`, sorted by lot then kind: a respelled kind's attempt and the day before its new spell)
 and shadows (`shadowLot`, `shadowRow`, `shadowK`, `shadowR`, `shadowExisting`, `shadowMonth`).
 
@@ -136,14 +139,23 @@ writing**, or the index goes stale silently (a write without a bump is not detec
 | 3, 5, 6  | `onProjectEvent` | `'start'` of an ordinary lot start: its rows leave the line. Else money events.                               |
 | 4        | `apply`          | The due lots' applications, joined in key order; `appliedThrough`.                                            |
 | 5        | `serve`          | Grouped scan, awards (`startProject` with a `FundedStart`), `'award'`, then the closing check (`closeSpent`). |
-| 7        | `shadow`         | Shadow starts and `'displaced'`, then the amortized compaction.                                               |
+| 7        | `shadow`         | Shadow starts and `'displaced'`, the amortized compaction, then `recordWaiting`.                              |
 | any      | `planLot`        | The first month the lot applies, or 0. Pure (it may build caches).                                            |
 | planning | `timelineOf`     | The timeline `planDue` plans under (`closedTimeline`); changes nothing.                                       |
 
 **Compaction** (`line-index.ts` `compact`, perf): a line of `COMPACT_MIN` (1024) rows or more is
 compacted only once an eighth of it is `gone`; a shorter one whenever it holds a `gone` row. So
-`gone` rows may survive a step on a long line; every reader skips them. The count comes from the
-index (rebuilt from columns when stale), so a clone compacts in the same months.
+`gone` rows may survive a step on a long line; every reader skips them. The row count comes from
+the index (rebuilt from columns when stale), so a clone compacts in the same months.
+
+**Homes waiting** (`system.ts` `waitingHomes`, `recordWaiting`): last in the step, after the
+compaction, `recordWaiting(world, month)` stores the count in `line.waitHomes[month]`. The count
+is one pass over the line's rows, without the index: a lot counts once, by its larger `units`; a
+row marked `gone` and a row whose lot has a lot row not `LOT_FREE` (the lazy guard's test) are
+skipped. Its per-lot scratch is module-level, grown by doubling and told apart between calls by a
+stamp, so a month allocates nothing; every world shares it. Months with no hook between two
+records take the last value; a month not after `waitThrough` throws. Both fields are plain, so a
+clone and a restore carry the record.
 
 ## Pool closing
 
@@ -251,8 +263,10 @@ npx vitest --run --project perf src/lib/sim/world/funding/funded-month.perf.spec
 
 synthCity with its bench baseline money (`benchFunded('baseline')`), seeds 1 to 8 stepped untimed
 to month 120, then months 121 to 240 timed one `step` at a time per world (the whole step: core
-and funding). Bar: **mean at most 90 µs per world-month** (the 9 ms constraint is a sum over two
-worlds, the plan's and its twin's; the per-world-month bar is unchanged). It also prints each hook's share and the whole-city replan month, unasserted.
+and funding, with the waiting-homes record, which adds about 100 µs). Bar: **mean at most
+250 µs per world-month** (the 9 ms constraint is a sum over two worlds, the plan's and its twin's;
+this bar is per world). It also prints each hook's share and the whole-city replan month,
+unasserted.
 
 Task 8 (synthCity, bench baseline money; hooks only, months 2 to 120, quiet, lock held), after
 grouped serving, the line index and the lazy guard: serve mean 9.1 to 13.0 µs, apply 3.9 to 9.6,
@@ -339,14 +353,14 @@ below) gave the table below unchanged.
 2026-11-13, quiet (lock held), one process per row, Node v24 on an Apple M5 Pro; "bundle" is an
 esbuild bundle without `keepNames` (as a Vite build); "vitest" the perf project. The change month
 is month 120 after a market step (+0.25 from month 120: every free lot replanned). The
-96-world and 48-world rows were taken with 48 + 48 worlds on 2026-11-13; `/sim` now runs one world per side.
+96-world and 48-world rows were taken with 48 + 48 worlds on 2026-11-13; the simulation now runs one world per side.
 
 | Measurement                                            | bundle before | bundle after | vitest before | vitest after |
 | ------------------------------------------------------ | ------------- | ------------ | ------------- | ------------ |
 | live, funded `planDue` per world, median ms            | 15.0          | 5.8          | 27.6          | 8.0          |
 | live, 96 worlds' `planDue`, ms                         | 1,484         | 591          | 2,682         | 799          |
 | live, change month per world, median ms (48 worlds)    | 26.8          | 6.7          | 40.6          | 8.7          |
-| synthCity baseline, world-month mean µs (bar 90)       | 75.8          | 79.3         | 87.1          | 83.1         |
+| synthCity baseline, world-month mean µs (bar then 90)  | 75.8          | 79.3         | 87.1          | 83.1         |
 | synthCity bench set, `planDue` per world, median ms    | 109.3         | 72.8         | 158.3         | 120.4        |
 | synthCity bench set, change month per world, median ms | 157.1         | 120.5        | 215.8         | 172.0        |
 | synthCity bench set, world-month mean µs               | 222.0         | 208.3        | 272.6         | 256.1        |

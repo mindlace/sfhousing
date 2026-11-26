@@ -57,6 +57,7 @@ import {
 import { chunk, statics as baseStatics } from './test/fixtures';
 import type { Pool } from '$lib/timelapse/types';
 import type { AddChoice } from './add';
+import { openGame, type GameStore } from '$lib/game/store.svelte';
 import TimelineModeHost from './test/TimelineModeHost.svelte';
 import { pointerBetween } from './test/pointer';
 
@@ -179,6 +180,8 @@ type Over = Partial<{
   onactivity: () => void;
   fetchPlaces: (url: string) => Promise<NeighborhoodShapes | null>;
   spacePlays: boolean;
+  /** The game (none by default). */
+  game: GameStore;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -230,6 +233,7 @@ function setup(over: Over = {}) {
       ...(over.ondetails ? { ondetails: over.ondetails } : {}),
       ...(over.onactivity ? { onactivity: over.onactivity } : {}),
       ...(over.spacePlays !== undefined ? { spacePlays: over.spacePlays } : {}),
+      ...(over.game ? { game: over.game } : {}),
       fetchPlaces: over.fetchPlaces ?? (async () => FIXTURE_PLACES)
     }
   });
@@ -2175,7 +2179,7 @@ describe('TimelineMode', () => {
 
   /** The boxes that must hold still as the status comes and goes. */
   function stillBoxes(): Record<string, DOMRect> {
-    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing Simulator' });
+    const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true });
     const lead = name.elements().length
       ? name.element()
       : page.getByRole('button', { name: 'Menu' }).element();
@@ -3110,6 +3114,23 @@ describe('the goal notice', () => {
       .toHaveTextContent('Goal missed by 63 homes. Add a policy and play again.');
   });
 
+  it("with no game and with the open game: the header score is pinned and the notice is today's", async () => {
+    for (const game of [undefined, openGame()]) {
+      const s = await opened(LAST, { goal: metAt8, ...(game ? { game } : {}) });
+      await expect.element(page.getByRole('banner').getByTestId('score-bar')).toBeVisible();
+      expect(document.querySelector('[data-testid=goal-headline]')).toBeNull();
+      expect(document.querySelector('[data-testid=tl-locked-lane]')).toBeNull();
+      await keysTo(8);
+      await expect
+        .element(notice())
+        .toHaveTextContent(
+          `Goal reached in ${formatShortMonthYear(MONTHS[8])}, by the ${formatShortMonthYear(MONTHS[DEADLINE])} deadline.`
+        );
+      (await s.r).unmount();
+      workers = [];
+    }
+  });
+
   it('it stays as the playhead goes back, and does not come back once dismissed', async () => {
     await opened(LAST, { goal: missing });
     await keysTo(DEADLINE + 2, DEADLINE + 1);
@@ -3590,6 +3611,21 @@ describe('halos on the map', () => {
   });
 });
 
+describe('no game: no phase', () => {
+  it('data-phase is none, setRunView is never called, and the dock mounts', async () => {
+    await opened();
+    expect(page.getByTestId('tl-mode').element().getAttribute('data-phase')).toBe('none');
+    await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
+    expect(callsOf('getMap').length).toBeGreaterThan(0); // the map was ready
+    expect(callsOf('setRunView')).toEqual([]);
+    const box = page.getByTestId('tl-map-box').element();
+    expect(box.hasAttribute('inert')).toBe(false);
+    expect(box.hasAttribute('tabindex')).toBe(false);
+    expect(document.querySelector('[data-testid=game-tree-pane]')).toBeNull();
+    expect(document.querySelector('[data-testid=run-waiting]')).toBeNull();
+  });
+});
+
 describe("Activity's latest stage changes", () => {
   const MISSION: [number, number] = [-122.4194, 37.76];
   const ELSEWHERE: [number, number] = [-122.5, 37.7];
@@ -3606,6 +3642,7 @@ describe("Activity's latest stage changes", () => {
       lngLat: new Float32Array(2 * k),
       days: new Float32Array(3 * k),
       homes: Uint16Array.from(ms.map(() => 12)),
+      existing: new Uint16Array(k),
       flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
     };
     ms.forEach((m, i) => {

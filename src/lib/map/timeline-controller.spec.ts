@@ -10,6 +10,7 @@ import { MAX_CELLS_PER_SLICE, SWAP_CELLS_PER_SLICE } from './hide';
 import { TYPOLOGY_ORDER, type TimedPackedCell, type TimelineUpdate } from './types';
 import type { BarAttrs } from './timelapse/types';
 import { buildHalos, evalHalo, type HaloAttrs } from './timelapse/halos';
+import { encodeParts } from './timelapse/encode';
 import { SLOT_FLAG, type CityDelta } from './types';
 import { cityGroup } from './timelapse/city-grid';
 import { buildBars, evalBar } from './timelapse/bars';
@@ -1060,6 +1061,7 @@ describe('TimelineController city', () => {
       lngLat: Float32Array.from(ms.flatMap((m) => m.lngLat)),
       days: Float32Array.from(ms.flatMap((m) => m.days)),
       homes: Uint16Array.from(ms.map((m) => m.homes)),
+      existing: new Uint16Array(ms.length),
       flags: Uint8Array.from(ms.map((m) => m.flags ?? 0))
     };
   }
@@ -1567,3 +1569,362 @@ function drainWith(d: FakeTimelineDeps, c: TimelineController): void {
   for (let i = 0; i < 1000 && c.debugSnapshot().pending > 0; i++) d.flushFrame();
   expect(c.debugSnapshot().pending).toBe(0);
 }
+
+describe('setMerged', () => {
+  const RUN_SOLID = 'timeline-solid-run';
+  const RUN_GHOST = 'timeline-ghost-run';
+  const KEYS = ['getElevation', 'getFillColor', 'getTlA', 'getTlB', 'getTlC'] as const;
+  type Acc = (o: unknown, info: { index: number }) => number | ArrayLike<number>;
+  interface Joined {
+    length: number;
+    startIndices: Uint32Array;
+    attributes: { getPolygon: { value: Float64Array; size: number } };
+  }
+  const joinOf = (f: FakeTimelineDeps, id = RUN_SOLID) => props(byId(f, id)).data as Joined;
+  /** A copy of an accessor's value (vec4 accessors share a scratch array). */
+  const read = (l: Layer, key: string, index: number) => {
+    const v = (l.props as unknown as Record<string, Acc>)[key](null, { index });
+    return typeof v === 'number' ? v : Array.from(v);
+  };
+  /** B with A's parts: a changed cell B. */
+  const changedB = (): TimedPackedCell => ({ ...cellOf(A), cellId: B });
+  /** Props with functions and the extension instances named, for comparing controllers. */
+  const shape = (l: Layer) =>
+    Object.fromEntries(
+      Object.entries(l.props).map(([k, v]) => [
+        k,
+        typeof v === 'function'
+          ? 'fn'
+          : k === 'extensions'
+            ? (v as object[]).map((e) => e.constructor.name)
+            : v
+      ])
+    );
+  /** Installed A and B, drained, with halos and an overlay layer. */
+  function ready(f: FakeTimelineDeps = deps, beforeId = 'label-1', lookups = true) {
+    const c = new TimelineController(f, 'light', beforeId);
+    if (lookups) c.setLookups(timelineLookups);
+    c.setHalos({ from: DAYS.start });
+    c.apply({
+      ...timelineSmall,
+      cells: timelineSmall.cells.map((x) => ({
+        ...x,
+        slotFlags: new Uint8Array(x.slotProjectIds.length).fill(SLOT_FLAG.zoning)
+      }))
+    });
+    c.setOverlayLayers([new SolidPolygonLayer({ id: 'brush', data: [] })]);
+    drainWith(f, c);
+    return c;
+  }
+
+  it('emits one merged pair in place of the per-cell layers, the tail unchanged', () => {
+    const c = ready();
+    const unmerged = ids(deps);
+    const tail = unmerged.filter((id) => !TIMELINE_PART_LAYER.test(id));
+    expect(tail).toEqual(['timeline-bars', 'timeline-halos', 'brush']);
+    c.setMerged(true);
+    expect(ids(deps)).toEqual([RUN_SOLID, RUN_GHOST, ...tail]);
+    expect(ids(deps).filter((id) => TIMELINE_PART_LAYER.test(id))).toEqual([]);
+    expect(c.lookup(RUN_SOLID, 0)).toBeNull();
+  });
+
+  it('joins the cells in cell-id order', () => {
+    const c = ready();
+    const cells = deps.lastLayers;
+    c.setMerged(true);
+    const a = cellOf(A);
+    const b = cellOf(B);
+    const j = joinOf(deps);
+    expect(joinOf(deps, RUN_GHOST)).toBe(j);
+    expect(j.length).toBe(a.partCount + b.partCount);
+    expect(j.attributes.getPolygon.size).toBe(2);
+    expect([...j.attributes.getPolygon.value]).toEqual([...a.positions, ...b.positions]);
+    const vertsA = a.positions.length / 2;
+    expect([...j.startIndices]).toEqual([
+      ...a.startIndices.slice(0, a.partCount),
+      ...[...b.startIndices].map((s) => s + vertsA)
+    ]);
+    for (const [run, perCell] of [
+      [RUN_SOLID, solid],
+      [RUN_GHOST, ghost]
+    ] as const) {
+      const m = byId(deps, run);
+      const la = cells.find((l) => l.id === perCell(A))!;
+      const lb = cells.find((l) => l.id === perCell(B))!;
+      for (const key of KEYS) {
+        for (let i = 0; i < a.partCount; i++) expect(read(m, key, i)).toEqual(read(la, key, i));
+        for (let i = 0; i < b.partCount; i++)
+          expect(read(m, key, a.partCount + i)).toEqual(read(lb, key, i));
+      }
+    }
+  });
+
+  it('gives the merged layers the per-cell layers’ props apart from id and data', () => {
+    const c = ready();
+    const cells = deps.lastLayers;
+    c.setMerged(true);
+    for (const [run, perCell] of [
+      [RUN_SOLID, solid(A)],
+      [RUN_GHOST, ghost(A)]
+    ]) {
+      const m = byId(deps, run).props as unknown as Record<string, unknown>;
+      const p = cells.find((l) => l.id === perCell)!.props as unknown as Record<string, unknown>;
+      const fns = (o: Record<string, unknown>) =>
+        Object.keys(o)
+          .filter((k) => typeof o[k] === 'function')
+          .sort();
+      expect(fns(m)).toEqual(fns(p));
+      const keys = Object.keys(p).filter(
+        (k) => !['id', 'data', 'updateTriggers'].includes(k) && typeof p[k] !== 'function'
+      );
+      expect(keys).toEqual(
+        expect.arrayContaining([
+          'extruded',
+          '_normalize',
+          '_windingOrder',
+          'elevationScale',
+          'extensions',
+          'timelapsePass',
+          'pickable',
+          'beforeId',
+          ...(run === RUN_SOLID ? ['autoHighlight', 'highlightColor'] : ['parameters'])
+        ])
+      );
+      expect(Object.keys(m).sort()).toEqual(Object.keys(p).sort());
+      for (const k of keys) expect(m[k], k).toEqual(p[k]);
+      expect((m.extensions as unknown[])[0]).toBe((p.extensions as unknown[])[0]);
+      expect({ ...(m.updateTriggers as object), getTlC: 0 }).toEqual({
+        ...(p.updateTriggers as object),
+        getTlC: 0
+      });
+    }
+  });
+
+  it('unmerged, emits the layers of a controller never merged', () => {
+    const c = ready();
+    const before = deps.lastLayers;
+    c.setMerged(true);
+    c.setMerged(false);
+    const after = deps.lastLayers;
+    // deck finalizes a layer that left its list: fresh instances, never the earlier ones.
+    for (const l of after.filter((x) => TIMELINE_PART_LAYER.test(x.id)))
+      expect(l).not.toBe(before.find((x) => x.id === l.id));
+    const other = makeFakeTimelineDeps();
+    ready(other);
+    expect(after.map((l) => l.id)).toEqual(other.lastLayers.map((l) => l.id));
+    after.forEach((l, i) => {
+      if (TIMELINE_PART_LAYER.test(l.id)) expect(shape(l)).toEqual(shape(other.lastLayers[i]));
+    });
+  });
+
+  it('lock, unlock, lock again emits new merged instances with equal props', () => {
+    const c = ready();
+    c.setMerged(true);
+    const first = [byId(deps, RUN_SOLID), byId(deps, RUN_GHOST)];
+    c.setMerged(false);
+    c.setMerged(true);
+    const second = [byId(deps, RUN_SOLID), byId(deps, RUN_GHOST)];
+    second.forEach((l, i) => {
+      expect(l).not.toBe(first[i]);
+      // The trigger counter is the one prop that differs: each join is a new generation.
+      expect({ ...shape(l), updateTriggers: null }).toEqual({
+        ...shape(first[i]),
+        updateTriggers: null
+      });
+    });
+  });
+
+  it('rebuilds the join after an update that changes a cell while merged', () => {
+    const c = ready();
+    c.setMerged(true);
+    const before = joinOf(deps);
+    c.apply(update(1, { cells: [changedB()] }));
+    drainWith(deps, c);
+    const after = joinOf(deps);
+    expect(after).not.toBe(before);
+    const a = cellOf(A);
+    const b = changedB();
+    expect(after.length).toBe(a.partCount + b.partCount);
+    expect([...after.attributes.getPolygon.value]).toEqual([...a.positions, ...b.positions]);
+    expect(joinOf(deps, RUN_GHOST)).toBe(after);
+  });
+
+  it('setTime while merged joins nothing and emits no more than unmerged', () => {
+    const c = ready();
+    c.setMerged(true);
+    const join = joinOf(deps);
+    const emits = deps.layerHistory.length;
+    c.setTime(DAYS.horizon);
+    drainWith(deps, c);
+    expect(joinOf(deps)).toBe(join);
+    const merged = deps.layerHistory.length - emits;
+    const other = makeFakeTimelineDeps();
+    const u = ready(other);
+    const otherEmits = other.layerHistory.length;
+    u.setTime(DAYS.horizon);
+    drainWith(other, u);
+    expect(merged).toBeLessThanOrEqual(other.layerHistory.length - otherEmits);
+  });
+
+  it('an update while merged, then unmerged, gives the updated cell’s layers', () => {
+    const c = ready();
+    c.setMerged(true);
+    c.apply(update(1, { cells: [changedB()] }));
+    drainWith(deps, c);
+    c.setMerged(false);
+    const b = changedB();
+    for (const id of [solid(B), ghost(B)]) {
+      const d = props(byId(deps, id)).data as Joined;
+      expect(d.length).toBe(b.partCount);
+      expect(d.attributes.getPolygon.value).toBe(b.positions);
+    }
+    expect(ids(deps)).not.toContain(RUN_SOLID);
+  });
+
+  it('a value already in force emits nothing', () => {
+    const c = ready();
+    c.setMerged(true);
+    const emits = deps.layerHistory.length;
+    c.setMerged(true);
+    expect(deps.layerHistory).toHaveLength(emits);
+    const fresh = makeFakeTimelineDeps();
+    const f = ready(fresh);
+    const freshEmits = fresh.layerHistory.length;
+    f.setMerged(false);
+    expect(fresh.layerHistory).toHaveLength(freshEmits);
+  });
+
+  it('re-encodes the merged getTlC with new lookups', () => {
+    const c = ready(deps, 'label-1', false);
+    c.setMerged(true);
+    const tlc = () => {
+      const m = byId(deps, RUN_SOLID);
+      return Array.from({ length: joinOf(deps).length }, (_, i) => read(m, 'getTlC', i));
+    };
+    const before = tlc();
+    c.setLookups(timelineLookups);
+    drainWith(deps, c);
+    const expected = [cellOf(A), cellOf(B)].flatMap((x) => {
+      const t = encodeParts(x, timelineLookups).tlC;
+      return Array.from({ length: x.partCount }, (_, i) => [...t.subarray(4 * i, 4 * i + 4)]);
+    });
+    expect(tlc()).toEqual(expected);
+    expect(tlc()).not.toEqual(before);
+  });
+
+  it('setTheme while merged gives the merged fill colours of that theme', () => {
+    const c = ready();
+    c.setMerged(true);
+    const light = byId(deps, RUN_SOLID);
+    c.setTheme('dark');
+    const m = byId(deps, RUN_SOLID);
+    expect(props(m).updateTriggers.getFillColor).toBe('dark');
+    const a = cellOf(A);
+    const b = cellOf(B);
+    const n = a.partCount + b.partCount;
+    const colours = (l: Layer) => Array.from({ length: n }, (_, i) => read(l, 'getFillColor', i));
+    c.setMerged(false);
+    const perCell = [
+      ...Array.from({ length: a.partCount }, (_, i) =>
+        read(byId(deps, solid(A)), 'getFillColor', i)
+      ),
+      ...Array.from({ length: b.partCount }, (_, i) =>
+        read(byId(deps, solid(B)), 'getFillColor', i)
+      )
+    ];
+    expect(colours(m)).toEqual(perCell);
+    expect(colours(m)).not.toEqual(colours(light));
+  });
+
+  it('a cell removed while merged leaves a join of the rest', () => {
+    const c = ready();
+    c.setMerged(true);
+    c.apply(update(1, { removedCells: [B] }));
+    drainWith(deps, c);
+    const a = cellOf(A);
+    const j = joinOf(deps);
+    expect(j.length).toBe(a.partCount);
+    expect([...j.attributes.getPolygon.value]).toEqual([...a.positions]);
+    expect([...j.startIndices]).toEqual([...a.startIndices]);
+  });
+
+  /** The merged join in each setLayers call from `from` on. */
+  const joinsFrom = (from: number) =>
+    deps.layerHistory
+      .slice(from)
+      .map((ls) => props(ls.find((l) => l.id === RUN_SOLID)!).data as Joined);
+  /** How many times the join object changes along `joins`, starting from `first`. */
+  const changes = (first: Joined, joins: Joined[]) => {
+    let n = 0;
+    let prev = first;
+    for (const j of joins) {
+      if (j !== prev) n++;
+      prev = j;
+    }
+    return n;
+  };
+
+  it('a two-slice swap while merged joins once, after its last slice', () => {
+    const c = controller();
+    c.apply(update(0, { cells: named('o', 2) }));
+    drainWith(deps, c);
+    c.setMerged(true);
+    const before = joinOf(deps);
+    const from = deps.layerHistory.length;
+    const swapped = named('s', SWAP_CELLS_PER_SLICE + 4);
+    c.apply(update(0, { cells: swapped, swap: true, complete: true }));
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0); // the second slice is queued
+    expect(joinOf(deps)).toBe(before); // the first slice keeps the previous pair
+    drainWith(deps, c);
+    const joins = joinsFrom(from);
+    expect(joins.length).toBeGreaterThanOrEqual(2);
+    expect(changes(before, joins)).toBe(1);
+    expect(joins.at(-1)).not.toBe(before);
+    expect(joinOf(deps).length).toBe(swapped.reduce((n, x) => n + x.partCount, 0));
+  });
+
+  it('setLookups over more than one slice while merged joins once, after the last', () => {
+    const c = controller();
+    const cells = named('o', MAX_CELLS_PER_SLICE + 1);
+    c.apply(update(0, { cells }));
+    drainWith(deps, c);
+    c.setMerged(true);
+    const before = joinOf(deps);
+    const from = deps.layerHistory.length;
+    c.setLookups({ ...timelineLookups });
+    expect(c.debugSnapshot().pending).toBe(2);
+    deps.flushFrame(); // the first re-encode slice
+    expect(joinOf(deps)).toBe(before);
+    drainWith(deps, c);
+    const joins = joinsFrom(from);
+    expect(joins.length).toBeGreaterThanOrEqual(2);
+    expect(changes(before, joins)).toBe(1);
+    expect(joinOf(deps).length).toBe(before.length);
+  });
+
+  it('merging while slices are queued joins at once', () => {
+    const c = controller();
+    c.apply(update(0, { cells: manyCells(MAX_CELLS_PER_SLICE + 1) }));
+    expect(c.debugSnapshot().pending).toBeGreaterThan(0);
+    c.setMerged(true);
+    expect(ids(deps).slice(0, 2)).toEqual([RUN_SOLID, RUN_GHOST]);
+    const first = joinOf(deps);
+    expect(first.length).toBe(manyCells(MAX_CELLS_PER_SLICE).reduce((n, x) => n + x.partCount, 0));
+    drainWith(deps, c);
+    expect(joinOf(deps)).not.toBe(first);
+    expect(joinOf(deps).length).toBe(
+      manyCells(MAX_CELLS_PER_SLICE + 1).reduce((n, x) => n + x.partCount, 0)
+    );
+  });
+
+  it('emits no merged layer when no cell has parts', () => {
+    const c = controller();
+    c.setMerged(true);
+    const empty = (id: string) => packTimedCell(id, []);
+    c.apply(update(0, { cells: [empty('e0'), empty('e1')] }));
+    drainWith(deps, c);
+    expect(ids(deps).filter((id) => id.startsWith('timeline-solid-'))).toEqual([]);
+    expect(ids(deps).filter((id) => id.startsWith('timeline-ghost-'))).toEqual([]);
+    expect(c.debugSnapshot().cells).toBe(2);
+  });
+});

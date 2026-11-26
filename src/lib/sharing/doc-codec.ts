@@ -18,7 +18,7 @@ export type DocKind = 'plan' | 'sim';
 
 /**
  * What plan sharing needs to know about a document: where it lives (storage key, API, page
- * path) and how to read, write and describe it. Autosave, publish and remix are generic over it.
+ * path) and how to read, write and describe it. Autosave and publish are generic over it.
  */
 export interface DocCodec<D> {
   readonly kind: DocKind;

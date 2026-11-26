@@ -54,7 +54,7 @@ describe('chunkOf', () => {
     }
   });
 
-  it('a chunk holds rows, the effect, money, tiers and cars only', () => {
+  it('a chunk holds rows, the effect, money, tiers, cars and waiting only', () => {
     const plan = world([1]);
     expect(Object.keys(chunkOf(plan, plan, null, 0, 0)).sort()).toEqual([
       'cars',
@@ -62,7 +62,8 @@ describe('chunkOf', () => {
       'money',
       'planEffect',
       'rows',
-      'tiers'
+      'tiers',
+      'waiting'
     ]);
   });
 
@@ -73,11 +74,12 @@ describe('chunkOf', () => {
     expect(() => chunkOf(full, short, null, 0, 2)).toThrow();
   });
 
-  it('money and tiers are null without a feed', () => {
+  it('money, tiers and waiting are null without a feed', () => {
     const plan = world([1]);
     const c = chunkOf(plan, plan, null, 0, 0);
     expect(c.money).toBeNull();
     expect(c.tiers).toBeNull();
+    expect(c.waiting).toBeNull();
   });
 
   it('a feed with a plan world that is not a WorldSeries of createWorldSeries throws', () => {

@@ -69,11 +69,11 @@ describe('NoticeStack', () => {
     render(NoticeStack, {
       notices: [
         { id: 'n1', text: "Your saved plan couldn't be read. The old data was kept." },
-        { id: 'remix', text: 'Remixed', tone: 'toast' }
+        { id: 'saved', text: 'Saved', tone: 'toast' }
       ],
       ondismiss: () => {}
     });
-    await expect.element(page.getByText('Remixed')).toBeVisible();
+    await expect.element(page.getByText('Saved', { exact: true })).toBeVisible();
     const [card, chip] = [...document.querySelectorAll('[data-testid="notice"]')];
     expect(card.getAttribute('data-shape')).toBe('card');
     expect(chip.getAttribute('data-shape')).toBe('chip');
@@ -87,7 +87,7 @@ describe('NoticeStack', () => {
     render(NoticeStack, {
       notices: [
         { id: 'info', text: 'Stays' },
-        { id: 'remix', text: 'Remixed', tone: 'toast' }
+        { id: 'saved', text: 'Saved', tone: 'toast' }
       ],
       ondismiss
     });
@@ -95,7 +95,7 @@ describe('NoticeStack', () => {
     expect(ondismiss).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(200);
     expect(ondismiss).toHaveBeenCalledTimes(1);
-    expect(ondismiss).toHaveBeenCalledWith('remix');
+    expect(ondismiss).toHaveBeenCalledWith('saved');
     await vi.advanceTimersByTimeAsync(20_000);
     expect(ondismiss).toHaveBeenCalledTimes(1);
   });
@@ -114,7 +114,7 @@ describe('NoticeStack', () => {
       manifest: manifestJson as unknown as Manifest,
       initial: [
         { id: 'n3', text: 'Rebased notice' },
-        { id: 'remix', text: 'Remixed toast', tone: 'toast' }
+        { id: 'saved', text: 'Saved toast', tone: 'toast' }
       ],
       ondismiss
     });
@@ -136,9 +136,9 @@ describe('NoticeStack', () => {
     expect(document.documentElement.style.getPropertyValue('--notice-stack-h')).toBe('');
 
     await vi.advanceTimersByTimeAsync(8_100);
-    expect(ondismiss).toHaveBeenCalledWith('remix');
+    expect(ondismiss).toHaveBeenCalledWith('saved');
     expect(ondismiss).toHaveBeenCalledTimes(1);
-    expect(text('Remixed toast')).toBe(false);
+    expect(text('Saved toast')).toBe(false);
     expect(text('Rebased notice')).toBe(true);
     expect(document.querySelectorAll('[data-testid="fzp-notices"]')).toHaveLength(1);
   });

@@ -1,6 +1,6 @@
-# SF Housing Simulator
+# SF Housing
 
-A free, open-source educational game about housing in San Francisco. Paint zoning until there is room for the homes goal, then reach the goal in a simulation of the city, unlocking permitting, zoning and public money one level at a time. Plans and policies can be published and remixed.
+A free, open-source educational game about housing in San Francisco. Paint zoning until there is room for the homes goal, then play the city's forecast in short runs: collect units from the homes it builds and spend them on real policy levers, until the goal is met as early as the full set of levers allows. Plans and policies can be published.
 
 Built with SvelteKit 2, Svelte 5 and Tailwind 4 on Cloudflare Workers (D1 + R2). No paid APIs or vendor keys are needed to run or build it.
 

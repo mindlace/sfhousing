@@ -1,0 +1,992 @@
+# Superconductor ledger — design: docs/superpowers/design/2026-11-24-2120-incremental-loop.html
+
+Source model document: docs/superpowers/specs/2026-11-24-incremental-feel-design.html (approved by the partner 2026-11-24, ruling P12)
+Package worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop
+Build graph: docs/superpowers/design/2026-11-24-2120-incremental-loop-build-graph.md @ 5f6ff673
+SDD scripts: /Users/mindlace/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.2/skills/subagent-driven-development/scripts
+HTML scripts: /Users/mindlace/.claude/plugins/cache/super/superpowers-html/0.1.0/bin
+Project commands: npm, npx, lsof, ls, cat, grep, head, tail, wc, pwd, uptime, mkdir; operators run with --permission-mode dontAsk and CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1 (both carried from the incremental-game run)
+
+## Checkpoints
+
+- 8d01fbd7-d8aa-4b45-bcb6-f6554b5cb5c0 | model claude-opus-5-5 | package @ 471e04ee | 2026-11-24
+- 3e6cbc12-fa0c-4b88-b399-c54d9af04fcb | model opus | package @ 6909f578 | 2026-11-25 | ruling conductor-1
+- 674f9738-07e7-497b-acdd-6e13b0a62466 | model opus | package @ e2298de1 | 2026-11-25 | ruling conductor-4
+- 1548b631-81f6-41e0-aadf-d2a95c57e6eb | model opus | package @ 2fed7108 | 2026-11-25 | ruling game-core-1
+- df224800-49d6-4d6c-8f32-414643fef7cd | model opus | package @ 1e42ef1c | 2026-11-25 | ruling tree-catalogue-code-1
+- 7b3802ed-fe52-40dc-bfef-5767e6153a65 | model opus | package @ 7b78d3ff | 2026-11-25 | ruling run-play-1
+- 83cf01b1-8408-40b3-be8a-320f5a74ffc9 | model opus | package @ 2a690292 | 2026-11-25 | ruling run-play-3
+- 522d782a-525a-4ffc-8cd8-459571465898 | model opus | package @ f18a8067 | 2026-11-25 | ruling tally-tree-a-1
+- 4e69e503-17ed-431c-a5eb-baec02432345 | model opus | package @ bedb5499 | 2026-11-25 | ruling conductor-8
+- e7e1071e-13c0-4146-8a09-6f097f6021de | model opus | package @ a6822279 | 2026-11-25 | ruling tally-tree-a-3
+- 0883a5c0-ca8f-4d75-9d9f-5c40ce8e8aa8 | model opus | package @ 812e1bf5 | 2026-11-25 | ruling run-play-9
+- 026d45ea-3935-4e06-8437-522771d10b1e | model opus | package @ 1a644a98 | 2026-11-25 | ruling tree-catalogue-measure-1
+- 529a4fa2-c224-4d1c-807d-4bee11ebd092 | model opus | package @ cbe7786b | 2026-11-25 | ruling game-lane-3
+- 33412b2b-2f9c-4300-a958-e4c9249e14b3 | model opus | package @ ebea2e8f | 2026-11-25 | ruling conductor-11
+- 35ad1919-31c2-4fea-9bcb-80b7ab20e2ef | model opus | package @ 395d5303 | 2026-11-25 | ruling game-lane-5
+- 0070b4d2-c6b8-4473-b816-1986778b8ac8 | model opus | package @ fc6faad8 | 2026-11-25 | ruling money-wait-perf-1
+- 9a2de726-376e-4431-910d-bcdc7c14444f | model opus | package @ 3d0018c6 | 2026-11-25 | ruling conductor-16
+
+## 2026-11-24 — composition started (supercomposer, fresh)
+
+- Composition worktree: /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel, branch `worktree-incremental-feel`, source model at `7bb0efbc`.
+- Partner rulings P1 to P12 are quoted in the source model's Intent section. In short: still a simulation and forecasting tool (P1); goals called out (P2); length comes from levers (P3); approach B (P4); one game on one page (P5); goal in the header (P6); the tree only between runs (P7); the name "SF Housing" (P8); units are collected from completing homes, a ledger separate from the forecast (P9); affordable units come after this round, leave room (P10); Paint is the opening only (P11); a bought lever can be switched off, approval (P12).
+- C1 inventory taken by `ls` and `grep` in this session: `src/lib` has 26 entries (about, account, attribution, brush, config, data, dock, fzp, game, generator, goal, ids, map, paint, plan, scoreboard, server, sharing, shell, sim, sim-page, timelapse, timeline, transit, view); `src/lib/server` has 14; routes: `/`, about, account, api/{account,auth,e2e,game,plans,policies}, attribution, data, forgot-password, p/[id], reset-password, s/[id], signin, sim, test; D1 tables: user, session, account, verification, passkey, user_identity, principal, plan, game_save, user_version, handle_tombstone; bindings: ASSETS, DB, BUCKET, six rate limits; vars ENVIRONMENT, AUTH_METHODS, SES_FROM ("SF Housing Simulator <noreply@...>"), PUBLIC_APP_RELEASE; one web worker (`src/lib/sim/client.ts` starts `worker.ts`), plus `src/routes/test/page-worker.ts`.
+- Seven surveys dispatched, reports under `surveys/`: game-saves, shell-routes-name, paint-opening, sim-page-timeline, levers, engine-outputs, map.
+- `surveys/map.md` back and read (lines 1 to 557 of 694; the tail is the Layers panel, prefs, e2e names and the appendix). Findings the design binds against: (1) the citywide feed `CityDelta` (`src/lib/map/types.ts:63-83`) already carries, per project row, a label point, the approved, started and completed days, the homes and the policy flags; the map stores it and draws nothing from it, and `TimelineMode` keeps its own index of it. It has no homes by income tier. (2) Completion is a shader state change with no event or callback. (3) `SimMapHandle` has no method to set, fit or read the view; consumers call MapLibre through `getMap()`. No whole-city fit exists; the default view is pitched at zoom 13 (12.2 on phones). `setPanEnabled(false)` leaves scroll, pinch and double-click zoom on. (4) The one draw hook is `setOverlayLayers`, owned by a four-slot mux (`feedback`, `limits`, `outline`, `ring`); there is no slot for a fifth owner, no Marker, no 2D canvas. DOM siblings over the map that take pointer events block picks beneath them. (5) Hover picking ignores touch, pressed buttons and a moving camera. (6) Timeline mode has no wall-clock animation and no reduced-motion handling. (7) The bench bar is p95 at most 16.7 ms; no case measures a moving pointer. Eight doc and code disagreements are listed at the top of the report; none bears on this design except D6 (`HIDDEN_VIEW` is described as what the map gets during a run, and no code passes it).
+- `surveys/levers.md` back and read (sections A to K; the appendix not read). Findings the design binds against: (1) every `Policy` in the schema 4 document already has `on: boolean`, with `setOn` (`src/lib/timeline/spans.ts:212-216`) and an Inspector switch; an off policy keeps its ids and place. P12 needs no new mechanism. (2) `allowed.ts` locks per kind only (and given-or-own for money); nothing is per preset, stop type, band or field. `playable(doc, allowed)` filters the document the worker runs and Publish sends. (3) On/off items available today: 3 permitting presets (`sb423Clock`, `noDiscretionary`, `benchmarkPermits`; `ceqaInfill` is unavailable), 4 stop types, 3 protections, 8 money measures of which 6 add money and 2 take it away (`state-off`, `federal-credits-off`); 3 more money presets are held back. (4) Stepped settings: up to 3 distance bands (1 to 3219 m, editor-only caps), stories 1 to 80, 11 editable (route, stage) durations with two sourced floors, route shares, `newerThan` years. (5) A measure is dated from its policy's first span, which "+" starts at the playhead's month; only `htf-2026` has dates fixed in law and it is unavailable. The source model's sentence "A measure starts on its own lawful date" is wrong for every available measure. (6) The three available permitting presets act on three different things; "multiply when stacked" holds only for timers on the same route and stage. (7) A change dated from month 1 re-steps the whole window; a zoning change also builds a view (about 4.4 to 4.7 s for one metro rule on the live city without a gross table, per `docs/dev/policy-timeline.md:150-164`); permitting and money changes build none. (8) `docs/dev/policy-timeline.md:5` says schema 4 is not switched on; the code uses it.
+- `surveys/game-saves.md` back and read (sections a, c, d, e, f; b, g, h and the appendix not read). Findings: (1) `GameSave` and `Progress` are `v: 1`; every parser refuses another `v`, nothing migrates, and `parseGameSave` rebuilds from known fields only, so an unknown field is dropped on the server and on adopt. A new save shape needs a new `v` and a decision on old saves. (2) Level is written into many places: `Level = 1..5`, `Progress.level` and `banked` keys 2 to 5, the D1 `level` column (NOT NULL), `SaveEntry.level`, the index parser, `allowed.ts`, `copy.ts`, `e2e/helpers/game.ts`. (3) `plan` and `policy` in a save are opaque text copies of the `sfhousing:plan:v1` and `sfhousing:sim:v2` records; the server never parses them. (4) Limits: 12 saved games, 600,000-byte PUT body, 120 writes per 60 s per identity. (5) An account is minted only by `PUT /api/game/[id]` when the save's `firstWinAt` is set; `won()` sets it once, from Paint's win card or `/sim`'s won standing. (6) `GameStore` holds `progress`, `allowed`, `offer`, `saves`; `setOffer` and `levelUp` are the level mechanism; `navigate.ts` maps level 1 to `/` and above to `/sim`; `remix` makes a saved game from a published plan or policy. (7) The e2e seam: with no helper called every spec runs the open game (`ALL_ALLOWED`, level 5); `seedGame(page, level)` seeds a level; eleven specs call it.
+- `surveys/engine-outputs.md` back and read (headline findings, sections b from Snapshots on, c, d, f, h, j and the doc disagreements; a, e, g, i not read). Findings: (1) No per-project event reaches the page. The `CityDelta` marker is the only citywide per-project record: world row index (not stable across edits), label point, approved, started and completed days, gross homes capped at 65,535, flags. No project id, parcel id, existing homes or tiers. (2) `tiersOf` runs only in the worker at a row's completion (`src/lib/sim/world/score/series.ts:345`), is summed by month and discarded per row; tiers are filed only when the window has finance. (3) Marker homes are gross units; the goal's measure is `baseline.completedNet + rows[i].completedNet`, net of existing homes, so summed drops exceed the goal's count. (4) The series per month has `completedNet` (pipeline and new), `entitledNew`, `inProgress` for six stages (gross homes), `exitedUnits`, money per pool, cumulative tiers. The twin's rows are not sent; only plan minus twin for `entitledNew` and `completedNetNew`. (5) The funding line (`FundLine`) is worker-only state at the stepped month; no waiting count is recorded, no event marks an application joining or leaving, and with one copy at month 0 the line at an earlier month is gone once the world steps on. (6) `Goal` is a plain object: `{ ...defaultGoal(asOf), deadline: d }` is a goal with another deadline; `readGoal` reads up to the deadline's month. `TimelineMode` has no deadline prop outside a test seam. (7) The whole window (480 model months) is computed ahead of the playhead and replayed; docs give about 1.8 to 2.1 s to first results and 3.2 to 3.8 s for the window on an M5 Pro; no phone timing exists. An edit from month m re-runs from month 0.
+- `surveys/sim-page-timeline.md` back and read (headline findings and sections A to C; D to K and the appendix not read). Findings: (1) `Playhead` exports only `toggle()`; `TimelineMode` owns `day`, `playing`, `speed` (TM:384-386). Two fixed speeds, 12 and 36 model months per second (`src/lib/fzp/playback.ts:6-9`); none is "the window in N seconds". (2) Nothing sets a stop month: playback stops only where `end >= last`, both derived (TM:422, 431-437). A stop day needs both to be that day, and drags then clamp to it too. (3) One callback per day change (`handleDay`, TM:1218-1224); no month, end or per-project event. (4) A seen result follows the furthest day reached, so a ruler drag counts the same as playing; nothing records how a month was reached. (5) The game store is read in `SimRoute`, `SimPage`, `TimelineMode` only; below them it is props (`allowed`, `level`, `locked`, `bar`). The win card, the offer, the bar and the level-up clock reset are in `TimelineMode` (TM:679-783, 725-746). (6) `src/lib/dock` is not used on `/sim`. (7) One CSS transition and one reduced-motion guard exist in scope.
+- `surveys/shell-routes-name.md` back and read (sections a.2 to a.6, the page routes and endpoint tables, c.1; the rest not read). Findings: (1) `SiteHeader` renders the site name, the steps nav (`steps()` at `:147-168`), `LevelCell`, the status cell, the pinned item, the Menu, actions, the account link, About. `LevelCell` opens `LevelPanel`, which holds the saved games list, New game, Rename, Delete and the sync line. (2) `useHeaderActions` has three production callers: `/`, `/p/[id]`, `TimelineMode`. (3) `/` mounts `BrushEditor`; `/sim` mounts `SimRoute` then `SimPage` then `TimelineMode`; `/` leaves for `/sim` with `goto('/sim')` when the level leaves 1. (4) The name: 14 lines shown to users, among them `APP_NAME` (`src/lib/config.ts:2`), `PRODUCT_NAME` (`src/lib/server/auth/brand.ts:2`, which feeds the emails and the passkey prompt), page titles, the header, a plan error message and `SES_FROM` in `wrangler.jsonc` (both environments); 22 lines of test or identifier; 48 of documentation. (5) `isFullHeightRoute` still names `/lesscars`, which has no route. There is no `static/`, favicon or manifest.
+- `surveys/paint-opening.md` back (summary read; report not read): `/` is a thin page over `BrushEditor`, which owns the map, the worker, the dock and the brush; `paintWon` has one caller (`src/routes/+page.svelte:173`); the plan lives in `sfhousing:plan:v1` and nothing under `sim`, `sim-page` or `timeline` reads it; `BrushController`, `BrushState`, `PaintTab`, `PaletteStrip`, `HistoryButtons` are shared with `/sim`; `ScoreboardPanel`, `HeaderScore` and `sharing/remix.ts` have no page importer.
+
+## 2026-11-24 — tension audit (C2)
+
+Source model against the code and against the rulings of the five-level design (`docs/superpowers/design/2026-11-22-1216-incremental-game.html`, R0 to R7, D1 to D14). Items marked PARTNER go to the partner; the rest are composer calls, to be written in the design doc as calls.
+
+- T1 (call). "Only a played run pays" needs a run to be distinct from moving the playhead: today a drag reaches the same result as playing. A run is started by Run, hides the ruler, cannot be dragged, and is the only time drops exist. Between runs the timeline works as it does today and pays nothing. The goal is counted met when a run reaches the deadline.
+- T2 (call). A run's speed is the span from today to the deadline over a fixed wall time; the two existing speeds stay for the timeline between runs.
+- T3 (call, after D9). A deadline once met stays met after a data update.
+- T4 (call). The header's unit count opens the panel that the level cell opens today (saved games, New game, the sync line).
+- T5 (PARTNER). D5 and D6: a remixed published policy makes a saved game that "runs only what its level has unlocked", with the rest shown locked. With a tree, "unlocked" is per node. Options: keep D5 with a per-node rule (a policy runs only when everything it sets is within what is bought); offer Remix of a policy only once the tree is complete; or a remix is a free-play game with everything open and no units.
+- T6 (PARTNER, proposal). The five-level design says "Paint stays open at every level" and a plan remix "takes the published plan". P11 makes Paint the opening only. Proposal: past the opening the plan is kept in the save and not editable; `/p` links still open; Remix of a plan starts a new game at the opening with that plan; Publish sends the plan during the opening and the policy after it.
+- T7 (call, after D7). The first win is still the room goal in the opening; the account is minted there.
+- T8 (PARTNER). Saved games made under the five levels (`v: 1`, `level`, `banked`). Options: keep each save's plan and policy, mark the opening done for level 2 and up, grant no nodes, and show its policies as locked until their nodes are bought; or grant the nodes of the kinds its level had unlocked; or set old saves aside and start afresh.
+- T9 (call, after D5). Publish sends the policies that run: bought and switched on.
+- T10 (call). The open game (server render, `/s/<id>`, and every e2e spec that calls no helper) stays the full tool with everything allowed and no runs, tally or tree.
+- T11 (call). A drop is worth its project's net new homes (units less existing homes), so collected and completed are the same kind of number as the goal's. The city feed carries gross units only; it gains the existing homes.
+- T12 (correction to the source model). Per-project tiers are not kept or sent by the engine. Round one keeps the room P10 asks for in the ledger and the price shapes only (units by kind, one kind). Sending tiers per project is the first task of P10's round.
+- T13 (call). The tally's "homes waiting for money" is a new series field filled from the funding line each month. It is its own build unit; the tally ships with the stage counts and gains the row when that unit lands.
+- T14 (call). The map gains a way to fit and lock the view and a fifth overlay owner for drops.
+- T15 (call). A zoning purchase costs a view build (seconds) before the forecast; Run waits on first results and says so.
+- T16 (call). `Allowed` becomes what is bought: presets, stop types, the number of bands, the story and distance caps, the stage timings open to custom values, the money measures.
+- T17 (correction to the source model). Every available money measure is dated from the month it is added; none has "its own lawful date".
+- T18 (call). The name changes in the 14 user-facing places, `SES_FROM`, the tests that expect it and the documents. `rpID`, the worker, the bucket, the database and the repository keep their names.
+- T19 (call). Deadlines step in from the window's end by a fixed number of years down to the earliest year the full tree reaches, which a build unit measures.
+- T20 (call). Side goals are defined over what the page already receives at the deadline's month (policy effect on new projects, tiers, funded homes, stage counts, public money per added home) and the run's own counts.
+- Primary reading done by the composer (2026-11-24): `src/lib/game/allowed.ts` (whole), `progress.ts` (whole), `saves.ts:1-110`, `src/lib/map/types.ts:40-149` (`CityDelta`, `TimelineUpdate`, `SimMapHandle`), `src/lib/sim/world/city-feed.ts` (whole: a marker's homes are the last revision's units from `scheduleAt`, clamped to 0..65,535), `src/lib/map/overlay-mux.ts` (whole: four named slots), `src/lib/timeline/TimelineMode.svelte:396-440` (goal, `g`, `runDoc`, `allowed`, `lastDay`, `filledEnd`) and `:615-810` (outcome and seen result, standing, win card, offer, level-up reaction, `playWaits`). Still to read before the design binds: `src/lib/game/store.svelte.ts`, `src/lib/timeline/Playhead.svelte`, `src/lib/sim-page/SimRoute.svelte`, `src/routes/+page.svelte`, `src/lib/shell/SiteHeader.svelte`, `src/lib/goal/goal.ts`, and the paint-opening report.
+- T5, T6 and T8 put to the partner 2026-11-24 with recommendations (T5: per-node rule; T6: the proposal as written; T8: keep and re-earn). Awaiting rulings. The design doc is not started.
+- **Partner rulings 2026-11-24 on T5, T6, T8** (verbatim): "let's drop remixes for the moment. for publishing, what is published should be whatever was true at the time of publishing. the five-level edition has never gone to prod so don't worry about backwards compatibility". Recorded as P13 (no Remix in this round: the buttons on `/p/<id>` and `/s/<id>` and `GameStore.remix` go; published links still open and play in full), P14 (Publish sends what is true at that moment: the plan during the opening, the policy as it runs after it) and P15 (no backwards compatibility for saves or the `game_save` table made under the five levels).
+- **Composer architecture, 2026-11-24** (decomposition choices, for the design doc). Twelve subsystems: `contracts`; `game-core` (pure rules: progress v2, units, buying, allowed-from-bought, within and playable, the deadline ladder, side goals, settling a run, the save parser, copy); `tree-catalogue` (the node data, applying a grant to the policy document, the balance script, the reach measurement that fixes the ladder); `game-save` (browser store, sync, server store, the `game_save` table, the API; Remix removed); `city-net` (the city feed carries existing homes); `money-wait` (a series field of homes waiting in the funding line); `map-run` (fit the city and lock the view); `run-play` (drops, collecting by pointer and keyboard, the collect-for-me setting, pops, sound, on a canvas over the map); `tally-tree` (the tally card, the tree screen, the goal headline with side goals, the game panel and unit count); `game-sim` (the one owner of `TimelineMode.svelte`, `SimPage.svelte`, `SimRoute.svelte`: the run seam, the page's states, editor limits, removal of levels); `game-shell` (header, the name, one address, the opening on `/`, `/sim` redirect, Remix removed from the shared pages, About); `closing` (journey e2e, docs, the reach check's new question, a bench case for a run). Custom timing and custom route shares open at the ending, not as nodes: the source model says both, and the ending is chosen because a purchase must show in the next run and those steps have no value to set. Painted area, own pool, City funding scale and market terms stay out of the game at every stage (P11; D4 of the five-level design). Drops are drawn on a 2D canvas over the map with `pointer-events: none`, positions from `map.project`; the map itself only gains the view lock.
+- **Design doc written, 2026-11-24** (C3): `docs/superpowers/design/2026-11-24-2120-incremental-loop.html`. Thirteen interface rows: G1 state and saved game, G2 units, G3 tree, G4 limits, G5 applying a grant, G6 ladder, side goals and run result, G7 browser store, G8 save API and table, E1 existing homes in the city feed, E2 homes waiting for money, M1 the map's run view, R1 drops and collecting, U1 screens and header parts. Model commitments: G1, G2, G3, G4, G6, R1. Eighteen composer calls are listed in its `sec-rulings-calls`. Naming: the five-level `Allowed` and `Progress` are replaced by `Limits` (`limits.ts`) and `GameState` (`state.ts`) in new files, so `contracts` lands without breaking the application; `game-save`, `game-sim` and `game-shell` are one lane that merges together. E2 puts the new series on `SeriesChunk` and `TimelineView`, not on `MonthRow`, because `MonthRow` is defined under `src/lib/sim/scenario`, which the dataset version hashes. Awaiting the partner's approval of the design doc; specs not started.
+- **Partner approved the design doc, 2026-11-24** ("go ahead"), at commit `4d22bf96`. C4 started: twelve spec writers dispatched, one per subsystem, each to `docs/superpowers/specs/2026-11-24-<slug>-design.html` (slugs: contracts, game-core, tree-catalogue, city-net, money-wait, map-run, run-play, tally-tree, game-save, game-sim, game-shell, closing). Each embeds its interface rows and the global constraints verbatim, decides what the design leaves open, and reports the decisions it made and any conflict it found. The format checker is `.superpowers/superconductor/incremental-loop/check_spec.py`.
+
+### Spec hand-backs (C4), to reconcile before the fresh-eyes check
+
+- `city-net` (spec written, checker clean). Decisions: `existing` is `Schedule.existingUnits` once the row enters construction after `asOf`, else 0, so `homes - existing` is the row's effect on `completedNet` (`series.ts:502-509`); marker `WIDTH` 7 to 8, 29 bytes a row; `validateCityDelta` throws when the field is absent; accessor `ActivityIndex.markers(): CityMarkerRow[]` (`{row, lngLat, completed, homes, existing}`, ascending by row). Conflict: E1's `dd` says "the homes on the lot that the project replaces"; the spec's reading (0 until construction starts after `asOf`) is the right one. TO DO: amend E1's meaning in the design and in every spec that copies E1 (run-play, game-sim, contracts). Files outside its write set that must change: `src/lib/timeline/TimelineMode.svelte.spec.ts` (one fixture line), `src/lib/map/SimMap.timeline.svelte.spec.ts`, `src/lib/map/timeline-controller.spec.ts`, `src/lib/map/test/synthetic-timeline.ts`; wanted: `src/lib/sim/world/test/map-stream-run.ts`, `src/lib/sim/world/host.spec.ts:580`, `docs/dev/map-stream.md:33`. TO DO: add all seven to `city-net`'s write set in the design.
+
+- `contracts` (spec written, checker clean; its 14 stubs type-check against the real modules and pass prettier). Decisions: stub parameters start with `_`; `isGiven` throws in the stub; `OPEN_LIMITS` has the 5 preset ids, the 4 stop types, bands 3, stories 80, reach 3219, empty `measures` (funding ids exist only with a calibration), `BASE_HANDS`; `NEW_GAME.units` is `{}`; an absent `existing` reads as 0, absent `waiting`/`waitingMoney` as null; each stub has a colocated spec. Conflicts: (1) a required `setRunView` breaks `npm run check` through `src/lib/fzp/test/sim-map-stub.ts:155` and `src/lib/brush/test/sim-map-stub.ts:23`, so contracts adds it optional and `map-run` takes those two files (told to the map-run writer). (2) **`src/lib/config.ts` is hashed into the dataset version.** Verified by the composer at `pipeline/lib/version.ts:41-50`: PATHS is `pipeline`, `src/lib/config.ts`, `src/lib/data`, `src/lib/generator`, `src/lib/timelapse`, `src/lib/plan/geometry.ts`, `src/lib/plan/types.ts`, `src/lib/sim/finance`. The design's global constraint lists other paths (taken from the five-level design's text). TO DO: correct the global constraint's list in the design and in every spec; `game-shell` must not write `config.ts`: the name lives in a new `src/lib/shell/name.ts` and `APP_NAME` stays untouched (told to the game-shell writer). `OPEN_LIMITS.measures` empty means `within` must treat `open` as always true before reading sets (G4 already says so). TO DO: add the colocated stub specs to contracts' write set.
+- `run-play` (spec written, checker clean). Decisions: the state machine in a new `src/lib/game/run/run-model.ts` (clock, projection and reduced motion as arguments); a drop's position computed at appearance and on resize; the ring collects along its path between frames; arrow step 16 px, 64 px with Shift; drop radius `3 + 1.5 * sqrt(worth)` capped at 9 px; every shape on screen at least 400 ms; at most 240 drops drawn, older ones still count; a feed day going backwards changes nothing; at most one sound a frame, gaps 70 ms (`pop`) and 50 ms (`collect`); preferences stored as `'1'`/`'0'`; a mocked `clock.ts`; `data-dropped` and `data-collected` on the layer for e2e; the layer's frame budget 2 ms p95, confirmed by closing's bench. Keys asked of `words.ts`: `runOverText(take)`, `dropCountText(n)`. TO DO: confirm game-core's spec has both. Gaps: the arrow keys in About's shortcut list (given to `game-shell`: TO DO check that spec has it); the map's hover picks keep running during a run (M1 says taps and tooltips are off while locked; TO DO make M1 say hover picks are off too, and check map-run's spec).
+- `map-run` (spec written, checker clean). Decisions: the fit uses `SF_GRID_BBOX` with 24 px padding, pitch 0, bearing 0, through a pure `runFrame(w, h, inset)` in `camera.ts`; fitted zooms about 11.6 on desktop, 10.8 on `/sim`'s docked box, 10.5 on a phone; while locked `maxBounds` is lifted and the minimum zoom drops to 8 (`RUN_MIN_ZOOM`); one `applyInteraction()` replaces `applyPan`, all 8 handlers off while locked, and `setPanEnabled` while locked takes effect at unlock; root `data-run-view="on"`; no hover, taps or clicks while locked and deck `_pickable: false`; resize or `setBottomInset` while locked refits; the remembered camera is kept across a manifest remount; no new bench case. Findings: the design did not say that `maxBounds` and minZoom 11 make the fit impossible on small boxes (resolved in the spec); at the fitted zooms existing buildings never show (their layer starts at zoom 12) and far bars are at most about 20% alpha on desktop and absent on a phone, so during a run the map is the flat basemap and the run layer's drops; the lock's `moveend` gives `SimPage`'s view follower citywide bounds (for `game-sim`: TO DO check that spec handles it); a new `SimMap` component starts unlocked. Files outside the write set: `src/lib/fzp/test/sim-map-stub.ts`, `src/lib/brush/test/sim-map-stub.ts`. TO DO: add both to map-run's write set; make M1 say hover picks are off while locked (the spec already does it).
+- `money-wait` (spec written, checker clean). Findings: the line cannot be read at a calendar month's end (it is served once per model month, and joins and awards within a step are not ordered by day), and a series field would not work (the runner fills the series from a log while the world steps on after an edit: `ensemble.ts:166,222-251`, `runner.ts:643`). The spec's quantity: calendar month i reads the line at the end of model month `finalTable[i]`; two calendar months ending in one model month share a value. Decisions: the count is kept in the world as `FundLine.waitHomes` by model month and `waitThrough`, recorded in the funding `shadow` hook after system 7; `chunkOf` reads it through a new `Extras.waiting`; the series layout stays at version 5 with 18 fields; homes are the application's gross `units`; lots no longer free are left out by the lazy guard's own test (`serve.ts:202-206`); `waitingMoney` is null when any chunk lacks `waiting`. Files outside the write set: writes in `src/lib/sim/world/funding/columns.ts` and `funding/system.ts` (not only a reader); one line each in `src/lib/sim/world/host.edit.spec.ts`, `src/lib/sim/timeline-client.host.spec.ts`, `src/lib/timeline/test/fixtures.ts`, `src/lib/timeline/SimDetails.svelte.spec.ts`; `docs/dev/world-funding.md`. **Composer ruling:** `SeriesChunk.waiting` and `TimelineView.waitingMoney` stay optional in the types for good (absent reads as null), so no fixture or spec outside the unit changes and money-wait never overlaps the game-sim lane; the unit's write set gains `funding/columns.ts`, `funding/system.ts` and `docs/dev/world-funding.md`. TO DO: amend E2 in the design (optional fields; "at the end of the model month that holds the calendar month's last day"; gross units) and in every spec that copies E2 (money-wait, game-core, game-sim, contracts); have the money-wait spec drop "makes them required" and the four outside lines.
+- `game-save` (spec written, checker clean). Decisions: the storage keys keep their names, and a five-level save or index (any JSON with `v: 1`) is deleted at load, not moved to a corrupt key; the index becomes `v: 2` with `phase` and `rung`; `saves.ts` keeps keys, limits and default names; the table is dropped and created again in two generated migrations (a NOT NULL column without a default fails in SQLite, and a default would keep rows the parser refuses); `startRuns` answers `storage` while `firstWinAt` is null; `settle` does nothing for a run already settled (same `at` and `rung`); `takeNext` with nothing to take answers `ok`; the open game is in `phase: 'runs'` with placeholder met rungs; `seedGame(page, Partial<GameState>)` merges onto `NEW_GAME`; no ladder seam. Conflicts: `AccountOffer.svelte` imports `syncText` from the deleted `copy.ts`; the spec assumes `syncText`, `playedText`, `FULL_TEXT`, `STORAGE_TEXT` move to `words.ts` with the same names; the e2e helper imports `NEW_GAME` from `state.ts` by relative path, which works only while `state.ts` has type-only `$lib` imports. **Composer rulings:** those four names do move to `words.ts` unchanged (TO DO: check game-core's spec has them, and that `state.ts` and `save-shape.ts` import `$lib` modules as types only); `game-save`'s write set gains `src/lib/game/AccountOffer.svelte` and its spec (the import line), `src/lib/game/test/StoreHost.svelte`, `src/lib/server/auth/better-auth.spec.ts`, `src/lib/server/user-store/deletion.spec.ts`. TO DO: closing needs a short ladder and a fast run for its journey; no unit provides a seam yet.
+- `game-shell` (spec written, checker clean). Decisions: `+page.ts` loads the plan and `loadSimScenario` together (the calibration, up to 256 KB, on every load of `/`); nothing is chosen before mount; after mount `/` mounts a new `src/lib/shell/PaintOpening.svelte` or `SimRoute`; **at `/` the open game always shows the simulation, with no query or seam, so Paint's e2e specs must call `newVisitor` first**; `/sim` answers 308 to `/` and drops the query; the opening card stays open while the goal is met, and a refused Start shows "This browser refused to save."; no dot on the Menu button; `SITE_NAME` in `src/lib/shell/name.ts`, `config.ts` untouched; About's section keeps the id `about-levels` with new passages; `remix.ts` deleted. Conflicts: the `/sim` redirect is game-shell's by the design but `src/routes/sim/**` is game-sim's by the write sets; `/s/[id]` (game-sim's) also needs the name and the new `SharedBanner` props; G7 does not say the open game's phase; `OpeningCard` has no dismiss; `GamePanel` must load `/` after a switch, a new game or deleting the current game, and `GameCell` needs `data-header-keep-open`. Files outside the write set: `src/lib/brush/BrushEditor.svelte` (a `camera()` export), `initialFrame` on `SimRoute`, `SimPage`, `TimelineMode` (game-sim), `src/routes/page*.spec.ts`, `src/routes/test/**`, `src/lib/plan/schema.spec.ts:213`, `src/routes/about/+page.svelte`. **Composer rulings:** `src/routes/sim/+page.svelte` and `+page.ts` (the redirect) are game-shell's, the rest of `src/routes/sim` is game-sim's, which moves its page tests under `src/lib/sim-page`; `src/routes/s/[id]/+page.svelte` is edited by game-sim (Remix) and then by game-shell (the name), in lane order; G7 gains "the open game is in phase `'runs'`"; game-shell's write set gains `BrushEditor.svelte`, `src/routes/page*.spec.ts`, `src/routes/test/**`, `src/lib/plan/schema.spec.ts`, `src/routes/about/+page.svelte`, `src/lib/shell/name.ts`, and loses `src/lib/config.ts` and `+layout.svelte`. TO DO: check game-sim's spec has `initialFrame`, the `/s` name and banner props, and tests moved off `src/routes/sim`; check tally-tree's spec has the panel's page load and `data-header-keep-open`; check closing's spec has every Paint e2e calling `newVisitor`.
+- `tally-tree` (spec written, checker clean). Decisions: the tree is branch columns of nested lists (a node nests under the first earlier node of its branch named in `after`), one column on a phone, two from md, four from lg, the open node's detail a fifth column from 1024 px and inline below it; no "?" placeholder nodes; focus on mount goes to Continue, Run or Start; Run can always be pressed and shows "Getting the forecast ready" while busy; below sm the headline drops "homes" and line 2; durations 400/800/1200/300 ms; stage labels are `STAGE_KEY`'s; a saved game's row reads "Painting" or "Goal N of M". Conflicts: U1 lacks `on` and `ontoggle` for a bought node's switch, `ending` (reached month, money per home) and `publish` for the ending, `before` on `Tally`, and a way for "Collect for me" to apply mid-run; contracts stubs no G7 store, so `GameCell` and `GamePanel` build only after `game-save` (the spec splits itself: part A merges alone, part B joins the lane); `expectNoA11yViolations` works only in Playwright, so component specs use `axe.run`. Needs outside its write set: about 70 word keys in `words.ts`; the six components added to `THEMED_FILES` in `src/lib/shell/accent.spec.ts`. **Composer rulings:** each UI unit owns its own words, so no unit waits on another's word list: `src/lib/game/ui/words.ts` (tally-tree) and `src/lib/game/run/words.ts` (run-play); game-core's `src/lib/game/words.ts` holds only the words the store, the sync and the server-facing parts use (`syncText`, `playedText`, `FULL_TEXT`, `STORAGE_TEXT`, default save names). U1 gains the four missing props. R1's prefs gain a subscription so a change applies mid-run. TO DO: amend U1 and R1 in the design; have tally-tree and run-play move their words into their own files; have game-shell's spec add the six components to `THEMED_FILES`.
+- `game-core` (spec written, checker clean). Decisions: `NEW_GAME` frozen; `parseGameSave` refuses a malformed save whole and repairs only drift (unknown nodes and side goals dropped, a rung past the ladder lowered); a `'runs'` state needs `firstWinAt`; starting limits after the first stop type are 1 band, 4 stories, 402 m; `within` ignores `on`; rung deadlines clamped (never after the rung before, never before the dataset date's month); `settle` pays the lump and a side reward only when it also records them; 11 side goals (public money per added home left out because lower is better); extra exports `parseGameState`, `parseRunResult`, `deadlineIndex`, `START_*`, `FUNDING_PRESET_IDS`. Conflicts: "Custom timing" is a permitting policy whose preset is `observed`, never bought, so G4's rule could never run it; the spec adds `observed` to `presets` at the ending. Side-goal targets for funded, building and affordable homes are above zero under current law with no baseline in the code, so the balance script must set them, and those numbers, the side rewards and `RUNG_LUMP` sit in files outside tree-catalogue's write set. Outside its write set: `src/lib/game/words.spec.ts`. **Composer rulings:** G4 gains "at the ending `presets` also holds `observed`"; every number the balance script tunes moves to one data file tree-catalogue owns, `src/lib/game/catalogue/tuning.ts` (`RUNG_LUMP`, the side goals' targets and rewards), which `ladder.ts` and `side-goals.ts` import; contracts ships its starting values. TO DO: amend G4 and G6 in the design; have game-core import the tuned numbers, trim `words.ts` to the shared words, and add `words.spec.ts` to its files; have tree-catalogue and contracts take `tuning.ts`.
+- `game-sim` (spec written, checker clean). Decisions: five page states, adding `starting` (waits for the forecast); a load or reload starts the first run while no run has been settled, else lands on the tree; runs have their own clock `RunClock` and the ruler is not shown; `Playhead` changes only by losing the "To beat" flag; `advance` takes days per second; the run starts once the forecast has its first month with numbers current; drops are recomputed each time the city feed updates during the run; **the tree takes the bottom pane's place**; the run view stays on until the tally's Continue; Space does nothing in a run; Edit re-adds a node's policy only when it is missing; in a game "+ Transit rule" adds a rule sized to what is bought; given measures stay read-only; no starter suggestions; an e2e run-length seam `sfhousing:e2e:run-ms`. Conflicts: it writes `src/routes/sim/+server.ts` (a 308) though the redirect is game-shell's; U1's `Tree` has no switch, so it uses the Inspector's On switch through Edit; R1 does not say `feed.drops` can change during a run; it assumes `ActivityIndex.markers(): Iterable<Marker>`; G4 and Custom timing (as game-core found). Outside its write set: `src/lib/game/WinCard.svelte.spec.ts`. **Composer rulings:** the tree fills the page below the header, as in the wireframe the partner approved, not the bottom pane; the node carries its own switch (U1's new `on` and `ontoggle`), wired to `setOn`, and the Inspector's switch stays too; the redirect is game-shell's, so game-sim drops `+server.ts`, deletes the old `/sim` page files and moves its page tests under `src/lib/sim-page`; R1 says `feed.drops` may be replaced during a run and drops are matched by row; game-sim maps city-net's `CityMarkerRow` to R1's `Marker`. TO DO: amend the game-sim spec on those five points; check it has `initialFrame`, handles the view follower's citywide `moveend` during a run, and the `/s` page's name and banner props; add `WinCard.svelte.spec.ts` to its write set.
+- `closing` (spec written, checker clean; written before the other eleven existed, from the design alone). Decisions: every journey uses goal amount 1, so no ladder seam is needed, and the ending is reached by seeding a game at the last rung; three journeys (pointer with "Collect for me"; keyboard only on chromium steering the ring; the ending); `gotoEditor` makes a new visitor; the reach check is renamed `scripts/reach-check.ts`, prints four lines, exits 1 if either question misses, and builds the full tree's document by a written rule; the bench case `e2e/bench/game-run.bench.ts`, on the live dataset, on a quiet machine. Seams it needs: `seedGame(page, Partial<GameState>)` (game-save has it); a fast-run key and a `seedRunMs` helper (game-sim reads `sfhousing:e2e:run-ms`; the helper belongs in `e2e/helpers/game.ts`, game-save's file); the goal amount read on the runs side (game-sim); a `window.__sfhRun` hook (run-play offers `data-dropped` and `data-collected` instead); the arrow step at most `BASE_HANDS.radiusPx` (16 against 48: holds); on fixture-0 some node at rung 0 costs no more than `RUNG_LUMP`. Conflicts: `docs/dev/map-perf.md:37` says to kill whatever holds port 4173, against the shared-port rule. Outside its write set: the reach check's rename, `docs/dev/pipeline.md`, and the `docs/dev` files now untrue and owned by no unit (testing, map-perf, accessibility, developing, plan-sharing, ui-parts, sim-funding, and those that call the page `/sim`). Owner action noted: rename the app in the Google Auth Platform console. **Composer rulings:** closing's write set gains `scripts/reach-check.ts` and its spec (the rename), `docs/dev/pipeline.md` and every `docs/dev` file no other unit owns; closing reads the run's counts from `data-dropped` and `data-collected`, not a window hook; game-save's helper gains `seedRunMs(page, ms)`. TO DO: amend the closing and game-save specs accordingly; check tree-catalogue has a rung-0 node priced at or under `RUNG_LUMP`.
+- `tree-catalogue` (spec written, checker clean). Decisions: 23 nodes over stages 0 to 4; start nodes `sb423-clock`, `stop-rail`, `housing-bond`, `hands-radius`; a node's ring is `round(stage × (RUNGS − 1) / 4)`; `state-double` is a node shown only after `federal-support`; shared code `catalogue/play.ts` (`buyAndApply`, `fullTree`) and an engine runner exported from `scripts/reach-measure.ts`; starting prices, an assumed collect share (0.25 to 0.80) and an assumed pacing clock are in the spec. Conflicts: G5's bands rule could never fit (resolved by splitting the outermost band); G4 did not give the transit limits after the first stop type; Hands steps must exceed `BASE_HANDS`; `npm run data:local` loads local R2 and deletes its temporary copy, so the scripts take a dataset directory or fetch over HTTP; the ladder rule put rung 1 about 9 months before rung 0; more than five rungs leaves some opening nothing. All resolved by the amendments below.
+- **Reconciliation, 2026-11-24.** The design was amended from the twelve hand-backs (E1, E2, G4, G5, G6, G7, M1, R1, U1, the contracts list, the write-set table, the hashed-files constraint, calls 19 to 25) and committed with the first-round specs at `d3f4cf28`. The amendments, by row and by spec, are in `amendments-1.md`. Eleven writers were resumed with it (all but closing, which goes last because it reads the others).
+- **Re-sync round, 2026-11-24.** All eleven writers handed back with clean checkers. Items settled after it: (1) money-wait: the `before` helpers of `src/lib/sim/world/host.edit.spec.ts` and `src/lib/sim/timeline-client.host.spec.ts` drop `waiting` when they trim a chunk, so their view comparisons would fail with baseline money; **ruling:** both helpers join money-wait's write set (one line each: copy `waiting`, trimmed like `money`); the design's write-set table and the spec say so. (2) game-core: G1 said the parser drops unknown nodes, but `save-shape.ts` imports no catalogue (types only, for the e2e helper); **ruling:** `parseGameSave` checks the shape only, `fitGame(s, nodes?, goals?)` in `ladder.ts` is part of G6 (drops unknown nodes and side goals, lowers a level or a rung past the end), the browser store calls it after the parser (G7) and the server never does. G1, G6 and G7 amended in the design; `sync_rows.py --write` copied the three sections into the eight specs that hold them; contracts (stub), game-core (wording) and game-save (the call) were resumed for their own text. (3) `defaultSaveName` is in game-core's `words.ts` (game-save's assumption holds). (4) contracts' stubs of `ladder.ts` and `side-goals.ts` do not import the tuning constants (unused imports fail lint); game-core adds the imports. (5) game-sim reported game-shell's spec as still giving it the redirect; game-shell re-synced after that read; left for the fresh-eyes check. Tool: `sync_rows.py` compares every spec's copied `sec-if-*` sections, table lines and `sec-global-constraints` with the design (leading whitespace ignored outside `pre`); before amendment (2) every copy in the eleven specs matched.
+- **Partner question, 2026-11-24:** "why are four on offer from the start? the first round of the sim should just be 'what if we changed nothing'". Answer given: it is; the first run starts from the opening card with nothing bought and no units, and the tree is first shown after that run's tally. No design change.
+- **Fresh-eyes check 1, 2026-11-24** (`fresh-eyes-1.md`; committed package `6ba62672`): 1 blocker, 8 major, 14 minor. Composer rulings, by finding: (1) tree-catalogue adopts game-core's side-goal ids. (2) game-sim's wrapper becomes `run-layer-box`; `run-layer` is RunLayer's root. (3) game-shell's wrapper becomes `opening-card-box`. (4) focus in the tree phase is `Tree`'s own (Run). (5) `goalUnlocks` returns a noun phrase. (6) the title of `/s/[id]/+error.svelte` goes to game-shell with `+page.svelte`'s (write set amended); `sim-page.md:81` stays game-sim's. (7) tally-tree part B needs G7 and R1. (8) recorded as call 26: a bought node is not shown on the map before the next run (the tree covers the map); **narrows the source model, told to the partner in the hand-off message**. (9) the partner approved the design with calls 1 to 18, which name both deviations; the design now says so and lists calls 3, 5 and 26 among those told to the partner. (10) lanes ordered in `sec-write-sets`: city-net then map-run; game-save, tally-tree B, game-sim, game-shell. (11) call 27: a first run that fails starts again. (12) G6 reworded: settled twice pays lump and side rewards once; the store refuses the second settle. (13) contracts sentence reworded: no run-time `$lib` import. (14, 15, 17, 19) tally-tree fixes. (16) one waiting string, tally-tree's `RUN_BUSY`. (18) focus after Start is game-sim's. (20) `CLOCK` and `SHARE` are stated assumptions the owner changes after playing; the 1.25 rule is tree-catalogue's. (21) game-sim follows run-play on mute. (22) three readability fixes. (23) run-play does not need E1.
+- **The chain, after fresh-eyes 1.** Its chain: contracts → game-core → tree-catalogue → game-save → game-sim → game-shell → closing. Rulings on its edges: *game-core → tree-catalogue* kept for the code; tree-catalogue is cut into the code (G3, G5) and the measurement (new row **T1**: measured `LADDER_YEARS`, tuned `tuning.ts`), and only closing waits on T1, so the tuning loop on the production dataset is off every other path. *tree-catalogue → game-save*: the lane now waits only on the code part. *game-sim → game-shell* kept: the cut was refused because the application builds only once both are in, so neither could check its own work; the lane (game-save, tally-tree B, game-sim, game-shell) is one serial unit merged once. Moving G2's bodies into contracts was not taken (game-core is short; the gain is one short unit on a side path). Needs lists in `sec-subsystems` now mean "calls what the owner builds"; a type or constant comes from contracts. Expected longest chain for the graph: contracts → game-core → tree-catalogue (code) → the game lane → closing, with tree-catalogue (measurement) → closing beside it.
+- `amendments-2.md` holds the corrections by spec. Resumed: tree-catalogue, game-sim, tally-tree, game-shell, run-play; closing after them. Edited by the composer directly: contracts (one sentence), game-save (one list, readability).
+- **Fresh-eyes check 2, 2026-11-24** (`fresh-eyes-2.md`; package `7d438ff7`): 22 of 23 fixed as ruled; finding 10 partly; five new (one major, four minor), all one-sentence fixes made by the composer directly: N1 game-core's needs line said G3 and E2 (now "needs no row", the two copied for their shapes); N2 game-save and game-shell name the four-part lane; N3 city-net and map-run state their lane order; N4 game-shell needs G7 and U1, G1 copied for its shape; N5 closing's game-sim list preamble covers the cases that seed their own state. Chain as the checker reads it: contracts → game-core → tree-catalogue (the code) → [game-save → tally-tree B → game-sim → game-shell] → closing. Two cuts it still sees, both refused: *tree-catalogue (code) → game-save* (the lane is one unit and game-sim calls `treeView`, `buy` and `applyGrant` for real, so the lane waits on G3 and G5 whatever game-save mocks); *tally-tree B → game-sim* (an order inside one serial unit; either order builds, the design keeps the one that gives game-shell both).
+- T21 (call). One address: `/` holds the game. It mounts the brush editor during the opening and the simulation page after it; `/sim` redirects to `/`. The map remounts at that one transition, carrying the camera.
+
+## 2026-11-24 — handoff (C5)
+
+- **Package.** Design `docs/superpowers/design/2026-11-24-2120-incremental-loop.html`; twelve specs `docs/superpowers/specs/2026-11-24-{contracts,game-core,tree-catalogue,city-net,money-wait,map-run,run-play,tally-tree,game-save,game-sim,game-shell,closing}-design.html`; source model `docs/superpowers/specs/2026-11-24-incremental-feel-design.html`; build graph `docs/superpowers/design/2026-11-24-2120-incremental-loop-build-graph.md`; surveys under `surveys/`; checks `fresh-eyes-{1,2,3}.md`; tools `check_spec.py` (format) and `sync_rows.py` (each spec's copied rows against the design; run it after any change to an interface row).
+- **Integration branch** `superconductor/incremental-loop`, created at `76ed1a08`. The package worktree is nested under the composition worktree `.claude/worktrees/incremental-feel` because the composing session was confined to that worktree; **the composition worktree must stay until the build is merged.** The composition branch `worktree-incremental-feel` is an ancestor of the integration branch up to `76ed1a08` and holds nothing more that the package needs.
+- **Checkpoint 1** on `claude-opus-5-5` (the partner prefers Opus for the most capable roles), cold read at `471e04ee`: "Checkpoint ready".
+- **Build graph** by fork `graph-all` at `a6731240`: ten units (contracts, game-core, tree-catalogue-code, tree-catalogue-measure, map-lane, money-wait, run-play, tally-tree-a, game-lane, closing); four tied longest chains of five units, all through game-core and ending at closing.
+- **Fresh-eyes check 3** (the chain and the graph, `fresh-eyes-3.md`): the chains are the ones challenged in C4, with the lane counted as one unit; no edge added or dropped. Fixed here: tree-catalogue's code part writes over `catalogue/ladder-years.spec.ts` with the rule (contracts' stub test asserted `[2060]` and had no owner), and its file table says "write over the contracts stub's spec" for the four specs contracts creates; in the graph, two uncited sections cited (contracts `sec-design-corrections`, map-run `sec-design-visible`), E2's cell names closing as its waiter, game-lane's writes leave `activity.spec.ts` to map-lane, and tally-tree's test-id section is cited by both parts. No interface row changed, so checkpoint 1 stands; the graph fork was not rerun because no unit's row changed beyond those cells.
+- **Left as it is, for the conductor to know.** (a) The design lists G4 among run-play's needs and G1, G4 among tally-tree part A's, though both use them only as types and constants; every such row is game-core's, so no edge changes. (b) The lane's first part, game-save, calls only game-core's rows; G3, G5, R1 and U1 part A are first called by its second and third parts, E1 and M1 by game-sim. If the lane is the last thing waiting, it can be admitted once game-core has merged and take the other rows in before part B. (c) closing's tests and documents build on the starting numbers; only its reach check of record and its bench need T1.
+- **Settled decisions:** P1 to P15 (the source model's intent section and the design's rulings) and composer calls 1 to 27 (design `sec-rulings-calls`). The partner approved the design with calls 1 to 18; calls 19 to 27 were told to the partner as they were made. **Call 26 narrows the source model** (a bought node is not shown on the map before the next run); the partner was told on 2026-11-24 and has not answered.
+- **Open, by measurement:** node prices, the rung lump, side-goal targets and rewards, the ladder years, and pacing are starting values until `tree-catalogue-measure` runs against the production dataset; `CLOCK` and `SHARE` in the balance script are assumptions the owner changes after playing.
+- **Owner action after the build:** rename the app in the Google Auth Platform console if Google sign-in is on.
+- **Next:** conduction starts in a fresh session with supersonic:superconductor. No operator was dispatched from the composing session.
+
+## 2026-11-25 — conduction started (superconductor)
+
+- Intake 2026-11-25 01:00. No operator has run; no unit worktree or branch exists. The conductor's ledger dir is the project root's `.superpowers/superconductor/incremental-loop/` (this file), copied from the package worktree's tracked copy at a3425dda with `checkpoint-1.json` and `prompts/`: a tracked ledger inside the package worktree would be lost to a `reset --hard` there. The package worktree's copy is the composer's and is no longer written. At the finish, copy this file back into the branch.
+- Helpers here (adapted from incremental-game): `start.sh`, `mkassign.py`, `relaunch.sh`, `review.sh`, `mkrule.py`, `rulechain.py`, `line.py`. Operators and forks run on opus (owner preference).
+- Band at intake: low (seven_day 13%).
+- The conductor session's name is `sfhousing-86`, not `incremental-loop-conductor`: operator messages may not arrive; the heartbeat covers it. Owner told.
+- Package accepted at intake (design sections, traceability, coverage table `tbl-coverage`, commitment layering, twelve specs, build graph with ten units and its Longest chain lines, checkpoint 1 on opus at 471e04ee; the composer ledgered three fresh-eyes checks and that checkpoint 1 stands after the graph fixes). Comprehension gate dispatched 01:15 (general-purpose, opus): `surveys/gate-explain.md`, `surveys/gate-findings.md`. No operator starts before it reports. Package worktree being set up for merge suites (npm install, fixture, migrate; logs in the session scratchpad).
+
+## Units
+
+- contracts: incremental-loop-contracts — status: launching (branch incremental-loop-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-contracts, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: root of every chain; every row's shape, needs: none, produces: G1-G6, R1 shapes)
+- contracts: incremental-loop-contracts — status: admitted (branch incremental-loop-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-contracts, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: root of every chain; every row's shape, needs: none, produces: G1-G6, R1 shapes)
+- game-core: incremental-loop-game-core — status: launching (branch incremental-loop-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-core, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: first on every longest chain; state, ladder and save rules, needs: G1-G6 shapes (contracts; not merged yet), produces: G1, G2, G4, G6)
+- game-core: incremental-loop-game-core — status: planning (branch incremental-loop-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-core, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: first on every longest chain; state, ladder and save rules, needs: G1-G6 shapes (contracts; not merged yet), produces: G1, G2, G4, G6)
+- tree-catalogue-code: incremental-loop-tree-catalogue-code — status: launching (branch incremental-loop-tree-catalogue-code, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-code, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: tree and grant logic over the catalogue, needs: G1, G2, G4, G6 (not merged yet), produces: G3, G5)
+- tree-catalogue-code: incremental-loop-tree-catalogue-code — status: planning (branch incremental-loop-tree-catalogue-code, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-code, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: tree and grant logic over the catalogue, needs: G1, G2, G4, G6 (not merged yet), produces: G3, G5)
+- map-lane: incremental-loop-map-lane — status: launching (branch incremental-loop-map-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-map-lane, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: two specs across the map and the city feed, needs: E1, M1 shapes (contracts; not merged yet), produces: E1, M1)
+- map-lane: incremental-loop-map-lane — status: planning (branch incremental-loop-map-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-map-lane, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: two specs across the map and the city feed, needs: E1, M1 shapes (contracts; not merged yet), produces: E1, M1)
+- money-wait: incremental-loop-money-wait — status: launching (branch incremental-loop-money-wait, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: engine funding columns and score chunks, needs: E2 shape (contracts; not merged yet), produces: E2)
+- money-wait: incremental-loop-money-wait — status: planning (branch incremental-loop-money-wait, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: engine funding columns and score chunks, needs: E2 shape (contracts; not merged yet), produces: E2)
+- run-play: incremental-loop-run-play — status: launching (branch incremental-loop-run-play, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: canvas run layer, drops, sound; perf budget, needs: G2, G4 (not merged yet), produces: R1)
+- run-play: incremental-loop-run-play — status: planning (branch incremental-loop-run-play, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: canvas run layer, drops, sound; perf budget, needs: G2, G4 (not merged yet), produces: R1)
+- tally-tree-a: incremental-loop-tally-tree-a — status: launching (branch incremental-loop-tally-tree-a, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tally-tree-a, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four screens with a11y and motion, needs: G1, G2, G4, G6 (not merged yet), produces: U1 (Tally, Tree, GoalHeadline, OpeningCard))
+- tally-tree-a: incremental-loop-tally-tree-a — status: planning (branch incremental-loop-tally-tree-a, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tally-tree-a, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four screens with a11y and motion, needs: G1, G2, G4, G6 (not merged yet), produces: U1 (Tally, Tree, GoalHeadline, OpeningCard))
+- game-lane: incremental-loop-game-lane — status: launching (branch incremental-loop-game-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-lane, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four specs in one serial lane; the app builds only with all four, needs: G1-G6, E1, M1, R1, U1 part A (none merged yet), produces: G7, G8, U1 (GameCell, GamePanel))
+- game-lane: incremental-loop-game-lane — status: planning (branch incremental-loop-game-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-lane, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four specs in one serial lane; the app builds only with all four, needs: G1-G6, E1, M1, R1, U1 part A (none merged yet), produces: G7, G8, U1 (GameCell, GamePanel))
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: launching (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: planning (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- closing: incremental-loop-closing — status: launching (branch incremental-loop-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-closing, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: e2e journeys, reach check, docs sweep, needs: G1-G8, E1, E2, M1, R1, U1, T1 (none merged yet), produces: none)
+- closing: incremental-loop-closing — status: planning (branch incremental-loop-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-closing, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: e2e journeys, reach check, docs sweep, needs: G1-G8, E1, E2, M1, R1, U1, T1 (none merged yet), produces: none)
+- contracts-1: incremental-loop-contracts-1 — status: launching (branch incremental-loop-contracts-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-contracts-1, start 2cd18925104aead7396f6639723c6c616942e2c5, model opus — rationale: hand-back of contracts task 3: three type edits, needs: none, produces: E1, E2, M1 shapes)
+- contracts-1: incremental-loop-contracts-1 — status: admitted (branch incremental-loop-contracts-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-contracts-1, start 2cd18925104aead7396f6639723c6c616942e2c5, model opus — rationale: hand-back of contracts task 3: three type edits, needs: none, produces: E1, E2, M1 shapes)
+- contracts: incremental-loop-contracts — status: complete (branch incremental-loop-contracts, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-contracts, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: root of every chain; every row's shape, needs: none, produces: G1-G6, R1 shapes)
+- contracts-1: incremental-loop-contracts-1 — status: complete (branch incremental-loop-contracts-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-contracts-1, start 2cd18925104aead7396f6639723c6c616942e2c5, model opus — rationale: hand-back of contracts task 3: three type edits, needs: none, produces: E1, E2, M1 shapes)
+- run-play-1: incremental-loop-run-play-1 — status: launching (branch incremental-loop-run-play-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play-1, start 74968ccc87cdcc9e95fb7f1982854375666763e1, model opus — rationale: hand-back of run-play task 2: prefs module, needs: none (contracts' prefs stub merged at f6d8cc8e), produces: none)
+- run-play-1: incremental-loop-run-play-1 — status: admitted (branch incremental-loop-run-play-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play-1, start 74968ccc87cdcc9e95fb7f1982854375666763e1, model opus — rationale: hand-back of run-play task 2: prefs module, needs: none (contracts' prefs stub merged at f6d8cc8e), produces: none)
+- game-core: incremental-loop-game-core — status: admitted (branch incremental-loop-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-core, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: first on every longest chain; state, ladder and save rules, needs: G1-G6 shapes (contracts; not merged yet), produces: G1, G2, G4, G6)
+- map-lane: incremental-loop-map-lane — status: admitted (branch incremental-loop-map-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-map-lane, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: two specs across the map and the city feed, needs: E1, M1 shapes (contracts; not merged yet), produces: E1, M1)
+- money-wait: incremental-loop-money-wait — status: admitted (branch incremental-loop-money-wait, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: engine funding columns and score chunks, needs: E2 shape (contracts; not merged yet), produces: E2)
+- run-play-1: incremental-loop-run-play-1 — status: complete (branch incremental-loop-run-play-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play-1, start 74968ccc87cdcc9e95fb7f1982854375666763e1, model opus — rationale: hand-back of run-play task 2: prefs module, needs: none (contracts' prefs stub merged at f6d8cc8e), produces: none)
+- money-wait: incremental-loop-money-wait — status: complete (branch incremental-loop-money-wait, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: engine funding columns and score chunks, needs: E2 shape (contracts; not merged yet), produces: E2)
+- tree-catalogue-code: incremental-loop-tree-catalogue-code — status: admitted (branch incremental-loop-tree-catalogue-code, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-code, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: tree and grant logic over the catalogue, needs: G1, G2, G4, G6 (not merged yet), produces: G3, G5)
+- tally-tree-a: incremental-loop-tally-tree-a — status: admitted (branch incremental-loop-tally-tree-a, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tally-tree-a, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four screens with a11y and motion, needs: G1, G2, G4, G6 (not merged yet), produces: U1 (Tally, Tree, GoalHeadline, OpeningCard))
+- run-play: incremental-loop-run-play — status: admitted (branch incremental-loop-run-play, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: canvas run layer, drops, sound; perf budget, needs: G2, G4 (not merged yet), produces: R1)
+- game-core: incremental-loop-game-core — status: complete (branch incremental-loop-game-core, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-core, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: first on every longest chain; state, ladder and save rules, needs: G1-G6 shapes (contracts; not merged yet), produces: G1, G2, G4, G6)
+- map-lane: incremental-loop-map-lane — status: complete (branch incremental-loop-map-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-map-lane, start a458b998e565009fdc370a61da0d6842a17fd882, model opus — rationale: two specs across the map and the city feed, needs: E1, M1 shapes (contracts; not merged yet), produces: E1, M1)
+- note: game-core and map-lane were set complete at 06:55 when their final commits were merged in batch 4, before batch 4's suite reported; if that suite fails, the fix round line reopens them.
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: admitted (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- tree-catalogue-code: incremental-loop-tree-catalogue-code — status: complete (branch incremental-loop-tree-catalogue-code, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-code, start 6909f578034453bcfeb9365e71ad923fe03efafe, model opus — rationale: tree and grant logic over the catalogue, needs: G1, G2, G4, G6 (not merged yet), produces: G3, G5)
+- run-play: incremental-loop-run-play — status: complete (branch incremental-loop-run-play, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-play, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: canvas run layer, drops, sound; perf budget, needs: G2, G4 (not merged yet), produces: R1)
+- game-lane: incremental-loop-game-lane — status: admitted (branch incremental-loop-game-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-lane, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four specs in one serial lane; the app builds only with all four, needs: G1-G6, E1, M1, R1, U1 part A (none merged yet), produces: G7, G8, U1 (GameCell, GamePanel))
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: replaced (ruling tree-catalogue-measure-1) (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: launching (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: admitted (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- tally-tree-a: incremental-loop-tally-tree-a — status: complete (branch incremental-loop-tally-tree-a, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tally-tree-a, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four screens with a11y and motion, needs: G1, G2, G4, G6 (not merged yet), produces: U1 (Tally, Tree, GoalHeadline, OpeningCard))
+- tree-catalogue-measure: incremental-loop-tree-catalogue-measure — status: complete (branch incremental-loop-tree-catalogue-measure, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-tree-catalogue-measure, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: measurement scripts against the production dataset, needs: G1-G6 (none merged yet), produces: T1)
+- side-goal-effect: incremental-loop-side-goal-effect — status: launching (branch incremental-loop-side-goal-effect, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-side-goal-effect, start ebea2e8fab324f7d5e723bf66e5b173718b0184e, model opus — rationale: owner-directed fix round from ruling conductor-11: reader, script and a retune on the production dataset, needs: G6 (game-core), T1 as first tuned (tree-catalogue-measure), G3, G5 (tree-catalogue-code): all merged at ebea2e8f, produces: G6 (the effect reader on SideInput.inForce), T1 (tuned again))
+- side-goal-effect: incremental-loop-side-goal-effect — status: admitted (branch incremental-loop-side-goal-effect, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-side-goal-effect, start ebea2e8fab324f7d5e723bf66e5b173718b0184e, model opus — rationale: owner-directed fix round from ruling conductor-11: reader, script and a retune on the production dataset, needs: G6 (game-core), T1 as first tuned (tree-catalogue-measure), G3, G5 (tree-catalogue-code): all merged at ebea2e8f, produces: G6 (the effect reader on SideInput.inForce), T1 (tuned again))
+- side-goal-effect: incremental-loop-side-goal-effect — status: complete (branch incremental-loop-side-goal-effect, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-side-goal-effect, start ebea2e8fab324f7d5e723bf66e5b173718b0184e, model opus — rationale: owner-directed fix round from ruling conductor-11: reader, script and a retune on the production dataset, needs: G6 (game-core), T1 as first tuned (tree-catalogue-measure), G3, G5 (tree-catalogue-code): all merged at ebea2e8f, produces: G6 (the effect reader on SideInput.inForce), T1 (tuned again))
+- game-lane: incremental-loop-game-lane — status: complete (branch incremental-loop-game-lane, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-game-lane, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: four specs in one serial lane; the app builds only with all four, needs: G1-G6, E1, M1, R1, U1 part A (none merged yet), produces: G7, G8, U1 (GameCell, GamePanel))
+- closing: incremental-loop-closing — status: admitted (branch incremental-loop-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-closing, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: e2e journeys, reach check, docs sweep, needs: G1-G8, E1, E2, M1, R1, U1, T1 (none merged yet), produces: none)
+- closing: incremental-loop-closing — status: complete (branch incremental-loop-closing, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-closing, start 2744840d26c46aa4396a29abb82a06675a6ba48e, model opus — rationale: e2e journeys, reach check, docs sweep, needs: G1-G8, E1, E2, M1, R1, U1, T1 (none merged yet), produces: none)
+- loose-ends: incremental-loop-loose-ends — status: launching (branch incremental-loop-loose-ends, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends, start 73fc9a47eef9c2a9212e2e4825a1051ff73bb522, model opus — rationale: ruling conductor-13: docs wording, one dead link, skip link placement, fixture words; small, touches e2e a11y, needs: none, produces: none)
+- loose-ends: incremental-loop-loose-ends — status: admitted (branch incremental-loop-loose-ends, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends, start 73fc9a47eef9c2a9212e2e4825a1051ff73bb522, model opus — rationale: ruling conductor-13: docs wording, one dead link, skip link placement, fixture words; small, touches e2e a11y, needs: none, produces: none)
+- loose-ends-1: incremental-loop-loose-ends-1 — status: launching (branch incremental-loop-loose-ends-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends-1, start d41031e8074ed1564d8a4911f14ba7464c724f58, model opus — rationale: hand-back of loose-ends task 2: skip link in flow, axe check, needs: none, produces: none)
+- loose-ends-1: incremental-loop-loose-ends-1 — status: admitted (branch incremental-loop-loose-ends-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends-1, start d41031e8074ed1564d8a4911f14ba7464c724f58, model opus — rationale: hand-back of loose-ends task 2: skip link in flow, axe check, needs: none, produces: none)
+- loose-ends-2: incremental-loop-loose-ends-2 — status: launching (branch incremental-loop-loose-ends-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends-2, start d41031e8074ed1564d8a4911f14ba7464c724f58, model opus — rationale: hand-back of loose-ends tasks 3 and 4: comment, fixture words, docs wording, needs: none, produces: none)
+- loose-ends-2: incremental-loop-loose-ends-2 — status: admitted (branch incremental-loop-loose-ends-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends-2, start d41031e8074ed1564d8a4911f14ba7464c724f58, model opus — rationale: hand-back of loose-ends tasks 3 and 4: comment, fixture words, docs wording, needs: none, produces: none)
+- loose-ends: incremental-loop-loose-ends — status: complete (branch incremental-loop-loose-ends, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends, start 73fc9a47eef9c2a9212e2e4825a1051ff73bb522, model opus — rationale: ruling conductor-13: docs wording, one dead link, skip link placement, fixture words; small, touches e2e a11y, needs: none, produces: none)
+- loose-ends-1: incremental-loop-loose-ends-1 — status: complete (branch incremental-loop-loose-ends-1, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends-1, start d41031e8074ed1564d8a4911f14ba7464c724f58, model opus — rationale: hand-back of loose-ends task 2: skip link in flow, axe check, needs: none, produces: none)
+- loose-ends-2: incremental-loop-loose-ends-2 — status: complete (branch incremental-loop-loose-ends-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-loose-ends-2, start d41031e8074ed1564d8a4911f14ba7464c724f58, model opus — rationale: hand-back of loose-ends tasks 3 and 4: comment, fixture words, docs wording, needs: none, produces: none)
+- money-wait-perf: incremental-loop-money-wait-perf — status: launching (branch incremental-loop-money-wait-perf, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait-perf, start 5378a93ea2f28655d6494d5f4072f0bad25c99db, model opus — rationale: ruling conductor-14: funded month shadow hook 0.5 to ~900 µs; fix the waiting count's cost, values unchanged, needs: none, produces: none)
+- money-wait-perf: incremental-loop-money-wait-perf — status: admitted (branch incremental-loop-money-wait-perf, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait-perf, start 5378a93ea2f28655d6494d5f4072f0bad25c99db, model opus — rationale: ruling conductor-14: funded month shadow hook 0.5 to ~900 µs; fix the waiting count's cost, values unchanged, needs: none, produces: none)
+- run-frame: incremental-loop-run-frame — status: launching (branch incremental-loop-run-frame, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-frame, start 5378a93ea2f28655d6494d5f4072f0bad25c99db, model opus — rationale: ruling conductor-14: bench:map case=run p95 17.5 ms against 16.7; trace, then fix main-thread work outside the layer, needs: none, produces: none)
+- run-frame: incremental-loop-run-frame — status: admitted (branch incremental-loop-run-frame, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-frame, start 5378a93ea2f28655d6494d5f4072f0bad25c99db, model opus — rationale: ruling conductor-14: bench:map case=run p95 17.5 ms against 16.7; trace, then fix main-thread work outside the layer, needs: none, produces: none)
+- money-wait-perf: incremental-loop-money-wait-perf — status: complete (branch incremental-loop-money-wait-perf, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-money-wait-perf, start 5378a93ea2f28655d6494d5f4072f0bad25c99db, model opus — rationale: ruling conductor-14: funded month shadow hook 0.5 to ~900 µs; fix the waiting count's cost, values unchanged, needs: none, produces: none)
+- run-frame: incremental-loop-run-frame — status: complete (branch incremental-loop-run-frame, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-run-frame, start 5378a93ea2f28655d6494d5f4072f0bad25c99db, model opus — rationale: ruling conductor-14: bench:map case=run p95 17.5 ms against 16.7; trace, then fix main-thread work outside the layer, needs: none, produces: none)
+- main-merge: incremental-loop-main-merge — status: launching (branch incremental-loop-main-merge, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge, start 3d0018c634eb6fcac8e477a6d82ae1ca4ae55c44, model opus — rationale: ruling conductor-16: bring origin/main (cars #153 and three more) into the integration branch by the main-merge spec, suite and reach check green, needs: none, produces: none (the merge of origin/main; main-merge-retake waits on it))
+- main-merge: incremental-loop-main-merge — status: admitted (branch incremental-loop-main-merge, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge, start 3d0018c634eb6fcac8e477a6d82ae1ca4ae55c44, model opus — rationale: ruling conductor-16: bring origin/main (cars #153 and three more) into the integration branch by the main-merge spec, suite and reach check green, needs: none, produces: none (the merge of origin/main; main-merge-retake waits on it))
+- main-merge: incremental-loop-main-merge — status: complete (branch incremental-loop-main-merge, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge, start 3d0018c634eb6fcac8e477a6d82ae1ca4ae55c44, model opus — rationale: ruling conductor-16: bring origin/main (cars #153 and three more) into the integration branch by the main-merge spec, suite and reach check green, needs: none, produces: none (the merge of origin/main; main-merge-retake waits on it))
+- main-merge-retake: incremental-loop-main-merge-retake — status: launching (branch incremental-loop-main-merge-retake, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-retake, start 30b840fa708cc864a5b4b712a0efdd3803b31c32, model opus — rationale: ruling conductor-16: re-take every result of record on main's dataset 2026-11-25-76c90397 with cars on, needs: none (main-merge merged at 30b840fa), produces: none)
+- main-merge-retake: incremental-loop-main-merge-retake — status: admitted (branch incremental-loop-main-merge-retake, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-retake, start 30b840fa708cc864a5b4b712a0efdd3803b31c32, model opus — rationale: ruling conductor-16: re-take every result of record on main's dataset 2026-11-25-76c90397 with cars on, needs: none (main-merge merged at 30b840fa), produces: none)
+- main-merge-retake: incremental-loop-main-merge-retake — status: complete (branch incremental-loop-main-merge-retake, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-retake, start 30b840fa708cc864a5b4b712a0efdd3803b31c32, model opus — rationale: ruling conductor-16: re-take every result of record on main's dataset 2026-11-25-76c90397 with cars on, needs: none (main-merge merged at 30b840fa), produces: none)
+- main-merge-2: incremental-loop-main-merge-2 — status: launching (branch incremental-loop-main-merge-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-2, start 225a822e30e1df093707c8b5c0b6cb7daf592d2e, model opus — rationale: ruling conductor-17: merge 083fb7ae fix(funding) #154 into the integration branch by the main-merge spec's later-pass rules, needs: none (main-merge-retake merged at 225a822e), produces: none (main-merge-retake-2 waits on it))
+- main-merge-2: incremental-loop-main-merge-2 — status: admitted (branch incremental-loop-main-merge-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-2, start 225a822e30e1df093707c8b5c0b6cb7daf592d2e, model opus — rationale: ruling conductor-17: merge 083fb7ae fix(funding) #154 into the integration branch by the main-merge spec's later-pass rules, needs: none (main-merge-retake merged at 225a822e), produces: none (main-merge-retake-2 waits on it))
+- main-merge-2: incremental-loop-main-merge-2 — status: complete (branch incremental-loop-main-merge-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-2, start 225a822e30e1df093707c8b5c0b6cb7daf592d2e, model opus — rationale: ruling conductor-17: merge 083fb7ae fix(funding) #154 into the integration branch by the main-merge spec's later-pass rules, needs: none (main-merge-retake merged at 225a822e), produces: none (main-merge-retake-2 waits on it))
+- main-merge-retake-2: incremental-loop-main-merge-retake-2 — status: launching (branch incremental-loop-main-merge-retake-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-retake-2, start bbf5ebfe895f43520f2aff153dadeac08d2c0745, model opus — rationale: ruling conductor-17: re-take reach-measure, tree-balance (all eleven side goals), purchase to ready and the perf budgets after #154, needs: none (main-merge-2 merged at bbf5ebfe), produces: none)
+- main-merge-retake-2: incremental-loop-main-merge-retake-2 — status: admitted (branch incremental-loop-main-merge-retake-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-retake-2, start bbf5ebfe895f43520f2aff153dadeac08d2c0745, model opus — rationale: ruling conductor-17: re-take reach-measure, tree-balance (all eleven side goals), purchase to ready and the perf budgets after #154, needs: none (main-merge-2 merged at bbf5ebfe), produces: none)
+- main-merge-retake-2: incremental-loop-main-merge-retake-2 — status: complete (branch incremental-loop-main-merge-retake-2, worktree /Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-loop-main-merge-retake-2, start bbf5ebfe895f43520f2aff153dadeac08d2c0745, model opus — rationale: ruling conductor-17: re-take reach-measure, tree-balance (all eleven side goals), purchase to ready and the perf budgets after #154, needs: none (main-merge-2 merged at bbf5ebfe), produces: none)
+
+## Supervision
+
+- 01:30 comprehension gate back (`surveys/gate-findings.md`): 0 blockers, 0 majors, 6 minors, filed as conductor-1..6 (gate-3, 5, 2, 1, 6, 4 in that order; gate-3 first because it touches rows R1 and E1, which contracts stubs). contracts starts once conductor-1 is routed; planning operators start as their units' questions route. source-fidelity reaches 3 at conductor-4 (--trip).
+- plan game-core: docs/superpowers/plans/2026-11-25-game-core.html at c098dd2a
+- 01:40 operator messages do reach this session under the name sfhousing-86 (game-core's plan ready arrived)
+- plan tree-catalogue-code: docs/superpowers/plans/2026-11-25-tree-catalogue-code.html at 9c51a69e
+- 02:00 all ten operators started (contracts admitted, nine planning); band low. Chain 2: game-core-1 (trip: spec-disagreement third), game-core-2, tree-catalogue-code-1.
+- 02:10 contracts: hand-back of task 3 (E1, E2, M1) → sibling contracts-1 started from fd9c4b9d; rows moved to its line. contracts reports rows G1-G6 passed review at f1d2e1fb and R1 at b633e84c: merge owed, waits for the amending chain (one writer). Operators' sends to 'incremental-loop-conductor' do not arrive; they reach this session only by replying to a message from it.
+- notified incremental-loop-contracts: sibling incremental-loop-contracts-1
+- 02:20 every operator told the conductor's address is sfhousing-86 and asked for its status line and resends; mkassign.py now writes that name on the Conductor line (restarts carry it).
+- plan money-wait: docs/superpowers/plans/2026-11-25-money-wait.html at 56362ec1
+- plan map-lane: docs/superpowers/plans/2026-11-25-map-lane.html at 28cdf029
+- 02:30 contracts sent complete (branch tip; rows G1-G6, R1); merge owed once the amending chain exits. Check ruling game-core-1's affected units for contracts before merging.
+- plan tree-catalogue-measure: docs/superpowers/plans/2026-11-25-tree-catalogue-measure.html at 39b5740b
+- 02:40 run-play hand-back: tasks 2 of docs/superpowers/plans/2026-11-25-run-play.html at 2f1728e6; files src/lib/game/run/prefs.ts, prefs.spec.ts; needs rows none but it builds on contracts' prefs stub. OWED: start sibling run-play-1 right after the contracts merge passes (so its branch holds the stub).
+- order after chain 2 exits: merge contracts (critical path) and start its suite (agent); then chain 3 (run-play-1, -2, -3) runs during the suite; if that suite fails with rule commits on top, take the merge out with revert -m 1, not reset.
+- plan run-play: docs/superpowers/plans/2026-11-25-run-play.html at 2f1728e6
+- plan tally-tree-a: docs/superpowers/plans/2026-11-25-tally-tree-a.html at b741867e
+- plan closing: docs/superpowers/plans/2026-11-25-closing.html at 82b77286
+- chain 3 started 03:00: run-play-1, run-play-2, run-play-3, tally-tree-a-1 (trip), closing-1; runs during the contracts suite.
+- plan tree-catalogue-code: docs/superpowers/plans/2026-11-25-tree-catalogue-code.html at 6d2318f0 (tasks 3 and 4 rewritten after ruling tree-catalogue-code-1)
+- status asked game-lane
+- plan tally-tree-a: docs/superpowers/plans/2026-11-25-tally-tree-a.html at 414588f1 (after ruling tally-tree-a-1)
+- plan run-play: docs/superpowers/plans/2026-11-25-run-play.html at 74968ccc (after rulings run-play-1..3; task 2 handed back)
+- 03:45 run-play-1 started for run-play's handed-back task 2 (branched from the plan at 74968ccc, integration merged in).
+- notified incremental-loop-run-play: sibling incremental-loop-run-play-1
+- 03:50 admitted game-core, map-lane, money-wait (contracts shapes merged at 3bf89997). run-play-1's bring-up-to-date merge failed on an index write (race with the checkout); its branch holds run-play's earlier merge of the integration branch with the stubs, so it was launched as is.
+- plan game-lane: docs/superpowers/plans/2026-11-25-game-lane.html at 5e944dece8c2e53af10e682c7b3a672a765eb1db (42 tasks, one lane)
+- 04:25 game-core: row G1 passed review at a978d800. Merge owed after the suite on run-play-1 finishes (the suite is reading the worktree); G1 alone admits no unit (every consumer also needs G2 and G4).
+- plan game-lane: docs/superpowers/plans/2026-11-25-game-lane.html at fc50276cad661724e4ffd2cdf5be95f3eed0da8f (after rulings game-lane-1, conductor-7)
+- 04:35 game-core: row G2 passed review at 8b7b8aa1 (G1 at a978d800 is an ancestor's report). Merge owed after the run-play-1 suite; consumers still need G4.
+- 04:40 map-lane: row E1 passed review at 854be8fe. Merge owed after the run-play-1 suite, batched with game-core's rows.
+- 04:55 money-wait: row E2 passed review at 79f6b17b. Merge owed with the batch after the run-play-1 suite.
+- 05:15 money-wait sent complete @ 76b75536 (E2 at 79f6b17b already in batch 2; the tip adds final-review polish): merge owed after batch 2's suite. OWED: its perf bars (spec sec-design-cost; the 90 µs funded-month bar rated at risk, last mean 83.1 µs) were not run under load; tell money-wait when the machine is quiet (owner rule: timing only on a quiet machine).
+- 05:20 game-core: row G4 passed review at d9fdd344. Batch 3 (after batch 2's suite): G4 @ d9fdd344, money-wait tip 76b75536, and G6 if reported by then. G4 admits run-play.
+- restarted tree-catalogue-measure: death, rung 1, since start gen 0
+- resent to incremental-loop-tree-catalogue-measure
+- 06:05 map-lane: row M1 passed review at 633cda8b. Batch 4 (after batch 3's suite); only game-lane and closing need it.
+- 06:10 tree-catalogue-code's session is gone at quiet 68 min; tree-catalogue-measure's went at quiet 65: a --bg session with nothing to do appears to end after about an hour idle. These are not failures. Rule for this run: a planning unit whose plan is ledgered and whose session ended idle is NOT restarted to idle again; it is relaunched (beat.sh relaunched, no rung) with Admitted: yes and its plan when its rows merge. tree-catalogue-code is relaunched when batch 3 passes (G1, G2, G4, G6). Expect run-play, tally-tree-a, game-lane, closing to end the same way.
+- 06:20 map-lane sent complete @ 633cda8b (tip = M1's commit): batch 4. OWED on a quiet machine: bench:map (the owner's rule: the conductor side runs it locally, never hands it to the owner). Note for closing: CLAUDE.md's map-interfaces index line does not mention the run view.
+- 06:35 game-core sent complete @ fa72bb36 (fix wave after G6 @ 5c411cc2): batch 4 with map-lane @ 633cda8b.
+- relaunched tree-catalogue-code
+- resent to incremental-loop-tree-catalogue-code
+- relaunched tally-tree-a
+- resent to incremental-loop-tally-tree-a
+- relaunched run-play
+- resent to incremental-loop-run-play
+- 06:55 admitted by relaunch (sessions had ended idle): tree-catalogue-code, tally-tree-a, run-play; their rows merged and tested at batch 3; their branches took the integration head 7b6443b9, which also holds batch 4 (under test).
+- 07:20 tree-catalogue-code: row G3 passed review at b354efc4. Batch 5 (after batch 4's suite); consumers also need G5.
+- OWED: batch 5 = tree-catalogue-code row G3 @ b354efc4, merged once the run-play-6 fork exits (one writer).
+- 08:25 tree-catalogue-code sent complete @ 3e458451 (adds catalogue/play.ts on top of G5 @ 95b012e3). Batch 6, merged as soon as batch 5's suite reports; tree-catalogue-measure imports play.ts, so it is admitted on the head that holds batch 6.
+- 08:30 run-play: row R1 passed review at fec3e711 (tasks 9, 10 still to come). Batch 6 with tree-catalogue-code's complete @ 3e458451.
+- relaunched tree-catalogue-measure
+- resent to incremental-loop-tree-catalogue-measure
+- 08:50 admitted by relaunch: tree-catalogue-measure (G3, G5 merged and tested in batch 5; its branch took head 18ecd0af, which holds batch 6 under test, play.ts included). Its tuning loop on the production dataset may run for hours. The 24 '[WebServer] ERROR' lines in every e2e log are the expected 404 pages (same count since the first suite).
+- relaunched game-lane
+- resent to incremental-loop-game-lane
+- 10:50 admitted by relaunch: game-lane (every needed row merged; U1 part A is in batch 8, under test; branch took head b94edfcb).
+- 11:05 tally-tree-a sent complete @ 341b6553 (the commit already merged in batch 8); it is complete when batch 8's suite passes. conductor-10 queued after tree-catalogue-measure-1.
+- plan game-lane: docs/superpowers/plans/2026-11-25-game-lane.html at 8b15b889 (after conductor-8, conductor-9, run-play-9)
+- 11:55 game-lane reported row G7 at 644b3f7b: not merged. The lane is merged once (build graph, design sec-write-sets): the app builds only with all four parts in, and closing, the only consumer, needs every row. Its rows merge with its complete. The heartbeat's 'row game-lane …' lines are skipped for the same reason.
+- status asked tree-catalogue-measure
+- plan tree-catalogue-measure: docs/superpowers/plans/2026-11-25-tree-catalogue-measure-remaining.html at e7c8ad51 (fresh operator; LADDER_YEARS measured [2060, 2055, 2045, 2040] at 7f4aa255; tuning loop under way)
+- FOR THE OWNER at the finish (from rulings tree-catalogue-measure-1 and -2; details in tree-catalogue-measure's hand-back): on dataset 2026-11-14-09ca30c8 the City money measures (general-revenue, public-bank) lower net, funded and affordable homes at the deadlines; side goals funded-homes and affordable-homes are not offered; the side goals' completedNetNew effect reads 6,450 on the empty document but about 124 after one purchase (planEffect baseline untraced).
+- 13:50 tree-catalogue-measure: row T1 passed review at 032fa8ea (LADDER_YEARS [2060, 2055, 2045, 2040]; tree-balance exits 0 with funded-homes and affordable-homes left out). Its complete follows a whole-branch review; closing is T1's only consumer and also waits on game-lane, so T1 merges with the complete (one suite).
+- 15:10 the owner renamed this session to incremental-loop-conductor; mkassign.py writes that name again; game-lane told. Any 'sfhousing-86' in earlier lines is this session's old name.
+- 15:40 owner asked why funding lowers homes; investigator's trace saved at surveys/funding-trace.md (all-or-nothing award at full coverage; side-goal compare bug; possible bond-pool closing bug). Not filed as questions: the engine and finance are the owner's (ruling tree-catalogue-measure-2); awaiting the owner's direction.
+- 16:00 owner: 'fix the side-goal comparison' (filed as conductor-11, trip: spec-code-mismatch third) and asked for a prompt for another agent to brainstorm the award rule (given in chat; the award-rule fix is outside this build).
+- 16:25 unit side-goal-effect started (admitted; build-graph row added by ruling conductor-11). game-lane and closing wait on its merge.
+- 17:00 side-goal-effect reported row G6 at 66c6f636: not merged; its row is merged once, with the retune (ruling conductor-11). 16:50 owner corrected the award-rule prompt: the all-or-nothing award rule is on main today (clocks.ts and scenario/funding.ts identical there), not specific to this build.
+- 19:05 game-lane sent complete @ 621adb1c (181 files). Strays it could not remove: tsconfig.uicheck.json in its worktree root; .superpowers/sdd/2026-11-25-game-lane.html/task-33-report.md in the MAIN checkout (untracked; left for the owner or the finish).
+- relaunched closing
+- resent to incremental-loop-closing
+- 19:35 admitted by relaunch: closing (last unit), on head bbf3d5c1.
+- closing need command (env-prefixed bench:map and SFH_E2E_PERF perf specs): not granted; told to defer the bench of record and the three perf-spec runs to the conductor's quiet-machine run after merge, and to list commands, bars and where results go in complete
+- closing sent complete 3bd29bf2..90cc2c90; merged as c492e10c, full suite running (merge-batch-12). Its complete lists deferred timed runs (bench:map 'run with drops' p95<=16.7ms, 'purchase to ready' median vs 4000ms, 3 perf specs 5x) on dataset 2026-11-14-09ca30c8, results into docs/dev/map-perf.md 'The game's runs' Results; other units' leftovers (APP_NAME still 'SF Housing Simulator' in src/lib/config.ts:2, /sim page-name in several docs, TimelineMode 'Go to the editor' links /, skip link target-size, favicon 404, 'remix' leftovers); owner action Google console app name 'SF Housing'
+- loose-ends hand-backs at d41031e8: task 2 (+layout.svelte skip link, e2e/game-a11y.spec.ts) → sibling loose-ends-1; tasks 3 and 4 (sim-doc.ts comment, three fixture specs; six docs/dev files) → one sibling loose-ends-2 (two trivial tasks, one session)
+- notified incremental-loop-loose-ends: siblings incremental-loop-loose-ends-1 (task 2), incremental-loop-loose-ends-2 (tasks 3, 4)
+- loose-ends sent complete 73fc9a47..11c414b3 (task 1); merged as f1154af1, full suite running (merge-batch-13)
+- loose-ends-1 sent complete d41031e8..890452c0 (task 2; minors: test split in two, header shifts while skip link focused, accepted by sec-design-skip). MERGE OWED: waits for the merge-batch-13 suite to finish in the package worktree
+- loose-ends-2 sent complete d41031e8..7b32cae3 (tasks 3, 4; unit 9846 with 2 load flakes outside the diff, both pass alone; minors in docs wording, sim-doc.ts:42 comment still says /sim). MERGE OWED with loose-ends-1 after the merge-batch-13 suite; both then get one suite (batch 14), bisect if it fails
+- merged loose-ends-1 as a7d34a6c and loose-ends-2 as 428d6b4e; one full suite over both running (merge-batch-14); if it fails, bisect by resetting to a7d34a6c
+- all units merged; deferred timing runs started (agent, scratchpad timing/): test:perf (covers money-wait cost bars, run-play p95, the 3 e2e perf specs 5x), bench:map whole + 'run with drops' + 'purchase to ready' on 2026-11-14-09ca30c8, at HEAD 428d6b4e, waits for load < 2. A failed bar is a question; results go into docs/dev/map-perf.md by a fix round to closing
+- timing results at 428d6b4e (quiet, load ~2; logs scratchpad timing/): e2e perf specs 25/25 at 5x; run layer p95 0.300 ms (bar 2 ms) pass; bench:map all older cases pass (p95 9.1-9.3 ms), buy-to-ready median 777 ms (< 4000); FAIL bench:map case=run p95 17.5 ms twice (bar 16.7; p50 15.8); vitest perf stage fails 6-7 budgets twice: funded month mean 2217 then 891 µs (bar 90; shadow hook ~900 µs), map-stream worst flush 49-50 ms (30), world.bench 3.2 ms (3), compile step(20) 60 ms (50), swap install cadence 406-423 ms (50), declutter and scenario cases marginal. Baseline on main being measured (agent) before filing the question
+- ruling conductor-14: two fixes required, held to main (+10 µs shadow, +10% funded month; bench case=run <= 16.7 ms p95). Started money-wait-perf and run-frame (run-frame's list adds 'env SFH_BENCH_DATASET=2026-11-14-09ca30c8 npm run bench:map'; both have note 9: they measure, ballpark, conductor takes the record). OWED after money-wait-perf merges, quiet machine, main and branch back to back in one session: funded month + shadow, host.perf and chunk.perf, map-stream worst flush, swap install cadence (main baseline needs a temp worktree of main with npm install, since the main checkout's client-perf files fail at import); then map-perf is admitted only for a budget that misses main+10%. After run-frame merges: bench case=run of record. Then results into docs/dev/map-perf.md (closing's doc; fix round to closing or the last unit)
+- OWNER NOTE: ruling money-wait-perf-1 accepts about +100 µs per funded world-month for the homes-waiting record (funded month bar restated 90 → 250 µs; shadow hook <= main + 150 µs); the incremental count was ruled too invasive. Tell the owner at the finish
+- run-frame trace (its SDD dir trace-1.md): 17.0 s of a 20.3 s run is MapLibre → deck.gl interleaved _drawLayers, ~13 ms a frame, per-draw-call uniform setup; no game-lane code in the top 80; run layer ~0.3 ms. By the run-frame row the round is map-lane's; confirmed to the operator, who files a question if it needs a file outside the row's map-lane list
+- money-wait-perf sent complete 5378a93e..2903390e (one-pass count, BAR_US 250; ballpark funded month 206/176 µs, shadow +107/+88 µs at load 3-5; minors: docs/dev/world-funding.md:146 and :257 still describe byLot and 90 µs). MERGE OWED after the run-frame-1 chain exits (one writer)
+- money-wait-perf complete again at c0cda2d3 (world-funding.md fixed); merged as b7a90a9e, full suite running (merge-batch-15)
+- run-frame row report at 6ffdcaf4 (merged pair drawn in the run view; ballpark bench case=run p50 8.3 ms p95 9.9 ms PASS at load 3.1, was 17.5). No unit waits on its rows, so one merge at its complete (final review still to come), not a row merge now
+- run-frame sent complete e7c3235b..6ffdcaf4 (final review Ready to merge). Sent back once for docs/dev/map-interfaces.md 'The run view' (map-lane's doc: merged pair while locked; the lead-in is now wrong). Its minors: swap install cadence 405-423 ms predates it (owes the main baseline); unlock re-creates every cell's layers, cost unmeasured, once per run end; the join frame at lock is not measured as one frame
+- run-frame complete again at facd8808 (map-interfaces.md fixed); merged as 3a5d5f79, full suite running (merge-batch-16); timing of record after it
+- timing of record @ 3a5d5f79 (2026-11-25, load 1.6-2.0, main be6467dc and branch alternated; logs scratchpad/timing-record/): funded month mean 217.8, 210.1 µs MET (bar 250; main 104.9, 98.1); shadow 108.3, 109.5 µs MET (main 0.5); host.perf and chunk.perf pass x4; bench:map x2 every bar= case PASS, case=run p95 10.3 ms twice, buy-to-ready median 837, 857 ms; e2e perf 25 passed, 5 skipped, 0 failed; swap install cadence branch 289.1, 421.4 vs main 418.8, 402.2 (within main + 10%: no map-perf for it); map-stream worst flush branch 25.02, 37.23 vs main 26.61, 25.31 (runs disagree: repeating the spec before deciding map-perf); planLot hook 20.4, 21.0 vs main 17.8, 17.3 and scenario.bench cases 3, 5, host macrotask, reroll fail on the branch and pass on main: question conductor-15
+- map-stream flush repeat @ 3a5d5f79 (6 runs of map-stream.perf.spec.ts alone, load 1.8-2.0; logs scratchpad/timing-record/flush-<n>.log): worst 24.63, 24.49, 37.50 (month 441, 84 cells), 28.21, 27.05, 26.84 ms; with the two runs of record the branch is over 30 ms in 2 of 8 runs (37.23, 37.50), main in 1 of 4 (34.9 in the first timing; 27.2, 26.61, 25.31). Decision under conductor-14: the 49-50 ms failure did not persist after the money-wait fix; the branch's occasional spike is within main's worse figure + 10% (38.4 ms). map-perf NOT admitted; recorded as an intermittent spike present on main too.
+- scenario.bench alone, main be6467dc vs branch, 2 runs each alternated (logs scratchpad/timing-record/scenario-*.log): all four pass 23/23; case 3 median 67.1, 64.0 (main) vs 60.2, 59.8 (branch); case 5 longest macrotask 94.9, 101.7 vs 88.8, 103.5; band/twin 41.7, 45.9 vs 44.9, 45.2; funded initScenario 8417, 7650 vs 7531, 7712 ms. The gap seen in whole-project runs does not remain when the spec runs alone: an order effect of the whole perf project, not the scenario engine. Note: the branch's merge-base with main is 85e08e42; main has since taken #153 (cars), so signoff's merge of origin/main is a real merge.
+- main-merge-retake row T1 reported @ b0cfea6d (LADDER_YEARS unchanged [2060, 2055, 2045, 2040], reach-check exit 0, tree-balance exit 0 with tuning.ts unchanged, on 2026-11-25-76c90397 with cars): no unit waits on it; not merged apart, it merges with the unit's complete so the machine stays quiet for the bench
+- main-merge-retake ready for budgets @ b8921ad4 (bench committed: run p95 10.1, 10.3 ms PASS; purchase to ready median 618, 616 ms; load below 2; dataset 2026-11-25-76c90397). Conductor's budgets agent started: test:perf vitest half on main be6467dc and b8921ad4 alternated x2, bench:map whole on each; logs scratchpad/timing-retake/
+- budgets with cars, main be6467dc vs b8921ad4, alternated x2, load 1.35-1.86 (logs scratchpad/timing-retake/): funded month mean 207.3, 205.2 µs (bar 250; main 97.4, 93.4); shadow 100.9, 103.5 (main 0.5); host.perf, chunk.perf pass x4; map-stream worst flush branch 34.25, 33.11 vs main 29.46, 43.27 (branch within main's worse); swap cadence branch 403.4, 392.9 vs main 396.4, 393.4 (+1.8%); compile step(20) branch 44.2, 51.1 vs main 58.7, 62.8; world.bench branch 3.005, 3.099 vs main 3.187, 3.034; scenario.bench passes on the branch; bench:map main vs branch every shared bar= case within 10% (branch p95 9.6-10.2, main 9.9-10.3), case=run p95 10.0 PASS, buy-to-ready median 630 ms. Every budget held to main is met. NOTE: origin/main has moved again to 083fb7ae (fix(funding) #154): another merge of main is owed before signoff.
+- main-merge-retake merged at 225a822e (outside docs: 2 lines of ladder-years.ts); main-merge-2 started while that merge's suite runs, since a failing suite would be the retake's to fix either way and the pass after it re-runs everything
+- main-merge-2 complete and merged at bbf5ebfe (operator: unit 10103, e2e 828, dataset unchanged 2026-11-25-76c90397 and served on production, reach-check cars on exit 0: current law Oct 2061, full tree Aug 2037); origin/main unmoved at 083fb7ae; main-merge-retake-2 started while the merge's suite runs (its timed runs wait for a quiet machine)
+- main-merge-retake-2 row T1 reported @ 53738e89 (ladder years, reach check, tree-balance exit 0 with all eleven goals, funded-homes 21,000): no unit waits on it; merges with the unit's complete so the machine stays quiet for purchase to ready
+- main-merge-retake-2 ready for budgets @ dd688b51 (purchase to ready medians 877, 837 ms at load 1.14, 1.32). Conductor's budgets agent started: perf vitest half on main 083fb7ae and dd688b51 alternated x2; logs scratchpad/timing-retake-2/
+- perf budgets after #154, main 083fb7ae vs dd688b51, alternated x2, load 1.54-1.89 (logs scratchpad/timing-retake-2/): funded month mean main 337.6, 327.7 / branch 338.8, 318.3 µs (main was 97 before #154; branch bar 250 FAILS, main's 90 fails); shadow 17 µs on both; seven scenario.bench budgets fail on both by 1.4x to 5x (case 2 154-157 ms vs 30); host.perf slice 50.5 (main-1) and 50.2 (branch-2) vs 50; map-stream flush branch 24.50, 38.35 vs main 29.13, 28.11; swap, compile, world.bench as before; every branch figure within 10% of main's except the flush spike. #154 slowed main's funded engine about 3.5x: owner finding. Question conductor-18.
+- finish 2026-11-26T01:13: every unit merged and reviewed No drift through 831fc7b6; all operators stopped; timer stopped; ledger copied into the branch; next: npm run signoff, PR, merge
+
+## Questions
+
+- 2026-11-25 conductor-1 from conductor [defect-class: source-fidelity]: gate-3: Projects with the diamond do not pop in the policy's colour → rulings/conductor-1.md (commit 60a74488, changes contract: yes)
+- 2026-11-25 conductor-2 from conductor [defect-class: spec-disagreement]: gate-5: Drops due in the run's last frame are never shown or counted → rulings/conductor-2.md (commit a458b998, changes contract: no)
+- 2026-11-25 conductor-3 from conductor [defect-class: source-fidelity]: gate-2: A collected drop does not fly to the unit count → rulings/conductor-3.md (commit 6c8c93c3, changes contract: no)
+- 2026-11-25 conductor-4 from conductor [defect-class: source-fidelity]: gate-1: The ending drops "beside the state's own" year → rulings/conductor-4.md (commit c6bc4c5f, changes contract: yes)
+- 2026-11-25 conductor-5 from conductor [defect-class: spec-disagreement]: gate-6: An empty LADDER_YEARS is produced by the rule but refused by the tests → rulings/conductor-5.md (commit 8fd4a945, changes contract: no)
+- 2026-11-25 conductor-6 from conductor [defect-class: spec-silence]: gate-4: No unit measures how long the next run's forecast takes after a purchase → rulings/conductor-6.md (commit 544202e9, changes contract: no)
+- routing conductor-1: rulings/conductor-1.md, commit 60a74488
+- build graph for conductor-1 @ 6909f578
+- routed conductor-1
+- routing conductor-2: rulings/conductor-2.md, commit a458b998
+- build graph for conductor-2 @ 7ba5b1b3
+- routed conductor-2
+- routing conductor-3: rulings/conductor-3.md, commit 6c8c93c3
+- build graph for conductor-3 @ afa4177b
+- routed conductor-3
+- routing conductor-4: rulings/conductor-4.md, commit c6bc4c5f
+- build graph for conductor-4 @ e2298de1
+- routing conductor-5: rulings/conductor-5.md, commit 8fd4a945
+- build graph for conductor-5 @ daeb957f
+- routed conductor-5
+- 2026-11-25 game-core-1 from game-core [defect-class: spec-disagreement]: contracts and game-core specs disagree on OPEN_LIMITS.measures (empty vs FUNDING_PRESET_IDS) and on freezing constants → rulings/game-core-1.md (commit 6e8154aa, changes contract: no)
+- 2026-11-25 game-core-2 from game-core [defect-class: spec-disagreement]: resultOf's side-goal tests cannot pass against contracts' empty SIDE_TUNING; mock tuning in the spec, or change G6 → rulings/game-core-2.md (commit b5cb3406, changes contract: no)
+- routing conductor-6: rulings/conductor-6.md, commit 544202e9
+- 2026-11-25 tree-catalogue-code-1 from tree-catalogue-code [defect-class: spec-disagreement]: row G5 and the tree-catalogue spec's grant rules disagree on three points (stop types of a re-made game rule, switching on the player's own policy, within ctx.limits); holds its tasks 3 and 4 → rulings/tree-catalogue-code-1.md (commit 81026c64, changes contract: yes)
+- build graph for conductor-6 @ 2744840d
+- routed conductor-6
+- relayed conductor-4 to incremental-loop-contracts
+- routed conductor-4
+- 2026-11-25 map-lane-1 from map-lane [defect-class: unmodeled-interaction]: the locked run view hides the bottom-left control container that TimelineMode (game-sim's file) measures; who handles it → rulings/map-lane-1.md (commit none, changes contract: no)
+- routing game-core-1: rulings/game-core-1.md, commit 6e8154aa
+- build graph for game-core-1 @ 2fed7108
+- relayed game-core-1 to incremental-loop-game-core
+- routing game-core-2: rulings/game-core-2.md, commit b5cb3406
+- build graph for game-core-2 @ 57567cab
+- 2026-11-25 run-play-1 from run-play [defect-class: spec-code-mismatch]: tl-halo-policy equals the accent in both themes, so policy drops look the same as other drops → rulings/run-play-1.md (commit 3d23abb7, changes contract: yes)
+- 2026-11-25 run-play-2 from run-play [defect-class: spec-silence]: a run that starts while the canvas box is 0x0 leaves the ring at the top-left corner (setBox only re-clamps) → rulings/run-play-2.md (commit f543b277, changes contract: no)
+- 2026-11-25 run-play-3 from run-play [defect-class: spec-disagreement]: R1 says an uncollected drop is gone lingerMs after it appeared, but the spec has a 400 ms floor and an end-of-run cut; non-blocking → rulings/run-play-3.md (commit 2a690292, changes contract: yes)
+- relayed game-core-2 to incremental-loop-game-core
+- routed game-core-1
+- routed game-core-2
+- routing tree-catalogue-code-1: rulings/tree-catalogue-code-1.md, commit 81026c64
+- 2026-11-25 tally-tree-a-1 from tally-tree-a [defect-class: spec-silence]: four small tally-tree silences (Tree Escape propagation, round vs floor for data-fill, balanceName(1), side-goal target <= 0) → rulings/tally-tree-a-1.md (commit 2aced7d9, changes contract: no)
+- build graph for tree-catalogue-code-1 @ 1e42ef1c
+- routing map-lane-1: rulings/map-lane-1.md, commit none
+- routed map-lane-1
+- 2026-11-25 closing-1 from closing [defect-class: spec-disagreement]: CLAUDE.md's fixed 'a deadline five years earlier' vs G6 allowing wider ladder steps; holds only task 11's one sentence → rulings/closing-1.md (commit 667e44f1, changes contract: no)
+- routed map-lane-1 pending relay to the asker
+- relayed tree-catalogue-code-1 to incremental-loop-tree-catalogue-code (routing note: its Task 3 was never started, the operator held it and filed the question; nothing built on the old text, so nothing is cut and it is not replaced; told to rewrite plan tasks 3 and 4 from the spec)
+- routed tree-catalogue-code-1
+- relayed map-lane-1 to incremental-loop-map-lane
+- routed map-lane-1
+- routing run-play-1: rulings/run-play-1.md, commit 3d23abb7
+- build graph for run-play-1 @ 7b78d3ff
+- routing run-play-2: rulings/run-play-2.md, commit f543b277
+- build graph for run-play-2 @ adb4aadd
+- routing run-play-3: rulings/run-play-3.md, commit 2a690292
+- build graph for run-play-3 @ none
+- routing tally-tree-a-1: rulings/tally-tree-a-1.md, commit 2aced7d9
+- build graph for tally-tree-a-1 @ f18a8067
+- relayed run-play-1 to incremental-loop-run-play (routing note: Task 7 never started, unit not admitted; not replaced; told to rewrite the plan's tasks from the spec)
+- relayed run-play-2 to incremental-loop-run-play
+- relayed run-play-3 to incremental-loop-run-play
+- relayed run-play-1 to incremental-loop-tally-tree-a
+- relayed run-play-3 to incremental-loop-tally-tree-a
+- relayed tally-tree-a-1 to incremental-loop-tally-tree-a
+- relayed run-play-1 to incremental-loop-closing
+- relayed run-play-3 to incremental-loop-closing
+- routed run-play-1
+- routed run-play-2
+- routed run-play-3
+- routed tally-tree-a-1
+- routing closing-1: rulings/closing-1.md, commit 667e44f1
+- build graph for closing-1 @ 9fdc7249
+- relayed closing-1 to incremental-loop-closing
+- routed closing-1
+- 2026-11-25 run-play-4 from run-play [defect-class: spec-silence]: (a) does the ring's move to the centre from an empty box enter sweep like pointRing; (b) what share of the perf case's 3,000 drops are policy diamonds → rulings/run-play-4.md (commit 46e68857, changes contract: no)
+- routing run-play-4: rulings/run-play-4.md, commit 46e68857
+- build graph for run-play-4 @ 3bf89997
+- relayed run-play-4 to incremental-loop-run-play
+- routed run-play-4
+- 2026-11-25 game-lane-1 from game-lane [defect-class: write-set-gap]: Paint's read-only line 'Read-only. Remix to edit.' (src/lib/brush/messages.ts:10) is in no unit's write set after P13 → rulings/game-lane-1.md (commit db8ae153, changes contract: no)
+- 2026-11-25 conductor-7 from game-lane [defect-class: spec-silence]: may game-lane's plan run three game-shell tasks before game-sim and merge two tasks across parts, against the lane's literal order → rulings/conductor-7.md (commit 94649ad6, changes contract: no)
+- routing game-lane-1: rulings/game-lane-1.md, commit db8ae153
+- build graph for game-lane-1 @ 519b0955
+- routing conductor-7: rulings/conductor-7.md, commit 94649ad6
+- build graph for conductor-7 @ dffa8db1
+- relayed game-lane-1 to incremental-loop-game-lane
+- relayed conductor-7 to incremental-loop-game-lane
+- routed game-lane-1
+- routed conductor-7
+- 2026-11-25 conductor-8 from game-core [defect-class: spec-silence]: do the consumer specs state game-core's two consumer notes (defaultSaveName's taken must hold the account copy's name; guard last.rung past the ladder) → rulings/conductor-8.md (commit bedb5499, changes contract: no)
+- routing conductor-8: rulings/conductor-8.md, commit bedb5499
+- build graph for conductor-8 @ none
+- relayed conductor-8 to incremental-loop-game-lane
+- routed conductor-8
+- correction: the conductor-8 relay to game-lane was NOT delivered (its session had ended idle). OWED: send it right after game-lane's admitted relaunch (it must check its plan's game-save sync tasks against game-save § sec-design-sync and § sec-tests-client).
+- 2026-11-25 run-play-5 from run-play [defect-class: spec-disagreement]: after a mid-run drops replacement, does a never-shown row dated at or before highDay appear or never appear (the spec's cursor rule vs R1); holds nothing → rulings/run-play-5.md (commit 1524be04, changes contract: no)
+- note: questions/run-play-1.md was overwritten by the relaunched run-play operator and replaced with a reconstruction marked RECONSTRUCTED; no copy of the original exists; its ruling (rulings/run-play-1.md, commit 3d23abb7) and the spec are untouched.
+- routing run-play-5: rulings/run-play-5.md, commit 1524be04
+- build graph for run-play-5 @ 883cad92
+- relayed run-play-5 to incremental-loop-run-play
+- routed run-play-5
+- 2026-11-25 run-play-6 from run-play [defect-class: spec-disagreement]: FloatCount has no policy or size field, so a count cannot sit countGapPx above a policy diamond's top edge (sec-d-draw); holds Task 7's fix round → rulings/run-play-6.md (commit 8dd04d65, changes contract: no)
+- routing run-play-6: rulings/run-play-6.md, commit 8dd04d65
+- build graph for run-play-6 @ 48d63eed
+- relayed run-play-6 to incremental-loop-run-play
+- routed run-play-6
+- 2026-11-25 tally-tree-a-2 from tally-tree-a [defect-class: spec-disagreement]: sec-design-common says a hidden diamond glyph must have accessible text saying 'units', but the fixed words (collectedText, lumpText, sideRewardText, priceText, buyText) carry none; are those lines exempt → rulings/tally-tree-a-2.md (commit f01cc85f, changes contract: no)
+- routing tally-tree-a-2: rulings/tally-tree-a-2.md, commit f01cc85f
+- build graph for tally-tree-a-2 @ cc637f00
+- relayed tally-tree-a-2 to incremental-loop-tally-tree-a
+- routed tally-tree-a-2
+- 2026-11-25 run-play-7 from run-play [defect-class: spec-silence]: is a run's first pointer move fresh, or does it sweep from the starting centre to the pointer and collect along the line; holds nothing → rulings/run-play-7.md (commit d143deea, changes contract: no)
+- routing run-play-7: rulings/run-play-7.md, commit d143deea
+- build graph for run-play-7 @ 525319c6
+- relayed run-play-7 to incremental-loop-run-play
+- routed run-play-7
+- 2026-11-25 tally-tree-a-3 from tally-tree-a [defect-class: spec-disagreement]: the GoalHeadline box as the spec's markup writes it is 47.5 px, but the spec and its test say at most 44 px; which governs and what markup → rulings/tally-tree-a-3.md (commit 373f179e, changes contract: no)
+- routing tally-tree-a-3: rulings/tally-tree-a-3.md, commit 373f179e
+- build graph for tally-tree-a-3 @ a6822279
+- relayed tally-tree-a-3 to incremental-loop-tally-tree-a
+- routed tally-tree-a-3
+- 2026-11-25 run-play-8 from run-play [defect-class: platform-gap]: the spec unlocks audio only on the first pointerdown or keydown, so iOS WebKit likely never plays sound; widen the gesture events and keep listening until the context runs → rulings/run-play-8.md (commit 8e03e1dc, changes contract: no)
+- 2026-11-25 run-play-9 from run-play [defect-class: unmodeled-interaction]: RunLayer samples feed.running once per frame, so a stop-and-restart inside one frame loses the end ontake and carries the old take; an R1 contract on game-sim, or should the layer catch it → rulings/run-play-9.md (commit 21be0687, changes contract: yes)
+- routing run-play-8: rulings/run-play-8.md, commit 8e03e1dc
+- build graph for run-play-8 @ 34646c16
+- routing run-play-9: rulings/run-play-9.md, commit 21be0687
+- build graph for run-play-9 @ 812e1bf5
+- relayed run-play-8 to incremental-loop-run-play
+- relayed run-play-9 to incremental-loop-run-play
+- relayed run-play-9 to incremental-loop-tally-tree-a
+- OWED at relaunch (sessions ended idle): relay run-play-9 and conductor-8 to game-lane (game-sim § sec-if-r1, sec-design-run: a run starts no earlier than the frame after running last turned false); relay run-play-9 to closing (§ sec-if-r1)
+- routed run-play-8
+- routed run-play-9
+- 2026-11-25 conductor-9 from run-play [defect-class: spec-silence]: does game-sim's spec require one stable RunFeed object (a new feed identity while running re-runs startLoop and forces a layout read) → rulings/conductor-9.md (commit fe71a926, changes contract: no)
+- routing conductor-9: rulings/conductor-9.md, commit fe71a926
+- build graph for conductor-9 @ ee129ab2
+- OWED at game-lane's relaunch: relay conductor-9 (game-sim § sec-design-feed, § sec-tests-component: one RunFeed object for TimelineMode's life, getters over the page's state) with conductor-8 and run-play-9.
+- routed conductor-9
+- relayed conductor-8 to incremental-loop-game-lane
+- relayed conductor-9 to incremental-loop-game-lane
+- relayed run-play-9 to incremental-loop-game-lane
+- 2026-11-25 tree-catalogue-measure-1 from tree-catalogue-measure [defect-class: measurement-miss]: no tuning.ts makes tree-balance exit 0 on dataset 2026-11-14-09ca30c8 (money-first stuck at rung 1: general-revenue lowers 2060 homes below the goal; collect-for-me gating; the stage-4 band vs the 0.25 share); holds T1 → rulings/tree-catalogue-measure-1.md (commit 4a932285, changes contract: yes)
+- 2026-11-25 conductor-10 from tally-tree-a [defect-class: spec-silence]: do the consumer specs state tally-tree-a's consumer notes (Tally's tweens set once, so game-sim keys it on the result; others in its final-review.md) → rulings/conductor-10.md (commit c4314bfb, changes contract: no)
+- routing tree-catalogue-measure-1: rulings/tree-catalogue-measure-1.md, commit 4a932285
+- 2026-11-25 game-lane-2 from game-lane [defect-class: spec-disagreement]: must an abort in a run's start frame stop the clock in exactly the next frame (game-sim sec-design-run), or may TimelineMode hold it two frames because rAF callback order against RunLayer's read is not fixed; holds its Tasks 31, 32 → rulings/game-lane-2.md (commit ed2552d9, changes contract: no)
+- note: the relaunched game-lane operator filed this as game-lane-1, overwriting the file of the already-ruled game-lane-1 (ruling db8ae153 untouched); the conductor copied it to questions/game-lane-2.md with the id changed. questions/game-lane-1.md now holds the new text under the old name; the original text is lost.
+- build graph for tree-catalogue-measure-1 @ 1a644a98
+- replacing tree-catalogue-measure for tree-catalogue-measure-1: step 1 done
+- replacing tree-catalogue-measure for tree-catalogue-measure-1: step 2 done
+- replacing tree-catalogue-measure for tree-catalogue-measure-1: step 3 done
+- replacing tree-catalogue-measure for tree-catalogue-measure-1: step 4 done (nothing of it had merged; no revert, no row unmerged)
+- replacing tree-catalogue-measure for tree-catalogue-measure-1: step 5 done
+- replacing tree-catalogue-measure for tree-catalogue-measure-1: step 6 done
+- routing note tree-catalogue-measure-1: the operator had built Tasks 4 and 5 (a88171df, cce4bb6e) and a controller commit 956ef16d on the old exit rule, so it was replaced: branch cut to 5d5373a3 (Tasks 1-3 kept), SDD workspace removed (its progress.md kept as assignments/tree-catalogue-measure.superseded-progress.md for the conductor only), fresh operator started with Plan: none. The measured ladder years of Task 5 are redone by the fresh operator. OWED: relay to closing at its relaunch (§ sec-if-t1).
+- routed tree-catalogue-measure-1
+- routing conductor-10: rulings/conductor-10.md, commit c4314bfb
+- build graph for conductor-10 @ 322a2c50
+- routing game-lane-2: rulings/game-lane-2.md, commit ed2552d9
+- build graph for game-lane-2 @ none
+- relayed game-lane-2 to incremental-loop-game-lane
+- relayed conductor-10 to incremental-loop-game-lane
+- routed conductor-10
+- routed game-lane-2
+- 2026-11-25 tree-catalogue-measure-2 from tree-catalogue-measure [defect-class: measurement-miss]: no tuning makes tree-balance exit 0 on 2026-11-14-09ca30c8: pacing passes in all five gated plays, but the side goals funded-homes and affordable-homes are never met at their raise-to floors; two model findings (money measures lower homes at deadlines; current law's planEffect is not 0) → rulings/tree-catalogue-measure-2.md (commit 512b5ce5, changes contract: no)
+- routing tree-catalogue-measure-2: rulings/tree-catalogue-measure-2.md, commit 512b5ce5
+- build graph for tree-catalogue-measure-2 @ 07bde6b7
+- relayed tree-catalogue-measure-2 to incremental-loop-tree-catalogue-measure (tree-catalogue-code, also listed as clarification, is complete and merged; the measurement part writes the tuning.spec.ts assertions, so nothing is sent to it)
+- routed tree-catalogue-measure-2
+- 2026-11-25 game-lane-3 from game-lane [defect-class: spec-code-mismatch]: game-core's readRun reads the window's last month when the deadline is past the window, where game-sim's spec says it returns null; the lane guards it in TimelineMode meanwhile; holds nothing → rulings/game-lane-3.md (commit 0683c36a, changes contract: yes)
+- routing game-lane-3: rulings/game-lane-3.md, commit 0683c36a
+- build graph for game-lane-3 @ cbe7786b
+- relayed game-lane-3 to incremental-loop-game-lane (game-core, tree-catalogue-code, tree-catalogue-measure, tally-tree-a are listed as clarification for G6's copied wording only: all are complete and no code of theirs changes, so nothing is sent; OWED: relay to closing at its relaunch, § sec-if-g6)
+- routed game-lane-3
+- 2026-11-25 conductor-11 from conductor [defect-class: spec-code-mismatch]: owner direction: fix the side goals' completedNetNew effect, which reads current law less old zoning (6,450) on an empty document instead of 0; which unit, where, and the retune that follows → rulings/conductor-11.md (commit d994bf8e, changes contract: yes)
+- routing conductor-11: rulings/conductor-11.md, commit d994bf8e
+- build graph for conductor-11 @ ebea2e8f
+- relayed conductor-11 to incremental-loop-game-lane (told: no complete until side-goal-effect has merged; then merge and add inForce at its two call sites). game-core, tree-catalogue-measure, tally-tree-a are complete: the fix is the new unit side-goal-effect's. OWED: tell game-lane when side-goal-effect merges; relay to closing at its relaunch (§ sec-if-g6).
+- routed conductor-11
+- 2026-11-25 side-goal-effect-1 from side-goal-effect [defect-class: write-set-gap]: the required SideInput.inForce breaks src/lib/game/run-result.spec.ts (outside its write set); may it add inForce: true to that spec's two SideInput literals → rulings/side-goal-effect-1.md (commit 878f15f9, changes contract: no)
+- routing side-goal-effect-1: rulings/side-goal-effect-1.md, commit 878f15f9
+- routed side-goal-effect-1
+- relayed side-goal-effect-1 to incremental-loop-side-goal-effect
+- 2026-11-25 game-lane-4 from game-lane [defect-class: spec-code-mismatch]: plan/purity.spec.ts rejects schema.ts's spec'd import of SITE_NAME from ../shell/name (the lane's only test:unit failure); a literal, or an allow-list entry → rulings/game-lane-4.md (commit c3bcf01d, changes contract: no)
+- 2026-11-25 game-lane-5 from game-lane [defect-class: write-set-gap]: npm run check has 35 errors, all in closing's e2e specs on the old seedGame/SEED_BAR_DAY; is check gated on them for this lane (the conductor adds: the integration suite after game-lane's merge runs check and e2e before closing has rewritten those specs: what must pass at that merge) → rulings/game-lane-5.md (commit 57bcca33, changes contract: no)
+- routing game-lane-4: rulings/game-lane-4.md, commit c3bcf01d
+- build graph for game-lane-4 @ ca6a7821
+- relayed game-lane-4 to incremental-loop-game-lane
+- routed game-lane-4
+- routing game-lane-5: rulings/game-lane-5.md, commit 57bcca33
+- build graph for game-lane-5 @ 395d5303
+- relayed game-lane-5 to incremental-loop-game-lane (OWED: relay to closing at its relaunch, § sec-design-order)
+- routed game-lane-5
+- 2026-11-25 conductor-12 from game-lane [defect-class: spec-silence]: game-sim sec-design-publish does not say the tree's Publish opens the header Menu first below lg; docs/dev/about.md, deploy.md, plan-sharing.md and two code notes are outside game-lane's write set → rulings/conductor-12.md (commit 48f7ac98, changes contract: no)
+- routing conductor-12: rulings/conductor-12.md, commit 48f7ac98
+- build graph for conductor-12 @ bbf3d5c1
+- routed conductor-12
+- OWED to closing at its relaunch, one message: re-read closing's whole spec as on disk (rulings since its plan at 82b77286: run-play-9 R1, game-lane-3 G6, conductor-11 G6 inForce, tree-catalogue-measure-1 T1, game-lane-5 sec-design-order, conductor-12 sec-design-docs) and write its plan again.
+- relayed run-play-9 to incremental-loop-closing
+- relayed game-lane-3 to incremental-loop-closing
+- relayed conductor-11 to incremental-loop-closing
+- relayed tree-catalogue-measure-1 to incremental-loop-closing
+- relayed game-lane-5 to incremental-loop-closing
+- relayed conductor-12 to incremental-loop-closing
+- 2026-11-25 closing-2 from closing [defect-class: spec-code-mismatch]: the ending's tree-publish opens no dialog with nothing bought (SimPage.svelte:689-698, PublishButton no-ops on an empty policy), but closing sec-design-ending step 6 requires the dialog; the fix is outside closing's write set (game-lane's merged code) → rulings/closing-2.md (commit a936dedc, changes contract: no)
+- note: the relaunched closing operator filed this as closing-1, overwriting the earlier ruled closing-1's file (ruling 667e44f1 untouched); copied to questions/closing-2.md with the id changed.
+- routing closing-2: rulings/closing-2.md, commit a936dedc
+- build graph for closing-2 @ c507b3cb
+- relayed closing-2 to incremental-loop-closing
+- routed closing-2
+- 2026-11-25 conductor-13 from closing [defect-class: spec-silence]: closing's complete lists leftovers in other units' write sets (APP_NAME 'SF Housing Simulator', /sim as page name in six docs, TimelineMode 'Go to the editor' links /, skip link target-size, favicon 404, 'remix' leftovers); which does the package require and whose are they → rulings/conductor-13.md (commit 799bdabd, changes contract: no)
+- routing conductor-13: rulings/conductor-13.md, commit 799bdabd
+- build graph for conductor-13 @ 73fc9a47
+- routed conductor-13 (closing and game-lane are complete and named for clarification only; no relay sent; new unit loose-ends started)
+- 2026-11-25 merge-loose-ends-f1154af1 from merge review [defect-class: none, a fact the review could not see]: the merge carries only task 1 of four. Answered by the ledger, no ruling: tasks 2-4 were handed back to siblings loose-ends-1 (task 2, merged a7d34a6c) and loose-ends-2 (tasks 3-4, merged 428d6b4e); the reviews of those two merges check that the rest of the spec landed
+- routed merge-loose-ends-f1154af1
+- 2026-11-25 conductor-14 from the timing runs [defect-class: failed bar]: funded month mean 891-2217 µs vs 98-99 on main (bar 90; shadow hook 0.5 → ~900 µs), bench:map case=run p95 17.5 ms twice (bar 16.7), map-stream worst flush 49-50 ms vs 27-35 on main (bar 30), swap install cadence 406-423 ms (bar 50, no main baseline), marginal world.bench and scenario cases; which are required, whose, against which bar → rulings/conductor-14.md (commit 7d7ee4d1, changes contract: no)
+- routing conductor-14: rulings/conductor-14.md, commit 7d7ee4d1
+- build graph for conductor-14 @ 5378a93e
+- build graph for conductor-14: new rows money-wait-perf, run-frame, map-perf (conditional)
+- routed conductor-14 (money-wait, run-play, closing named for clarification only, all complete; no relay; new units money-wait-perf and run-frame started; map-perf conditional, decided after money-wait-perf merges)
+- 2026-11-25 money-wait-perf-1 from money-wait-perf [defect-class: bar not reachable in write set]: the one-pass count (5f4d9d1b) cuts shadow 930 → 105 µs but misses both main-relative bars (shadow +~105 µs vs 10; funded month ~2.1x vs 1.10x); an incremental count needs files outside its writes, or the bar is restated → rulings/money-wait-perf-1.md (commit 6321e8b3, changes contract: no)
+- routing money-wait-perf-1: rulings/money-wait-perf-1.md, commit 6321e8b3
+- build graph for money-wait-perf-1 @ fc6faad8
+- relayed money-wait-perf-1 to incremental-loop-money-wait-perf (the ruling names money-wait; the running fix round is money-wait-perf and takes the BAR_US edit in funded-month.perf.spec.ts; the build graph's money-wait-perf row still shows the withdrawn bars, the money-wait row carries the new ones)
+- routed money-wait-perf-1
+- 2026-11-25 run-frame-1 from run-frame [defect-class: write set too narrow]: the run frame does ~500 deck draws (one extruded solid and one ghost layer per timeline cell, ~124 cells), built in src/lib/map/timeline-controller.ts, outside the row's map-lane list; recommends adding it and its spec so the controller emits merged layers while the run view is on → rulings/run-frame-1.md (commit b36bb683, changes contract: no)
+- routing run-frame-1: rulings/run-frame-1.md, commit b36bb683
+- build graph for run-frame-1 @ 501c0336
+- relayed run-frame-1 to incremental-loop-run-frame (the ruling names map-lane; the running round is run-frame)
+- routed run-frame-1
+- 2026-11-25 run-frame-2 from run-frame [defect-class: spec stricter than the mechanism allows]: a merged ghost layer draws all sides before all tops, so overlapping translucent ghosts of neighbouring cells blend in a different order (about one pixel at pitch 0); not strictly pixel for pixel; recommends the identity be read at pass level → rulings/run-frame-2.md (commit 8101fa70, changes contract: no)
+- routing run-frame-2: rulings/run-frame-2.md, commit 8101fa70
+- build graph for run-frame-2 @ 14247fc0
+- relayed run-frame-2 to incremental-loop-run-frame (the ruling names map-lane; the running round is run-frame)
+- routed run-frame-2
+- 2026-11-25 conductor-15 from the timing runs of record [defect-class: failed bar]: funded month, shadow, bench and e2e bars met at 3a5d5f79; planLot hook 15-21% above main (rule: other hooks no more than main's); scenario.bench case 3 (153 vs 83 ms), case 5 longest macrotask (268 vs 121 ms, both runs), host macrotask 60-68 vs 50, reroll 52-54 vs 50 fail on the branch and pass on main; fix (whose, which bar), restate, or record → rulings/conductor-15.md (commit 9b28e0bb, changes contract: no)
+- routing conductor-15: rulings/conductor-15.md, commit 9b28e0bb
+- build graph for conductor-15 @ 2038a243
+- relayed conductor-15 to incremental-loop-closing (with the fix round); money-wait is complete with no open round, named for clarification only: no relay
+- routed conductor-15
+- 2026-11-25 conductor-16 from the finish [defect-class: package base moved]: origin/main is four commits past the base 85e08e42 (cars #153, calibration #150, freeway #149, ci #151); merging it conflicts in 17 files (world/score chunk, series, types, view and their specs; e2e game-sim and fzp-sim; level2-check deleted here and modified there; five docs and CLAUDE.md); no unit owns the merge; who merges, by what rules, which results of record are re-taken → rulings/conductor-16.md (commit 5ffcf704, changes contract: yes)
+- routing conductor-16: rulings/conductor-16.md, commit 5ffcf704
+- build graph for conductor-16 @ 3d0018c6
+- routed conductor-16
+- routed conductor-16 (changes contract: E2 shows cars in the chunk; every unit is merged, the copied rows changed as clarification only: no relay; new units main-merge then main-merge-retake)
+- 2026-11-25 conductor-17 from the finish [defect-class: package base moved]: origin/main took 083fb7ae fix(funding) #154 (the award rule; 54 files) after main-merge; three conflicts (CLAUDE.md, docs/dev/pipeline.md, score/money.spec.ts); the retake's results describe the tree before it; who merges, by what rules, what is re-taken, and a standing rule if main moves again → rulings/conductor-17.md (commit 5591062f, changes contract: no)
+- routing conductor-17: rulings/conductor-17.md, commit 5591062f
+- build graph for conductor-17 @ f0621f31
+- relayed conductor-17 to incremental-loop-main-merge-retake (clarification: it finishes its be6467dc results as they are); tree-catalogue-measure is complete, clarification only: no relay
+- routed conductor-17 (new units after main-merge-retake merges: main-merge-2 then main-merge-retake-2; standing rule: later commits on main are further passes with no ruling)
+- 2026-11-25 main-merge-retake-1 from main-merge-retake [defect-class: spec-disagreement]: tree-catalogue's amended left-out rule says a retake starts from all eleven side-goal ids, ruling conductor-17 says this pass finishes its be6467dc results as they are; does this pass re-decide the left-out goals or carry funded-homes and affordable-homes out and leave that to the 083fb7ae pass → rulings/main-merge-retake-1.md (commit 84682f5b, changes contract: no)
+- routing main-merge-retake-1: rulings/main-merge-retake-1.md, commit 84682f5b
+- build graph for main-merge-retake-1 @ 0605273f
+- relayed main-merge-retake-1 to incremental-loop-main-merge-retake
+- routed main-merge-retake-1 (OWED: main-merge-retake-2's brief says it starts from all eleven side-goal ids, both entries back at game-core's starting values)
+- 2026-11-26 main-merge-retake-2-1 from main-merge-retake-2 [defect-class: spec-disagreement]: tree-balance exits 0 with all eleven side goals (funded-homes kept, raised to 21,000), but main's funding-award-rule spec § sec-side-goals says funded-homes is redefined before it is offered, and side-goals.ts is outside the retake's write set; offer it as tuned, leave it out, or redefine it (whose write set) → rulings/main-merge-retake-2-1.md (commit e35343db, changes contract: no)
+- routing main-merge-retake-2-1: rulings/main-merge-retake-2-1.md, commit e35343db
+- build graph for main-merge-retake-2-1 @ 4204d2ba
+- relayed main-merge-retake-2-1 to incremental-loop-main-merge-retake-2 (the ruling names game-core, complete, clarification only; the asking unit is the running one)
+- routed main-merge-retake-2-1 (OWNER NOTE for the finish: the package keeps funded-homes as defined, target 21,000, against the advice in main's funding-award-rule spec to redefine it)
+- 2026-11-26 conductor-18 from the retake's budgets [defect-class: failed bar]: after #154 main itself reads 328-338 µs per funded world-month (bar 90) and fails seven scenario.bench budgets by up to 5x; the branch equals main within a few percent and so fails its restated 250 µs bar; is main + 10% the whole bar for a later pass, and what does funded-month.perf.spec.ts say → rulings/conductor-18.md (commit 798f9ca0, changes contract: no)
+- routing conductor-18: rulings/conductor-18.md, commit 798f9ca0
+- build graph for conductor-18 @ 5f6ff673
+- relayed conductor-18 to incremental-loop-main-merge-retake-2 with the figures (the ruling names money-wait and main-merge-retake, both complete, clarification only; the running retake is main-merge-retake-2)
+- routed conductor-18 (OWNER FINDING for the finish: #154 made main's funded month about 3.5x and the scenario bench up to about 5x slower; the branch equals main; funded-month.perf.spec.ts is left failing at BAR_US 250)
+
+## Forks
+
+- fork rule-conductor-1 started 2026-11-25T01:14
+- fork rule-conductor-1 exited [0]: output
+- fork graph-conductor-1 started 2026-11-25T01:16
+- fork graph-conductor-1 exited [0]: output
+- fork checkpoint-2 started 2026-11-25T01:18
+- fork checkpoint-2 exited [0]: output
+- fork rule-conductor-2 started 2026-11-25T01:21
+- fork rule-conductor-2 exited [0]: output
+- fork graph-conductor-2 started 2026-11-25T01:21
+- fork graph-conductor-2 exited [0]: output
+- fork rule-conductor-3 started 2026-11-25T01:22
+- fork rule-conductor-3 exited [0]: output
+- fork graph-conductor-3 started 2026-11-25T01:23
+- fork graph-conductor-3 exited [0]: output
+- fork rule-conductor-4 started 2026-11-25T01:23
+- fork rule-conductor-4 exited [0]: output
+- fork graph-conductor-4 started 2026-11-25T01:25
+- fork graph-conductor-4 exited [0]: output
+- fork checkpoint-3 started 2026-11-25T01:26
+- fork checkpoint-3 exited [0]: output
+- fork rule-conductor-5 started 2026-11-25T01:28
+- fork rule-conductor-5 exited [0]: output
+- fork graph-conductor-5 started 2026-11-25T01:29
+- fork graph-conductor-5 exited [0]: output
+- fork rule-conductor-6 started 2026-11-25T01:29
+- fork rule-conductor-6 exited [0]: output
+- fork graph-conductor-6 started 2026-11-25T01:30
+- fork graph-conductor-6 exited [0]: output
+- fork rule-game-core-1 started 2026-11-25T01:33
+- fork rule-game-core-1 exited [0]: output
+- fork graph-game-core-1 started 2026-11-25T01:34
+- fork graph-game-core-1 exited [0]: output
+- fork checkpoint-4 started 2026-11-25T01:34
+- fork checkpoint-4 exited [0]: output
+- fork rule-game-core-2 started 2026-11-25T01:38
+- fork rule-game-core-2 exited [0]: output
+- fork graph-game-core-2 started 2026-11-25T01:38
+- fork graph-game-core-2 exited [0]: output
+- fork rule-tree-catalogue-code-1 started 2026-11-25T01:39
+- fork rule-tree-catalogue-code-1 exited [0]: output
+- fork graph-tree-catalogue-code-1 started 2026-11-25T01:40
+- fork graph-tree-catalogue-code-1 exited [0]: output
+- fork checkpoint-5 started 2026-11-25T01:41
+- fork checkpoint-5 exited [0]: output
+- fork rule-map-lane-1 started 2026-11-25T01:43
+- fork rule-map-lane-1 exited [0]: output
+- fork rule-run-play-1 started 2026-11-25T01:44
+- fork rule-run-play-1 exited [0]: output
+- fork graph-run-play-1 started 2026-11-25T01:45
+- fork graph-run-play-1 exited [0]: output
+- fork checkpoint-6 started 2026-11-25T01:46
+- fork checkpoint-6 exited [0]: output
+- fork rule-run-play-2 started 2026-11-25T01:48
+- fork rule-run-play-2 exited [0]: output
+- fork graph-run-play-2 started 2026-11-25T01:48
+- fork graph-run-play-2 exited [0]: output
+- fork rule-run-play-3 started 2026-11-25T01:48
+- fork rule-run-play-3 exited [0]: output
+- fork graph-run-play-3 started 2026-11-25T01:49
+- fork graph-run-play-3 exited [0]: output
+- fork checkpoint-7 started 2026-11-25T01:50
+- fork checkpoint-7 exited [0]: output
+- fork rule-tally-tree-a-1 started 2026-11-25T01:52
+- fork rule-tally-tree-a-1 exited [0]: output
+- fork graph-tally-tree-a-1 started 2026-11-25T01:53
+- fork graph-tally-tree-a-1 exited [0]: output
+- fork checkpoint-8 started 2026-11-25T01:53
+- fork checkpoint-8 exited [0]: output
+- fork rule-closing-1 started 2026-11-25T01:55
+- fork rule-closing-1 exited [0]: output
+- fork graph-closing-1 started 2026-11-25T01:55
+- fork graph-closing-1 exited [0]: output
+- fork rule-run-play-4 started 2026-11-25T01:57
+- fork rule-run-play-4 exited [0]: output
+- fork graph-run-play-4 started 2026-11-25T01:58
+- fork graph-run-play-4 exited [0]: output
+- fork review-contracts-54f40691 started 2026-11-25T02:03
+- fork review-contracts-1-07d61824 started 2026-11-25T02:03
+- fork review-contracts-54f40691 exited [0]: output
+- fork review-contracts-1-07d61824 exited [0]: output
+- fork rule-game-lane-1 started 2026-11-25T02:07
+- fork rule-game-lane-1 exited [0]: output
+- fork graph-game-lane-1 started 2026-11-25T02:08
+- fork graph-game-lane-1 exited [0]: output
+- fork rule-conductor-7 started 2026-11-25T02:08
+- fork rule-conductor-7 exited [0]: output
+- fork graph-conductor-7 started 2026-11-25T02:09
+- fork graph-conductor-7 exited [0]: output
+- fork review-run-play-1-321b696a started 2026-11-25T02:28
+- fork review-run-play-1-321b696a exited [0]: output
+- fork review-game-core-8b7b8aa1 started 2026-11-25T02:47
+- fork review-map-lane-854be8fe started 2026-11-25T02:47
+- fork review-money-wait-79f6b17b started 2026-11-25T02:47
+- fork review-game-core-8b7b8aa1 exited [0]: output
+- fork review-map-lane-854be8fe exited [0]: output
+- fork review-money-wait-79f6b17b exited [0]: output
+- fork rule-conductor-8 started 2026-11-25T03:06
+- fork rule-conductor-8 exited [0]: output
+- fork graph-conductor-8 started 2026-11-25T03:07
+- fork graph-conductor-8 exited [0]: output
+- fork checkpoint-9 started 2026-11-25T03:08
+- fork checkpoint-9 exited [0]: output
+- fork review-money-wait-76b75536 started 2026-11-25T03:14
+- fork review-money-wait-76b75536 exited [0]: output
+- fork rule-run-play-5 started 2026-11-25T03:26
+- fork rule-run-play-5 exited [0]: output
+- fork graph-run-play-5 started 2026-11-25T03:27
+- fork graph-run-play-5 exited [0]: output
+- fork rule-run-play-6 started 2026-11-25T03:29
+- fork review-game-core-fa72bb36 started 2026-11-25T03:29
+- fork review-map-lane-633cda8b started 2026-11-25T03:29
+- fork rule-run-play-6 exited [0]: output
+- fork graph-run-play-6 started 2026-11-25T03:30
+- fork graph-run-play-6 exited [0]: output
+- fork review-game-core-fa72bb36 exited [0]: output
+- fork review-map-lane-633cda8b exited [0]: output
+- fork rule-tally-tree-a-2 started 2026-11-25T03:56
+- fork rule-tally-tree-a-2 exited [0]: output
+- fork graph-tally-tree-a-2 started 2026-11-25T03:57
+- fork graph-tally-tree-a-2 exited [0]: output
+- fork rule-run-play-7 started 2026-11-25T04:00
+- fork rule-run-play-7 exited [0]: output
+- fork graph-run-play-7 started 2026-11-25T04:01
+- fork graph-run-play-7 exited [0]: output
+- fork rule-tally-tree-a-3 started 2026-11-25T04:07
+- fork rule-tally-tree-a-3 exited [0]: output
+- fork graph-tally-tree-a-3 started 2026-11-25T04:07
+- fork graph-tally-tree-a-3 exited [0]: output
+- fork checkpoint-10 started 2026-11-25T04:08
+- fork checkpoint-10 exited [0]: output
+- fork rule-run-play-8 started 2026-11-25T04:12
+- fork rule-run-play-8 exited [0]: output
+- fork graph-run-play-8 started 2026-11-25T04:12
+- fork graph-run-play-8 exited [0]: output
+- fork rule-run-play-9 started 2026-11-25T04:13
+- fork rule-run-play-9 exited [0]: output
+- fork graph-run-play-9 started 2026-11-25T04:13
+- fork review-tree-catalogue-code-3e458451 started 2026-11-25T04:14
+- fork review-run-play-fec3e711 started 2026-11-25T04:14
+- fork graph-run-play-9 exited [0]: output
+- fork checkpoint-11 started 2026-11-25T04:14
+- fork review-tree-catalogue-code-3e458451 exited [0]: output
+- fork review-run-play-fec3e711 exited [0]: output
+- fork checkpoint-11 exited [0]: output
+- fork rule-conductor-9 started 2026-11-25T04:20
+- fork rule-conductor-9 exited [0]: output
+- fork graph-conductor-9 started 2026-11-25T04:20
+- fork graph-conductor-9 exited [0]: output
+- fork review-run-play-ac92448c started 2026-11-25T04:38
+- fork review-run-play-ac92448c exited [0]: output
+- fork rule-tree-catalogue-measure-1 started 2026-11-25T04:59
+- fork rule-tree-catalogue-measure-1 exited [0]: output
+- fork graph-tree-catalogue-measure-1 started 2026-11-25T05:02
+- fork graph-tree-catalogue-measure-1 exited [0]: output
+- fork checkpoint-12 started 2026-11-25T05:03
+- fork checkpoint-12 exited [0]: output
+- fork rule-conductor-10 started 2026-11-25T05:04
+- fork rule-conductor-10 exited [0]: output
+- fork graph-conductor-10 started 2026-11-25T05:05
+- fork graph-conductor-10 exited [0]: output
+- fork rule-game-lane-2 started 2026-11-25T05:06
+- fork rule-game-lane-2 exited [0]: output
+- fork graph-game-lane-2 started 2026-11-25T05:06
+- fork graph-game-lane-2 exited [0]: output
+- fork review-tally-tree-a-341b6553 started 2026-11-25T05:15
+- fork review-tally-tree-a-341b6553 exited [0]: output
+- fork rule-tree-catalogue-measure-2 started 2026-11-25T06:48
+- fork rule-tree-catalogue-measure-2 exited [0]: output
+- fork graph-tree-catalogue-measure-2 started 2026-11-25T06:50
+- fork graph-tree-catalogue-measure-2 exited [0]: output
+- fork rule-game-lane-3 started 2026-11-25T07:28
+- fork rule-game-lane-3 exited [0]: output
+- fork graph-game-lane-3 started 2026-11-25T07:29
+- fork graph-game-lane-3 exited [0]: output
+- fork checkpoint-13 started 2026-11-25T07:30
+- fork checkpoint-13 exited [0]: output
+- fork review-tree-catalogue-measure-032fa8ea started 2026-11-25T07:41
+- fork review-tree-catalogue-measure-032fa8ea exited [0]: output
+- fork rule-conductor-11 started 2026-11-25T08:16
+- fork rule-conductor-11 exited [0]: output
+- fork graph-conductor-11 started 2026-11-25T08:18
+- fork graph-conductor-11 exited [0]: output
+- fork checkpoint-14 started 2026-11-25T08:19
+- fork checkpoint-14 exited [0]: output
+- fork rule-side-goal-effect-1 started 2026-11-25T08:22
+- fork rule-side-goal-effect-1 exited [0]: output
+- fork rule-game-lane-4 started 2026-11-25T09:15
+- fork rule-game-lane-4 exited [0]: output
+- fork graph-game-lane-4 started 2026-11-25T09:15
+- fork graph-game-lane-4 exited [0]: output
+- fork rule-game-lane-5 started 2026-11-25T09:16
+- fork rule-game-lane-5 exited [0]: output
+- fork graph-game-lane-5 started 2026-11-25T09:17
+- fork graph-game-lane-5 exited [0]: output
+- fork checkpoint-15 started 2026-11-25T09:18
+- fork checkpoint-15 exited [0]: output
+- fork review-side-goal-effect-1a34a8c1 started 2026-11-25T09:28
+- fork review-side-goal-effect-1a34a8c1 exited [0]: output
+- fork rule-conductor-12 started 2026-11-25T09:46
+- fork rule-conductor-12 exited [0]: output
+- fork graph-conductor-12 started 2026-11-25T09:47
+- fork graph-conductor-12 exited [0]: output
+- fork review-game-lane-621adb1c started 2026-11-25T09:55
+- fork review-game-lane-621adb1c exited [0]: output
+- fork rule-closing-2 started 2026-11-25T11:02
+- fork rule-closing-2 exited [0]: output
+- fork graph-closing-2 started 2026-11-25T11:03
+- fork graph-closing-2 exited [0]: output
+- fork review-closing-c492e10c started 2026-11-25T14:31
+- fork review-closing-c492e10c exited [0]: output
+- fork rule-conductor-13 started 2026-11-25T14:31
+- fork rule-conductor-13 exited [0]: output
+- fork graph-conductor-13 started 2026-11-25T14:34
+- fork graph-conductor-13 exited [0]: output
+- fork review-loose-ends-f1154af1 started 2026-11-25T15:05
+- fork review-loose-ends-f1154af1 exited [0]: output
+- fork review-loose-ends-1-a7d34a6c started 2026-11-25T15:23
+- fork review-loose-ends-2-428d6b4e started 2026-11-25T15:23
+- fork review-loose-ends-1-a7d34a6c exited [0]: output
+- fork review-loose-ends-2-428d6b4e exited [0]: output
+- fork rule-conductor-14 started 2026-11-25T16:19
+- fork rule-conductor-14 exited [0]: output
+- fork graph-conductor-14 started 2026-11-25T16:20
+- fork graph-conductor-14 exited [0]: output
+- fork rule-money-wait-perf-1 started 2026-11-25T16:31
+- fork rule-money-wait-perf-1 exited [0]: output
+- fork graph-money-wait-perf-1 started 2026-11-25T16:33
+- fork graph-money-wait-perf-1 exited [0]: output
+- fork checkpoint-16 started 2026-11-25T16:33
+- fork checkpoint-16 exited [0]: output
+- fork rule-run-frame-1 started 2026-11-25T16:40
+- fork rule-run-frame-1 exited [0]: output
+- fork graph-run-frame-1 started 2026-11-25T16:42
+- fork graph-run-frame-1 exited [0]: output
+- fork review-money-wait-perf-b7a90a9e started 2026-11-25T17:01
+- fork review-money-wait-perf-b7a90a9e exited [0]: output
+- fork rule-run-frame-2 started 2026-11-25T17:05
+- fork rule-run-frame-2 exited [0]: output
+- fork graph-run-frame-2 started 2026-11-25T17:06
+- fork graph-run-frame-2 exited [0]: output
+- fork review-run-frame-3a5d5f79 started 2026-11-25T18:03
+- fork review-run-frame-3a5d5f79 exited [0]: output
+- fork rule-conductor-15 started 2026-11-25T19:08
+- fork rule-conductor-15 exited [0]: output
+- fork graph-conductor-15 started 2026-11-25T19:10
+- fork graph-conductor-15 exited [0]: output
+- fork review-closing-c3ce29c9 started 2026-11-25T19:15
+- fork review-closing-c3ce29c9 exited [0]: output
+- fork rule-conductor-16 started 2026-11-25T19:33
+- fork rule-conductor-16 exited [0]: output
+- fork graph-conductor-16 started 2026-11-25T19:37
+- fork graph-conductor-16 exited [0]: output
+- fork checkpoint-17 started 2026-11-25T19:38
+- fork checkpoint-17 exited [0]: output
+- fork review-main-merge-30b840fa started 2026-11-25T20:44
+- fork review-main-merge-30b840fa exited [0]: output
+- fork rule-conductor-17 started 2026-11-25T22:54
+- fork rule-conductor-17 exited [0]: output
+- fork graph-conductor-17 started 2026-11-25T22:55
+- fork graph-conductor-17 exited [0]: output
+- fork rule-main-merge-retake-1 started 2026-11-25T22:59
+- fork rule-main-merge-retake-1 exited [0]: output
+- fork graph-main-merge-retake-1 started 2026-11-25T23:00
+- fork graph-main-merge-retake-1 exited [0]: output
+- fork review-main-merge-retake-225a822e started 2026-11-25T23:02
+- fork review-main-merge-retake-225a822e exited [0]: output
+- fork review-main-merge-2-bbf5ebfe started 2026-11-25T23:33
+- fork review-main-merge-2-bbf5ebfe exited [0]: output
+- fork rule-main-merge-retake-2-1 started 2026-11-26T00:00
+- fork rule-main-merge-retake-2-1 exited [0]: output
+- fork graph-main-merge-retake-2-1 started 2026-11-26T00:01
+- fork graph-main-merge-retake-2-1 exited [0]: output
+- fork rule-conductor-18 started 2026-11-26T00:43
+- fork rule-conductor-18 exited [0]: output
+- fork graph-conductor-18 started 2026-11-26T00:44
+- fork graph-conductor-18 exited [0]: output
+- fork review-main-merge-retake-2-831fc7b6 started 2026-11-26T00:50
+- fork review-main-merge-retake-2-831fc7b6 exited [0]: output
+
+## Frame-defect tally
+
+- source-fidelity: 3 — instances: conductor-1 (gate-3, 2026-11-25); conductor-3 (gate-2, 2026-11-25); conductor-4 (gate-1, 2026-11-25)
+- spec-disagreement: 11 — instances: conductor-2 (gate-5, 2026-11-25); conductor-5 (gate-6, 2026-11-25); game-core-1 (2026-11-25, third: trip); game-core-2 (2026-11-25); tree-catalogue-code-1 (2026-11-25); run-play-3 (2026-11-25); run-play-5 (2026-11-25); run-play-6 (2026-11-25); tally-tree-a-2 (2026-11-25); tally-tree-a-3 (2026-11-25); game-lane-2 (2026-11-25)
+- spec-silence: 10 — instances: conductor-6 (gate-4, 2026-11-25); run-play-2 (2026-11-25); tally-tree-a-1 (2026-11-25, third: trip); run-play-4 (2026-11-25); conductor-7 (2026-11-25); conductor-8 (2026-11-25); run-play-7 (2026-11-25); conductor-9 (2026-11-25); conductor-10 (2026-11-25); conductor-12 (2026-11-25)
+- unmodeled-interaction: 2 — instances: map-lane-1 (2026-11-25); run-play-9 (2026-11-25)
+- spec-code-mismatch: 5 — instances: run-play-1 (2026-11-25); game-lane-3 (2026-11-25); conductor-11 (2026-11-25, third: trip); game-lane-4 (2026-11-25); closing-2 (2026-11-25)
+- write-set-gap: 3 — instances: game-lane-1 (2026-11-25); side-goal-effect-1 (2026-11-25); game-lane-5 (2026-11-25, third: trip)
+- platform-gap: 1 — instances: run-play-8 (2026-11-25)
+- measurement-miss: 2 — instances: tree-catalogue-measure-1 (2026-11-25); tree-catalogue-measure-2 (2026-11-25)
+
+## Integration
+
+- 02:55 merge of contracts @ 54f40691 made (merge commit 4e500ce5) and contracts-1 @ 07d618240a1d3fe0c84b785cc8dddef48321a9fe on top; one full suite runs on both (agent); not ledgered as merged until it passes. If it fails after rule commits land on top, take the merges out with revert -m 1.
+- 03:25 suite on the contracts merges (f6d8cc8e): check pass, lint pass, e2e 781 passed; unit and pipeline did not start: vite's dependency optimizer read the parent worktree's tsconfig.json (incremental-feel), which extends a .svelte-kit/tsconfig.json that worktree never generated. Environment, not the merge: wrote an empty incremental-feel/.svelte-kit/tsconfig.json (ignored file); one spec then ran. Unit and pipeline rerun (agent), logs in scratchpad merge-contracts/.
+- merged contracts [rows G1, G2, G3, G4, G5, G6, R1 shapes] @ 54f40691425dc57f75db32bee4c1d5b777f9c828 into superconductor/incremental-loop, tests pass (check, lint, unit 9292, pipeline 2284, e2e 781), band low
+- merged contracts-1 [rows E1, E2, M1 shapes] @ 07d618240a1d3fe0c84b785cc8dddef48321a9fe into superconductor/incremental-loop, tests pass (same suite), band low
+- No drift @ 54f40691425dc57f75db32bee4c1d5b777f9c828 (contracts)
+- No drift @ 07d618240a1d3fe0c84b785cc8dddef48321a9fe (contracts-1)
+- 04:05 merge of run-play-1 @ 321b696ad9423b125f44977a68e785f6ad292cee made; suite running (agent, scratchpad merge-run-play-1/); not merged until it passes.
+- merged run-play-1 [no row; run-play task 2, prefs] @ 321b696ad9423b125f44977a68e785f6ad292cee into superconductor/incremental-loop, tests pass (check, lint, unit 9296, pipeline 2284, e2e 776 passed + 4 passed on retry; 1 timeout in e2e/sim-share.spec.ts:275 at load average 30, the spec passed 15/15 alone with no retries), band low
+- 05:05 batch merge made: game-core rows G1, G2 @ 8b7b8aa1dff08a85d449fead5cfd0934eaf5871b; map-lane row E1 @ 854be8fe54bda54e6c5a85cf93cd54c2e764755e; money-wait row E2 @ 79f6b17bc72f82be2f33c36f533a8b64bcb82f77; one suite on the three (agent, scratchpad merge-batch-2/); not merged until it passes.
+- No drift @ 321b696ad9423b125f44977a68e785f6ad292cee (run-play-1)
+- merged game-core [rows G1, G2] @ 8b7b8aa1dff08a85d449fead5cfd0934eaf5871b into superconductor/incremental-loop, tests pass (check, lint, unit 9384, pipeline 2284, e2e 781), band low
+- merged map-lane [row E1] @ 854be8fe54bda54e6c5a85cf93cd54c2e764755e into superconductor/incremental-loop, tests pass (check, lint, unit 9384, pipeline 2284, e2e 781), band low
+- merged money-wait [row E2] @ 79f6b17bc72f82be2f33c36f533a8b64bcb82f77 into superconductor/incremental-loop, tests pass (check, lint, unit 9384, pipeline 2284, e2e 781), band low
+- 05:50 batch 3 merge made: game-core row G4 @ d9fdd3445d45e3d55d90d7dd513ca8a77c611509; money-wait complete @ 76b755369c05caaec52d1b5d0bd6d823f89d0045; suite running (agent, scratchpad merge-batch-3/).
+- No drift @ 8b7b8aa1dff08a85d449fead5cfd0934eaf5871b (game-core G1, G2)
+- No drift @ 854be8fe54bda54e6c5a85cf93cd54c2e764755e (map-lane E1)
+- No drift @ 79f6b17bc72f82be2f33c36f533a8b64bcb82f77 (money-wait E2)
+- 06:00 game-core row G6 @ 5c411cc2f950971a7be4e2768310a47296efe0f9 merged into batch 3 while its suite was in check/lint (before unit started); OWED: run check and lint again on the final tree before ledgering batch 3 as merged.
+- merged game-core [row G4] @ d9fdd3445d45e3d55d90d7dd513ca8a77c611509 into superconductor/incremental-loop, tests pass (check and lint rerun on the final tree, unit 9504, pipeline 2284, e2e 781), band low
+- merged money-wait [complete] @ 76b755369c05caaec52d1b5d0bd6d823f89d0045 into superconductor/incremental-loop, tests pass (check and lint rerun on the final tree, unit 9504, pipeline 2284, e2e 781), band low
+- merged game-core [row G6] @ 5c411cc2f950971a7be4e2768310a47296efe0f9 into superconductor/incremental-loop, tests pass (check and lint rerun on the final tree, unit 9504, pipeline 2284, e2e 781), band low
+- 06:50 batch 4 merge made: game-core complete @ fa72bb3654c7c10ee75d70f579392e62cb3ca779; map-lane complete (row M1) @ 633cda8b278eef1999919cf9ce44cb77db550e10; suite running (agent, scratchpad merge-batch-4/).
+- note: game-core's rows G4 and G6 are reviewed once, at its complete commit fa72bb36, after batch 4's suite passes.
+- No drift @ 76b755369c05caaec52d1b5d0bd6d823f89d0045 (money-wait complete)
+- merged game-core [complete; rows G1, G2, G4, G6] @ fa72bb3654c7c10ee75d70f579392e62cb3ca779 into superconductor/incremental-loop, tests pass (check, lint, unit 9541, pipeline 2284, e2e 781), band low
+- merged map-lane [complete; rows E1, M1] @ 633cda8b278eef1999919cf9ce44cb77db550e10 into superconductor/incremental-loop, tests pass (check, lint, unit 9541, pipeline 2284, e2e 781), band low
+- 07:55 batch 5 merge made: tree-catalogue-code row G3 @ b354efc4e1f7093d74327c68a2d9872756ce9f4a; suite running (agent, scratchpad merge-batch-5/).
+- correction to 07:55: no suite started yet for batch 5. G3 alone admits no unit, so the suite waits for the next row report (G5 expected from tree-catalogue-code) and runs once on both. The G3 merge is at the branch head, untested: if a conductor resumes here, run the suite (Phase 0).
+- No drift @ fa72bb3654c7c10ee75d70f579392e62cb3ca779 (game-core complete)
+- No drift @ 633cda8b278eef1999919cf9ce44cb77db550e10 (map-lane complete)
+- 08:10 batch 5: tree-catalogue-code row G5 @ 95b012e3c5e9433a97e7289395cb1d5d63ad500a merged on top of G3 @ b354efc4; suite running on both (agent, scratchpad merge-batch-5/).
+- merged tree-catalogue-code [row G3] @ b354efc4e1f7093d74327c68a2d9872756ce9f4a into superconductor/incremental-loop, tests pass (check, lint, unit 9587, pipeline 2284, e2e 781), band low
+- merged tree-catalogue-code [row G5] @ 95b012e3c5e9433a97e7289395cb1d5d63ad500a into superconductor/incremental-loop, tests pass (check, lint, unit 9587, pipeline 2284, e2e 781), band low
+- 08:45 batch 6 merge made: tree-catalogue-code complete @ 3e458451878a4f43b18e2004bbfa4d959aa22826; run-play row R1 @ fec3e711f0466a10a42575eec91b79b44255d819; suite running (agent, scratchpad merge-batch-6/).
+- merged tree-catalogue-code [complete; rows G3, G5] @ 3e458451878a4f43b18e2004bbfa4d959aa22826 into superconductor/incremental-loop, tests pass (check, lint, unit 9688, pipeline 2284, e2e 781), band low
+- merged run-play [row R1] @ fec3e711f0466a10a42575eec91b79b44255d819 into superconductor/incremental-loop, tests pass (check, lint, unit 9688, pipeline 2284, e2e 781), band low
+- No drift @ 3e458451878a4f43b18e2004bbfa4d959aa22826 (tree-catalogue-code complete)
+- No drift @ fec3e711f0466a10a42575eec91b79b44255d819 (run-play R1)
+- 09:50 batch 7 merge made: run-play complete @ ac92448cef2e12ec45c88990c8538d37487713e4; suite running (agent, scratchpad merge-batch-7/).
+- merged run-play [complete; row R1] @ ac92448cef2e12ec45c88990c8538d37487713e4 into superconductor/incremental-loop, tests pass (check, lint, unit 9701, pipeline 2284, e2e 781), band low
+- No drift @ ac92448cef2e12ec45c88990c8538d37487713e4 (run-play complete)
+- 10:45 batch 8 merge made: tally-tree-a row U1 (part A) @ 341b6553eca671fbec9736061494c892fc4531f6; suite running (agent, scratchpad merge-batch-8/).
+- cut tree-catalogue-measure to 5d5373a3 for ruling tree-catalogue-measure-1
+- merged tally-tree-a [complete; row U1 part A] @ 341b6553eca671fbec9736061494c892fc4531f6 into superconductor/incremental-loop, tests pass (check, lint, unit 9786, pipeline 2284, e2e 781), band low
+- No drift @ 341b6553eca671fbec9736061494c892fc4531f6 (tally-tree-a complete)
+- 14:00 batch 9 merge made: tree-catalogue-measure complete (row T1) @ 032fa8ea9b357e4059d2e12c95bd9c6c533d1d57; suite running (agent, scratchpad merge-batch-9/). Its owner findings report is copied to surveys/tree-catalogue-measure-task-4-report.md: money measures lower homes; completedNetNew effect 6,450 not 0; left-out goals' floors 17,000/20,000; stage-4 prices below some stage-2/3 ones.
+- merged tree-catalogue-measure [complete; row T1] @ 032fa8ea9b357e4059d2e12c95bd9c6c533d1d57 into superconductor/incremental-loop, tests pass (check, lint, unit 9862, pipeline 2284, e2e 781), band low
+- No drift @ 032fa8ea9b357e4059d2e12c95bd9c6c533d1d57 (tree-catalogue-measure complete)
+- 18:00 batch 10 merge made: side-goal-effect complete (G6 reader on inForce, tree-balance, tuning net zero) @ 1a34a8c15c39a925ddde842865fed678393375b0; suite running (agent, scratchpad merge-batch-10/). game-lane told to take head 4d7a9265 in.
+- RULE from ruling game-lane-5 (design sec-write-sets): at game-lane's merge the gate is lint, build, test:unit, test:pipeline, and check with errors only in e2e/** other than e2e/helpers/game.ts; test:e2e is not a gate. closing is admitted on that tree. closing's merge is where check is 0 errors and test:e2e passes; the full suite gates again from then.
+- merged side-goal-effect [complete; G6 effect reader on inForce, T1 re-checked] @ 1a34a8c15c39a925ddde842865fed678393375b0 into superconductor/incremental-loop, tests pass (check, lint, unit 9868, pipeline 2284, e2e 781), band low
+- No drift @ 1a34a8c15c39a925ddde842865fed678393375b0 (side-goal-effect complete)
+- 19:00 batch 11 merge made: game-lane complete (rows G7, G8, U1 GameCell and GamePanel) @ 621adb1c79800c0de5544b7f46d69a36d4d9652e; gate per ruling game-lane-5 running (agent, scratchpad merge-batch-11/): lint, build, unit, pipeline, and check with errors only in e2e/** other than e2e/helpers/game.ts.
+- merged game-lane [complete; rows G7, G8, U1 (GameCell, GamePanel)] @ 621adb1c79800c0de5544b7f46d69a36d4d9652e into superconductor/incremental-loop, gate of ruling game-lane-5 passes (lint, build, unit 9836, pipeline 2284; check 35 errors, all in 11 e2e spec files, none in e2e/helpers/game.ts; e2e not run), band low
+- No drift @ 621adb1c79800c0de5544b7f46d69a36d4d9652e (game-lane complete)
+- merged closing [complete] @ c492e10c1dec3276c7579b82b82e7e38c7528281 into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors, unit 9848, pipeline 2284, e2e 816 passed 0 failed 0 flaky; logs scratchpad merge-batch-12/), band low. Timed runs deferred to the conductor's quiet-machine pass
+- No drift @ c492e10c1dec3276c7579b82b82e7e38c7528281 (closing complete)
+- merged loose-ends [complete; task 1] @ f1154af14a248064cad5d4d5cac8aa8c101caebb into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors, unit 9848, pipeline 2284, e2e 816 passed 0 failed 0 flaky; merge-batch-13/), band low
+- merged loose-ends-1 [complete; task 2] @ a7d34a6c1ff8879d125d406e4bc7f88a2bb24877 and loose-ends-2 [complete; tasks 3, 4] @ 428d6b4e3b28aa7024b413006af5061a0add0656 into superconductor/incremental-loop, one full suite over both passes at 428d6b4e (check 0 errors, lint 0 errors, unit 9848, pipeline 2284, e2e 820 passed 0 failed 0 flaky; merge-batch-14/), band low
+- No drift @ a7d34a6c1ff8879d125d406e4bc7f88a2bb24877 (loose-ends-1 complete)
+- No drift @ 428d6b4e3b28aa7024b413006af5061a0add0656 (loose-ends-2 complete; with f1154af1 and a7d34a6c the loose-ends spec is whole)
+- merged money-wait-perf [complete] @ b7a90a9e22f7ba805d9ae9e1b74f70564e8a3d50 into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors, unit 9848, pipeline 2284, e2e 820 passed 0 failed 0 flaky; merge-batch-15/), band low. Timing of record owed on a quiet machine
+- No drift @ b7a90a9e22f7ba805d9ae9e1b74f70564e8a3d50 (money-wait-perf complete)
+- merged run-frame [complete; map-lane's round] @ 3a5d5f794a6f0072fcbaf98781bf437e5984c8ae into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors, unit 9865, pipeline 2284, e2e 820 passed 0 failed 0 flaky; merge-batch-16/), band low. Timing of record owed
+- No drift @ 3a5d5f794a6f0072fcbaf98781bf437e5984c8ae (run-frame complete)
+- fix round closing: record the timing runs of record in docs/dev/map-perf.md (The game's runs, Results, two pending rows); carries the conductor-15 relay
+- merged closing [fix round: timing results of record in docs/dev/map-perf.md] @ c3ce29c9194db5c8d10c199a8d64fa56aed44476 into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors 152 warnings, unit 9865, pipeline 2284, e2e 820 passed 0 failed 0 flaky; merge-batch-17/), band low
+- No drift @ c3ce29c9194db5c8d10c199a8d64fa56aed44476 (closing fix round)
+- merged main-merge [complete] @ 30b840fa708cc864a5b4b712a0efdd3803b31c32 into superconductor/incremental-loop (origin/main be6467dc included), full suite passes (check 0 errors, lint 0 errors 152 warnings, unit 10068, pipeline 2439, e2e 828 passed 0 failed 0 flaky; dataset-version --check 2026-11-25-76c90397; reach-check cars on exit 0: current law Jun 2065, full tree Jan 2040; merge-batch-18/), band low
+- No drift @ 30b840fa708cc864a5b4b712a0efdd3803b31c32 (main-merge complete)
+- merged main-merge-retake [complete] @ 225a822e30e1df093707c8b5c0b6cb7daf592d2e into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors 152 warnings, unit 10068, pipeline 2439, e2e 828 passed 0 failed 0 flaky; merge-batch-19/), band low
+- No drift @ 225a822e30e1df093707c8b5c0b6cb7daf592d2e (main-merge-retake complete)
+- merged main-merge-2 [complete] @ bbf5ebfe895f43520f2aff153dadeac08d2c0745 into superconductor/incremental-loop (origin/main 083fb7ae included), full suite passes (check 0 errors, lint 0 errors 152 warnings, unit 10103, pipeline 2439, e2e 828 passed 0 failed 0 flaky; dataset-version --check 2026-11-25-76c90397; reach-check cars on exit 0: current law Oct 2061, full tree Aug 2037; merge-batch-20/), band low
+- No drift @ bbf5ebfe895f43520f2aff153dadeac08d2c0745 (main-merge-2 complete)
+- merged main-merge-retake-2 [complete] @ 831fc7b67a481b84b097d5b638b98c4c67b8bed8 into superconductor/incremental-loop, full suite passes (check 0 errors, lint 0 errors 152 warnings, unit 10103, pipeline 2439, e2e 828 passed 0 failed 0 flaky; dataset 2026-11-25-76c90397; reach-check exit 0: current law Oct 2061, full tree Aug 2037; tree-balance exit 0, lump 10,000 in 5 runs, side rewards 7,600 from 10 goals; merge-batch-21/), band low
+- No drift @ 831fc7b67a481b84b097d5b638b98c4c67b8bed8 (main-merge-retake-2 complete)
+
+## Cost
+
+- contracts: admitted 2026-11-25T01:20 seven_day 15% | session c34d5b42-95fc-4729-8db5-1e7cd1543399
+- game-core: admitted 2026-11-25T01:21 seven_day 15% | session 326cc8e9-a2c7-4f0d-b8ca-a695e2012e86
+- tree-catalogue-code: admitted 2026-11-25T01:21 seven_day 15% | session f7b74cf7-7870-4e5f-928f-12973c96d62a
+- map-lane: admitted 2026-11-25T01:22 seven_day 15% | session d62ffb37-bc7d-4263-897d-c3b374c72e05
+- money-wait: admitted 2026-11-25T01:22 seven_day 15% | session 372634ee-020f-43f3-8ea4-11f8612bae53
+- run-play: admitted 2026-11-25T01:31 seven_day 16% | session 33e8a545-2f29-4413-833f-c9dc3c6284eb
+- tally-tree-a: admitted 2026-11-25T01:32 seven_day 16% | session d86c6958-b8d8-4bbe-9506-847beb5f3d59
+- game-lane: admitted 2026-11-25T01:32 seven_day 16% | session dbdda45f-6057-4471-9fcb-c12cb6d3e147
+- tree-catalogue-measure: admitted 2026-11-25T01:32 seven_day 16% | session fec66cac-f60d-4462-a975-86b49efda670
+- closing: admitted 2026-11-25T01:33 seven_day 16% | session 4704e941-f709-481b-9f15-464395d83431
+- contracts-1: admitted 2026-11-25T01:34 seven_day 16% | session b78e5064-6ceb-471f-9bd8-c75e9f8a80f8
+- contracts: finished 2026-11-25T02:02 seven_day 20%
+- contracts-1: finished 2026-11-25T02:02 seven_day 20%
+- run-play-1: admitted 2026-11-25T02:03 seven_day 20% | session 107f0e78-a95f-491d-9514-5559a6594731
+- run-play-1: finished 2026-11-25T02:28
+- money-wait: finished 2026-11-25T03:10
+- game-core: finished 2026-11-25T03:29
+- map-lane: finished 2026-11-25T03:29
+- tree-catalogue-code: finished 2026-11-25T04:14
+- run-play: finished 2026-11-25T04:38
+- tally-tree-a: finished 2026-11-25T05:15
+- tree-catalogue-measure: finished 2026-11-25T07:41
+- side-goal-effect: admitted 2026-11-25T08:21 seven_day 35% | session 8ca599b3-3beb-42e4-96be-df81c0e09288
+- side-goal-effect: finished 2026-11-25T09:28
+- game-lane: finished 2026-11-25T09:55
+- closing: finished 2026-11-25T14:31
+- loose-ends: admitted 2026-11-25T14:35 seven_day 42% | session e789a361-05ad-430a-a21a-7de60d226800
+- loose-ends-1: admitted 2026-11-25T14:37 seven_day 42% | session de793299-4c6a-4838-80e2-dac47163a9be
+- loose-ends-2: admitted 2026-11-25T14:38 seven_day 42% | session c0fa24c7-658f-4da7-acd1-046fd22132eb
+- loose-ends: finished 2026-11-25T15:05
+- loose-ends-1: finished 2026-11-25T15:23
+- loose-ends-2: finished 2026-11-25T15:23
+- money-wait-perf: admitted 2026-11-25T16:23 seven_day 43% | session 9cf3f7f1-cce3-4ac8-8cf9-95fb20cad838
+- run-frame: admitted 2026-11-25T16:24 seven_day 44% | session 4a2818cd-6eb1-4b0f-a063-82a4f97f26cb
+- money-wait-perf: finished 2026-11-25T17:01
+- run-frame: finished 2026-11-25T18:03
+- main-merge: admitted 2026-11-25T19:41 seven_day 47% | session 95c28756-6fe3-4149-921c-a0af8ea98404
+- main-merge: finished 2026-11-25T20:44
+- main-merge-retake: admitted 2026-11-25T21:03 seven_day 48% | session 94a1cd3e-90b9-4576-9f13-bc0dc7c823cf
+- main-merge-retake: finished 2026-11-25T23:02
+- main-merge-2: admitted 2026-11-25T23:02 seven_day 50% | session e1278792-346f-4924-b18b-bc061d529377
+- main-merge-2: finished 2026-11-25T23:33
+- main-merge-retake-2: admitted 2026-11-25T23:33 seven_day 50% | session 7e7d24fa-7c9e-4cc5-a908-35c2a7f80bcc
+- main-merge-retake-2: finished 2026-11-26T00:50

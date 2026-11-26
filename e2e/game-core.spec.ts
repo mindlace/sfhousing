@@ -1,12 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import { newVisitor, seedGame } from './helpers/game';
+import { savedGame } from './helpers/play';
 import { SAVES_KEY, saveKey } from '../src/lib/game/saves';
 
-type Index = {
-  v: number;
-  current: string;
-  saves: { id: string; level: number }[];
-};
+type Entry = { id: string; phase: 'opening' | 'runs'; rung: number };
+type Index = { v: number; current: string; saves: Entry[] };
 
 function hydrationWarnings(page: Page): string[] {
   const seen: string[] = [];
@@ -27,33 +25,33 @@ async function index(page: Page): Promise<Index> {
   return JSON.parse(text ?? 'null');
 }
 
-async function levelOf(page: Page, id: string): Promise<number> {
-  const text = await item(page, saveKey(id));
-  expect(text).not.toBeNull();
-  return JSON.parse(text ?? 'null').progress.level;
-}
-
-test('with no helper the layout provides the open game', async ({ page }) => {
+test('with no helper, /about has no hydration warning and stores no saves', async ({ page }) => {
   const warnings = hydrationWarnings(page);
   await openAbout(page);
   expect(warnings).toEqual([]);
   expect(await item(page, SAVES_KEY)).toBeNull();
 });
 
-test('a new visitor gets one level 1 game', async ({ page }) => {
+test('a new visitor gets one game in the opening', async ({ page }) => {
   const warnings = hydrationWarnings(page);
   await newVisitor(page);
   await openAbout(page);
   const stored = await index(page);
+  expect(stored.v).toBe(2);
   expect(stored.saves).toHaveLength(1);
-  expect(stored.saves[0].level).toBe(1);
   expect(stored.current).toBe(stored.saves[0].id);
-  expect(await levelOf(page, stored.current)).toBe(1);
+  expect(stored.saves[0].phase).toBe('opening');
+  expect(stored.saves[0].rung).toBe(0);
+  const save = await savedGame(page);
+  expect(save.v).toBe(2);
+  expect(save.id).toBe(stored.current);
+  expect(save.state.phase).toBe('opening');
+  expect(save.state.rung).toBe(0);
   expect(warnings).toEqual([]);
 });
 
 test('a seeded index is kept as seeded', async ({ page }) => {
-  await seedGame(page, 3);
+  await seedGame(page);
   await page.addInitScript((k) => {
     (window as unknown as { __seededIndex: string | null }).__seededIndex = localStorage.getItem(k);
   }, SAVES_KEY);
@@ -65,8 +63,8 @@ test('a seeded index is kept as seeded', async ({ page }) => {
   expect(await item(page, SAVES_KEY)).toBe(seeded);
 });
 
-test('a current id that names no entry gets a new level 1 game', async ({ page }) => {
-  await seedGame(page, 3);
+test('a current id that names no entry gets a new game in the opening', async ({ page }) => {
+  await seedGame(page, { phase: 'runs', units: { home: 500 } });
   await openAbout(page);
   const seededId = (await index(page)).current;
   await page.evaluate((k) => {
@@ -79,11 +77,71 @@ test('a current id that names no entry gets a new level 1 game', async ({ page }
   const stored = await index(page);
   expect(stored.saves).toHaveLength(2);
   const kept = stored.saves.find((s) => s.id === seededId);
-  expect(kept?.level).toBe(3);
-  expect(await levelOf(page, seededId)).toBe(3);
+  expect(kept?.phase).toBe('runs');
   expect(stored.current).not.toBe(seededId);
   expect(stored.current).not.toBe('missing');
   const fresh = stored.saves.find((s) => s.id === stored.current);
-  expect(fresh?.level).toBe(1);
-  expect(await levelOf(page, stored.current)).toBe(1);
+  expect(fresh?.phase).toBe('opening');
+  expect(fresh?.rung).toBe(0);
+  const current = await savedGame(page);
+  expect(current.id).toBe(stored.current);
+  expect(current.state.phase).toBe('opening');
+  const old = JSON.parse((await item(page, saveKey(seededId))) ?? 'null');
+  expect(old.state.units.home).toBe(500);
+});
+
+test('a five-level index and save are deleted at load, never moved aside', async ({ page }) => {
+  const old = 'oldfivelevel';
+  await newVisitor(page);
+  await page.addInitScript(
+    (a) => {
+      try {
+        if (localStorage.getItem(a.saves) !== null) return;
+        localStorage.setItem(
+          a.saves,
+          JSON.stringify({
+            v: 1,
+            current: a.id,
+            saves: [{ id: a.id, name: 'Old', nameIsDefault: false, savedAt: a.at, level: 3 }]
+          })
+        );
+        localStorage.setItem(
+          a.key,
+          JSON.stringify({ v: 1, id: a.id, name: 'Old', savedAt: a.at, progress: { level: 3 } })
+        );
+      } catch {
+        // storage refused: the test's own checks fail
+      }
+    },
+    { saves: SAVES_KEY, id: old, key: saveKey(old), at: new Date().toISOString() }
+  );
+  await openAbout(page);
+  const kept = await page.evaluate(() => {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key !== null) out[key] = localStorage.getItem(key) ?? '';
+    }
+    return out;
+  });
+  expect(kept[saveKey(old)]).toBeUndefined();
+  expect(Object.keys(kept).filter((k) => k.startsWith(saveKey('corrupt:')))).toEqual([]);
+  const records = Object.entries(kept).filter(
+    ([k]) => k === SAVES_KEY || k.startsWith(saveKey(''))
+  );
+  expect(records.length).toBeGreaterThan(0);
+  for (const [, text] of records) {
+    let v: unknown = null;
+    try {
+      v = (JSON.parse(text) as { v?: unknown } | null)?.v;
+    } catch {
+      // not JSON: not a five-level record
+    }
+    expect(v).not.toBe(1);
+  }
+  const stored = await index(page);
+  expect(stored.v).toBe(2);
+  expect(stored.saves).toHaveLength(1);
+  expect(stored.saves[0].id).not.toBe(old);
+  expect(stored.saves[0].phase).toBe('opening');
 });

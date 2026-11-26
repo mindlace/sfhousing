@@ -6,7 +6,8 @@ import { clearE2eMail, readE2eMail } from '$lib/server/e2e/mail-sink';
 import { eq } from 'drizzle-orm';
 import { gameSave } from '$lib/server/db/schema';
 import { putGame } from '$lib/server/game/store';
-import { parseGameSave, type GameSave } from '$lib/game/saves';
+import { parseGameSave, type GameSave } from '$lib/game/save-shape';
+import { NEW_GAME } from '$lib/game/state';
 import { newId } from '$lib/ids/base58';
 import { getAuth, verifyAuthSecret, authGenerateId, onLinkAccountFor } from './better-auth';
 import { PSEUDONYMOUS_EMAIL_DOMAIN } from './brand';
@@ -281,11 +282,16 @@ describe('change-email mail records', () => {
 
 function gameOf(): GameSave {
   const s: GameSave = {
-    v: 1,
+    v: 2,
     id: newId(),
     name: 'Game, 22 Nov',
     nameIsDefault: true,
-    progress: { v: 1, level: 2, banked: {}, firstWinAt: '2026-11-22T10:00:00.000Z' },
+    state: {
+      ...structuredClone(NEW_GAME),
+      phase: 'runs',
+      rung: 1,
+      firstWinAt: '2026-11-22T10:00:00.000Z'
+    },
     plan: null,
     policy: null,
     savedAt: '2026-11-22T12:00:00.000Z'

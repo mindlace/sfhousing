@@ -1,4 +1,4 @@
-import type { GameSave, SaveEntry } from './saves';
+import type { GameSave, SaveEntry } from './save-shape';
 
 export const MAX_SAVE_BYTES = 600_000;
 
@@ -35,7 +35,9 @@ export type PutGame =
   | { status: 410 }
   | { status: 401; body: { error: 'sign_in' } }
   | { status: 422; body: { error: 'invalid' | 'too_many' | 'no_win' } }
-  | { status: 403 | 413 | 415 | 429 };
+  | { status: 403 | 415 | 500; body: { error: string } }
+  | { status: 413 | 429 };
 
 /** DELETE /api/game/[id] */
-export type DeleteGame = { status: 204 } | { status: 401 };
+export type DeleteGame =
+  { status: 204 } | { status: 401 | 429 } | { status: 403 | 415; body: { error: string } };

@@ -1,6 +1,6 @@
-# The ensemble runner: the /sim timeline worker host
+# The ensemble runner: the simulation's timeline worker host
 
-`createTimelineHost` (`src/lib/sim/world/host.ts`) runs the step engine for `/sim`: one world under the policy and one under its comparison, both on seed 1 (`SEED`, `runner/ensemble.ts`), advanced one month at a time ahead of the viewer, posting what is final, and resuming from an edit's month. Spec `docs/superpowers/specs/2026-11-13-ensemble-runner-design.md`; plan `docs/superpowers/plans/2026-11-13-ensemble-runner.md`.
+`createTimelineHost` (`src/lib/sim/world/host.ts`) runs the step engine for the simulation: one world under the policy and one under its comparison, both on seed 1 (`SEED`, `runner/ensemble.ts`), advanced one month at a time ahead of the viewer, posting what is final, and resuming from an edit's month. Spec `docs/superpowers/specs/2026-11-13-ensemble-runner-design.md`; plan `docs/superpowers/plans/2026-11-13-ensemble-runner.md`.
 
 | File                                   | Holds                                                                                                          |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -39,7 +39,7 @@ A compile is stalled (it waits for `chunkArrived`) only when `step` returned fal
 
 ### The world core and the car system
 
-Both ensembles step with the dataset's world core, `Dataset.core = withFunding(createFundingSystem(), cars)`, built once per dataset load (`loadDataset`): `cars` is `Dataset.cars = carSystemOf(loaded, { off })` (`world/cars/dataset.ts`), which needs cars.bin (`Loaded.cars`, fetched only when the manifest names `scenarios.fzp.cars`; `car-zones.json` is the page's) and `calibration.cars`, and is null otherwise: an older dataset runs as before, `cars: null` in every chunk. Both worlds run on seed 1, so the comparison's twin pairing holds; the parking link is on iff the model's `parking.costPerSpace` is set. `TimelineHostDeps.cars: 'off'` (`level2-check --cars off`) loads no cars.bin and builds no system.
+Both ensembles step with the dataset's world core, `Dataset.core = withFunding(createFundingSystem(), cars)`, built once per dataset load (`loadDataset`): `cars` is `Dataset.cars = carSystemOf(loaded, { off })` (`world/cars/dataset.ts`), which needs cars.bin (`Loaded.cars`, fetched only when the manifest names `scenarios.fzp.cars`; `car-zones.json` is the page's) and `calibration.cars`, and is null otherwise: an older dataset runs as before, `cars: null` in every chunk. Both worlds run on seed 1, so the comparison's twin pairing holds; the parking link is on iff the model's `parking.costPerSpace` is set. `TimelineHostDeps.cars: 'off'` (`reach-check --cars off`) loads no cars.bin and builds no system.
 
 ### Finality and posting
 
@@ -103,7 +103,7 @@ A consumer applies `filled` and `refill` in order (`refill` withdraws every mont
 
 ## Decisions
 
-- **D1** No hashed file changed: `runner/dataset.ts` and `runner/lookups.ts` compose exported functions; the old host's copy goes when `timeline-ui` switches `/sim`.
+- **D1** No hashed file changed: `runner/dataset.ts` and `runner/lookups.ts` compose exported functions; the old host's copy goes when `timeline-ui` switched the simulation.
 - **D2** Series wait for their `ScoreStatics` (buffered feed logs).
 - **D3** Each ensemble's series use its own `ScoreStatics`; `compiled` carries the plan's.
 - **D4** A comparison `comparisonOf` gives unchanged is not recompiled; its world stays.
@@ -130,7 +130,7 @@ Lines of `src/lib/sim/scenario/scenario-host.ts` each new file mirrors, so `time
 
 ## Timings
 
-History: taken 2026-11-10 with 48 + 48 worlds; `/sim` now steps one world per side. The figures below are that run's.
+History: taken 2026-11-10 with 48 + 48 worlds; the simulation now steps one world per side. The figures below are that run's.
 
 Live 2026-11-10-6ee5a23d (155,020 parcels, gross table, baseline money 8 pools), 48 + 48 worlds, 480 months, Apple M5 Pro, Node 24.2. All quiet (lock held). "Task 1" rows are the prototype bundled (minified, no keepNames) after the planning memo (`measure-1.md` §§11, 12); "host" rows go through `createTimelineHost`, under Vitest (`host.perf.spec.ts`) and bundled (`ensemble-measure.ts --case host`).
 

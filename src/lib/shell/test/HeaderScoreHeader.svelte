@@ -40,5 +40,5 @@
   />
 {/snippet}
 
-<SiteHeader routeId="/sim" {actions} {pinned} {status} {user} />
+<SiteHeader routeId="/" {actions} {pinned} {status} {user} />
 <div data-testid="outside" style="height: 400px">Map</div>

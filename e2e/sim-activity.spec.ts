@@ -1,4 +1,4 @@
-// /sim's Activity (timeline-ui, "Activity"): the detail column at rest from md, reached from
+// The simulation's Activity (the open game at `/`; timeline-ui, "Activity"): the detail column at rest from md, reached from
 // Details' button in the phone sheet. At today it names the goal and offers three starter policies
 // that add as the "+" menu does; after Play it shows the totals so far, agreeing with the header.
 // Empty kinds say what "+" adds. axe in light and dark at both widths. fixture-0, the VITE_E2E
@@ -19,7 +19,7 @@ async function gotoSim(
     reducedMotion: opts.motion ?? 'reduce',
     colorScheme: opts.colorScheme ?? 'light'
   });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
 }
@@ -231,12 +231,15 @@ test('a transit rule from today: a listed project under it carries the mark', as
   await expect(item.locator('.sr-only')).toHaveText('Under your policy');
 });
 
-/** A client navigation to /sim from /about, so the browser fetches what a route can fail. */
+/**
+ * A client navigation to the simulation (the open game at `/`) from /about by the site name, so
+ * the browser fetches what a route can fail.
+ */
 async function simFromAbout(page: Page): Promise<void> {
   await gotoHydrated(page, '/about');
   await openHeaderMenu(page);
-  await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
-  await expect(page).toHaveURL(/\/sim$/);
+  await page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
 }
 const radius = (loc: Locator) =>
   loc.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
@@ -253,12 +256,7 @@ test('the no-scenario message is a card; a load failure is a chip with Retry', a
   await expect(status).toContainText("isn't available for dataset fixture-0");
   await expect(status).toHaveAttribute('data-shape', 'card');
   expect(await radius(status)).toBe(8);
-  // The link sits under the words.
-  const link = status.getByRole('link', { name: 'Go to the editor' });
-  const words = status.getByText(/isn't available/);
-  expect((await link.boundingBox())!.y).toBeGreaterThanOrEqual(
-    (await words.boundingBox())!.y + (await words.boundingBox())!.height
-  );
+  await expect(status.getByRole('link')).toHaveCount(0);
 
   await page.unroute('**/manifest.json');
   await page.route('**/scenarios/fzp/calibration.json', (route) => route.fulfill({ status: 500 }));

@@ -18,11 +18,12 @@ export function chunkOf(
       throw new Error(`world-score: month ${through} is not final (${s.finalThrough()})`);
     }
   }
-  // The plan world's money and tiers (rule 9); read first, so a series without extras throws
-  // before any work.
+  // The plan world's money, tiers and waiting (rule 9); read first, so a series without extras
+  // throws before any work.
   const extras = money === null ? null : extrasOf(plan);
   const moneyRows = extras === null ? null : moneyRowsOf(money!, extras, from, through);
   const tiers = extras === null ? null : extras.tiers(from, through);
+  const waiting = extras === null ? null : extras.waiting(money!.world, from, through);
 
   const cars = carRowsOf(plan, from, through);
 
@@ -32,5 +33,5 @@ export function chunkOf(
     entitledNew: r.entitledNew - twinRows[i].entitledNew,
     completedNetNew: r.completedNetNew - twinRows[i].completedNetNew
   }));
-  return { from, rows, planEffect, money: moneyRows, tiers, cars };
+  return { from, rows, planEffect, money: moneyRows, tiers, cars, waiting };
 }

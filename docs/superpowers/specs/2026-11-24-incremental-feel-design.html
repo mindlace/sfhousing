@@ -1,0 +1,434 @@
+<article>
+  <header>
+    <h1>Making the game play like an incremental game</h1>
+    <p>A comparison of the game with Nodebuster and A Game About Feeding a Black Hole, and a proposal to rebuild its loop around short runs, a currency and a tree of small policy pieces.</p>
+  </header>
+
+  <section id="sec-status">
+    <h2>Status</h2>
+    <aside data-kind="note"><strong>Note</strong> Approved on 2026-11-24 (P12). Nothing is built. Approach B is chosen (see <a href="#sec-approaches">Approaches</a>). The calls I made from your rulings are listed in <a href="#sec-questions">Calls to check</a>. Numbers marked "estimate" or "to measure" are not measured yet.</aside>
+  </section>
+
+  <section id="sec-intent">
+    <h2>Intent</h2>
+    <aside data-kind="decision" id="p1"><strong>Partner: P1, still a simulation</strong> "I don't want to go so far as to make this deviate from being a simulation and forecasting tool, i'm just trying to make it engaging to go further in what you can do, and space out the learning curve."</aside>
+    <aside data-kind="decision" id="p2"><strong>Partner: P2, goals are called out</strong> "It doesn't call out your goals the way incrementals do."</aside>
+    <aside data-kind="decision" id="p3"><strong>Partner: P3, length comes from levers</strong> "The relative brevity is something we can address with more policy levers and e.g. the car-ownership simulation the fewer-cars agent is working on."</aside>
+    <aside data-kind="decision" id="p5"><strong>Partner: P5, one game</strong> "It is inane that paint and simulate are two tabs, it's one game."</aside>
+    <aside data-kind="decision" id="p6"><strong>Partner: P6, the goal is in the header</strong> "A." (of the two placements in the mockups)</aside>
+    <aside data-kind="decision" id="p7"><strong>Partner: P7, the tree is between runs</strong> "The tree only appears between runs, like in an incremental game, doesn't need to be in the menu."</aside>
+    <aside data-kind="decision" id="p8"><strong>Partner: P8, the name</strong> "We should change the name to 'SF Housing'."</aside>
+    <aside data-kind="decision" id="p9"><strong>Partner: P9, units are collected</strong> "There are plenty of games that give you 'points' that you can only spend if you collect them. The housing should be like that - all housing units count to the sim outcome, but you only get units to spend in the tree from whatever you collected. i.e. the units you get &amp; the spend of those units is disjoint from the sim, but derived from it."</aside>
+    <aside data-kind="decision" id="p10"><strong>Partner: P10, affordable units come next</strong> "As soon as we're done with this first round I'm going to want to make affordable housing unit 'coins' either worth more than base coins or a secondary currency that gates higher unlocks."</aside>
+    <aside data-kind="decision" id="p11"><strong>Partner: P11, paint is the opening only</strong> "I don't want paint to recur. It exists at the beginning to give you a sense of what has to get built in getting to the goal. There's no way to allow painting in later stages without fundamentally disrupting the idea this is a simulator that has some fidelity to the original." Then: "some fidelity to reality, that is."</aside>
+    <aside data-kind="decision" id="p12"><strong>Partner: P12, a purchase can be switched off; approval</strong> "Purchase takes effect at once but should be disable-able if the user wants. Go ahead."</aside>
+    <p>So the game layer has two jobs: give the player a reason to go one step further, and hand over the tool one lever at a time. It never changes what the simulation forecasts, and it never takes the forecasting tool away.</p>
+    <ul>
+      <li><strong>Goals:</strong> the next goal, how far off it is and what it unlocks are always on screen.</li>
+      <li><strong>Non-goals:</strong> a long game from the levers that exist today; the genre's spectacle for its own sake.</li>
+      <li><strong>Anti-goals:</strong> a result that depends on anything but the player's policy; an editor or forecast the player cannot reach once they have unlocked it; a tree that is one forced order.</li>
+    </ul>
+  </section>
+
+  <section id="sec-finding">
+    <h2>Finding</h2>
+    <p>The game today is a policy editor behind four gates. The reference games are built from five things: hands that stay busy, a run that ends in a tally, a currency, a large tree of small upgrades, and feedback on every action. The game has none of the five after level 1. What it calls incremental is the order in which editors unlock.</p>
+    <p>The game does have the raw material. A simulated run already lasts about as long as a run in those games. The map already shows projects moving through stages. Nothing is ever lost. The policy levers can be cut into many small pieces, each a real rule with a source.</p>
+  </section>
+
+  <section id="sec-reference">
+    <h2>The reference games</h2>
+    <p>Both games run the same loop. The player sweeps the cursor over targets for a short run, earns a currency, and spends it between runs in a large tree. Everything bought is kept. The game ends after a few hours.</p>
+    <table id="tbl-reference">
+      <caption>The two games side by side</caption>
+      <thead>
+        <tr><th scope="col">Property</th><th scope="col">Nodebuster</th><th scope="col">A Game About Feeding a Black Hole</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Hands</th><td>Move the cursor; its attack area fires on its own. No clicking.</td><td>Hover over asteroids to break them. No clicking.</td></tr>
+        <tr><th scope="row">What ends a run</th><td>Health runs out. It drains over time, faster the longer the run.</td><td>A timer. Upgrades lengthen it.</td></tr>
+        <tr><th scope="row">Run length</th><td>Tens of seconds early on (inferred; no source gives a figure).</td><td>About 10 to 30 seconds at the start (inferred).</td></tr>
+        <tr><th scope="row">Currencies</th><td>About six, each arriving with a new enemy or tab.</td><td>One. The hole's mass is a milestone track.</td></tr>
+        <tr><th scope="row">Tree</th><td>Roughly 90 to 100 nodes, most with several levels (count from a weak source).</td><td>"Over 200 upgrades" in one tree.</td></tr>
+        <tr><th scope="row">What upgrades change</th><td>New things on the field: bombs, chain lightning, drones, auto-collect.</td><td>New things on the field: electric and radioactive asteroids, moons, planets. Many others are plain numbers.</td></tr>
+        <tr><th scope="row">Automation</th><td>Drones, auto-collect, a mine. Late play is close to idle.</td><td>Little. Chain reactions do some of the work.</td></tr>
+        <tr><th scope="row">Milestones</th><td>A boss per prestige level; beating it opens a harder, better-paying level.</td><td>The hole grows at mass milestones until it fills the screen.</td></tr>
+        <tr><th scope="row">Losing</th><td>A run ends on death; everything earned is kept.</td><td>Cannot lose.</td></tr>
+        <tr><th scope="row">Length</th><td>About 3 to 4.5 hours to a stated ending.</td><td>About 2 hours to a stated ending.</td></tr>
+        <tr><th scope="row">Main complaints</th><td>Late game is an idle grind; flashing strains the eyes.</td><td>Costs force one order of purchase: "could have been a button that says 'Unlock next upgrade'".</td></tr>
+      </tbody>
+    </table>
+    <p>The complaints matter as much as the praise. A tree whose order is forced reads as a single "next" button, and heavy flashing shuts people out.</p>
+  </section>
+
+  <section id="sec-today">
+    <h2>The game today</h2>
+    <ul>
+      <li><strong>Level 1</strong> is painting. The player sweeps a brush over the map until "Room for N homes" reaches 82,069. This is the one part that already plays like the reference games: the hands move and a number rises under them.</li>
+      <li><strong>Levels 2 to 5</strong> are one loop. The player edits a policy, waits about 2 to 4 seconds for "Updating", then watches up to about 38 seconds of playback (about 13 at 3×; both estimates) to see whether the goal month is earlier than the one banked at the level before.</li>
+      <li><strong>Nothing is earned or spent.</strong> There is no resource, upgrade or multiplier. The player carries forward the policy and one banked month per level.</li>
+      <li><strong>There are four unlocks</strong> in a fixed order: the simulation, Permitting, Zoning, Public money. Each opens a whole editor at once.</li>
+      <li><strong>A run that falls short gives nothing.</strong> The page says "Goal reached in Mar 2058. Beat Jun 2057 to level up."</li>
+      <li><strong>A win is quiet.</strong> A small card opens. The app has no sound and almost no motion.</li>
+      <li><strong>The round ends</strong> at level 5 with "Round complete" and a line about what is coming next. A first play-through takes roughly 5 to 20 minutes (estimate).</li>
+      <li><strong>The earlier design set no feel targets.</strong> Its goal was "A person starts weak and gets stronger, one unlock per win". It has no pacing, growth or resource targets.</li>
+    </ul>
+    <figure id="fig-loop-today">
+      <svg class="diagram" viewBox="0 0 760 130" role="img" aria-labelledby="fig-loop-today-t">
+        <title id="fig-loop-today-t">The loop at levels 2 to 5 today</title>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+        <g class="node" id="n-today-edit"><rect x="10" y="20" width="130" height="44"/><text x="75" y="42">Edit a form</text></g>
+        <g class="node muted" id="n-today-wait"><rect x="165" y="20" width="130" height="44"/><text x="230" y="42">Updating, 2 to 4 s</text></g>
+        <g class="node" id="n-today-watch"><rect x="320" y="20" width="130" height="44"/><text x="385" y="42">Watch, 13 to 38 s</text></g>
+        <g class="node" id="n-today-check"><rect x="475" y="20" width="130" height="44"/><text x="540" y="42">Earlier month?</text></g>
+        <g class="node result" id="n-today-level"><rect x="630" y="20" width="120" height="44"/><text x="690" y="42">Level up, 4 times</text></g>
+        <g class="edge" data-from="n-today-edit" data-to="n-today-wait"><path d="M140 42H163"/></g>
+        <g class="edge" data-from="n-today-wait" data-to="n-today-watch"><path d="M295 42H318"/></g>
+        <g class="edge" data-from="n-today-watch" data-to="n-today-check"><path d="M450 42H473"/></g>
+        <g class="edge" data-from="n-today-check" data-to="n-today-level"><path d="M605 42H628"/><text x="616" y="34">yes</text></g>
+        <g class="edge" data-from="n-today-check" data-to="n-today-edit"><path d="M540 64V100H75V66"/><text x="307" y="116">no: nothing is gained</text></g>
+      </svg>
+      <figcaption>Figure 1. Today's loop. The only reward is passing a gate, and there are four gates.</figcaption>
+    </figure>
+  </section>
+
+  <section id="sec-compare">
+    <h2>Comparison</h2>
+    <table id="tbl-compare">
+      <caption>Where the game departs from the two reference games</caption>
+      <thead>
+        <tr><th scope="col">Property</th><th scope="col">Reference games</th><th scope="col">The game today</th><th scope="col">Gap</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Hands</th><td>Sweep the cursor for the whole run.</td><td>Level 1: sweep a brush. After that: fill in a form, then watch.</td><td>The hands stop at level 2.</td></tr>
+        <tr><th scope="row">Run</th><td>Seconds to a minute or two, ends on a cap, then a summary.</td><td>13 to 38 seconds of playback that can be skipped by dragging the ruler. No summary.</td><td>The length is right. Nothing happens in it or after it.</td></tr>
+        <tr><th scope="row">Goals</th><td>The next milestone, the distance to it and its reward are on the play screen all the time: the hole's mass track, Nodebuster's boss and its milestones tab.</td><td>The goal is a line in the header. The bar to beat appears only as a notice after a miss. What comes next is behind the level cell.</td><td>The player is not told what they are working toward or what it will give them.</td></tr>
+        <tr><th scope="row">Earn and spend</th><td>Every run pays. The player buys after almost every run.</td><td>Nothing is earned or spent.</td><td>There is no economy.</td></tr>
+        <tr><th scope="row">Upgrades</th><td>One tree of about 100 to 200 small steps.</td><td>Four unlocks, each a whole editor.</td><td>Four large steps instead of a hundred small ones, and no choice.</td></tr>
+        <tr><th scope="row">Growth</th><td>Numbers multiply; the player ends overpowered.</td><td>The goal month moves earlier by months. The bar is one month.</td><td>The number that matters barely moves, and it moves down.</td></tr>
+        <tr><th scope="row">What an upgrade changes</th><td>The field: new things appear and act.</td><td>The side panel: a new editor row.</td><td>An unlock is not seen on the map.</td></tr>
+        <tr><th scope="row">Feedback</th><td>Particles, sound, pop-ups on every hit.</td><td>No sound, no transitions; numbers dim while updating.</td><td>None.</td></tr>
+        <tr><th scope="row">Delay after acting</th><td>None.</td><td>2 to 4 seconds, then a replay.</td><td>Cause and effect are seconds apart.</td></tr>
+        <tr><th scope="row">Automation</th><td>What was done by hand becomes automatic.</td><td>Nothing is done by hand.</td><td>Absent.</td></tr>
+        <tr><th scope="row">A run that falls short</th><td>Still pays.</td><td>Pays nothing.</td><td>Attempts are wasted.</td></tr>
+        <tr><th scope="row">Reading</th><td>A node name and a cost.</td><td>From level 3: route timelines, shares that sum to 100, provenance lines.</td><td>The player reads before acting.</td></tr>
+        <tr><th scope="row">Ending</th><td>A stated ending after 2 to 4 hours.</td><td>"Round complete" after minutes.</td><td>No ending.</td></tr>
+      </tbody>
+    </table>
+    <section id="sec-fits">
+      <h3>What already fits</h3>
+      <ul>
+        <li>Nothing is lost between attempts, and the player cannot fail.</li>
+        <li>A simulated run is already 13 to 38 seconds long.</li>
+        <li>The map is a field with targets: projects show progress bars, and a new project on a lot the player rezoned, or one funded by money the player added, carries a diamond.</li>
+        <li>Paint's brush is a cursor that acts by sweeping.</li>
+        <li>There is a long way to go and it is real: current law reaches 82,069 homes around 2065.</li>
+        <li>One future means the same choices always give the same result, so pacing can be computed instead of guessed.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <section id="sec-approach-a">
+      <h3>A. More rungs and feedback</h3>
+      <p>Keep the five levels and the editors. Cut each editor's unlock into ten or so smaller unlocks handed out in a fixed order, add a tally after each playback, and add motion and sound.</p>
+      <p><strong>Trade-off:</strong> the cheapest of the three. It fixes the silence and the all-at-once editors. It adds no economy, no choice and nothing for the hands, so it reproduces the Black Hole game's main complaint (a "next upgrade" button) without that game's play.</p>
+    </section>
+    <section id="sec-approach-b">
+      <h3>B. Runs, units and a tree (chosen)</h3>
+      <p>Replace levels 2 to 5 with a loop: a run of about 20 seconds, a tally, a tree. Runs pay a currency. The tree's nodes are small pieces of real policy. During a run the player sweeps the map to collect from projects their policy produced. The simulation is unchanged: the hands affect what the player earns, never what gets built.</p>
+      <p><strong>Trade-off:</strong> it has all five things the reference games are built from, and it keeps the claim "this policy gives this result" exact. The cursor collects; it does not cause. That is thinner than the reference games, where the cursor does the damage.</p>
+    </section>
+    <section id="sec-approach-c">
+      <h3>C. Hands in the city</h3>
+      <p>B, and the cursor also acts inside the simulation: hovering over a project in permitting moves it along, as case-by-case approval. By-right approval in the tree then does automatically what the player did by hand, which is the genre's automation arc and also the policy lesson.</p>
+      <p><strong>Trade-off:</strong> the closest to the reference games and the strongest teaching arc. It needs the simulation to step live with input instead of forecasting and replaying, and a result then depends on the player's hands as well as their policy, which changes what a published policy can claim.</p>
+    </section>
+    <aside data-kind="decision" id="p4"><strong>Partner: P4, approach B</strong> "B sounds good." I recommended B because it is the smallest build that changes what kind of game this is while leaving the model's honesty alone. With P1, approach C is out: the player's hands never change what gets built.</aside>
+  </section>
+
+  <section id="sec-proposal">
+    <h2>The proposal (approach B)</h2>
+    <figure id="fig-loop-proposed">
+      <svg class="diagram" viewBox="0 0 760 130" role="img" aria-labelledby="fig-loop-proposed-t">
+        <title id="fig-loop-proposed-t">The proposed loop: run, tally, tree</title>
+        <g class="node" id="n-run"><rect x="10" y="30" width="150" height="44"/><text x="85" y="52">Run, about 20 s</text></g>
+        <g class="node" id="n-tally"><rect x="200" y="30" width="150" height="44"/><text x="275" y="52">Tally</text></g>
+        <g class="node" id="n-tree"><rect x="390" y="30" width="150" height="44"/><text x="465" y="52">Tree: buy pieces</text></g>
+        <g class="node result" id="n-deadline"><rect x="580" y="30" width="170" height="44"/><text x="665" y="52">The deadline moves in</text></g>
+        <g class="edge" data-from="n-run" data-to="n-tally"><path d="M160 52H198"/></g>
+        <g class="edge" data-from="n-tally" data-to="n-tree"><path d="M350 52H388"/><text x="369" y="44">units</text></g>
+        <g class="edge" data-from="n-tree" data-to="n-run"><path d="M465 74V108H85V76"/><text x="275" y="124">every run pays</text></g>
+        <g class="edge" data-from="n-tally" data-to="n-deadline"><path d="M275 30V10H665V28"/><text x="470" y="22">goal met</text></g>
+      </svg>
+      <figcaption>Figure 2. The proposed loop. A turn takes under a minute and always ends in a purchase or progress toward one.</figcaption>
+    </figure>
+    <aside data-kind="note"><strong>Note</strong> B as first written paid only for projects the player's policy caused. The engine cannot say which those are: the diamond marks only new projects on rezoned lots or with added money, and a permitting change marks nothing. P9 removes the need. Every completing home can be collected, whatever caused it, so the game layer reads completions from the forecast and asks the engine for nothing new.</aside>
+
+    <section id="sec-one-game">
+      <h3>One game on one page</h3>
+      <ul>
+        <li>There is one page and one map (P5). The header's two steps, "1 Paint" and "2 Simulate", go. The old addresses keep working.</li>
+        <li>The page has two states. In a <strong>run</strong> it shows the map, the goal and the clock. <strong>Between runs</strong> it shows the tally, then the tree (P7).</li>
+        <li>A new game opens with the brush. The first goal is room for 82,069 homes, as level 1 is today. It shows the player how much has to be built to reach the goal (P11). Meeting it starts the first run.</li>
+        <li>The brush does not come back (P11). What was painted never enters the simulation, as ruled before, and no later stage offers painting.</li>
+        <li>The editors and the timeline open from the tree: a bought node opens its lever's editor, and the forecast can be scrubbed from there (P1).</li>
+      </ul>
+    </section>
+
+    <section id="sec-run">
+      <h3>The run</h3>
+      <ul>
+        <li>A run is Play from today to the current deadline under the player's policy. It takes about 20 seconds whatever the deadline.</li>
+        <li>The timeline stays. Before and after a run the player can drag the ruler through the forecast as they do today. Only a played run pays.</li>
+        <li>The whole city is in view. Projects appear, move through their stages and complete, as the map shows today.</li>
+        <li>A completing project pops: the building rises and it leaves a drop worth its homes. Projects that carry the diamond pop in the policy's colour.</li>
+        <li>Every completed home counts toward the goal, collected or not. The goal's bar fills as homes complete.</li>
+        <li>The player sweeps the cursor over a drop to collect it. A drop that is not collected fades after a few seconds, as coins do in games that spit them out. Only collected homes become units to spend (P9).</li>
+        <li>The view is fixed on the whole city during a run, so on touch a drag sweeps instead of panning.</li>
+        <li>The run ends at the deadline. Nothing the player does in a run changes what gets built.</li>
+      </ul>
+    </section>
+
+    <section id="sec-goal-callout">
+      <h3>Goals called out</h3>
+      <p>The reference games keep the next milestone and its reward in front of the player all the time. The game does the same in four places (P2):</p>
+      <ul>
+        <li><strong>The goal, in the header (P6).</strong> The pinned headline becomes the goal: line 1 "61,400 of 82,069 homes by 2055", line 2 a bar and what meeting it unlocks. It is there in both states of the page, and the bar fills through a run.</li>
+        <li><strong>Side goals.</strong> Three or so smaller goals at a time, each a real quantity from the simulation with a reward in units: "1,000 homes added", "A project approved inside a year", "500 affordable homes funded". Each one points at something the player has not tried, so they carry the learning curve. They sit behind a tap on the goal, with a mark on it when one is met.</li>
+        <li><strong>The next purchase.</strong> In the tree, a node the player can afford stands out, and one they cannot yet afford shows how far off it is.</li>
+        <li><strong>The tally.</strong> It restates the distance to the goal and the change since the last run.</li>
+      </ul>
+      <p>Meeting the goal is the one loud moment in the game: see <a href="#sec-feedback">Feedback</a>.</p>
+    </section>
+
+    <section id="sec-tally">
+      <h3>The tally</h3>
+      <p>A card after every run, with three things:</p>
+      <ul>
+        <li><strong>Homes by the deadline</strong> against the goal, as a bar, with the change from the last run.</li>
+        <li><strong>Units collected</strong> this run, out of the homes completed.</li>
+        <li><strong>Where homes stand at the deadline:</strong> homes in each permitting stage and homes waiting for money. This tells the player what to buy next, and it is the lesson: the bottleneck moves.</li>
+      </ul>
+      <p>The tally shows only what the engine measures. Homes in each stage are in the series today. Homes waiting for money are in the funding line and have to be added to the series. The engine has no count of homes waiting on room or on the market (new projects start from per-lot odds), so the tally has no such rows.</p>
+      <p>One button leads on to the tree. Run is on the tree.</p>
+    </section>
+
+    <section id="sec-support">
+      <h3>Units</h3>
+      <ul>
+        <li>One currency: housing units the player has collected (P9). It buys nodes in the tree.</li>
+        <li>The two ledgers are separate. The simulation's outcome counts every home. The player's balance counts only what they collected, and spending it changes nothing in the simulation except through the lever bought.</li>
+        <li>Every run pays, the first one under current law included, because every completing home can be collected whatever caused it.</li>
+        <li>Growth comes from two sides: policy puts more homes on the map by the deadline, and the Hands nodes let the player collect more of them. Early on the cursor reaches a small share of the drops.</li>
+        <li>Each goal met and each side goal met pays a lump of units.</li>
+        <li>Units are separate from public money. Dollars stay inside the simulation with their sources and limits.</li>
+      </ul>
+      <section id="sec-affordable-room">
+        <h4>Room for affordable units (P10)</h4>
+        <p>The first round has one currency and every home is worth one unit. It is built so that either of the two later forms is a change of numbers and data, with no change to saved games or to the rules:</p>
+        <ul>
+          <li>A drop carries its project's homes by income tier. The engine already splits a completing project's homes by tier (<code>tiersOf</code>).</li>
+          <li>The player's ledger keeps what was collected by tier, even while the header shows one total.</li>
+          <li>A node's price is a list of amounts by kind of unit. In the first round every price names one kind.</li>
+          <li>What a tier's unit is worth is one table. "Worth more" is a change to that table; "a second currency" is a second kind in a price and a second count in the header.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-tree">
+      <h3>The tree</h3>
+      <p>The tree is the map of the tool. A node is one of two kinds. A <strong>preset or measure</strong> is a sourced rule the app offers today, such as the SB 423 approval clock or the housing bond; buying it turns it on. A <strong>step</strong> widens what the player may set, such as a stop type, a second distance band or a higher height cap; buying it opens the step and sets the lever to it. Either way the purchase shows in the next run and the lever appears in the editors, where the player can change it within what they have bought (P1). The editors show only what is bought, so the forms grow one lever at a time.</p>
+      <p>The player can switch any bought lever off, and on again, from its node or its editor (P12). Switching off refunds nothing and the node stays bought.</p>
+      <p>Heights and dates are the player's choices, so steps in them need no source. Clocks keep their sourced floors. A measure starts on its own lawful date, shown on the node, and not always today.</p>
+      <p>A lever that only takes homes away (the three protections, the state and federal off switches) costs nothing and appears in the editors when its branch opens.</p>
+      <p>The tree is the screen between runs and nowhere else: it has no button in the header or the Menu (P7). It holds Run. A bought node opens its lever's editor.</p>
+      <p>Nodes are revealed by adjacency: buying one shows its neighbours. A node shows a name, one line and a cost; its source is one tap away.</p>
+      <p>The tree is a catalogue that subsystems add to. A new lever or a new part of the model, such as the car-ownership simulation in progress, arrives as a branch of nodes without a change to the game's rules (P3).</p>
+      <table id="tbl-branches">
+        <caption>Branches and where their nodes come from</caption>
+        <thead>
+          <tr><th scope="col">Branch</th><th scope="col">Nodes</th><th scope="col">Source in the code today</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Permitting</th><td>The three presets on offer (SB 423 approval clock, no discretionary review, San Diego's pace), which multiply when stacked; custom timing for each route, down to the sourced floors.</td><td>The permitting presets, floors and evidence. The CEQA infill exemption is not available in the code today.</td></tr>
+          <tr><th scope="row">Zoning</th><td>The transit rule a piece at a time: each of the four stop types, a second and a third distance band, the height cap in steps.</td><td>The transit rule. The painted area is not offered (P11).</td></tr>
+          <tr><th scope="row">Public money</th><td>The measures that add money, about seven of the eleven presets.</td><td>The funding presets level 5 offers.</td></tr>
+          <tr><th scope="row">Hands</th><td>Collect reach; drops that last longer; collecting on its own near the cursor, then everywhere.</td><td>New. Game only: these act on what is collected, never on homes.</td></tr>
+          <tr><th scope="row">Free</th><td>The three protections; the state and federal off switches.</td><td>Exist today. They only take homes away, so they are not purchases.</td></tr>
+          <tr><th scope="row">Later</th><td>Funding rules, market rules, affordability targets, car ownership.</td><td>Designed as levels 6 to 9, or in progress elsewhere; not built.</td></tr>
+        </tbody>
+      </table>
+      <figure id="fig-tree">
+        <svg class="diagram" viewBox="0 0 760 290" role="img" aria-labelledby="fig-tree-t">
+          <title id="fig-tree-t">Sketch of the tree: current law at the centre, four branches, later branches not yet built</title>
+          <g class="node result" id="n-law"><rect x="320" y="123" width="120" height="44"/><text x="380" y="145">Current law</text></g>
+          <g class="node" id="n-permit"><rect x="150" y="60" width="130" height="40"/><text x="215" y="80">Permitting</text></g>
+          <g class="node" id="n-zoning"><rect x="150" y="190" width="130" height="40"/><text x="215" y="210">Zoning</text></g>
+          <g class="node" id="n-money"><rect x="480" y="60" width="130" height="40"/><text x="545" y="80">Public money</text></g>
+          <g class="node" id="n-hands"><rect x="480" y="190" width="130" height="40"/><text x="545" y="210">Hands</text></g>
+          <g class="node muted" id="n-clock"><rect x="10" y="30" width="120" height="36"/><text x="70" y="48">Review clock</text></g>
+          <g class="node muted" id="n-byright"><rect x="10" y="90" width="120" height="36"/><text x="70" y="108">By-right approval</text></g>
+          <g class="node muted" id="n-height"><rect x="10" y="164" width="120" height="36"/><text x="70" y="182">Height near BART</text></g>
+          <g class="node muted" id="n-band"><rect x="10" y="224" width="120" height="36"/><text x="70" y="242">Second band</text></g>
+          <g class="node muted" id="n-bond"><rect x="630" y="30" width="120" height="36"/><text x="690" y="48">Housing bond</text></g>
+          <g class="node muted" id="n-fund"><rect x="630" y="90" width="120" height="36"/><text x="690" y="108">Revolving fund</text></g>
+          <g class="node muted" id="n-reach"><rect x="630" y="164" width="120" height="36"/><text x="690" y="182">Collect reach</text></g>
+          <g class="node muted" id="n-linger"><rect x="630" y="224" width="120" height="36"/><text x="690" y="242">Longer drops</text></g>
+          <g class="node missing" id="n-market"><rect x="320" y="20" width="120" height="36"/><text x="380" y="38">Market rules</text></g>
+          <g class="node missing" id="n-cars"><rect x="320" y="240" width="120" height="36"/><text x="380" y="258">Car ownership</text></g>
+          <g class="edge" data-from="n-law" data-to="n-permit"><path d="M320 135L282 96"/></g>
+          <g class="edge" data-from="n-law" data-to="n-zoning"><path d="M320 155L282 194"/></g>
+          <g class="edge" data-from="n-law" data-to="n-money"><path d="M440 135L478 96"/></g>
+          <g class="edge" data-from="n-law" data-to="n-hands"><path d="M440 155L478 194"/></g>
+          <g class="edge" data-from="n-permit" data-to="n-clock"><path d="M150 72L132 54"/></g>
+          <g class="edge" data-from="n-permit" data-to="n-byright"><path d="M150 88L132 102"/></g>
+          <g class="edge" data-from="n-zoning" data-to="n-height"><path d="M150 202L132 188"/></g>
+          <g class="edge" data-from="n-zoning" data-to="n-band"><path d="M150 218L132 236"/></g>
+          <g class="edge" data-from="n-money" data-to="n-bond"><path d="M610 72L628 54"/></g>
+          <g class="edge" data-from="n-money" data-to="n-fund"><path d="M610 88L628 102"/></g>
+          <g class="edge" data-from="n-hands" data-to="n-reach"><path d="M610 202L628 188"/></g>
+          <g class="edge" data-from="n-hands" data-to="n-linger"><path d="M610 218L628 236"/></g>
+          <g class="edge" data-from="n-law" data-to="n-market"><path d="M380 123V58"/></g>
+          <g class="edge" data-from="n-law" data-to="n-cars"><path d="M380 167V238"/></g>
+        </svg>
+        <figcaption>Figure 3. A sketch of the tree. Dashed nodes are later branches. The real tree has several nodes and levels where the sketch shows one.</figcaption>
+      </figure>
+      <ul>
+        <li><strong>Size:</strong> about 15 to 20 presets and measures, plus the steps; my first estimate of 50 to 80 was too high. The catalogue spec counts it. It grows as levers are added (P3).</li>
+        <li><strong>Choice comes from the model.</strong> Zoning bought while permits are the bottleneck adds little. The tally shows the bottleneck, so the order of purchase is the player's to work out. This is the guard against the forced-order complaint.</li>
+        <li><strong>Costs come from the engine.</strong> Because there is one future, a script can play the tree in many orders against the real simulation and report how long each purchase takes to afford. It has to assume what share of drops a player collects at each step of reach; that share comes from playtests. Costs are set from the report to meet the pacing targets below.</li>
+      </ul>
+    </section>
+
+    <section id="sec-goals">
+      <h3>Goals and the ending</h3>
+      <ul>
+        <li>The goal stays 82,069 homes. What tightens is the deadline. The first deadline is the end of the window, which current law meets, so the first run is a win.</li>
+        <li>Meeting the goal offers the next deadline, some years earlier. Taking it is the player's choice; until then they can keep running and buying. Each new deadline also opens a ring of the tree.</li>
+        <li>After a deadline moves in, homes by the deadline drop below the goal and the player builds them back up. This is the genre's boss and prestige step, made from a real question: how soon?</li>
+        <li>The last deadline is the earliest year the full tree can reach (to measure). The ending names that year beside the state's own, lists the laws the player bought and what they cost in public money per home, and offers to publish the result as a policy.</li>
+        <li>Finishing lifts the last limits on the editors (custom timing, any value). Harder goals such as cheaper housing come later as new rounds.</li>
+      </ul>
+    </section>
+
+    <section id="sec-feedback">
+      <h3>Feedback</h3>
+      <ul>
+        <li>A completing project pops: the building rises, its drop appears, a short sound plays. A collected drop flies to the unit count.</li>
+        <li>The headline count rolls instead of jumping. The goal bar fills through the run.</li>
+        <li>A bought node is seen on the map before the next run: the area it affects lights, or its projects' bars shorten.</li>
+        <li>Meeting a goal gets a real moment: the map holds, the bar completes, the next ring of the tree is revealed.</li>
+        <li>The forecast for the next run starts when a node is bought, while the player is still in the tree, so "Updating" is not seen.</li>
+      </ul>
+    </section>
+
+    <section id="sec-pacing">
+      <h3>Pacing targets</h3>
+      <table id="tbl-pacing">
+        <caption>Targets the build is tuned and tested against</caption>
+        <thead>
+          <tr><th scope="col">Measure</th><th scope="col">Target</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">First purchase</th><td>Within 2 minutes of first load, Paint included</td></tr>
+          <tr><th scope="row">A run</th><td>About 20 seconds</td></tr>
+          <tr><th scope="row">Runs per purchase</th><td>1 early on; never more than 3</td></tr>
+          <tr><th scope="row">Something new on the map</th><td>About every 5 minutes</td></tr>
+          <tr><th scope="row">Deadlines</th><td>Counted from the measured reach; each several purchases apart</td></tr>
+        </tbody>
+      </table>
+      <p>These are my proposals. There is no target for the whole game's length: it follows from the size of the catalogue, perhaps an hour from today's levers, and grows as branches are added (P3).</p>
+    </section>
+
+    <section id="sec-changes">
+      <h3>What changes in the app</h3>
+      <ul>
+        <li><strong>The name</strong> becomes "SF Housing" wherever the site names itself: the header, page titles, About, the documents (P8).</li>
+        <li><strong>Paint and Simulate</strong> become one page (P5). The header's two steps go. Paint is the opening of a new game and nothing else (P11).</li>
+        <li><strong>Levels 3 to 5</strong> and their "beat your previous month" bars go. The level cell in the header becomes the unit count. Saved games move out of the level panel; where to is left to the shell's design.</li>
+        <li><strong>The timeline and the editors</strong> stay (P1). The editors list only the levers bought, and open from the tree.</li>
+        <li><strong>The headline</strong> in the header becomes the goal, with its bar and what it unlocks (P2, P6).</li>
+        <li><strong>Locks</strong> move from level to node: a lever is editable when its node is bought, within the steps bought.</li>
+        <li><strong>Publishing</strong> stays. The player's policy is a policy document as it is today, so Publish works at any point.</li>
+        <li><strong>Saved games</strong> hold the unit balance, the nodes bought and the deadlines met. What happens to games saved under the five levels is left to the design that follows.</li>
+        <li><strong>The reach check</strong> changes its question: the full tree must meet the last deadline, and current law must meet the first.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-rules">
+    <h2>Rules this keeps</h2>
+    <ul>
+      <li><strong>One future.</strong> The same policy always gives the same homes. The hands change the player's units only (P9).</li>
+      <li><strong>Evidence.</strong> A policy node acts on a real lever. No node multiplies homes. Game-only nodes act on collecting.</li>
+      <li><strong>Funding arrives yearly.</strong> Unchanged.</li>
+      <li><strong>Choices carry forward</strong> and moving on is the player's choice, as ruled for the levels.</li>
+      <li><strong>Accessibility.</strong> Everything works from the keyboard: the arrow keys move the collecting ring. A setting collects every drop in view for a player who cannot sweep, at no penalty. Motion follows the reduced-motion setting, nothing flashes more than three times a second, and sound has a mute in the header.</li>
+      <li><strong>Short text.</strong> A node is a name, a line and a cost.</li>
+      <li><strong>Paint never builds on road land.</strong> Unchanged.</li>
+    </ul>
+  </section>
+
+  <section id="sec-measure">
+    <h2>To measure before numbers are fixed</h2>
+    <ol>
+      <li>The earliest year the goal is reached with every existing lever at its strongest. This sets the last deadline and the number of deadlines.</li>
+      <li>Homes completed by each candidate deadline, across purchase orders, and the share of them a player collects at each step of reach. Together these set the cost curve.</li>
+      <li>How long the forecast for one run takes after a purchase, on a phone and a laptop.</li>
+      <li>How many projects complete per second of a run, and the map's frame time with drops on it.</li>
+    </ol>
+  </section>
+
+  <section id="sec-questions">
+    <h2>Calls to check</h2>
+    <p>No decision is open. P1 to P12 settle the questions raised along the way.</p>
+    <p>These are my calls, not things you said. Correct any that are wrong.</p>
+    <ul>
+      <li><strong>Hands never change what gets built.</strong> From P1. Approach C is dropped, and the run is not built to take live input.</li>
+      <li><strong>The timeline and editors stay,</strong> showing only what is bought. From P1. The first draft removed them until the ending.</li>
+      <li><strong>One drop per completing project,</strong> worth its homes, fading after a few seconds.</li>
+      <li><strong>The view is fixed during a run.</strong></li>
+      <li><strong>A setting collects everything for a player who cannot sweep,</strong> at no penalty. Anyone can turn it on.</li>
+      <li><strong>Goals and side goals pay a lump of units</strong> on top of what is collected.</li>
+      <li><strong>Switching a bought lever off refunds nothing,</strong> and it can be switched back on at no cost.</li>
+      <li><strong>Levers that only take homes away are free.</strong></li>
+      <li><strong>Steps in heights and bands need no source;</strong> clocks keep their sourced floors.</li>
+      <li><strong>The painted area leaves the game entirely,</strong> the ending included. From P11. A published policy that already uses one still opens and plays.</li>
+      <li><strong>The editors and the timeline open from the tree,</strong> since the tree is the screen between runs.</li>
+      <li><strong>The name changes on the site and in its documents only.</strong> The repository, the worker and the bucket keep theirs.</li>
+      <li><strong>The tally shows only what the engine measures:</strong> stages and money, not room or market.</li>
+      <li><strong>Sound is on by default</strong> with a mute in the header.</li>
+    </ul>
+  </section>
+
+  <section id="sec-size">
+    <h2>Size</h2>
+    <p>This is a project of several specs: the economy and saved games, the node catalogue and tree, the run and tally screen, feedback (motion and sound), the balance script and reach check, and the shell. It replaces much of the game layer that shipped in the five-level build and keeps accounts, saves, publishing and the engine.</p>
+  </section>
+
+  <section id="sec-out">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>New model features: funding rules, market rules, affordability targets.</li>
+      <li>The cursor acting inside the simulation (approach C).</li>
+      <li>Painting after the opening (P11).</li>
+      <li>Affordable units worth more, or as a second currency (P10). The first round leaves room for both and builds neither.</li>
+      <li>Widening "+N from your policy" to count projects already in the pipeline. The check found it counts new projects only; with P9 the game no longer depends on it.</li>
+      <li>The car-ownership simulation itself. It joins as a branch when it lands.</li>
+      <li>Randomness of any kind.</li>
+      <li>Idle or offline earning.</li>
+    </ul>
+  </section>
+
+  <section id="sec-sources">
+    <h2>Sources</h2>
+    <ul>
+      <li>Nodebuster: <a href="https://store.steampowered.com/app/3107330/Nodebuster/">Steam page</a>, <a href="https://mancunion.com/2025/05/08/nodebuster-review-a-short-and-sweet-incremental-game/">Mancunion review</a>, <a href="https://steamcommunity.com/app/3107330/reviews/?browsefilter=toprated">Steam reviews</a>.</li>
+      <li>A Game About Feeding a Black Hole: <a href="https://store.steampowered.com/app/3694480/">Steam page</a>, <a href="https://aarimous.itch.io/a-game-about-feeding-a-black-hole">itch.io page</a>, <a href="https://adventuregamers.com/article/a-game-about-feeding-black-hole-explained">Adventure Gamers</a>, <a href="https://www.incrementaldb.com/community/review/6827">IncrementalDB review</a>.</li>
+      <li>The game today: <code>docs/dev/game.md</code>, <code>docs/dev/timeline-ui.md</code>, <code>docs/dev/sim-page.md</code>, <code>src/lib/game/</code>, and the earlier design, <code>docs/superpowers/design/2026-11-22-1216-incremental-game.html</code>.</li>
+      <li>Run lengths for both reference games are inferred; no source gives them in seconds. The Nodebuster node count comes from a weak source.</li>
+    </ul>
+  </section>
+</article>

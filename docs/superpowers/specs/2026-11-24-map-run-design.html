@@ -1,0 +1,550 @@
+<article>
+  <header>
+    <h1>Map run view</h1>
+    <p>One handle method fits the map to the whole city, flat and north up, locks it for a run, and puts the camera back afterwards.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>During a run every drop must be on screen and reachable by the collecting ring. The map therefore shows the whole city, flat and north up, and nothing the player does with the pointer, wheel, fingers or keys moves it.</p>
+    <ul>
+      <li>It carries composer call 14: the run view is flat and north up, fitted to the city, so every drop is reachable and nothing hides behind a tower.</li>
+      <li>It carries composer call 19 on the map's side: during a run the map is the flat basemap and the drops; at the fitted zoom existing buildings do not draw and bars are faint or absent (<a href="#sec-design-visible">What shows at the fitted zoom</a>).</li>
+      <li>It carries composer call 13 on the map's side: the map gains only a run view. Drops are drawn by <code>run-play</code> on its own canvas.</li>
+      <li>It produces row M1. It needs no row.</li>
+      <li>It is the second part of one lane with <code>city-net</code>, which writes other lines of <code>src/lib/map/types.ts</code> and <code>docs/dev/map-interfaces.md</code>: <code>city-net</code>, then <code>map-run</code> (design, <code>sec-write-sets</code>).</li>
+      <li>Its only consumer is <code>game-sim</code>, which calls <code>setRunView(true)</code> as a run starts and <code>setRunView(false)</code> when it ends.</li>
+    </ul>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>Produced: M1. Needed: none.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">M1</th><td><code>map-run</code></td><td>Decomposition choice</td><td>The map's run view</td><td><a href="#sec-if-m1">M1</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-m1">
+      <h3>M1 The map's run view</h3>
+      <pre><code data-lang="ts">// src/lib/map/types.ts
+export interface SimMapHandle {
+  // every method it has today, and:
+  setRunView(on: boolean): void;
+}</code></pre>
+      <ul>
+        <li><code>true</code>: the map remembers its camera, jumps to the whole city, flat and north up, and locks.</li>
+        <li>Locked: no drag, wheel, pinch, double click, key or control moves the camera, and the canvas container has <code>touch-action: none</code>.</li>
+        <li>Locked: hover picks, taps and clicks are not made or delivered, and no tooltip or card shows.</li>
+        <li>Locked: the map's bounds and zoom floor are lifted so the city fits a small box. They return at unlock.</li>
+        <li>Locked: a resize or a change of the bottom inset fits again.</li>
+        <li><code>false</code>: the map unlocks and jumps back to the remembered camera.</li>
+        <li>The jump is not animated.</li>
+        <li>A call with the value already in force does nothing.</li>
+        <li>The state survives a remount of the map, as the pan state does.</li>
+        <li>The fit keeps the city inside the map box less the bottom inset.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on branch <code>worktree-incremental-feel</code> at <code>4d22bf96</code>. The <code>contracts</code> unit lands first and adds <code>setRunView?(on: boolean): void</code> to the handle as an optional method, with a body in SimMap that does nothing. The method is optional in the type until this unit makes it required and real, together with the two hand-written handles below.</p>
+    <ul>
+      <li>Two hand-written objects implement <code>SimMapHandle</code> outside SimMap: <code>stub.handle</code> in <code>src/lib/fzp/test/sim-map-stub.ts:155-169</code> and <code>stubHandle</code> in <code>src/lib/brush/test/sim-map-stub.ts:23-37</code>. A grep of <code>src</code> and <code>e2e</code> for objects typed or cast as the handle, and for every other file that names <code>setBarMode</code>, finds no third.</li>
+      <li><code>src/lib/map/SimMap.timeline.svelte.spec.ts</code> casts the component to the handle (<code>:76</code>) and implements nothing.</li>
+    </ul>
+
+    <section id="sec-found-camera">
+      <h3>The camera</h3>
+      <ul>
+        <li><code>CONSTRAINTS</code> is <code>minZoom: 11</code>, <code>maxZoom: 18</code>, <code>maxPitch: 70</code> and <code>maxBounds</code> <code>[[-122.56, 37.69], [-122.33, 37.84]]</code> (<code>src/lib/map/camera.ts:5-13</code>). It is spread into the MapLibre constructor (<code>src/lib/map/SimMap.svelte:603</code>).</li>
+        <li>The default frames are zoom 13, pitch 55, bearing −20 from 640 px wide, and zoom 12.2, pitch 45, bearing −20 below (<code>camera.ts:16-20</code>).</li>
+        <li><code>SF_GRID_BBOX</code> is <code>[-122.5155, 37.708, -122.3549, 37.8324]</code>, "Mainland San Francisco extent ... about 14 x 14 km" (<code>src/lib/transit/grid.ts:41-42</code>). SimMap imports it for the transit access grid (<code>SimMap.svelte:54</code>, <code>:1198</code>).</li>
+        <li>The handle has no method that sets the view. The only camera calls in SimMap are the constructor's initial camera (<code>SimMap.svelte:586</code>, <code>:610</code>) and <code>resetView</code>'s <code>jumpTo(defaultFrame(container.clientWidth))</code> (<code>:1271-1274</code>).</li>
+        <li>MapLibre 6.13's default constraint raises the zoom until <code>maxBounds</code> covers the box less the map's padding in both directions (<code>maplibre-gl-dev.mjs</code>, <code>defaultConstrain</code>, lines 42745-42796 of the installed bundle). Its <code>cameraForBounds</code> subtracts the map's padding and the fit's padding from the box (<code>cameraForBoxAndBearing</code>, line 43442).</li>
+        <li>The basemap is extracted with <code>--maxzoom=15</code> and no minimum zoom (<code>pipeline/sources/protomaps.ts:35-40</code>), so it draws below zoom 11.</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-handlers">
+      <h3>Handlers, controls and touch</h3>
+      <ul>
+        <li><code>setPanEnabled</code> stores <code>panEnabled</code>, clears the tooltip or card when false, and calls <code>applyPan</code> (<code>SimMap.svelte:287-291</code>).</li>
+        <li><code>applyPan</code> enables or disables <code>dragPan</code>, <code>dragRotate</code> and the rotation of <code>touchZoomRotate</code>, and nothing else (<code>:1107-1119</code>). <code>scrollZoom</code>, <code>boxZoom</code>, <code>doubleClickZoom</code>, <code>keyboard</code>, <code>touchPitch</code> and pinch zoom stay at MapLibre's defaults, which are on.</li>
+        <li><code>panEnabled</code> is handle state that outlives a remount (<code>:235</code>); <code>start</code> calls <code>applyPan</code> on every new map (<code>:620</code>).</li>
+        <li>Fine pointers get MapLibre's <code>NavigationControl</code> with compass at the bottom left (<code>:652</code>). Coarse pointers, read once at mount (<code>:584</code>), get a 29 px "Reset view" button instead (<code>:1602-1615</code>).</li>
+        <li>MapLibre's stylesheet sets <code>touch-action</code> on the canvas container from the classes its touch handlers add: <code>pan-x pan-y</code>, <code>pinch-zoom</code> or <code>none</code>. With neither class the container keeps the browser's default, <code>auto</code> (<code>maplibre-gl.css</code>).</li>
+        <li>The brush sets <code>touch-action</code> and <code>cursor</code> on <code>map.getCanvasContainer()</code> as inline styles, <code>''</code> or <code>'none'</code> (<code>src/lib/brush/BrushController.svelte.ts:297-301</code>, <code>:181-182</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-picking">
+      <h3>Picking, tooltips and cards</h3>
+      <ul>
+        <li>Hover picks never read <code>panEnabled</code> (<code>SimMap.svelte:1413-1439</code>). A tap is dropped while <code>panEnabled</code> is false (<code>:1489</code>), and so is a mouse click (<code>:1480</code>).</li>
+        <li><code>movestart</code> closes a tooltip and reports a hover miss; <code>moveend</code> picks again under a resting pointer (<code>:632-641</code>).</li>
+        <li><code>unreportHover</code> sends one <code>{ projectId: null, kind: 'hover' }</code> when the last report was a hit (<code>:1354-1358</code>). <code>clearShown</code> closes the tooltip or card (<code>:1402-1406</code>).</li>
+        <li>deck.gl also picks on its own: the overlay forwards MapLibre's <code>mousemove</code> to deck (<code>@deck.gl/maplibre/dist/overlay.js:242</code>), and the timeline's solid pass has <code>autoHighlight: true</code> (<code>src/lib/map/timeline-controller.ts:735-736</code>). deck's <code>_pickable: false</code> skips every picking pass (<code>@deck.gl/core/dist/lib/deck-picker.js:120-123</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-lifecycle">
+      <h3>Remount and the bottom inset</h3>
+      <ul>
+        <li>A new manifest object tears the map down and builds a new one inside the same component (<code>SimMap.svelte:475-486</code>). Handle state declared at <code>:233-250</code> outlives it.</li>
+        <li>The overlay is made in <code>onLoad</code>, after the map's <code>load</code> (<code>:818-836</code>).</li>
+        <li><code>setBottomInset</code> stores the inset, sets the map's bottom padding and works before the map exists (<code>:293-300</code>). A new map gets the padding at <code>:619</code>.</li>
+        <li>The root is <code>&lt;section data-testid="map-root" data-state=...&gt;</code> (<code>:1511-1521</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-layers">
+      <h3>What draws at low zoom</h3>
+      <ul>
+        <li>The existing-buildings layer has <code>minzoom: 12</code> and opacity 0 at zoom 12 rising to 0.92 at 13 (<code>src/lib/map/style.ts:238-243</code>).</li>
+        <li>A bar's gate is the larger of its mode's gate and its own <code>minZoom</code>; its alpha ramps over the 0.5 zoom below the gate (<code>src/lib/map/timelapse/bars.ts:182-183</code>). The far gate is 12 and the street gate 15 (<code>src/lib/map/timelapse/constants.ts:14</code>, <code>:26</code>).</li>
+        <li>Policy marks below zoom 14 are one per 800 m square (<code>src/lib/map/timelapse/halos.ts:137-139</code>).</li>
+        <li>Rail stops show from zoom 13 and bus stops from 15; regional stops always (<code>style.ts:310-314</code>). Stop tooltips start at zoom 14 (<code>SimMap.svelte:144</code>).</li>
+        <li>Timeline ghosts and solids have no zoom gate (<code>timeline-controller.ts:720-740</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-camera">
+      <h3>The fitted camera</h3>
+      <pre><code data-lang="ts">// src/lib/map/camera.ts (added)
+import { SF_GRID_BBOX } from '$lib/transit/grid';
+
+/** The run view fits this: mainland San Francisco, the transit grid's extent. */
+export const RUN_BOUNDS: BBox = SF_GRID_BBOX;
+/** CSS px kept clear between the city and each side of the box less the bottom inset. */
+export const RUN_PAD_PX = 24;
+/** The lowest zoom the run view jumps to. */
+export const RUN_MIN_ZOOM = 8;
+
+/** The run view's frame for a map box of this size and bottom inset, in CSS px. */
+export function runFrame(widthPx: number, heightPx: number, bottomInset: number): CameraFrame;</code></pre>
+      <dl>
+        <dt><code>RUN_BOUNDS</code></dt><dd>The box the fit keeps on screen.</dd>
+        <dt><code>runFrame</code></dt><dd>A pure function. It needs no map.</dd>
+      </dl>
+      <ul>
+        <li>The free width is <code>widthPx - 2 * RUN_PAD_PX</code>. The free height is <code>heightPx - bottomInset - 2 * RUN_PAD_PX</code>.</li>
+        <li>The bounds' size in world px at zoom 0 is their Web Mercator span times 512, MapLibre's tile size.</li>
+        <li>The zoom is <code>log2</code> of the smaller of free width over the bounds' zoom-0 width and free height over their zoom-0 height.</li>
+        <li>The zoom is never below <code>RUN_MIN_ZOOM</code>. When the free width or height is 0 or less, the zoom is <code>RUN_MIN_ZOOM</code>.</li>
+        <li>The centre is the bounds' centre in Web Mercator, unprojected: <code>[-122.4352, 37.77023]</code> to 5 decimals.</li>
+        <li>The pitch is 0 and the bearing is 0.</li>
+        <li>The map's bottom padding is the inset, so a <code>jumpTo</code> with this centre puts it in the middle of the box less the inset, and the fit is 24 px clear of each of its sides.</li>
+      </ul>
+      <table id="tbl-fit">
+        <caption>The fitted zoom for map boxes the game shows</caption>
+        <thead>
+          <tr><th scope="col">Map box (CSS px)</th><th scope="col">Inset</th><th scope="col">Zoom</th><th scope="col">Ground per px</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">1280 by 744 (desktop, full height)</th><td>0</td><td>11.60</td><td>about 20 m</td></tr>
+          <tr><th scope="row">960 by 752 (<code>/</code>'s box at 1280 by 800)</th><td>0</td><td>11.62</td><td>about 20 m</td></tr>
+          <tr><th scope="row">1280 by 451 (<code>/sim</code> with the timeline docked)</th><td>0</td><td>10.81</td><td>about 34 m</td></tr>
+          <tr><th scope="row">375 by 600 (phone)</th><td>0</td><td>10.48</td><td>about 43 m</td></tr>
+          <tr><th scope="row">100 by 100</th><td>0</td><td>8 (the floor; the fit wants 7.83)</td><td>about 230 m</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The city is about as tall as it is wide, so a landscape box is fitted by its height and a portrait one by its width.</li>
+        <li>Every box above except the desktop full-height ones needs a zoom below <code>CONSTRAINTS.minZoom</code> (11). A phone always does.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-constraints">
+      <h3>Zoom floor and bounds while locked</h3>
+      <ul>
+        <li>While locked the map's minimum zoom is <code>RUN_MIN_ZOOM</code> and it has no <code>maxBounds</code>.</li>
+        <li>Lifting <code>maxBounds</code> is required, not only lowering the minimum zoom. MapLibre raises the zoom until <code>maxBounds</code> covers the whole box. On a 375 by 600 box that is zoom 11.12, where the city is 508 px wide and does not fit.</li>
+        <li>On unlock the minimum zoom is <code>CONSTRAINTS.minZoom</code> again and <code>maxBounds</code> is <code>CONSTRAINTS.maxBounds</code> again.</li>
+        <li>When the fit wants a zoom below <code>RUN_MIN_ZOOM</code>, the map jumps to <code>RUN_MIN_ZOOM</code> at the centre. The city is then wider or taller than the box and its edges are cut. This happens only for a box whose free width is under about 59 px or free height under about 57 px.</li>
+        <li>The maximum zoom and maximum pitch are not changed.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-state">
+      <h3>Handle state</h3>
+      <pre><code data-lang="ts">// SimMap.svelte: handle state that outlives a remount, beside panEnabled
+let runView = $state(false);
+let remembered: CameraFrame | null = null;</code></pre>
+      <dl>
+        <dt><code>runView</code></dt><dd>The value of the last <code>setRunView</code> call; false at mount. Reactive because the markup reads it.</dd>
+        <dt><code>remembered</code></dt><dd>The camera to go back to on unlock: centre, zoom, pitch and bearing. Null while unlocked.</dd>
+      </dl>
+      <ul>
+        <li><code>remembered</code> is taken when the lock first meets a map: at <code>setRunView(true)</code> when a map exists, otherwise when the next map is created.</li>
+        <li>It is read as <code>map.getCenter()</code>, <code>getZoom()</code>, <code>getPitch()</code> and <code>getBearing()</code>. The centre is the centre of the box less the inset, as MapLibre reports it.</li>
+        <li>Once taken it is not replaced until unlock. A remount while locked keeps it.</li>
+        <li>Unlock clears it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-on">
+      <h3><code>setRunView(true)</code></h3>
+      <ol>
+        <li>If <code>runView</code> is already true, return.</li>
+        <li>Set <code>runView</code> to true.</li>
+        <li>Close any tooltip or card (<code>clearShown</code>) and send one hover miss if a hover hit was last reported (<code>unreportHover</code>).</li>
+        <li>Forget the resting pointer and any press in progress: <code>live.pointer</code>, <code>live.tap</code> and <code>live.click</code> become null.</li>
+        <li>If there is no map, stop here. The next map locks itself (see <a href="#sec-design-remount">Remount</a>).</li>
+        <li>Take <code>remembered</code> if it is null.</li>
+        <li>Apply the handlers (<a href="#sec-design-handlers">Handlers</a>).</li>
+        <li><code>map.setMaxBounds(null)</code>, then <code>map.setMinZoom(RUN_MIN_ZOOM)</code>.</li>
+        <li><code>map.jumpTo(runFrame(container.clientWidth, container.clientHeight, bottomInset))</code>.</li>
+        <li>Add the class <code>sim-map-run-locked</code> to <code>map.getCanvasContainer()</code>.</li>
+        <li>If the overlay exists, <code>overlay.setProps({ _pickable: false })</code>.</li>
+      </ol>
+    </section>
+
+    <section id="sec-design-off">
+      <h3><code>setRunView(false)</code></h3>
+      <ol>
+        <li>If <code>runView</code> is already false, return.</li>
+        <li>Set <code>runView</code> to false.</li>
+        <li>If there is no map, set <code>remembered</code> to null and stop. The next map starts at its initial camera, as today.</li>
+        <li>Remove the class <code>sim-map-run-locked</code> from the canvas container.</li>
+        <li>If the overlay exists, <code>overlay.setProps({ _pickable: true })</code>.</li>
+        <li>Apply the handlers.</li>
+        <li><code>map.jumpTo(remembered)</code>.</li>
+        <li><code>map.setMinZoom(CONSTRAINTS.minZoom)</code>, then <code>map.setMaxBounds(CONSTRAINTS.maxBounds)</code>.</li>
+        <li>Set <code>remembered</code> to null.</li>
+      </ol>
+      <ul>
+        <li>The jump comes before the constraints, so a camera that is still lawful lands exactly where it was and the constraints change nothing.</li>
+        <li>If the box was resized or the inset changed while locked, the remembered centre and zoom are kept as they are: the remembered centre sits in the middle of the new box less the new inset, at the remembered zoom, pitch and bearing. The constraints set after the jump then clamp the camera as MapLibre clamps any camera, so a box grown past <code>maxBounds</code> at that zoom gets a higher zoom.</li>
+        <li>No camera is computed from the old box size.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-handlers">
+      <h3>Handlers</h3>
+      <p><code>applyPan</code> becomes <code>applyInteraction</code>, the one function that sets MapLibre's handlers from both switches. <code>setPanEnabled</code>, <code>setRunView</code> and <code>start</code> call it; nothing else touches a handler.</p>
+      <pre><code data-lang="ts">function applyInteraction(): void {
+  const m = live?.map;
+  if (!m) return;
+  if (runView) {
+    m.dragPan.disable();
+    m.dragRotate.disable();
+    m.scrollZoom.disable();
+    m.boxZoom.disable();
+    m.doubleClickZoom.disable();
+    m.keyboard.disable();
+    m.touchZoomRotate.disable();
+    m.touchPitch.disable();
+    return;
+  }
+  m.scrollZoom.enable();
+  m.boxZoom.enable();
+  m.doubleClickZoom.enable();
+  m.keyboard.enable();
+  m.touchZoomRotate.enable();
+  m.touchPitch.enable();
+  if (panEnabled) {
+    m.dragPan.enable();
+    m.dragRotate.enable();
+    m.touchZoomRotate.enableRotation();
+  } else {
+    m.dragPan.disable();
+    m.dragRotate.disable();
+    m.touchZoomRotate.disableRotation();
+  }
+}</code></pre>
+      <ul>
+        <li>Locked, all eight handlers are off, whatever <code>panEnabled</code> is.</li>
+        <li>Unlocked, the five that <code>setPanEnabled</code> never touched are on, which is MapLibre's default and today's state, and the three it owns follow <code>panEnabled</code> as today.</li>
+        <li><code>setPanEnabled</code> while locked stores <code>panEnabled</code> and, when false, closes a tooltip or card, as today. The handlers stay off. The value takes effect at unlock.</li>
+        <li><code>setRunView(false)</code> never turns the pan handlers on while <code>panEnabled</code> is false.</li>
+        <li><code>touchZoomRotate.disable()</code> also stops MapLibre's one-finger tap-and-drag zoom; <code>doubleClickZoom.disable()</code> stops double click and double tap.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-controls">
+      <h3>Controls, touch and cursor while locked</h3>
+      <ul>
+        <li>The root carries <code>data-run-view="on"</code> while <code>runView</code> is true and no such attribute otherwise. It is set from mount, with or without a map.</li>
+        <li>The bottom-left control container is hidden while locked, so the zoom buttons and the compass can be neither seen, pressed nor reached by Tab. Its rule is below.</li>
+        <li>The "Reset view" button is not rendered while locked: its condition becomes <code>coarse &amp;&amp; mapState === 'ready' &amp;&amp; !runView</code>. <code>resetView</code> returns at once while <code>runView</code> is true.</li>
+        <li>The credit stays shown and works as today. It moves no camera.</li>
+        <li>The canvas container gets <code>touch-action: none</code> and <code>cursor: default</code> from the class <code>sim-map-run-locked</code>. A class, not an inline style, so the brush's inline <code>''</code> on the same element cannot undo it.</li>
+        <li>The jumps fire <code>zoomstart</code> with no <code>originalEvent</code>, so they do not collapse the credit.</li>
+      </ul>
+      <pre><code data-lang="css">/* SimMap.svelte &lt;style&gt;, added */
+  .sim-map[data-run-view='on'] :global(.maplibregl-ctrl-bottom-left) {
+    display: none;
+  }
+  .sim-map :global(.maplibregl-canvas-container.sim-map-run-locked) {
+    touch-action: none;
+    cursor: default;
+  }</code></pre>
+    </section>
+
+    <section id="sec-design-picking">
+      <h3>Hover, taps, tooltips and cards while locked</h3>
+      <ul>
+        <li>No hover pick runs. <code>onPointerMove</code> sets <code>live.pointer</code> to null, closes a tooltip, calls <code>unreportHover</code> and returns when <code>runView</code> is true.</li>
+        <li><code>hoverSoon</code>'s frame callback returns without picking when <code>runView</code> is true, so the <code>moveend</code> of the lock's own jump picks nothing.</li>
+        <li><code>onPointerDown</code> records no tap and no click while locked. Touch pointers are still counted.</li>
+        <li><code>onPointerUp</code> delivers nothing while locked. A press that began while locked is never delivered, even if it ends after unlock.</li>
+        <li><code>timelinePick</code> receives nothing while locked except the one hover miss sent at the lock.</li>
+        <li>deck.gl's own picking is off while locked: the overlay has <code>_pickable: false</code>. So no part takes deck's hover highlight, and a pointer moving over the map costs no picking pass.</li>
+        <li>A part highlighted at the moment of the lock keeps deck's highlight until the next pick after unlock. A run starts from a card or button, so the pointer has left the canvas and deck has cleared it before the lock.</li>
+        <li><code>pickAt</code> itself is unchanged. The e2e debug's <code>timelinePartAt</code> finds no part while locked, because deck picks nothing.</li>
+        <li>After unlock, hover picks start at the next pointer move over the canvas.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-refit">
+      <h3>A resize or a new inset while locked</h3>
+      <ul>
+        <li>SimMap listens to the map's <code>resize</code> event from <code>start</code>. While <code>runView</code> is true it jumps to <code>runFrame</code> for the new box.</li>
+        <li><code>setBottomInset</code> while locked sets the padding as today, then jumps to <code>runFrame</code> with the new inset.</li>
+        <li><code>remembered</code> is not changed by either.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-remount">
+      <h3>Remount and calls before the map exists</h3>
+      <ul>
+        <li><code>setRunView</code> before the map exists stores the value and returns. It never throws, in any <code>mapState</code>.</li>
+        <li>In <code>start</code>, where <code>applyPan()</code> is called today, the new map calls <code>applyInteraction()</code>. Then, when <code>runView</code> is true, it takes <code>remembered</code> if it is null, lifts the bounds and floor, jumps to <code>runFrame</code> and adds the container class, as steps 6 to 10 of <a href="#sec-design-on">setRunView(true)</a>.</li>
+        <li>When the map was created locked before any <code>setRunView(true)</code> met a map, <code>remembered</code> is the map's initial camera (the <code>initialFrame</code> prop, the plan fit or the default frame). Unlock goes there.</li>
+        <li>The overlay is made with <code>_pickable: !runView</code>.</li>
+        <li>A remount while locked keeps <code>remembered</code> from the first map, so unlock goes to the camera the player had before the run.</li>
+        <li>An unsupported or failed map stays so. <code>setRunView</code> changes only the stored value and the root's attribute.</li>
+        <li>A new SimMap component starts unlocked, with no remembered camera. The page that mounts it decides whether to lock it.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-events">
+      <h3>Camera events a consumer sees</h3>
+      <ul>
+        <li>Each jump fires MapLibre's <code>movestart</code>, <code>move</code> and <code>moveend</code> once, with no <code>originalEvent</code>.</li>
+        <li>A consumer that follows <code>moveend</code> (<code>SimPage</code>'s <code>readView</code>, <code>src/lib/sim-page/SimPage.svelte:847-852</code>) sees the whole city's bounds at the lock and the remembered view at the unlock.</li>
+        <li><code>map.project</code> during a run gives positions in the fitted camera, so <code>run-play</code>'s <code>project</code> may call it once per frame and cache nothing across a resize.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-visible">
+      <h3>What shows at the fitted zoom</h3>
+      <p>No layer draws anything different in the run view; the timeline is drawn with fewer layers (<a href="#sec-design-merged">The timeline in one pair of layers while locked</a>). The table says what the consumers get, for the desktop fit (about 11.6) and the phone fit (about 10.5), flat and north up.</p>
+      <table id="tbl-visible">
+        <caption>Layers in the run view</caption>
+        <thead>
+          <tr><th scope="col">Thing</th><th scope="col">Desktop, zoom about 11.6</th><th scope="col">Phone, zoom about 10.5</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Basemap: land, water, parks, main roads, place labels</th><td>Yes</td><td>Yes, fewer labels</td></tr>
+          <tr><th scope="row">Existing buildings</th><td>No: the layer starts at zoom 12</td><td>No</td></tr>
+          <tr><th scope="row">Timeline ghosts and solids</th><td>Yes, seen from above; a lot is about 1 px</td><td>Yes; a lot is under 1 px</td></tr>
+          <tr><th scope="row">Bars, far mode</th><td>At most 20% alpha at zoom 11.6, only bars whose gate is 12</td><td>No</td></tr>
+          <tr><th scope="row">Bars, street mode</th><td>No</td><td>No</td></tr>
+          <tr><th scope="row">Policy marks</th><td>Yes, one per 800 m square, about 40 px apart</td><td>Yes, about 19 px apart</td></tr>
+          <tr><th scope="row">Transit access shading, when on</th><td>Yes</td><td>Yes</td></tr>
+          <tr><th scope="row">Regional stops, when on</th><td>Yes</td><td>Yes</td></tr>
+          <tr><th scope="row">Rail and bus stops</th><td>No</td><td>No</td></tr>
+          <tr><th scope="row">Height-limit contours and labels, when on</th><td>Yes, no lids</td><td>Yes, no lids</td></tr>
+          <tr><th scope="row">Tooltips and cards</th><td>No: locked</td><td>No: locked</td></tr>
+          <tr><th scope="row">The credit</th><td>Yes</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>Which timeline cells the map holds at a citywide view is decided by the page's stream, not by this unit.</li>
+        <li>A drop's label point outside <code>RUN_BOUNDS</code> still lands on the map while it is within the 24 px margin: about 480 m at zoom 11.6 and 1 km at zoom 10.5.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-merged">
+      <h3>The timeline in one pair of layers while locked</h3>
+      <p>While the run view is on, the timeline controller draws every cell's parts in one solid layer and one ghost layer, in place of one pair per cell. The run view shows the whole city, so the per-cell pairs (about 124 cells on the live city, four draws each with the extruded sides and tops) would cost about 500 draws a frame, and every frame redraws because the run's clock moves the day.</p>
+      <pre><code data-lang="ts">// src/lib/map/timeline-controller.ts (added)
+/** One merged solid and ghost layer over every cell while on; per-cell layers while off. */
+setMerged(on: boolean): void;</code></pre>
+      <ul>
+        <li><code>SimMap</code>'s <code>setRunView(true)</code> calls <code>setMerged(true)</code> on the timeline controller once the map and controller exist, and <code>setRunView(false)</code> calls <code>setMerged(false)</code>. A controller made while locked starts merged. A call with the value already in force does nothing.</li>
+        <li>Merged, the controller emits <code>timeline-solid-run</code> and <code>timeline-ghost-run</code>: the same <code>SolidPolygonLayer</code> props, <code>TimelapseExtension</code>, uniforms and clock as the per-cell layers, over the cells' binary attributes joined in cell-id order. Bars, marks and the overlay layers follow as they do unmerged, in the same order.</li>
+        <li>The picture is the per-cell layers' picture: same geometry, same parts, same extrusion, and the same two passes in the same order, every solid, then every ghost. The solid pass is the same pixel for pixel, since solids are opaque and write depth. Within the ghost pass the merged layer draws every cell's sides, then every cell's tops, where the per-cell layers draw each cell's sides and tops in turn; ghosts are translucent and write no depth, so where the ghosts of two cells overlap on screen they blend in that other order. At the run view's pitch 0 a side face projects to about one pixel or less, so the difference is confined to slivers of about one pixel where neighbouring cells' ghosts meet. No other pixel differs.</li>
+        <li>Merged layers are not culled per cell; the fitted view holds the whole city, so culling would keep every cell anyway.</li>
+        <li>The joined attributes are built once when merging starts and again after each <code>applyTimeline</code> that changes a cell while merged. A <code>setTime</code> joins nothing.</li>
+        <li>Unmerged, the controller emits per-cell layers exactly as it does with no run view, so per-cell picking and culling work as before. A cell update while merged is held in the per-cell state too, so unmerging needs no rebuild of a cell.</li>
+        <li>Picking is off while locked (<a href="#sec-design-picking">Hover, taps, tooltips and cards</a>), so a merged layer never answers a pick, and <code>TIMELINE_PART_LAYER</code> still names only per-cell layer ids.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-docs">
+      <h3>The developer document</h3>
+      <p><code>docs/dev/map-interfaces.md</code> gains a section "The run view", after "The dock's width and the bottom-left control". It holds:</p>
+      <ul>
+        <li>What <code>setRunView(on)</code> does, the fitted camera, <code>RUN_BOUNDS</code>, <code>RUN_PAD_PX</code> and <code>RUN_MIN_ZOOM</code>, and that <code>maxBounds</code> is lifted while locked.</li>
+        <li>The eight handlers, the hidden bottom-left controls and Reset view, <code>touch-action: none</code>, and that <code>setPanEnabled</code> takes effect at unlock.</li>
+        <li>That nothing is picked, delivered or shown while locked.</li>
+        <li>The remembered camera, the refit on resize or inset, and survival across a remount.</li>
+        <li>The table of what shows at the fitted zoom, and that the timeline draws as one solid and one ghost layer while locked.</li>
+        <li>The root's <code>data-run-view="on"</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <table id="tbl-files">
+      <caption>Files this unit writes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Change</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/map/camera.ts</code></th><td>Adds <code>RUN_BOUNDS</code>, <code>RUN_PAD_PX</code>, <code>RUN_MIN_ZOOM</code> and <code>runFrame</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/camera.spec.ts</code></th><td>Tests of <code>runFrame</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.svelte</code></th><td>The run view: state, <code>setRunView</code> (with the controller's <code>setMerged</code>), <code>applyInteraction</code>, the picking guards, the refit, the markup and style rules.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/timeline-controller.ts</code></th><td><code>setMerged</code> and the merged solid and ghost layers.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/timeline-controller.spec.ts</code></th><td>Tests of <code>setMerged</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.run-view.svelte.spec.ts</code></th><td>Created: the component tests below.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.svelte.spec.ts</code></th><td><code>HANDLE_FNS</code> gains <code>'setRunView'</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.ssr.spec.ts</code></th><td>The server render has no <code>data-run-view</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/types.ts</code></th><td><code>setRunView</code> in <code>SimMapHandle</code> becomes required, with its doc comment. No other line.</td></tr>
+        <tr><th scope="row"><code>docs/dev/map-interfaces.md</code></th><td>The section "The run view".</td></tr>
+        <tr><th scope="row"><code>src/lib/fzp/test/sim-map-stub.ts</code></th><td><code>stub.handle</code> gains <code>setRunView: record('setRunView')</code>.</td></tr>
+        <tr><th scope="row"><code>src/lib/brush/test/sim-map-stub.ts</code></th><td><code>stubHandle</code> gains <code>setRunView: () =&gt; {}</code>.</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>No file is deleted.</li>
+      <li>The two stubs are needed because a required method breaks <code>npm run check</code> on any object typed as the handle that lacks it.</li>
+      <li><code>src/lib/map/SimMap.timeline.svelte.spec.ts</code> is not this unit's: <code>city-net</code> adds a fixture line to it. This unit does not edit it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+
+    <section id="sec-tests-unit">
+      <h3>Unit (<code>camera.spec.ts</code>)</h3>
+      <ul>
+        <li><code>runFrame(1280, 744, 0)</code> has zoom 11.603 to 3 decimals, centre <code>[-122.4352, 37.77023]</code> to 4 decimals, pitch 0 and bearing 0.</li>
+        <li><code>runFrame(375, 600, 0)</code> has zoom 10.483 to 3 decimals: a portrait box is fitted by width.</li>
+        <li><code>runFrame(1280, 744, 300)</code> has zoom 10.789 to 3 decimals: the inset is taken from the height.</li>
+        <li><code>runFrame(100, 100, 0)</code> and <code>runFrame(40, 40, 0)</code> have zoom <code>RUN_MIN_ZOOM</code>.</li>
+        <li><code>RUN_BOUNDS</code> equals <code>SF_GRID_BBOX</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-merged">
+      <h3>Unit (<code>timeline-controller.spec.ts</code>)</h3>
+      <ul>
+        <li>With cells installed, <code>setMerged(true)</code> emits exactly one <code>timeline-solid-run</code> and one <code>timeline-ghost-run</code> layer, then the bars, the marks and the overlay layers in the same order as unmerged; no per-cell timeline layer.</li>
+        <li>The merged layers hold every installed cell's parts: their attribute lengths are the sums of the cells', in cell-id order, and their props and extension equal a per-cell layer's apart from id and data.</li>
+        <li><code>setMerged(false)</code> emits the per-cell layers equal to those of a controller never merged.</li>
+        <li>An <code>applyTimeline</code> that changes a cell while merged rebuilds the joined attributes; a <code>setTime</code> while merged rebuilds nothing.</li>
+        <li>A cell update while merged, then <code>setMerged(false)</code>, gives the per-cell layers of the updated cell.</li>
+        <li>A second <code>setMerged</code> with the value in force emits nothing new.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-component">
+      <h3>Component (<code>SimMap.run-view.svelte.spec.ts</code>, real MapLibre on fixture-0)</h3>
+      <ul>
+        <li>Locked on a 600 by 400 box: zoom equals <code>runFrame(600, 400, 0).zoom</code> to 3 decimals, pitch 0, bearing 0, and each corner of <code>RUN_BOUNDS</code> projects at least 23 px inside every edge.</li>
+        <li>Locked on a 375 by 400 box: the zoom is below 11 and the four corners project inside the box: the floor and bounds are lifted.</li>
+        <li>Locked: <code>isEnabled()</code> is false for all eight handlers; <code>map.getMaxBounds()</code> is null; <code>map.getMinZoom()</code> is 8.</li>
+        <li>Locked: the canvas container's computed <code>touch-action</code> is <code>none</code>; the bottom-left control container's computed <code>display</code> is <code>none</code>; the root has <code>data-run-view="on"</code>.</li>
+        <li>Unlocked after a lock: centre, zoom, pitch and bearing equal the camera before the lock to 6 decimals; the five zoom handlers are enabled; the minimum zoom is 11 and <code>maxBounds</code> is <code>CONSTRAINTS.maxBounds</code>; the root has no <code>data-run-view</code>.</li>
+        <li><code>setPanEnabled(false)</code>, lock, unlock: <code>dragPan</code> is off and <code>scrollZoom</code> on.</li>
+        <li>Lock, <code>setPanEnabled(true)</code>: <code>dragPan</code> stays off; then unlock: <code>dragPan</code> is on.</li>
+        <li>A second <code>setRunView(true)</code> after a programmatic <code>jumpTo</code> leaves the camera where the jump put it; unlock then returns to the camera before the first call. A second <code>setRunView(false)</code> changes nothing.</li>
+        <li>With a tooltip shown, the lock closes it, and <code>timelinePick</code> receives one hover miss when its last report was a hit.</li>
+        <li>Locked: a touch tap and a mouse click on the canvas deliver nothing to <code>timelinePick</code> and show no card.</li>
+        <li><code>setRunView(true)</code> on the component before <code>onready</code>: once ready, the camera is the fit; unlock goes to <code>defaultFrame(600)</code>.</li>
+        <li>A remount by a new manifest while locked: the new map is locked and fitted; unlock goes to the camera from before the lock on the first map.</li>
+        <li>Locked, the host resized to 800 by 500: <code>expect.poll</code> sees the zoom become <code>runFrame(800, 500, 0).zoom</code>.</li>
+        <li>Locked, <code>setBottomInset(120)</code>: the zoom becomes <code>runFrame(600, 400, 120).zoom</code>.</li>
+        <li>On a coarse pointer (<code>matchMedia</code> stubbed before render), "Reset view" is absent while locked and present after unlock.</li>
+        <li>Lock and unlock raise no console error and no unhandled rejection.</li>
+        <li>Locked with timeline cells applied, the overlay's layers hold one <code>timeline-solid-run</code> and one <code>timeline-ghost-run</code> and no per-cell timeline layer; after unlock they hold the per-cell layers again.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-ssr">
+      <h3>Server render (<code>SimMap.ssr.spec.ts</code>)</h3>
+      <ul>
+        <li>The rendered root has no <code>data-run-view</code> attribute.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-bench">
+      <h3>Performance</h3>
+      <ul>
+        <li>This unit adds no bench case. The run's case, a run with drops, belongs to <code>closing</code>.</li>
+        <li>No existing bench case calls <code>setRunView</code>, and the unlocked map runs the same per-frame code as today.</li>
+        <li>The implementer runs <code>npm run bench:map</code> once after the change, on a quiet machine, with the preview on port 4173 started by that session or already running. Every case must keep p95 at or under 16.7 ms.</li>
+        <li>When the machine is not quiet, the run is deferred and the hand-back says so; signoff does not wait for it.</li>
+      </ul>
+      <pre><code data-lang="sh">npm run bench:map</code></pre>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>The fit uses <code>SF_GRID_BBOX</code>, not <code>CONSTRAINTS.maxBounds</code>.</strong> It is the mainland city's extent, where lots and so drops are; <code>maxBounds</code> is a pan limit with water around it, about 1.4 times as wide, which would shrink the city on a phone for nothing.</li>
+      <li><strong>Padding 24 px on each side.</strong> It keeps a drop at the city's edge clear of the box's edge and the ring's reach, and is the project's target size.</li>
+      <li><strong>The lifted floor is 8.</strong> Every box a page shows fits above it; it only guards a box squeezed to near nothing.</li>
+      <li><strong>The fit is computed by a pure <code>runFrame</code>, not by <code>map.cameraForBounds</code>.</strong> It can be unit tested without a map, and <code>cameraForBounds</code> returns nothing for a box smaller than its padding.</li>
+      <li><strong>Unlock jumps first and restores the constraints after.</strong> A lawful camera then lands exactly, and a stale one is clamped by MapLibre's own rule.</li>
+      <li><strong>The zoom buttons and compass are hidden, not removed.</strong> A style rule keyed on the root's attribute needs no control instance kept across a remount.</li>
+      <li><strong>The root carries <code>data-run-view="on"</code>.</strong> The style rule needs a hook, and e2e specs in <code>closing</code> can read it.</li>
+      <li><strong><code>touch-action</code> comes from a class.</strong> The brush writes the same element's inline style; a class cannot be undone by it.</li>
+      <li><strong>The cursor is <code>default</code> while locked.</strong> MapLibre's grab cursor would say the map can be dragged.</li>
+      <li><strong>The timeline draws as one solid and one ghost layer while locked.</strong> A per-cell pair costs four draws and per-draw uniform setup on every frame of a run; the whole city's cells would put the run's frame over the map's bar. Joining the cells keeps the picture, apart from the blend order of overlapping ghost slivers of about one pixel, and drops the draws to a handful; no small number of draws can keep each cell's sides and tops together. Per-cell layers return at unlock because picking and culling need them.</li>
+      <li><strong>deck's picking is off while locked.</strong> Otherwise deck highlights parts under the ring and runs a picking pass on every pointer move, which no bench case measures.</li>
+      <li><strong>A press begun while locked is never delivered.</strong> A tap is a whole gesture; half of it was made on a locked map.</li>
+      <li><strong>"Survives a remount" means a remount by a new manifest inside one SimMap,</strong> as the pan state does; a new SimMap component starts unlocked.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>When to call <code>setRunView</code>, hiding the map key, the dock or the timeline during a run, and what the page does with the citywide <code>moveend</code>: <code>game-sim</code>.</li>
+      <li>Drops, the ring, its cursor, the canvas over the map and <code>RunFeed.project</code>: <code>run-play</code>.</li>
+      <li>The run's bench case, e2e specs of a run and the journey: <code>closing</code>.</li>
+      <li>Any change to what a layer draws, bar gates, the existing-buildings fade or what cells the stream loads.</li>
+      <li>Keeping the camera across the remount from the opening to the simulation page (call 6): the page that remounts the map.</li>
+      <li>The citywide feed's <code>existing</code> field and the feed's part of <code>types.ts</code> and <code>map-interfaces.md</code>: <code>city-net</code>.</li>
+    </ul>
+  </section>
+</article>

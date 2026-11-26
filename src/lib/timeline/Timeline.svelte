@@ -10,9 +10,7 @@
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
-  import { ALL_ALLOWED, runs, type Allowed } from '$lib/game/allowed';
-  import { lockedLane } from '$lib/game/copy';
-  import type { Level } from '$lib/game/levels';
+  import { OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
   import { marketLevel } from '$lib/sim/scenario/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
@@ -20,7 +18,9 @@
   import type { Calibration } from '$lib/timelapse/types';
   import ChartLegend from './ChartLegend.svelte';
   import type { ChartLens } from './chart-lens';
+  import { kindOpen } from './add';
   import FixedRow from './FixedRow.svelte';
+  import { LOCKED_LANE } from './game-copy';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
   import type { Policy, PolicyKind, SimPolicy4 } from './policy4';
@@ -75,10 +75,8 @@
      * that the page's box scrolls. Default true.
      */
     pinned?: boolean;
-    /** What the game allows: a kind it leaves out is locked, as is a policy that does not run. */
-    allowed?: Allowed;
-    /** The game's level, read only for a locked lane's words. */
-    level?: Level | null;
+    /** What is bought: a kind not open is locked, as is a policy not within. Default: all open. */
+    limits?: Limits;
   }
 
   let {
@@ -102,14 +100,12 @@
     stale = false,
     pinHeight = $bindable(0),
     pinned = true,
-    allowed = ALL_ALLOWED,
-    level = null
+    limits = OPEN_LIMITS
   }: Props = $props();
 
-  /** A locked kind's lane words; null while the game allows the kind. */
-  const lockOf = (kind: PolicyKind): string | null =>
-    allowed.kinds.has(kind) ? null : lockedLane(kind, level!);
-  const lockedIn = (kind: PolicyKind) => (p: Policy) => !runs(kind, p, allowed);
+  /** A locked kind's lane words; null while the kind is open. */
+  const lockOf = (kind: PolicyKind): string | null => (kindOpen(kind, limits) ? null : LOCKED_LANE);
+  const lockedIn = (kind: PolicyKind) => (p: Policy) => !within(kind, p, limits);
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));

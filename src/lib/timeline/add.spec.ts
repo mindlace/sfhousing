@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ALL_ALLOWED, allowedAt } from '$lib/game/allowed';
+import { FREE_MEASURES, OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
 import { dateMeasure, fundingPresets } from '$lib/sim-page/funding-presets';
+import { PRESETS } from '$lib/sim-page/timing';
+import { limitsWith } from './test/limits';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
 import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
@@ -8,7 +10,7 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Pool } from '$lib/timelapse/types';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
-import { addChoices, addPolicy, redateMoved, type AddChoice } from './add';
+import { addChoices, addPolicy, fittedLayer, kindOpen, redateMoved, type AddChoice } from './add';
 import { CUSTOM_TIMING_LABEL } from './lens';
 import { parsePolicy4 } from './parse4';
 import { DEFAULT_POLICY4, type Policy, type PolicyKind, type SimPolicy4 } from './policy4';
@@ -236,33 +238,92 @@ describe('addPolicy fixes', () => {
   });
 });
 
-describe('addChoices under what a level allows', () => {
-  const labels = (kind: PolicyKind, a = ALL_ALLOWED) =>
-    addChoices(kind, cal, DEFAULT_POLICY4, a).map((c) => c.label);
+describe('addChoices under limits', () => {
+  const early = limitsWith({ stops: new Set(['metro']), bands: 1, stories: 4, reachM: 402 });
+  const P = PRESETS.find((p) => p.available && p.id !== 'observed')!.id;
+  const presetName = (id: string) => PRESETS.find((p) => p.id === id)!.name;
+  const M = fundingPresets(cal).find((p) => p.available)!.id;
+  const fundingLabel = (id: string) => fundingPresets(cal).find((p) => p.id === id)!.label;
+  const freeLabels = () =>
+    fundingPresets(cal)
+      .filter((p) => p.available && FREE_MEASURES.includes(p.id))
+      .map((p) => p.label);
+  const labels = (kind: PolicyKind, l: Limits = OPEN_LIMITS) =>
+    addChoices(kind, cal, DEFAULT_POLICY4, l).map((c) => c.label);
 
-  it('under allowedAt(5) money offers only the available presets', () => {
-    const got = labels('money', allowedAt(5));
-    expect(got).toEqual(
-      fundingPresets(cal)
-        .filter((p) => p.available)
-        .map((p) => p.label)
-    );
-    expect(got.length).toBeGreaterThan(0);
-    for (const own of ['Your own pool', 'City funding scale', 'Market terms'])
-      expect(got).not.toContain(own);
+  it('kindOpen', () => {
+    for (const k of KINDS) expect(kindOpen(k, OPEN_LIMITS)).toBe(true);
+    for (const k of KINDS) expect(kindOpen(k, limitsWith({}))).toBe(false);
+    expect(kindOpen('zoning', early)).toBe(true);
+    expect(kindOpen('permitting', limitsWith({ presets: new Set([P]) }))).toBe(true);
+    expect(kindOpen('permitting', limitsWith({ custom: true }))).toBe(true);
+    expect(kindOpen('money', limitsWith({ measures: new Set([M]) }))).toBe(true);
   });
 
-  it('under allowedAt(3) zoning and money offer nothing', () => {
-    expect(labels('zoning', allowedAt(3))).toEqual([]);
-    expect(labels('money', allowedAt(3))).toEqual([]);
-    expect(labels('permitting', allowedAt(3))).toEqual(labels('permitting', ALL_ALLOWED));
+  it('a closed kind offers nothing', () => {
+    for (const k of KINDS) expect(labels(k, limitsWith({}))).toEqual([]);
   });
 
-  it('under ALL_ALLOWED offers are today’s', () => {
+  it('under OPEN_LIMITS offers are today’s', () => {
     for (const kind of KINDS)
-      expect(labels(kind, ALL_ALLOWED)).toEqual(
+      expect(labels(kind, OPEN_LIMITS)).toEqual(
         addChoices(kind, cal, DEFAULT_POLICY4).map((c) => c.label)
       );
+    expect(labels('zoning')).toContain('Painted area');
+    expect(labels('money')).toContain('Your own pool');
+  });
+
+  it('zoning: a fitted transit rule and the protections, never a painted area', () => {
+    expect(labels('zoning', early)).toEqual([
+      'Transit rule',
+      'Protect rent-controlled buildings',
+      'Protect historic buildings',
+      'Protect buildings newer than 30 years'
+    ]);
+    expect(labels('zoning', { ...early, bands: 0 })).not.toContain('Transit rule');
+    expect(labels('zoning', { ...early, stories: 0 })).not.toContain('Transit rule');
+    expect(labels('zoning', { ...early, reachM: 0 })).not.toContain('Transit rule');
+    expect(labels('zoning', { ...early, bands: 0 })).toContain('Protect historic buildings');
+    expect(labels('zoning', limitsWith({}))).toEqual([]);
+  });
+
+  it('permitting: bought presets, custom only while custom', () => {
+    const l = limitsWith({ presets: new Set([P, 'observed']) });
+    expect(labels('permitting', l)).toEqual([presetName(P)]);
+    expect(labels('permitting', { ...l, custom: true })).toEqual([
+      presetName(P),
+      CUSTOM_TIMING_LABEL
+    ]);
+  });
+
+  it('money: bought measures, then the two free ones; never own pool, scale or terms', () => {
+    const got = labels('money', limitsWith({ measures: new Set([M]) }));
+    expect(got[0]).toBe(fundingLabel(M));
+    expect(got).toEqual(expect.arrayContaining(freeLabels()));
+    expect(new Set(got).size).toBe(got.length);
+    for (const no of ['Your own pool', 'City funding scale', 'Market terms'])
+      expect(got).not.toContain(no);
+  });
+
+  it('fittedLayer fits the limits and the policy it adds runs', () => {
+    const l = limitsWith({
+      stops: new Set(['metro', 'regionalRail']),
+      bands: 1,
+      stories: 4,
+      reachM: 402
+    });
+    const r = fittedLayer(l);
+    expect(r).toMatchObject({
+      kind: 'transit',
+      stopTypes: ['regionalRail', 'metro'],
+      bands: [{ maxM: 402, stories: 4 }]
+    });
+    const { doc, ref } = addPolicy(
+      DEFAULT_POLICY4,
+      { kind: 'zoning', what: 'transit' },
+      { w, month: 1, cal, limits: l }
+    );
+    expect(within('zoning', policyOf(doc, 'zoning', ref.id)!, l)).toBe(true);
   });
 });
 

@@ -1,7 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { MONTH_DAYS } from '$lib/timelapse/time';
-import { DEFAULT_SPEED, FRAME_CLAMP_MS, SPEED_DAYS, SPEED_NAME, advance } from './playback';
+import {
+  DEFAULT_SPEED,
+  FRAME_CLAMP_MS,
+  RUN_MS,
+  SPEED_DAYS,
+  SPEED_NAME,
+  advance,
+  runRate
+} from './playback';
 import { HORIZON, dayFromUtc } from './time';
 import type { Speed } from './types';
 
@@ -26,27 +34,57 @@ describe('speed tables', () => {
   });
 
   it('3 years per second advances 36 months a second (a frame counts at most 100 ms)', () => {
-    expect(advance(0, 100, 'threeYears', 10_000).day).toBe(Math.floor(3.6 * MONTH_DAYS));
-    expect(advance(0, 1000, 'threeYears', 10_000).day).toBe(Math.floor(3.6 * MONTH_DAYS));
-    expect(advance(0, 100, 'threeYears', 10_000).t).toBeCloseTo(0.1 * 36 * MONTH_DAYS, 9);
+    const rate = SPEED_DAYS.threeYears;
+    expect(advance(0, 100, rate, 10_000).day).toBe(Math.floor(3.6 * MONTH_DAYS));
+    expect(advance(0, 1000, rate, 10_000).day).toBe(Math.floor(3.6 * MONTH_DAYS));
+    expect(advance(0, 100, rate, 10_000).t).toBeCloseTo(0.1 * 36 * MONTH_DAYS, 9);
+  });
+});
+
+describe('a run rate', () => {
+  it('advance takes days per second', () => {
+    expect(advance(0, 50, 360, 10_000)).toEqual({ t: 18, day: 18, done: false });
+    expect(advance(40, 50, 360, 50)).toEqual({ t: 50, day: 50, done: true });
+    expect(advance(0, 5000, 360, 10_000).t).toBe(36); // clamped to 100 ms
+  });
+
+  it('runRate', () => {
+    expect(RUN_MS).toBe(20_000);
+    expect(runRate(0, 2000, 10_000)).toBe(200);
+    expect(runRate(100, 100)).toBe(0);
+    expect(runRate(200, 100)).toBe(0);
+  });
+
+  it('runRate plays any span in 20 s of 16 ms frames to within one frame', () => {
+    for (const span of [30, 3650, 9000]) {
+      const rate = runRate(0, span);
+      let t = 0;
+      let frames = 0;
+      while (t < span) {
+        t = advance(t, 16, rate, span).t;
+        frames++;
+      }
+      expect(Math.abs(frames * 16 - 20_000)).toBeLessThanOrEqual(16);
+    }
   });
 });
 
 describe('advance', () => {
   it('advances by dt x days per second', () => {
     const t0 = asOf + 0.25;
-    const r = advance(t0, 16, 'year', HORIZON);
+    const r = advance(t0, 16, SPEED_DAYS.year, HORIZON);
     expect(r.t).toBeCloseTo(t0 + 0.016 * 12 * MONTH_DAYS, 9);
     expect(r.day).toBe(Math.floor(r.t));
     expect(r.done).toBe(false);
   });
 
   it('clamps a long frame to 100 ms', () => {
-    expect(advance(asOf, 5000, 'year', HORIZON).t).toBe(advance(asOf, 100, 'year', HORIZON).t);
+    const rate = SPEED_DAYS.year;
+    expect(advance(asOf, 5000, rate, HORIZON).t).toBe(advance(asOf, 100, rate, HORIZON).t);
   });
 
   it('stops at the horizon', () => {
-    const r = advance(HORIZON - 0.5, 100, 'year', HORIZON);
+    const r = advance(HORIZON - 0.5, 100, SPEED_DAYS.year, HORIZON);
     expect(r.day).toBe(HORIZON);
     expect(r.t).toBe(HORIZON);
     expect(r.done).toBe(true);
@@ -63,7 +101,7 @@ describe('advance', () => {
           let t: number = asOf;
           let prev: number = asOf;
           for (const [dt, s] of frames) {
-            const r = advance(t, dt, s, HORIZON);
+            const r = advance(t, dt, SPEED_DAYS[s], HORIZON);
             expect(r.day).toBeGreaterThanOrEqual(prev);
             expect(r.day).toBeLessThanOrEqual(HORIZON);
             t = r.t;

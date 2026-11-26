@@ -36,7 +36,7 @@ Nothing is promoted. The build computes the dataset version `<v>` from the sourc
 
 - **Guard.** Both deploy workflows run the step "Guard: this commit's dataset is published" before `npm run build`. It runs `npx tsx scripts/dataset-version.ts --check <host>` and sends a `HEAD` request (Node `fetch`, 15 s timeout, retried) for `/data/<v>/manifest.json` on the deployed host (either host serves any published version, so no R2 credentials are needed). If the manifest is missing the job fails without deploying and the running version stays up. The fix is to build and upload the dataset ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset").
 - **Smoke.** After the deploy, "Smoke: dataset manifest is served and the build uses it" checks the manifest again and that `/about` on the deployed host shows `<v>` (`/attribution` is a 308 to `/about#about-data`, and `curl -fsS` does not follow it).
-- **Level 2 check.** Before `upload`, `npx tsx scripts/level2-check.ts pipeline/out/<v>` must exit 0. Exit 1 means current law misses the goal inside the window on that data: nothing is uploaded, and the owner decides the remedy ([testing.md](testing.md), "The level 2 check").
+- **Reach check.** Before `upload`, `npx tsx scripts/reach-check.ts pipeline/out/<v>` must exit 0. Exit 1 means current law misses the first deadline, or the full tree misses the last, on that data: nothing is uploaded, and the owner decides the remedy ([game.md](game.md), "The reach check").
 - **Releases.** A release tag's tree computes its own `<v>`, so cutting a release is what moves production to a new dataset. `release-please.yml` needs no dataset step.
 - **Rollback** is a code revert. The reverted tree computes the old version, which is still in R2.
 - Versions are immutable and retained forever. There are no `chore(data)` or `data:` pointer PRs any more.
@@ -174,7 +174,7 @@ aws sesv2 delete-email-identity --region us-west-1 --email-identity sfhousing.mi
 
 Google sign-in shows once its two secrets are on an environment and `AUTH_METHODS` lists `google`. The client secret is the owner's to make and to set. In the owner's Google Cloud console, one project for the site:
 
-1. Google Auth Platform, Branding: app name `SF Housing Simulator`, the owner's support and developer contact address, home page `https://sfhousing.mindlace.net`, authorised domain `mindlace.net`.
+1. Google Auth Platform, Branding: app name `SF Housing`, the owner's support and developer contact address, home page `https://sfhousing.mindlace.net`, authorised domain `mindlace.net`.
 2. Audience: External, published to production, so any Google account can sign in.
 3. Data access: the scopes `openid`, `.../auth/userinfo.email` and `.../auth/userinfo.profile` only. These need no Google review.
 4. Clients, Create client: type Web application, name `sfhousing`.

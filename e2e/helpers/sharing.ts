@@ -12,6 +12,7 @@ import {
 import { readFileSync } from 'node:fs';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
+import { newVisitor } from './game';
 
 export type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
 export type LngLat = [number, number];
@@ -80,8 +81,7 @@ export async function clientNavigate(page: Page, path: string): Promise<void> {
  * Every spec opens the Menu through this. It waits for hydration first: a tap on the Menu button
  * before hydration is lost (the toggle is a Svelte handler, and the server's HTML has none), so a
  * click on a loaded machine left `aria-expanded` false (issues #96, #109). It finds the button by
- * `[data-header-menu]`, which matches whatever its name ("Menu, level up ready" while an offer is
- * set).
+ * `[data-header-menu]`, which matches whatever its name.
  */
 export async function openHeaderMenu(page: Page): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
@@ -111,8 +111,18 @@ export async function openPublish(page: Page): Promise<Locator> {
   return publishOpen(page);
 }
 
-/** `/` with the map ready and the header actions hydrated (the Publish button exists). */
+const visitors = new WeakSet<Page>();
+
+/**
+ * `/` as a new visitor, with the map ready and the header actions hydrated (the Publish button
+ * exists). The first call for a page makes it a new visitor (`newVisitor`); a spec that seeds its
+ * own game goes to `/` with `gotoHydrated(page, '/')` instead, never through here.
+ */
 export async function gotoEditor(page: Page): Promise<void> {
+  if (!visitors.has(page)) {
+    visitors.add(page);
+    await newVisitor(page);
+  }
   await page.goto('/');
   await waitForMap(page);
   // Attached, not visible: below 1024 px it waits in the closed header Menu.
@@ -145,8 +155,8 @@ export async function projectToPage(page: Page, lngLat: LngLat): Promise<[number
  * `<projectId>:phase:<n>`) at one of `candidates`, tried in order, and returns the page point to
  * tap. The gate is the map's own pick
  * (`__sfhMap.timelinePartAt`) with the canvas topmost there, so it covers the chunk not yet
- * installed, the part not yet drawn at the playhead's day and a sheet over the map. Tap once: on
- * /sim a miss is not idempotent (it selects the lot's plan, and on a phone that sheet covers the
+ * installed, the part not yet drawn at the playhead's day and a sheet over the map. Tap once: in
+ * the simulation a miss is not idempotent (it selects the lot's plan, and on a phone that sheet covers the
  * map), so a retried tap after a miss can never land. With `nudge`, each candidate also tries a
  * few pixels outwards from the map's centre, past a taller neighbour's roof leaning over it.
  */
@@ -308,7 +318,7 @@ export async function paintOnce(page: Page, isMobile: boolean): Promise<void> {
   await expect.poll(() => ops(page)).toBe(1);
 }
 
-/** The header score on `/` and `/p/:id` (and `/sim`): "Room for {n} homes" on Paint. */
+/** The header score on `/` and `/p/:id`: "Room for {n} homes" while the brush is on show. */
 export const headerScore = (page: Page): Locator =>
   page.getByRole('banner').getByTestId('score-bar');
 

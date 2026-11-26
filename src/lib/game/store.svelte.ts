@@ -1,29 +1,17 @@
 import { getContext, setContext } from 'svelte';
 import { isValidId, newId } from '$lib/ids/base58';
-import type { Day } from '$lib/timelapse/time';
-import { ALL_ALLOWED, allowedAt, type Allowed } from './allowed';
-import { NEW_GAME, levelUp as nextProgress, type Banked, type Progress } from './progress';
-import {
-  MAX_SAVES,
-  SAVES_KEY,
-  SAVE_NAME_MAX,
-  defaultSaveName,
-  parseGameSave,
-  saveKey,
-  type GameSave,
-  type SaveEntry
-} from './saves';
+import { NODES } from './catalogue/nodes';
+import { RUNGS, fitGame, takeNext as nextRung } from './ladder';
+import { OPEN_LIMITS, limitsOf, type Limits } from './limits';
+import { settle as settleRun, type RunResult } from './run-result';
+import { parseGameSave, type GameSave, type SaveEntry } from './save-shape';
+import { MAX_SAVES, SAVES_KEY, SAVE_NAME_MAX, saveKey } from './saves';
+import { NEW_GAME, type GameState, type NodeId } from './state';
+import { buy as buyNode, type Bought } from './tree';
+import { defaultSaveName } from './words';
 import type { SaveSync } from './save-sync.svelte';
 
 export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
-
-/** The win on screen that "Level up" would bank. */
-export interface Offer {
-  /** The day the seen result reached the goal; null for Paint's win. */
-  on: Day | null;
-  /** The dataset the result was seen on. */
-  datasetVersion: string;
-}
 
 /** The plan record (`PLAN_KEY` of `$lib/sharing/storage`). */
 const PLAN_RECORD = 'sfhousing:plan:v1';
@@ -152,7 +140,8 @@ function entryOf(save: GameSave): SaveEntry {
     name: save.name,
     nameIsDefault: save.nameIsDefault,
     savedAt: save.savedAt,
-    level: save.progress.level
+    phase: save.state.phase,
+    rung: save.state.rung
   };
 }
 
@@ -162,12 +151,31 @@ function sameEntry(a: SaveEntry, b: SaveEntry): boolean {
     a.name === b.name &&
     a.nameIsDefault === b.nameIsDefault &&
     a.savedAt === b.savedAt &&
-    a.level === b.level
+    a.phase === b.phase &&
+    a.rung === b.rung
   );
 }
 
 function isPlain(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
+/** A JSON object whose `v` is 1: a save or an index of the five-level game (P15). */
+function isV1(text: string): boolean {
+  try {
+    const json: unknown = JSON.parse(text);
+    return isPlain(json) && json.v === 1;
+  } catch {
+    return false;
+  }
+}
+
+/** A save as the store holds it: parsed, then its state fitted to the catalogue (G6). */
+function fitted(json: unknown): GameSave | null {
+  const save = parseGameSave(json);
+  if (save === null) return null;
+  const state = fitGame(save.state);
+  return state === save.state ? save : { ...save, state };
 }
 
 /** The index when valid (§sec-design-store-layout), else null. */
@@ -178,28 +186,27 @@ function parseIndex(text: string): { current: string; saves: SaveEntry[] } | nul
   } catch {
     return null;
   }
-  if (!isPlain(json) || json.v !== 1 || typeof json.current !== 'string') return null;
+  if (!isPlain(json) || json.v !== 2 || typeof json.current !== 'string') return null;
   if (!Array.isArray(json.saves)) return null;
   const ids = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   const saves: SaveEntry[] = [];
   for (const e of json.saves as unknown[]) {
     if (!isPlain(e)) return null;
-    const { id, name, nameIsDefault, savedAt, level } = e;
+    const { id, name, nameIsDefault, savedAt, phase, rung } = e;
     if (typeof id !== 'string' || ids.has(id)) return null;
     if (typeof name !== 'string' || typeof nameIsDefault !== 'boolean') return null;
     if (typeof savedAt !== 'string') return null;
-    if (typeof level !== 'number' || !Number.isInteger(level) || level < 1 || level > 5) {
-      return null;
-    }
+    if (phase !== 'opening' && phase !== 'runs') return null;
+    if (typeof rung !== 'number' || !Number.isSafeInteger(rung) || rung < 0) return null;
     ids.add(id);
-    saves.push({ id, name, nameIsDefault, savedAt, level: level as SaveEntry['level'] });
+    saves.push({ id, name, nameIsDefault, savedAt, phase, rung });
   }
   return { current: json.current, saves };
 }
 
 function parseSaveText(text: string): GameSave | null {
   try {
-    return parseGameSave(JSON.parse(text));
+    return fitted(JSON.parse(text));
   } catch {
     return null;
   }
@@ -208,7 +215,23 @@ function parseSaveText(text: string): GameSave | null {
 /** Set while `openGame` constructs its store: the module's private constructor path. */
 let opening = false;
 
-const OPEN_PROGRESS: Progress = { v: 1, level: 5, banked: {}, firstWinAt: null };
+const OPEN_AT = '1970-01-01T00:00:00.000Z';
+
+/** The open game's state: the last rung met, every node at its last level, no units (call 9). */
+function openState(): GameState {
+  return {
+    ...structuredClone(NEW_GAME),
+    phase: 'runs',
+    bought: Object.fromEntries(NODES.map((n) => [n.id, n.levels.length])),
+    rung: RUNGS - 1,
+    met: Array.from({ length: RUNGS }, (_, rung) => ({
+      rung,
+      reachedOn: 0,
+      datasetVersion: 'open',
+      at: OPEN_AT
+    }))
+  };
+}
 
 function openSync(): SaveSync {
   return {
@@ -230,14 +253,13 @@ export class GameStore {
   #storage: Storage | null = null;
   /** Where the two record keys are read; null when storage could not be read at all. */
   #records: Storage | null = null;
-  /** Every saved game as stored, by id: plain, since `saves` and `progress` carry the reactivity. */
+  /** Every saved game as held, by id: plain, since `saves` and `state` carry the reactivity. */
   #games: ReadonlyMap<string, GameSave> = new Map(); // eslint-disable-line svelte/prefer-svelte-reactivity
 
-  #progress = $state.raw<Progress>(NEW_GAME);
+  #state = $state.raw<GameState>(NEW_GAME);
   #currentId = $state.raw('');
-  #offer = $state.raw<Offer | null>(null);
   #saves = $state.raw<readonly SaveEntry[]>([]);
-  #allowed = $derived(this.#open ? ALL_ALLOWED : allowedAt(this.#progress.level));
+  #limits = $derived(this.#open ? OPEN_LIMITS : limitsOf(this.#state));
   /** `beforeLeave`'s functions in the order added; each registration is its own entry. */
   readonly #leaving: { fn: () => void }[] = [];
   /** Set once another game has become current: `touched()` does nothing from then on. */
@@ -247,21 +269,21 @@ export class GameStore {
     this.#sync = opts.sync;
     this.#now = opts.now ?? (() => new Date()); // eslint-disable-line svelte/prefer-svelte-reactivity
     if (this.#open) {
-      this.#memoryGame('Game', structuredClone(OPEN_PROGRESS));
+      this.#memoryGame('Game', openState());
       return;
     }
     this.#construct(opts.storage);
   }
 
   /** Step 1: memory mode, one game, nothing read. */
-  #memoryGame(name: string | null, progress: Progress): void {
+  #memoryGame(name: string | null, state: GameState): void {
     const at = this.#now();
     const save: GameSave = {
-      v: 1,
+      v: 2,
       id: newId(),
       name: name ?? defaultSaveName({ kind: 'new', at }, []),
       nameIsDefault: true,
-      progress,
+      state,
       plan: null,
       policy: null,
       savedAt: at.toISOString()
@@ -271,22 +293,22 @@ export class GameStore {
     this.#settle([save], save.id);
   }
 
-  /** A level 1 game with a new id and the default new name, `taken` taken. */
+  /** A new game with a new id and the default new name, `taken` taken. */
   #blank(taken: readonly string[], recs: Records): GameSave {
     const at = this.#now();
     return {
-      v: 1,
+      v: 2,
       id: newId(),
       name: defaultSaveName({ kind: 'new', at }, taken),
       nameIsDefault: true,
-      progress: structuredClone(NEW_GAME),
+      state: structuredClone(NEW_GAME),
       plan: recs.plan,
       policy: recs.policy,
       savedAt: at.toISOString()
     };
   }
 
-  /** A level 1 game with the two record keys' text as its plan and policy (step 2). */
+  /** A new game with the two record keys' text as its plan and policy (step 2). */
   #fromRecords(storage: Storage, taken: readonly string[]): GameSave {
     return this.#blank(taken, {
       plan: storage.getItem(PLAN_RECORD),
@@ -347,15 +369,22 @@ export class GameStore {
       pending.add(aside);
       ops.push([aside, raw], [key, null]);
     };
+    /** A five-level save is removed unread; any other text that is not a save goes aside. */
+    const drop = (key: string, raw: string): void => {
+      if (isV1(raw)) ops.push([key, null]);
+      else moveAside(key, raw);
+    };
     const index = parseIndex(indexText);
     const games: GameSave[] = [];
     let changed = false;
     let current: string | null = null;
 
     if (index === null) {
-      const aside = freeKey(storage, CORRUPT_PREFIX, at, pending);
-      pending.add(aside);
-      ops.push([aside, indexText]);
+      if (!isV1(indexText)) {
+        const aside = freeKey(storage, CORRUPT_PREFIX, at, pending);
+        pending.add(aside);
+        ops.push([aside, indexText]);
+      }
       const keys: string[] = [];
       for (let i = 0; i < storage.length; i++) {
         const key = storage.key(i);
@@ -368,7 +397,7 @@ export class GameStore {
         if (raw === null) continue;
         const save = parseSaveText(raw);
         if (save && save.id === key.slice(SAVE_PREFIX.length)) games.push(save);
-        else moveAside(key, raw);
+        else drop(key, raw);
       }
       changed = true;
     } else {
@@ -381,7 +410,7 @@ export class GameStore {
           if (!sameEntry(entry, entryOf(save))) changed = true;
         } else {
           changed = true;
-          if (raw !== null) moveAside(key, raw);
+          if (raw !== null) drop(key, raw);
         }
       }
       if (games.some((g) => g.id === index.current)) current = index.current;
@@ -406,7 +435,7 @@ export class GameStore {
    */
   #indexText(games: readonly GameSave[], current: string, recs: Records): string {
     const saves = this.#ordered(games, current, recs).map((e) => entryOf(e.save));
-    return JSON.stringify({ v: 1, current, saves });
+    return JSON.stringify({ v: 2, current, saves });
   }
 
   /**
@@ -433,7 +462,7 @@ export class GameStore {
     this.#games = new Map(games.map((g) => [g.id, g])); // eslint-disable-line svelte/prefer-svelte-reactivity
     this.#currentId = current;
     const now = this.#games.get(current) as GameSave;
-    this.#progress = now.progress;
+    this.#state = now.state;
     this.#saves = this.#ordered(games, current, recordsOf(this.#records, now)).map((k) => k.entry);
   }
 
@@ -508,7 +537,7 @@ export class GameStore {
 
   /**
    * Makes `target` current: copies the current game out (or, for `remove`, removes its save),
-   * the v1 copy aside, `target`'s save when `made`, its records, the index. Clears the offer.
+   * the v1 copy aside, `target`'s save when `made`, its records, the index.
    */
   #makeCurrent(
     target: GameSave,
@@ -540,7 +569,6 @@ export class GameStore {
     const games = this.#gamesWith(put, leave === 'remove' ? [old.id] : []);
     ops.push([SAVES_KEY, this.#indexText(games, target.id, target)]);
     if (!this.#commit(ops, games, target.id, calls)) return REFUSED;
-    this.#offer = null;
     this.#left = true;
     return OK;
   }
@@ -563,13 +591,13 @@ export class GameStore {
     }
   }
 
-  /** Reactive: the current game's progress. */
-  get progress(): Progress {
-    return this.#progress;
+  /** Reactive: the current game's state. */
+  get state(): GameState {
+    return this.#state;
   }
-  /** Reactive: what the current game may use (G3). */
-  get allowed(): Allowed {
-    return this.#allowed;
+  /** Reactive: what the current game may use (G4). */
+  get limits(): Limits {
+    return this.#limits;
   }
   /** True only for `openGame()`: every control and no game parts. */
   get open(): boolean {
@@ -583,42 +611,58 @@ export class GameStore {
   get currentId(): string {
     return this.#currentId;
   }
-  /** Reactive: the win "Level up" would bank now; null when there is none. */
-  get offer(): Offer | null {
-    return this.#offer;
-  }
   /** The save sync given at construction. */
   get sync(): SaveSync {
     return this.#sync;
   }
-  /** A win was seen. Sets `firstWinAt` the first time; later calls change nothing. */
+  /**
+   * A win was seen. Sets `firstWinAt` the first time; later calls change nothing. A refused
+   * write leaves `firstWinAt` null, so the next call tries again.
+   */
   won(): void {
+    if (this.#open) return;
     const cur = this.#current();
-    if (cur.progress.firstWinAt !== null) return;
+    if (cur.state.firstWinAt !== null) return;
     const at = this.#now().toISOString();
-    this.#write({ ...cur, progress: { ...cur.progress, firstWinAt: at }, savedAt: at });
-  }
-  /** The page sets the offer while its seen result wins the level, and clears it with null. */
-  setOffer(offer: Offer | null): void {
-    this.#offer = offer;
-  }
-  /** Banks the offer and raises the level. Does nothing while `offer` is null. */
-  levelUp(): void {
-    const offer = this.#offer;
-    if (offer === null) return;
-    const at = this.#now().toISOString();
-    const banked: Banked | null =
-      offer.on === null ? null : { on: offer.on, datasetVersion: offer.datasetVersion, at };
-    const cur = this.#current();
-    const progress = nextProgress(cur.progress, banked);
-    if (progress === cur.progress || this.#write({ ...cur, progress, savedAt: at })) {
-      this.#offer = null;
-    }
+    this.#write({ ...cur, state: { ...cur.state, firstWinAt: at }, savedAt: at });
   }
   /** The page's autosave wrote the current game's plan or policy record. */
   touched(): void {
-    if (this.#left) return;
+    if (this.#open || this.#left) return;
     this.#write({ ...this.#current(), savedAt: this.#now().toISOString() });
+  }
+  /** Writes `state` as the current game's; false (memory as it was) when the write is refused. */
+  #put(state: GameState): boolean {
+    return this.#write({ ...this.#current(), state, savedAt: this.#now().toISOString() });
+  }
+  /** Leaves the opening for the runs; storage while no win is held, or a write is refused. */
+  startRuns(): StoreChange {
+    if (this.#open) return OK;
+    const state = this.#state;
+    if (state.firstWinAt === null) return REFUSED;
+    if (state.phase === 'runs') return OK;
+    return this.#put({ ...state, phase: 'runs' }) ? OK : REFUSED;
+  }
+  /** Buys a node (G3); a refusal passes through unwritten, a refused write answers short. */
+  buy(id: NodeId): Bought {
+    const bought = buyNode(this.#state, id);
+    if (this.#open) return bought.ok ? { ok: false, reason: 'done' } : bought;
+    if (!bought.ok) return bought;
+    return this.#put(bought.state) ? bought : { ok: false, reason: 'short' };
+  }
+  /** Settles a finished run once; the same run again writes nothing. */
+  settle(r: RunResult): StoreChange {
+    if (this.#open) return OK;
+    const last = this.#state.last;
+    if (last !== null && last.at === r.at && last.rung === r.rung) return OK;
+    return this.#put(settleRun(this.#state, r)) ? OK : REFUSED;
+  }
+  /** Takes the next rung when one is due; writes nothing when it does not move. */
+  takeNext(): StoreChange {
+    if (this.#open) return OK;
+    const next = nextRung(this.#state);
+    if (next === this.#state) return OK;
+    return this.#put(next) ? OK : REFUSED;
   }
   /** Registers a function the store calls before another game becomes current; returns its remover. */
   beforeLeave(fn: () => void): () => void {
@@ -648,28 +692,8 @@ export class GameStore {
     this.#flush();
     return this.#makeCurrent(other, false, 'copy', [['changed', this.#currentId]]);
   }
-  remix(doc: { kind: 'plan' | 'sim'; record: string; title: string }): StoreChange {
-    if (this.#storage === null) return REFUSED;
-    if (this.#games.size >= MAX_SAVES) return FULL;
-    this.#flush();
-    const cur = this.#current();
-    const recs = recordsOf(this.#records, cur);
-    const made: GameSave = {
-      v: 1,
-      id: newId(),
-      name: defaultSaveName({ kind: 'remix', title: doc.title }, this.#names()),
-      nameIsDefault: true,
-      progress: structuredClone(cur.progress),
-      plan: doc.kind === 'plan' ? doc.record : recs.plan,
-      policy: doc.kind === 'sim' ? doc.record : recs.policy,
-      savedAt: this.#now().toISOString()
-    };
-    return this.#makeCurrent(made, true, 'copy', [
-      ['changed', cur.id],
-      ['changed', made.id]
-    ]);
-  }
   rename(id: string, name: string): void {
+    if (this.#open) return;
     const save = this.#games.get(id);
     if (!save) return;
     const cut = cutName(name);
@@ -720,7 +744,7 @@ export class GameStore {
     if (storage === null) return REFUSED;
     const taken = new Map<string, GameSave>(); // eslint-disable-line svelte/prefer-svelte-reactivity
     for (const s of saves) {
-      const parsed = parseGameSave(s);
+      const parsed = fitted(s);
       if (parsed) taken.set(parsed.id, parsed);
     }
     if (taken.size === 0) return OK;
@@ -751,10 +775,7 @@ export class GameStore {
     const recs = adopted ?? recordsOf(this.#records, this.#current());
     ops.push([SAVES_KEY, this.#indexText(games, current, recs)]);
     if (!this.#commit(ops, games, current, [])) return REFUSED;
-    if (adopted) {
-      this.#offer = null;
-      this.#left = true;
-    }
+    if (adopted) this.#left = true;
     return OK;
   }
   /** Give the saved game `id` the id `newId`, keeping everything else about it. */
@@ -786,7 +807,7 @@ function readRecord(records: Storage | null, key: string, fallback: string | nul
   }
 }
 
-/** A store with `open` true: one game at level 5, nothing banked, no storage, `allowed` equal to `ALL_ALLOWED`. */
+/** A store with `open` true: one game in memory with `openState()`, and `limits` equal to `OPEN_LIMITS`. */
 export function openGame(): GameStore {
   opening = true;
   try {

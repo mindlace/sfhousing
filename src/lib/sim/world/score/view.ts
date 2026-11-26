@@ -118,11 +118,13 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
   const planEffect: TimelineView['planEffect'] = [];
   const tiers: NonNullable<TimelineView['tiers']> = [];
   const money: MoneyRow[] = [];
+  const waiting: number[] = [];
   const carRows: CarRow[] = [];
   let hasCars = chunks.length > 0;
   let anyCars = false;
   let hasTiers = chunks.length > 0;
   let hasMoney = chunks.length > 0;
+  let hasWaiting = chunks.length > 0;
   for (const c of chunks) {
     if (c.from !== rows.length) {
       throw new Error(`chunk from ${c.from} does not follow ${rows.length - 1}`);
@@ -135,6 +137,8 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
     else hasTiers = false;
     if (c.money) money.push(...c.money);
     else hasMoney = false;
+    if (c.waiting) waiting.push(...c.waiting);
+    else hasWaiting = false;
     if (c.cars) {
       carRows.push(...c.cars);
       anyCars = true;
@@ -155,6 +159,7 @@ export function viewOf(chunks: SeriesChunk[], statics: ScoreStatics): TimelineVi
     money: hasMoney && money.length > 0 ? moneyViewOf(money, statics) : null,
     tiers: tierSeries,
     cars: hasCars ? carsViewOf(carRows) : null,
+    waitingMoney: hasMoney && money.length > 0 && hasWaiting ? waiting : null,
     baseline: { completedNet: units, since, provenance },
     phasing: statics.phasing,
     references: statics.references,
@@ -178,7 +183,8 @@ export function chunksBefore(chunks: SeriesChunk[], k: number): SeriesChunk[] {
       planEffect: c.planEffect.slice(0, n),
       money: c.money && c.money.slice(0, n),
       tiers: c.tiers && c.tiers.slice(0, n),
-      cars: c.cars && c.cars.slice(0, n)
+      cars: c.cars && c.cars.slice(0, n),
+      waiting: c.waiting ? c.waiting.slice(0, n) : null
     });
   }
   return out;

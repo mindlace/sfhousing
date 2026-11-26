@@ -1,6 +1,6 @@
-# /sim policy levers
+# The simulation's policy levers
 
-The engine behind `/sim` (plan 2 of 5; FZP-only since the sim runs plan 1, Task 1, spec `docs/superpowers/specs/2026-10-31-sim-runs-design.md`). Source: `src/lib/sim/levers/`; protocol: `src/lib/sim/scenario/types.ts`. The plan (`docs/superpowers/plans/2026-10-29-sim-policy-engine.md`, "Rulings") holds the reasons in full. Everything here is worker-safe and pure except the worker session.
+The engine behind the simulation (plan 2 of 5; FZP-only since the sim runs plan 1, Task 1, spec `docs/superpowers/specs/2026-10-31-sim-runs-design.md`). Source: `src/lib/sim/levers/`; protocol: `src/lib/sim/scenario/types.ts`. The plan (`docs/superpowers/plans/2026-10-29-sim-policy-engine.md`, "Rulings") holds the reasons in full. Everything here is worker-safe and pure except the worker session.
 
 ## The lever document
 
@@ -112,7 +112,7 @@ Height limits (height-lids plan, Task 8; `src/lib/map/height/`):
 - `heights { rev, city }` (`HeightCity`): the revision's city-wide height regions and contour chains. The revision's resolve step starts a staged city build (`createCityBuild`) on its resolved stories (a protected lot at FZP), `limitSources` and `countableMask`; its slices (job kind `'heights'`) run before the yield recompute, so `heights` goes out before the revision's `current`, and a revision waiting on chunks, or held by a failed one, still shows its heights. A revision superseded before its city is done posts none. The chain and label buffers are transferred. The finished city becomes the session's `limits`. The page's `onheights` takes a `heights` at or above the latest levers rev sent.
 - `heightLids { reqId, bbox }` answers `heightLids { reqId, result }` (`HeightLidsResult`): `{ ok: true, lids, missing }` with `lids.limitsRev` and `lids.sourceIds` from the limits it was built on, or `{ ok: false, reason: 'no-session' | 'superseded' | 'too-large' }`. It waits for limits, then runs a staged lid build (`createLidBuild`) on the loaded records of the cells around the bbox padded by `LID_PAD_M` whose label point is inside; `missing` counts the bbox's cells not loaded. A newer request answers the older `superseded`; a new city restarts a running lid build on its limits, so an answer never mixes revisions. Only a session initialised with levers answers (the router answers `no-session` outside scenario mode); a session end answers a waiting request `no-session`. `levers` responses no longer carry a fog grid.
 - `StoryEdit.source` (`src/lib/sim/levers/types.ts`) is the optional rule id a rule edit came from (absent on paint). `limitSources` (`src/lib/sim/levers/source.ts`) turns it into a per-lot code: `SRC_FZP` 0, `SRC_PAINT` 1, `SRC_RULE0 + k` for `ruleIds[k]`, `SRC_NONE` for no source. The city and lids carry the codes and the `sourceIds` they index, so the page can restyle a rule selection without a new request.
-- `lotAt { reqId, point }` (sim-ux plan 4, Task 3) answers `lotAt { reqId, result }` (`LotAtResult`) at once from the limits the worker holds (it never waits on a pending revision): `{ ok: true, parcelId, owner }`, with `parcelId` null off every loaded lot and `owner` (`LimitOwner`, `ownerOf` in `source.ts`: `fzp`, `paint` or `{ kind: 'rule', ruleId }`) null when the session has no limits yet; a code `ownerOf` cannot name (out of range, `SRC_NONE`, an edit with no `source`) reads `fzp`. `{ ok: false, reason: 'no-session' }` without a session with levers. The same owner rides on `parcelSummary`'s `limits.owner` (a protected lot reads `fzp`). `/sim` uses it to select a layer from a map click ([sim-page.md](sim-page.md), "Map selection").
+- `lotAt { reqId, point }` (sim-ux plan 4, Task 3) answers `lotAt { reqId, result }` (`LotAtResult`) at once from the limits the worker holds (it never waits on a pending revision): `{ ok: true, parcelId, owner }`, with `parcelId` null off every loaded lot and `owner` (`LimitOwner`, `ownerOf` in `source.ts`: `fzp`, `paint` or `{ kind: 'rule', ruleId }`) null when the session has no limits yet; a code `ownerOf` cannot name (out of range, `SRC_NONE`, an edit with no `source`) reads `fzp`. `{ ok: false, reason: 'no-session' }` without a session with levers. The same owner rides on `parcelSummary`'s `limits.owner` (a protected lot reads `fzp`). The simulation uses it to select a layer from a map click ([sim-page.md](sim-page.md), "Map selection").
 
 Brushes (plan 3): `resolveBrush { reqId, query }` answers `brushLots { reqId, result }` (`BrushLotsResult`: `{ ok: true, lots, points }` with `points` the lots' label points as lng/lat pairs, transferred; or `{ ok: false, reason }`), and `brushCatalog { reqId }` answers `brushCatalog { reqId, catalog }`.
 
@@ -181,11 +181,11 @@ no `.dev.vars` override), measured with
 "Ready" is the first `timeline` the worker posts at or after the last levers revision the page
 sent, in ms from navigation; median of 3 cold loads (each run in brackets):
 
-| Case             | Median ms | Runs ms             | Bar ms |
-| ---------------- | --------- | ------------------- | ------ |
-| A `/sim`         | 933       | 993, 933, 928       | 1,125  |
-| B `/sim?seed=72` | 635       | 638, 635, 617       | 857    |
-| C `/s/<id>`      | 1,044     | 1,044, 1,040, 1,053 | 2,500  |
+| Case              | Median ms | Runs ms             | Bar ms |
+| ----------------- | --------- | ------------------- | ------ |
+| A the simulation  | 933       | 993, 933, 928       | 1,125  |
+| B with `?seed=72` | 635       | 638, 635, 617       | 857    |
+| C `/s/<id>`       | 1,044     | 1,044, 1,040, 1,053 | 2,500  |
 
 The A and B bars are 10% over the medians recorded on `2026-11-08-91736640` (1,023 and 779 ms).
 C publishes `scripts/profile-sim-load.policy.json` and opens it.
@@ -232,7 +232,7 @@ fallback is needed. By the estimate, `scenarioYield` is nearly all of the recomp
 Rulings 1 to 3 of the plan, each with its reason.
 
 - **Law switch (ruling 1):** retired by the sim runs plan 1: the engine is FZP-only, with no current law and no 2032 switch (Task 1 stopped producing one; Task 8 removed `SimInput.lawSwitch` and `Schedule.afterSwitch` from the engine).
-- **Dated regimes:** the engine's `regimes` and `reservedFrom` inputs (`SimInput`, `src/lib/sim/scenario/types.ts`) are set only by the engine's tests; `/sim` never sets them.
+- **Dated regimes:** the engine's `regimes` and `reservedFrom` inputs (`SimInput`, `src/lib/sim/scenario/types.ts`) are set only by the engine's tests; the simulation never sets them.
 - **207.11 null cap and height (ruling 2):** a lot with no density cap has unlimited density, meets any minimum, and fails ordinance condition (b)(8), so it never qualifies (`s207Envelope` takes a non-null cap; `s207Row` throws on an `applies` row with a null cap). The under-40 ft test reads `lpFt` on a Local Program lot and `baseFt` elsewhere (input `fzpHeightFt`), because every project on a Local Program lot uses the Local Program. No shipped row changes (V33 stays OK).
 - **Sibling document, not `PlanOp`s (ruling 3):** see "The lever document".
 - **Edit semantics (rules and paint, sim runs plan 1), protection (amended by the 2026-10-29 rulings), Local Program forcing, policy start, rescale, scale bounds, references, capacity metric, disapproval threshold (ruling 3):** each is stated with its reason in the sections above.

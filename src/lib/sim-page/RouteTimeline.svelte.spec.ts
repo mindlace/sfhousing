@@ -39,14 +39,15 @@ function emulatePointer(fine: boolean): void {
 function setup(
   pathway: Pathway = 'discretionary',
   fine = true,
-  tweak: (c: Calibration) => void = () => {}
+  tweak: (c: Calibration) => void = () => {},
+  extra: { custom?: boolean } = {}
 ) {
   emulatePointer(fine);
   const calibration = load();
   tweak(calibration);
   const store = new PolicyStore(DEFAULT_POLICY);
   const announce = vi.fn();
-  void render(RouteTimeline, { props: { store, calibration, pathway, announce } });
+  void render(RouteTimeline, { props: { store, calibration, pathway, announce, ...extra } });
   return { store, calibration, announce };
 }
 
@@ -238,6 +239,19 @@ describe.each([768, 375])('RouteTimeline at %i px', (width) => {
       .dispatchEvent(new Event('change', { bubbles: true }));
     await expect.element(segment(/^Permit review, 5 months/)).toBeInTheDocument();
     expect(store.policy.timing.current.edits).toHaveLength(1);
+  });
+
+  it('with custom false a segment opens its details with no editor and no handles', async () => {
+    await page.viewport(width, 900);
+    setup('discretionary', true, () => {}, { custom: false });
+    await expect.element(bar()).toBeVisible();
+    expect(document.querySelector('[data-testid^="handle-"]')).toBeNull();
+    await segment(/^Permit review/).click();
+    await expect.element(segment(/^Permit review/)).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(page.getByText(/^Typical: 9 months/)).toBeVisible();
+    expect(months().elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Shorten by 0.5 month' }).elements()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Lengthen by 0.5 month' }).elements()).toHaveLength(0);
   });
 
   it('a locked stage shows its reason and no editor', async () => {

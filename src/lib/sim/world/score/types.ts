@@ -86,6 +86,8 @@ export interface SeriesChunk {
   tiers: TierUnits[] | null;
   /** The plan world's cars; null for a world without a car system. */
   cars: CarRow[] | null;
+  /** E2: homes waiting in the plan's funding line. Optional for good; absent reads as null. */
+  waiting?: number[] | null;
 }
 
 /** One calendar month's cars: the last model month ending in it, or the one before it. */
@@ -225,6 +227,8 @@ export interface TimelineView {
   phasing: TimelineScore['phasing'];
   references: TimelineScore['references'];
   compare: 'plan' | 'preFzp';
+  /** E2: homes waiting for money by month. Optional for good; absent reads as null. */
+  waitingMoney?: number[] | null;
 }
 
 /** What `cardAt` needs beyond the world. */

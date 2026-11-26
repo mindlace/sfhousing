@@ -4,7 +4,7 @@
   the pool draft). Nothing is added here.
 -->
 <script lang="ts">
-  import { ALL_ALLOWED, type Allowed } from '$lib/game/allowed';
+  import { OPEN_LIMITS, type Limits } from '$lib/game/limits';
   import type { Calibration } from '$lib/timelapse/types';
   import { addChoices, type AddOffer } from './add';
   import type { PolicyKind, SimPolicy4 } from './policy4';
@@ -16,13 +16,13 @@
     doc: SimPolicy4;
     /** A pick, with the label it was offered under. */
     onpick(choice: AddOffer, label: string): void;
-    /** What the level allows: only the choices it allows are offered. */
-    allowed?: Allowed;
+    /** What is bought: only the choices it allows are offered. */
+    limits?: Limits;
   }
 
-  let { kind, calibration, doc, onpick, allowed = ALL_ALLOWED }: Props = $props();
+  let { kind, calibration, doc, onpick, limits = OPEN_LIMITS }: Props = $props();
 
-  const choices = $derived(addChoices(kind, calibration, doc, allowed));
+  const choices = $derived(addChoices(kind, calibration, doc, limits));
   const link =
     'min-h-6 min-w-6 rounded-md px-1 text-left font-semibold underline hover:bg-surface-raised dark:hover:bg-surface-dark-raised';
 </script>

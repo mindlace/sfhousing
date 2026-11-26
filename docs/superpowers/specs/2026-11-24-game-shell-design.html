@@ -1,0 +1,877 @@
+<article>
+  <header>
+    <h1>Game shell: one address, the opening, the header and the name</h1>
+    <p>The game lives at <code>/</code>: the brush editor in the opening, the simulation after it, a header without steps, and the site named SF Housing.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This subsystem is the shell around the game of the incremental loop. It makes Paint and the simulation one page at one address, turns Paint into the opening of a new game, takes the two steps out of the header, renames the site and removes Remix from the shared plan page.</p>
+    <p>It carries these rulings and calls:</p>
+    <ul>
+      <li><strong>P5</strong> one game on one page: the steps "1 Paint" and "2 Simulate" go.</li>
+      <li><strong>P8</strong> the name is "SF Housing".</li>
+      <li><strong>P11</strong> paint is the opening only: the brush shows until the first run starts and never again.</li>
+      <li><strong>P13</strong> no Remix: the Remix button on <code>/p/&lt;id&gt;</code> goes, and the shared banner loses it for both kinds.</li>
+      <li><strong>P14</strong> Publish sends what is true: the plan during the opening.</li>
+      <li><strong>D7</strong> the account is made at the first win, which is the room goal: the opening calls <code>won()</code>.</li>
+      <li><strong>Call 6</strong> one address: <code>/sim</code> redirects to <code>/</code>; the map remounts once and keeps the camera.</li>
+      <li><strong>Call 7</strong> the header's unit count (<code>GameCell</code>) takes the level cell's place.</li>
+      <li><strong>Call 9</strong> the open game is the whole tool, and <strong>call 21</strong>: at <code>/</code> it shows the simulation; a test that needs the opening seeds a new visitor.</li>
+      <li><strong>Call 15</strong> the name changes in the user-facing places, <code>SES_FROM</code> and the tests; <code>rpID</code> and the infrastructure names stay.</li>
+    </ul>
+    <p>This is the last part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says. When the lane lands, the application builds again and type-checks outside <code>e2e/**</code>; the e2e specs that still use the earlier helper API, and the e2e run, are whole again when <code>closing</code> lands (design, <code>sec-write-sets</code>).</p>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>This subsystem produces no row. It needs G7 and U1. G1 is copied for the shape of the state it reads. All three are copied below without change.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G7</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's game store</td><td><a href="#sec-if-g7">G7</a></td></tr>
+        <tr><th scope="row">U1</th><td><code>tally-tree</code></td><td>Decomposition choice</td><td>The game's cards, the tree screen, the header parts</td><td><a href="#sec-if-u1">U1</a></td></tr>
+      </tbody>
+    </table>
+    <section id="sec-if-g1">
+      <h3>G1 The game's state and the saved game</h3>
+      <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+      <dl>
+        <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+        <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+        <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+        <dt><code>units</code></dt><dd>The balance to spend.</dd>
+        <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+        <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+        <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+        <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+      </dl>
+      <ul>
+        <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+        <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+        <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+        <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+        <li>The server stores what <code>parseGameSave</code> returns.</li>
+        <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+        <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+    </section>
+    <section id="sec-if-g7">
+      <h3>G7 The browser's game store</h3>
+      <pre><code data-lang="ts">// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  get state(): GameState;
+  get limits(): Limits;
+  get open(): boolean;
+  get saves(): readonly SaveEntry[];
+  get currentId(): string;
+  get sync(): SaveSync;
+  won(): void;
+  startRuns(): StoreChange;
+  buy(id: NodeId): Bought;
+  settle(r: RunResult): StoreChange;
+  takeNext(): StoreChange;
+  touched(): void;
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  read(id: string): GameSave | null;
+  adopt(saves: readonly GameSave[]): StoreChange;
+  rekey(id: string, newId: string): StoreChange;
+}
+
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <ul>
+        <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+        <li>Every save the store reads, from storage or from the server, passes through <code>parseGameSave</code> and then its state through <code>fitGame</code> (G6).</li>
+        <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
+        <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
+        <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
+        <li>The store does not hold the policy document. The page applies the grant (G5).</li>
+        <li>Each write calls <code>sync.changed(id)</code>, as today.</li>
+        <li>The open game is in phase <code>'runs'</code> with the last rung met, every node bought and no units; its methods that write do nothing.</li>
+        <li><code>settle</code> does nothing for a result already settled.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> the saved-games methods, <code>touched</code>, <code>beforeLeave</code>, the storage keys, <code>SaveSync</code>. <strong>Removed:</strong> <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>, <code>Offer</code>.</p>
+    </section>
+    <section id="sec-if-u1">
+      <h3>U1 The game's screens and header parts</h3>
+      <pre><code data-lang="ts">// src/lib/game/ui/Tally.svelte
+interface TallyProps {
+  result: RunResult;
+  before: number | null;
+  deadline: string;
+  oncontinue(): void;
+}
+
+// src/lib/game/ui/Tree.svelte
+interface TreeProps {
+  nodes: NodeView[];
+  on: Record&lt;NodeId, boolean&gt;;
+  units: Units;
+  busy: boolean;
+  next: Rung | null;
+  ending: { reachedOn: Day; stateBy: Day; perAddedHome: number | null } | null;
+  onbuy(id: NodeId): void;
+  onedit(id: NodeId): void;
+  ontoggle(id: NodeId, on: boolean): void;
+  onrun(): void;
+  onnext(): void;
+  onpublish(): void;
+}
+
+// src/lib/game/ui/GoalHeadline.svelte
+interface GoalHeadlineProps {
+  homes: number | null;
+  amount: number;
+  deadline: string;
+  unlocks: string | null;
+  met: boolean;
+  side: { goal: SideGoal; value: number; target: number; met: boolean }[];
+}
+
+// src/lib/game/ui/OpeningCard.svelte
+interface OpeningCardProps {
+  amount: number;
+  onstart(): void;
+}
+
+// src/lib/game/ui/GameCell.svelte
+interface GameCellProps {
+  inMenu: boolean;
+}</code></pre>
+      <dl>
+        <dt><code>before</code></dt><dd>Homes by the deadline in the run before this one on the same rung, or null.</dd>
+        <dt><code>on</code></dt><dd>For each bought node whose grant made a policy: whether that policy is switched on. A node with no entry shows no switch.</dd>
+        <dt><code>ending</code></dt><dd>Set once the last rung is met: the day the goal was reached, the day the state asks for the goal's homes by (<code>stateBy</code>, RHNA's deadline), and public money per added home.</dd>
+        <dt><code>busy</code></dt><dd>The forecast for the next run is not ready. Run says so and waits.</dd>
+        <dt><code>next</code></dt><dd>The rung on offer, when the rung in play is met.</dd>
+        <dt><code>homes</code></dt><dd>Null before the first run of a rung: the headline then shows the goal alone.</dd>
+        <dt><code>unlocks</code></dt><dd>What meeting the goal opens; null at the last rung.</dd>
+      </dl>
+      <ul>
+        <li><code>Tally</code> shows homes by the deadline with the change from the last run, units collected out of units dropped, the lump and side rewards, homes in each stage, and homes waiting for money when that is not null.</li>
+        <li><code>Tally</code> holds the account offer that the win card holds today.</li>
+        <li><code>Tree</code> shows each node with its label, its step, its price or how far short the balance is, and Edit when bought. One node at a time is open with its line, its source and Buy.</li>
+        <li><code>Tree</code> holds Run, and "Take the next goal" while <code>next</code> is set.</li>
+        <li><code>Tree</code> fills the page below the header, as in the wireframe.</li>
+        <li>A bought node with an entry in <code>on</code> carries a switch, which calls <code>ontoggle</code>.</li>
+        <li>With <code>ending</code> set, <code>Tree</code> shows the ending's summary and Publish, which calls <code>onpublish</code>.</li>
+        <li><code>GamePanel</code> loads <code>/</code> afresh after a switch of game, a new game, or the deletion of the game in play.</li>
+        <li>These parts' words are in <code>src/lib/game/ui/words.ts</code>.</li>
+        <li><code>GoalHeadline</code> is the header's pinned item: line 1 the homes of the amount by the deadline, line 2 a bar and what it unlocks. Pressing it opens the side goals.</li>
+        <li><code>GameCell</code> shows the unit count and opens <code>GamePanel</code>: saved games, New game, the sync line, the sound switch and "Collect for me".</li>
+        <li>Every control is reachable by keyboard, has a visible focus ring and a target of at least 24 px.</li>
+        <li>No part reads the simulation or the map. Each takes what it shows as props or from <code>useGame()</code>.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>WinCard</code>, <code>LevelPanel</code>, <code>LevelCell</code>.</p>
+    </section>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on the worktree at <code>4d22bf96</code>. Paths are relative to the repository root.</p>
+
+    <section id="sec-found-header">
+      <h3>The header</h3>
+      <ul>
+        <li>The bar's site name is <code>SF Housing</code> with <code>Simulator</code> in a span that is <code>sr-only</code> below xl (<code>src/lib/shell/SiteHeader.svelte:187-189</code>). The Menu's copy is the literal <code>SF Housing Simulator</code>, shown below sm on a page that pins an item (<code>:243-249</code>).</li>
+        <li>The steps are a snippet of an ordered list: "1 Paint" links <code>/</code>; "2 Simulate" links <code>/sim</code>, or is a dashed span with <code>data-step-locked</code> while <code>locked</code> (<code>:147-168</code>). It renders in a <code>nav aria-label="Steps"</code> from lg (<code>:190-192</code>) and in the Menu below lg (<code>:250-252</code>).</li>
+        <li><code>locked</code> is <code>mounted &amp;&amp; !game.open &amp;&amp; simLocked(game.progress)</code> (<code>:71</code>); <code>onSim</code> is <code>routeId === '/sim'</code> (<code>:51</code>).</li>
+        <li><code>LevelCell</code> mounts once: in the bar from lg (<code>:193</code>), in the Menu below lg (<code>:253</code>), only after mount and never for the open game.</li>
+        <li>The Menu button reads "Menu, level up ready" and carries a dot (<code>data-level-dot</code>) while <code>ready</code>: an offer is set and the round is not complete (<code>:77-79</code>, <code>:214</code>, <code>:223-229</code>).</li>
+        <li>A button inside an element marked <code>data-header-keep-open</code> does not close the Menu (<code>:127</code>).</li>
+        <li><code>useHeaderActions(snippet, opts)</code> fills the actions, pinned and status slots for the caller's life; a later mount replaces all three, and destroy clears them only if the caller is still the owner (<code>src/lib/shell/header-actions.svelte.ts:36-56</code>).</li>
+        <li><code>isFullHeightRoute</code> is true for <code>/</code>, <code>/sim</code>, <code>/lesscars</code>, <code>/p/[id]</code> and <code>/s/[id]</code> (<code>src/lib/shell/layout.ts:2-10</code>). No <code>src/routes/lesscars</code> exists.</li>
+        <li>The root layout provides the open game on the server and under the e2e seam, else a <code>GameStore</code> with save sync (<code>src/routes/+layout.svelte:19-32</code>). The layout load returns <code>datasetVersion</code>, <code>appRelease</code>, <code>user</code> and <code>signInAvailable</code> (<code>src/routes/+layout.server.ts:10-29</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-pages">
+      <h3>The two map pages</h3>
+      <ul>
+        <li><code>/</code>'s load returns <code>{ plan, manifest, fellBack, manifestError }</code> with an empty plan on the current dataset; an invalid dataset version is a 500 (<code>src/routes/+page.ts:8-25</code>). Nothing reads <code>fellBack</code>.</li>
+        <li><code>/sim</code>'s load returns <code>SimPageData</code> from <code>loadSimScenario(datasetVersion, datasetVersion, fetch)</code> (<code>src/routes/sim/+page.ts:9-17</code>). That function loads the same manifest, then the calibration named by <code>manifest.scenarios.fzp</code>; failures are flags (<code>src/lib/sim-page/load.ts:24-53</code>).</li>
+        <li>The calibration file is at most 256 KB (V25, <code>docs/dev/pipeline.md:157</code>); the fixture's is 59,823 bytes (<code>e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json</code>).</li>
+        <li><code>/sim</code> mounts <code>&lt;SimRoute {data} mode="edit" persist="restore" /&gt;</code> under the title "Policy simulation · SF Housing Simulator" (<code>src/routes/sim/+page.svelte:11-14</code>).</li>
+        <li><code>SimRoute</code> in edit mode renders nothing until mounted, then the locked page while the game is at level 1, else <code>SimPage</code>; it passes no game for the open game (<code>src/lib/sim-page/SimRoute.svelte:56</code>, <code>:99-115</code>).</li>
+        <li><code>/</code> mounts <code>BrushEditor</code> in <code>#map-region</code> (<code>src/routes/+page.svelte:304-324</code>) and puts Publish (plan), the Paint headline and the save state in the header (<code>:104</code>, <code>:243-294</code>).</li>
+        <li>Paint's win: <code>won</code> is <code>locked &amp;&amp; completeNet !== null &amp;&amp; paintWon(completeNet, goal.amount)</code> (<code>:172-173</code>). A complete score sets <code>completeNet</code> (<code>:193-198</code>). The card opens when won, not kept, not open and no pointer is held, and calls <code>game.won()</code> (<code>:186-190</code>). A held pointer is tracked by window events (<code>:297-301</code>).</li>
+        <li>"Complete" is chunk readiness only; a preview diff over loaded cells is complete (<code>src/lib/sim/host.ts:137-147</code>). The held-pointer flag is what defers the card during a stroke.</li>
+        <li>The page sets the store's offer while won (<code>:212-224</code>) and calls <code>goto('/sim')</code> when the level leaves 1 (<code>:226-232</code>).</li>
+        <li>The page restores the autosaved plan on mount, registers <code>game.beforeLeave(() =&gt; autosave.flush())</code> and calls <code>game.touched()</code> after each autosave write (<code>:68-85</code>, <code>:234-240</code>).</li>
+        <li><code>BrushEditor</code> passes no <code>initialFrame</code> to <code>SimMap</code> and exports only <code>getEditor</code> and <code>retryChunks</code> (<code>src/lib/brush/BrushEditor.svelte:182</code>, <code>:190</code>, <code>:602-609</code>). <code>SimMap</code> takes <code>initialFrame?: CameraFrame</code> (<code>src/lib/map/types.ts:14-19</code>, <code>:178</code>; <code>src/lib/map/camera.ts:30-56</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-shared">
+      <h3>The shared plan page and the banner</h3>
+      <ul>
+        <li><code>/p/[id]</code> builds a Remix state from the game, makes a saved game through <code>game.remix</code> and loads <code>/</code>; its "Your game" link is <code>gamePath(level)</code> (<code>src/routes/p/[id]/+page.svelte:44-80</code>).</li>
+        <li><code>SharedBanner</code> takes <code>remix</code>, <code>error</code>, <code>gameHref</code> and <code>onremix</code>, shows Remix, "Your game", <code>FULL_TEXT</code> and an "Open with current data" button on notice N5 or N6 (<code>src/lib/sharing/SharedBanner.svelte:16-96</code>). It imports <code>FULL_TEXT</code> from <code>$lib/game/copy</code>, which <code>game-save</code> deletes (<code>:7</code>).</li>
+        <li><code>/s/[id]</code> passes the same Remix props (<code>src/routes/s/[id]/+page.svelte:82-94</code>) and imports <code>REMIX_LATER</code> and <code>remixNeeds</code> (<code>:12</code>).</li>
+        <li><code>src/lib/sharing/remix.ts</code> has no importer outside its spec (<code>surveys/paint-opening.md</code>, section d).</li>
+        <li>The share copy says "Anyone with the link can view and remix it." (<code>src/lib/sharing/copy.ts:11-12</code>); N5 says "Remixing moves it to the current data" (<code>:36-37</code>); <code>SIM_COPY.startHref</code> is <code>/sim</code> (<code>:139</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-name">
+      <h3>The name</h3>
+      <ul>
+        <li><code>APP_NAME = 'SF Housing Simulator'</code> (<code>src/lib/config.ts:2</code>); its one user is the About title (<code>src/routes/about/+page.svelte:19</code>). <code>config.ts</code> is an input of the dataset version (<code>pipeline/lib/version.ts:41-50</code>).</li>
+        <li><code>PRODUCT_NAME = 'SF Housing Simulator'</code> feeds every email string and, as <code>PASSKEY_RP_NAME</code>, the passkey prompt (<code>src/lib/server/auth/brand.ts:2</code>, <code>:8</code>; <code>src/lib/server/email-templates/copy.ts:5-37</code>).</li>
+        <li><code>FUTURE_SCHEMA_MESSAGE</code> names the site (<code>src/lib/plan/schema.ts:32-33</code>). <code>schema.ts</code> is not an input of the dataset version.</li>
+        <li><code>SES_FROM</code> is <code>SF Housing Simulator &lt;noreply@sfhousing.mindlace.net&gt;</code> in production and staging (<code>wrangler.jsonc:40</code>, <code>:95</code>).</li>
+        <li>The other user-facing literals: <code>src/routes/+page.svelte:296</code>, <code>:303</code>; <code>src/routes/sim/+page.svelte:11</code>; <code>src/routes/p/[id]/+page.svelte:38</code>; <code>src/routes/p/[id]/+error.svelte:15</code>, <code>:18</code>; <code>src/routes/s/[id]/+page.svelte:26</code>; <code>src/routes/s/[id]/+error.svelte:16</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-about">
+      <h3>About</h3>
+      <ul>
+        <li>The words are in <code>src/lib/about/copy.ts</code>: the term "To beat" (<code>:72-75</code>), <code>LEVELS</code> (<code>:84-90</code>), <code>LEVEL_NOTES</code> (<code>:92-96</code>), <code>SAVED_GAMES</code> with a Remix line (<code>:98-102</code>).</li>
+        <li><code>AboutUsing</code> renders them as the sections "Levels" (<code>id="about-levels"</code>) and "Saved games" (<code>id="about-saved-games"</code>) (<code>src/lib/about/AboutUsing.svelte:47-64</code>). <code>src/routes/about/page.svelte.spec.ts:9</code> and <code>src/lib/about/AboutDialog.svelte.spec.ts:33</code> name both ids through <code>ABOUT_ID</code>.</li>
+        <li>"The goal" says "by the end of the 40-year window" (<code>src/lib/about/copy.ts:59-67</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-address">
+      <h3>One address</h3>
+      <p><code>/</code> loads what both the opening and the simulation need. <code>+page.svelte</code> chooses its body after mount from the game.</p>
+      <pre><code data-lang="ts">// src/routes/+page.ts
+import { error } from '@sveltejs/kit';
+import { emptyPlan, type Plan } from '$lib/plan';
+import { loadSimScenario, type SimPageData } from '$lib/sim-page/load';
+import type { PageLoad } from './$types';
+
+/** The opening's plan and the simulation's scenario: one manifest, then the calibration. */
+export type HomeData = SimPageData &amp; { plan: Plan };
+
+export const load: PageLoad = async ({ fetch, parent }): Promise&lt;HomeData&gt; =&gt; {
+  const { datasetVersion } = await parent();
+  let plan: Plan;
+  try {
+    plan = emptyPlan(datasetVersion);
+  } catch {
+    error(500, 'Invalid dataset version');
+  }
+  const { fellBack: _current, ...scenario } = await loadSimScenario(
+    datasetVersion,
+    datasetVersion,
+    fetch
+  );
+  return { plan, ...scenario };
+};</code></pre>
+      <ul>
+        <li>The load fetches the manifest once and the calibration once. The opening uses <code>plan</code>, <code>manifest</code> and <code>manifestError</code>; the simulation uses the five <code>SimPageData</code> fields.</li>
+        <li>A manifest failure returns <code>manifest: null</code>, <code>manifestError: true</code>, <code>calibration: null</code> and never throws. A calibration failure returns <code>calibrationError: true</code>; the opening runs, and the simulation shows its own Retry when it mounts.</li>
+        <li><code>fellBack</code> is no longer returned: nothing read it.</li>
+        <li>Cost: the calibration (at most 256 KB, 59,823 bytes in <code>fixture-0</code>) is fetched on every load of <code>/</code>, the opening included, and on a server render its body is inlined in the HTML, as <code>/sim</code>'s is today.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision</strong> Load both in <code>+page.ts</code>. The phase lives in the browser's storage, so the server cannot tell which body is needed. Loading the calibration only when the simulation mounts would add a round trip before the simulation on every later visit, which is every visit after the first win. The opening is played once per game.</aside>
+
+      <pre><code data-lang="svelte">&lt;!-- src/routes/+page.svelte --&gt;
+&lt;script lang="ts"&gt;
+  import { onMount } from 'svelte';
+  import { useGame, type StoreChange } from '$lib/game/store.svelte';
+  import type { CameraFrame } from '$lib/map/types';
+  import { SITE_NAME } from '$lib/shell/name';
+  import PaintOpening from '$lib/shell/PaintOpening.svelte';
+  import SimRoute from '$lib/sim-page/SimRoute.svelte';
+  import type { PageProps } from './$types';
+
+  let { data }: PageProps = $props();
+  const game = useGame();
+  let mounted = $state(false);
+  onMount(() =&gt; (mounted = true));
+  /** The opening's camera, handed to the simulation's map at Start; undefined after a load. */
+  let frame = $state&lt;CameraFrame | undefined&gt;();
+  const body = $derived(
+    !mounted ? 'pending' : game.open || game.state.phase === 'runs' ? 'sim' : 'opening'
+  );
+
+  function start(f: CameraFrame | null): StoreChange {
+    frame = f ?? undefined;
+    return game.startRuns();
+  }
+
+&lt;/script&gt;
+
+&lt;svelte:head&gt;&lt;title&gt;{SITE_NAME}&lt;/title&gt;&lt;/svelte:head&gt;
+&lt;h1 class="sr-only"&gt;{SITE_NAME}&lt;/h1&gt;
+{#if body === 'pending'}
+  &lt;div id="map-region" class="relative h-full" data-testid="home-frame"&gt;&lt;/div&gt;
+{:else if body === 'sim'}
+  &lt;SimRoute {data} mode="edit" persist="restore" initialFrame={frame} /&gt;
+{:else}
+  &lt;PaintOpening {data} onstart={start} /&gt;
+{/if}</code></pre>
+
+      <table id="tbl-home-states">
+        <caption>What <code>/</code> mounts</caption>
+        <thead>
+          <tr><th scope="col">Game</th><th scope="col">Body</th><th scope="col">Header slots</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Before mount (server render, first client render)</th><td>The heading and an empty <code>home-frame</code></td><td>Empty</td></tr>
+          <tr><th scope="row">The open game</th><td><code>SimRoute</code>, edit mode, no game</td><td>The simulation's</td></tr>
+          <tr><th scope="row"><code>phase</code> <code>'opening'</code></th><td><code>PaintOpening</code></td><td>Publish (plan), Room for N homes, save state</td></tr>
+          <tr><th scope="row"><code>phase</code> <code>'runs'</code></th><td><code>SimRoute</code>, edit mode, the game</td><td>The simulation's</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The body is chosen only after mount, because the server and the browser hold different games; choosing earlier would mismatch at hydration.</li>
+        <li>The open game is in phase <code>'runs'</code> (G7), so it gets the simulation (call 21). <code>game.open</code> is also tested on its own, so the rule does not rest on the open game's phase alone.</li>
+        <li>The body follows <code>game.state.phase</code> reactively. The opening ends when <code>startRuns()</code> sets <code>phase</code> to <code>'runs'</code>; the page then unmounts <code>PaintOpening</code> (its autosave flushes on detach) and mounts <code>SimRoute</code>. This is the one remount of the map (call 6).</li>
+        <li>After that change, focus is <code>game-sim</code>'s: it moves into the map box when the simulation is starting its first run. This page moves no focus.</li>
+        <li>The page does not remount on a change of <code>game.currentId</code>: a rekey of the current game by the save sync keeps the same game. A switch, New game or the deletion of the game in play is followed by a full load of <code>/</code> by <code>GamePanel</code> (U1).</li>
+        <li>The page title is the site's name in every state. The heading is the site's name, <code>sr-only</code>.</li>
+      </ul>
+
+      <section id="sec-design-sim-route">
+        <h4>What the simulation must take from this page</h4>
+        <p><code>SimRoute</code>, <code>SimPage</code> and <code>TimelineMode</code> belong to <code>game-sim</code>, which accepts <code>initialFrame</code> on all three and passes it to the map. This page relies on two things from them.</p>
+        <pre><code data-lang="ts">// src/lib/sim-page/SimRoute.svelte (game-sim): the prop this page passes, carried through
+// SimPage and TimelineMode to &lt;SimMap initialFrame&gt;
+interface Props {
+  // every prop it has today, and:
+  /** Edit mode: the camera the simulation's map opens on; the opening's at Start. */
+  initialFrame?: CameraFrame;
+}</code></pre>
+        <ul>
+          <li>A game whose <code>phase</code> is <code>'runs'</code> and whose <code>runs</code> is 0 opens on a run starting, not on the tree. The first run starts from the opening card; a load before the first run settles starts it again.</li>
+          <li>The run view (M1) remembers the camera the map opened on and returns to it after the run, so the opening's camera is where the player lands after the first run.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-sim-redirect">
+        <h4><code>/sim</code></h4>
+        <pre><code data-lang="ts">// src/routes/sim/+page.ts
+import { redirect } from '@sveltejs/kit';
+import type { PageLoad } from './$types';
+
+/** The game lives at `/` (one address): a permanent redirect, the query dropped. */
+export const load: PageLoad = () =&gt; {
+  redirect(308, '/');
+};</code></pre>
+        <pre><code data-lang="svelte">&lt;!-- src/routes/sim/+page.svelte: never rendered, its load always redirects --&gt;
+&lt;!-- /sim redirects to / (one address); see +page.ts. --&gt;</code></pre>
+        <ul>
+          <li>Both files are this subsystem's. The load is universal, so the server answers a first request with the 308 and a client navigation follows the same redirect without a server round trip.</li>
+          <li>Status 308, as <code>/attribution</code>'s redirect.</li>
+          <li>The query is dropped. The only query <code>/sim</code> ever read is <code>?seed=</code>, retired and dropped by <code>SimRoute</code> today. The browser keeps a fragment across the redirect.</li>
+          <li><code>game-sim</code> deletes the old page's tests under <code>src/routes/sim</code> (<code>page.spec.ts</code>, <code>page.svelte.spec.ts</code>, <code>game.svelte.spec.ts</code>) and moves what it keeps of them and of the hosts <code>test/GameSimHost.svelte</code> and <code>test/SimPageHost.svelte</code> under <code>src/lib/sim-page</code>.</li>
+          <li>The redirect's own test is in <code>src/routes/page.spec.ts</code>: <code>/sim</code>'s load throws a redirect with status 308 and location <code>/</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-open-game">
+        <h4>The open game and the e2e specs</h4>
+        <aside data-kind="warning"><strong>For <code>closing</code></strong> The open game at <code>/</code> is the simulation. It never shows the opening. Every e2e spec that seeds no game and goes to <code>/</code> or <code>/sim</code> now gets the simulation at <code>/</code>. A spec that needs the brush editor calls <code>newVisitor(page)</code> before its first navigation: the real store then holds a new game in the opening.</aside>
+        <ul>
+          <li>No query, flag or seam chooses the phase. The open game reaches the simulation by being open; a real game reaches the opening by being new.</li>
+          <li><code>e2e/helpers/sharing.ts</code>'s <code>gotoEditor</code> calls <code>newVisitor(page)</code> and then goes to <code>/</code>; the eleven direct <code>page.goto('/')</code> lines that expect the brush do the same. <code>fixture-0</code> cannot reach 82,069 homes, so no card opens in those specs unless they seed the goal.</li>
+          <li>The <code>gotoSim</code> helpers and <code>page.goto('/sim')</code> keep working through the redirect. Assertions on <code>/\/sim$/</code> become <code>/\/$/</code>.</li>
+          <li>Clicks on the "Paint" and "Simulate" steps, <code>headerLink(page, 'Simulate')</code> and every assertion on the steps go.</li>
+          <li>Path lists <code>['/', '/sim']</code> become <code>['/']</code>, plus a <code>newVisitor</code> case where the spec checks the opening.</li>
+          <li><code>paint-win</code> expectations move to <code>data-testid="opening-card"</code>, <code>OpeningCard</code>'s own root (U1), and to its controls. The wrapper is <code>opening-card-box</code>.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-opening">
+      <h3>The opening</h3>
+      <p>Today's <code>/</code> body moves into a new component, <code>src/lib/shell/PaintOpening.svelte</code>, so that its header registration lives only while the opening is mounted.</p>
+      <pre><code data-lang="ts">// src/lib/shell/PaintOpening.svelte
+interface Props {
+  /** The page's load data and the layout's dataset version. */
+  data: { plan: Plan; manifest: Manifest | null; manifestError: boolean; datasetVersion: string };
+  /** Start on the opening card, with the map's camera (null without a map). */
+  onstart(frame: CameraFrame | null): StoreChange;
+}
+
+// src/lib/brush/BrushEditor.svelte, one export added
+/** The map's camera now: centre, zoom, pitch, bearing; null before the map exists. */
+export function camera(): CameraFrame | null;</code></pre>
+      <p>What moves as it is from <code>src/routes/+page.svelte</code>:</p>
+      <ul>
+        <li><code>BrushEditor</code> in <code>&lt;div id="map-region" class="relative h-full"&gt;</code> with the same props.</li>
+        <li>The autosave: restore on mount, notices N1 to N3, <code>schedule</code> on each plan change, <code>beforeLeave</code> flush, <code>touched()</code> after each write, <code>setLastPublished</code> on publish.</li>
+        <li>The dock, Details (<code>PaintDetails</code>), the layer switches, the score wiring and the e2e goal seam (<code>e2eGoalAmount</code>, read on mount).</li>
+        <li><code>useHeaderActions(headerActions, { pinned: scoreBar, status: saveState })</code>: Publish with <code>PLAN_CODEC</code> (P14), the pinned "Room for N homes" and "N% of the goal", and the save state.</li>
+      </ul>
+      <p>What changes:</p>
+      <ul>
+        <li><code>won</code> is <code>completeNet !== null &amp;&amp; completeNet &gt;= goal.amount</code>. <code>paintWon</code>, <code>simLocked</code> and <code>locked</code> go; the component mounts only for a real game in the opening.</li>
+        <li><code>cardOpen</code> resets to false whenever <code>won</code> changes, as today. <code>kept</code> and <code>keep()</code> go: <code>OpeningCard</code> has no "Keep playing".</li>
+        <li><code>maybeOpen()</code> opens the card when <code>won</code>, the card is closed and no pointer is held, and calls <code>game.won()</code>. It runs after each complete score and on pointer release.</li>
+        <li>The card stays while the goal is met. A stroke that takes the plan below the goal closes it; crossing again reopens it on release.</li>
+        <li>The card is <code>&lt;OpeningCard amount={goal.amount} onstart={start} /&gt;</code> inside <code>&lt;div data-testid="opening-card-box" class="pointer-events-auto"&gt;</code>, in the notice stack where <code>WinCard</code> was.</li>
+        <li>The offer effect, <code>setOffer</code>, the <code>goto('/sim')</code> effect, <code>WinCard</code> and <code>unlockText</code> go.</li>
+        <li>The page's comment about a complete score is corrected: complete means the cells are loaded; the held pointer is what defers the card during a stroke.</li>
+      </ul>
+      <pre><code data-lang="ts">// in PaintOpening.svelte
+const START_REFUSED = 'This browser refused to save.';
+
+function start(): void {
+  const r = onstart(brushEditor?.camera() ?? null);
+  if (r.ok &amp;&amp; game.state.phase === 'runs') return;
+  notices = [...notices.filter((n) =&gt; n.id !== 'start'), { id: 'start', text: START_REFUSED }];
+}</code></pre>
+      <ul>
+        <li>Start reads the camera before anything unmounts, then the page calls <code>game.startRuns()</code>.</li>
+        <li>When the write is refused, or the phase is still <code>'opening'</code>, the opening stays and the notice "This browser refused to save." shows in its notice stack.</li>
+        <li>After the opening the plan is not shown again. Its record (<code>sfhousing:plan:v1</code>) stays as it is, and the store keeps it in the saved game's <code>plan</code>, as today. Nothing in the simulation reads it (P11). A plan published from it still opens at <code>/p/&lt;id&gt;</code>.</li>
+        <li>After the opening, Publish sends the policy; that button is <code>game-sim</code>'s.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-header">
+      <h3>The header</h3>
+      <ul>
+        <li>The <code>steps</code> and <code>stepNumber</code> snippets, both <code>nav aria-label="Steps"</code>, <code>lockedStep</code>, <code>onSim</code>, <code>locked</code> and <code>ready</code> go. <code>link</code> and <code>tab</code> stay for the account and About entries.</li>
+        <li><code>GameCell</code> (U1) takes <code>LevelCell</code>'s two places: <code>{#if mounted &amp;&amp; !game.open &amp;&amp; wide}&lt;GameCell inMenu={false} /&gt;{/if}</code> after the bar's site name, and <code>{#if mounted &amp;&amp; !game.open &amp;&amp; !wide}&lt;GameCell inMenu /&gt;{/if}</code> after the Menu's site name.</li>
+        <li>The Menu button's label is "Menu" in every state. It has no dot.</li>
+        <li>The <code>data-header-keep-open</code> rule stays: a button inside such an element does not close the Menu. <code>GameCell</code>'s root carries the attribute (<code>tally-tree</code>'s).</li>
+        <li>The bar's site name is <code>{SITE_NAME}</code> with no hidden part. The Menu's copy is <code>{SITE_NAME}</code>.</li>
+        <li><code>routeId</code> stays a prop; only About's <code>aria-current</code> reads it.</li>
+        <li>The header comment is rewritten to the rules of this section.</li>
+      </ul>
+      <table id="tbl-header-widths">
+        <caption>The header at each width, after the change</caption>
+        <thead>
+          <tr><th scope="col">Width</th><th scope="col">In the bar</th><th scope="col">In the Menu</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Below sm (under 640 px)</th><td>Name (only when nothing is pinned), status, pinned, Menu button</td><td>Name (when pinned), <code>GameCell</code>, actions, account, About</td></tr>
+          <tr><th scope="row">sm to lg (640 to 1023 px)</th><td>Name, status, pinned, Menu button</td><td><code>GameCell</code>, actions, account, About</td></tr>
+          <tr><th scope="row">lg to xl (1024 to 1279 px)</th><td>Name, <code>GameCell</code>, status, pinned (centred), actions, account (at most 6 rem), About</td><td>No Menu</td></tr>
+          <tr><th scope="row">xl and up</th><td>As lg, the account at most 10 rem</td><td>No Menu</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><code>GameCell</code> shows only after mount and never for the open game. Before mount, the header holds the name, the account entry from <code>user</code> and About.</li>
+        <li>The status cell is the page's: the plan's save state in the opening, the simulation's after it. It keeps its place and padding.</li>
+        <li>The pinned item is the page's: "Room for N homes" in the opening, <code>GoalHeadline</code> (<code>game-sim</code>'s registration) after it.</li>
+        <li>The <code>&lt;header&gt;</code> stays <code>relative</code> and the pinned slot's box is not positioned, so <code>GoalHeadline</code>'s side-goals pop-over places itself against the header. The slot renders whatever the snippet renders, including <code>GoalHeadline</code>'s two root nodes (the headline and its live region).</li>
+        <li>The actions are the page's: Publish for the plan in the opening, Publish for the policy after it.</li>
+        <li>In the opening the header shows: the name, <code>GameCell</code>, the plan's save state, "Room for N homes" with "N% of the goal", Publish for the plan, the account entry and About.</li>
+        <li>For the open game the header shows: the name, the simulation's status, pinned item and actions, the account entry and About. It has no <code>GameCell</code>.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision</strong> No dot on the Menu button. Neither a rung on offer nor an affordable node can be acted on from the Menu: "Take the next goal" and Buy are on the tree, which is the page between runs (P7), and <code>GamePanel</code> holds neither.</aside>
+    </section>
+
+    <section id="sec-design-fullheight">
+      <h3>Full-height routes</h3>
+      <pre><code data-lang="ts">// src/lib/shell/layout.ts
+/** Routes that fill the viewport (map pages) instead of flowing as documents. */
+export function isFullHeightRoute(routeId: string | null): boolean {
+  return (
+    routeId === '/' ||
+    (routeId?.startsWith('/p/[id]') ?? false) ||
+    (routeId?.startsWith('/s/[id]') ?? false)
+  );
+}</code></pre>
+      <ul>
+        <li><code>/sim</code> renders nothing of its own, and <code>/lesscars</code> has no route.</li>
+        <li><code>src/routes/+layout.svelte</code> is unchanged: the footer, skip link and <code>&lt;main&gt;</code> follow this rule as today.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-name">
+      <h3>The name</h3>
+      <pre><code data-lang="ts">// src/lib/shell/name.ts (new)
+/** The site's name, wherever the site names itself (P8). */
+export const SITE_NAME = 'SF Housing';
+
+// src/lib/server/auth/brand.ts
+import { SITE_NAME } from '$lib/shell/name';
+/** Product name used in emails and the passkey prompt. */
+export const PRODUCT_NAME = SITE_NAME;
+/** Relying-party display name shown by the passkey prompt. */
+export const PASSKEY_RP_NAME = PRODUCT_NAME;
+
+// src/lib/plan/schema.ts: the name as a literal, since plan/ imports only its siblings
+// and a named list (src/lib/plan/purity.spec.ts); schema.spec.ts pins the sentence
+export const FUTURE_SCHEMA_MESSAGE =
+  'This plan was made with a newer version of SF Housing. Reload the page to get the latest version.';</code></pre>
+      <pre><code data-lang="json">// wrangler.jsonc, production (line 40) and staging (line 95)
+"SES_FROM": "SF Housing &lt;noreply@sfhousing.mindlace.net&gt;",</code></pre>
+      <table id="tbl-name">
+        <caption>The fourteen places and what each becomes</caption>
+        <thead>
+          <tr><th scope="col">Place</th><th scope="col">Becomes</th><th scope="col">Written by</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>SiteHeader.svelte:247</code>, and the split name at <code>:187-189</code></th><td><code>SF Housing</code> at every width</td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/+page.svelte:296</code> (title)</th><td><code>SF Housing</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/+page.svelte:303</code> (h1)</th><td><code>SF Housing</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/sim/+page.svelte:11</code></th><td>Deleted with the page</td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/routes/p/[id]/+page.svelte:38</code></th><td><code>{title or 'Shared plan'} · SF Housing</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/p/[id]/+error.svelte:15</code></th><td><code>Plan not found · SF Housing</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/p/[id]/+error.svelte:18</code></th><td><code>{heading} · SF Housing</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/s/[id]/+page.svelte:26</code></th><td><code>{heading} · SF Housing</code>, from <code>SITE_NAME</code></td><td><code>game-shell</code>, after <code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/routes/s/[id]/+error.svelte:16</code></th><td><code>{heading} · SF Housing</code>, from <code>SITE_NAME</code></td><td><code>game-shell</code>, after <code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/config.ts:2</code> (<code>APP_NAME</code>)</th><td>Left as it is and unused; the About title reads <code>SITE_NAME</code></td><td><code>game-shell</code> (<code>src/routes/about/+page.svelte</code>)</td></tr>
+          <tr><th scope="row"><code>src/lib/server/auth/brand.ts:2</code></th><td><code>PRODUCT_NAME = SITE_NAME</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/lib/plan/schema.ts:33</code></th><td>"…a newer version of SF Housing…"</td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>wrangler.jsonc:40</code></th><td><code>SF Housing &lt;noreply@…&gt;</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>wrangler.jsonc:95</code></th><td><code>SF Housing &lt;noreply@…&gt;</code></td><td><code>game-shell</code></td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The About title becomes "About this model · SF Housing": <code>src/routes/about/+page.svelte</code> imports <code>SITE_NAME</code> from <code>$lib/shell/name</code> in place of <code>APP_NAME</code>.</li>
+        <li>The email strings follow <code>PRODUCT_NAME</code>, for example "Your SF Housing sign in link". <code>src/lib/server/email-templates/copy.ts</code> does not change.</li>
+        <li>The passkey prompt's <code>rpName</code> becomes "SF Housing". <code>rpID</code>, the worker, the bucket, the database, the routes, <code>PSEUDONYMOUS_EMAIL_DOMAIN</code>, <code>REPO_URL</code> and the <code>og:url</code> origins keep their names.</li>
+        <li><code>SES_FROM</code> ships with the code in <code>wrangler.jsonc</code>. <code>worker-configuration.d.ts</code> types vars loosely (<code>--strict-vars=false</code>), so it needs no regeneration.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-shared">
+      <h3>The shared plan page and the banner</h3>
+      <pre><code data-lang="ts">// src/lib/sharing/SharedBanner.svelte: the props after the change
+let {
+  title,
+  createdAt,
+  datasetNotice,
+  planVersion,
+  currentVersion,
+  kind
+}: {
+  title?: string;
+  id: string;
+  createdAt: string;
+  datasetNotice: DatasetNotice;
+  planVersion: string;
+  currentVersion: string;
+  kind: DocKind;
+} = $props();</code></pre>
+      <ul>
+        <li><code>RemixState</code>, <code>remix</code>, <code>error</code>, <code>gameHref</code> and <code>onremix</code> go, with the Remix button, the full note, the alert line and "Open with current data".</li>
+        <li>The banner keeps: the title (or the kind's untitled name), "Shared plan" or "Shared policy", the published date, a "Your game" link to <code>/</code>, and the N5 or N6 line.</li>
+        <li>The banner no longer imports from <code>$lib/game</code>.</li>
+        <li><code>/s/[id]</code> passes the new props (<code>game-sim</code>).</li>
+      </ul>
+      <p>On <code>/p/[id]/+page.svelte</code>:</p>
+      <ul>
+        <li><code>useGame</code>, <code>mounted</code>, <code>error</code>, <code>leaving</code>, <code>remixState</code>, <code>gameHref</code> and <code>remix()</code> go, with the imports of <code>$lib/game/*</code>, <code>PLAN_CODEC</code>, <code>LocalPlanRecord</code> and <code>MAX_SAVES</code>.</li>
+        <li>What remains: the banner, the read-only <code>BrushEditor</code> keyed on <code>data.id</code>, the dock and Details, the layer switches, the pinned "Room for N homes" headline with no actions or status, and the head tags.</li>
+        <li><code>pageTitle</code> is <code>`${data.plan.title ?? 'Shared plan'} · ${SITE_NAME}`</code>. The error page's two titles use <code>SITE_NAME</code>.</li>
+        <li><code>src/routes/p/[id]/test/PageHost.svelte</code> loses its <code>game</code> prop.</li>
+        <li>The read-only editor's line, <code>MSG.readOnly</code> in <code>src/lib/brush/messages.ts</code>, is <code>'Read-only.'</code>; its spec asserts those words. <code>BrushEditor.svelte</code>'s comments name no Remix.</li>
+      </ul>
+      <p>In <code>src/lib/sharing/copy.ts</code>:</p>
+      <pre><code data-lang="ts">dialogBody:
+  'Published plans are public and permanent. Anyone with the link can view it. You can keep editing your own copy afterward.',
+
+export const n5 = (planV: string, current: string): string =&gt;
+  `Made with map data ${planV}, older than the current data (${current}).`;
+
+// SIM_COPY
+startHref: '/'</code></pre>
+      <ul>
+        <li><code>remixedToast</code>, <code>remixConfirm</code>, <code>REMIX_LOCKED</code>, <code>remixNeeds</code> and <code>REMIX_LATER</code> are deleted, and <code>ShareCopy</code> loses <code>remixedToast</code> and <code>remixConfirm</code>.</li>
+        <li>The policy copy follows by <code>toPolicy</code>: "Anyone with the link can view it." and the N5 line are the same words.</li>
+        <li><code>src/lib/sharing/remix.ts</code> and <code>remix.spec.ts</code> are deleted: no page imports them.</li>
+        <li><code>PublishButton</code> and <code>PublishDialog</code> do not change.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-about">
+      <h3>About's text</h3>
+      <p>In <code>src/lib/about/copy.ts</code>, the term "To beat" goes, "The goal" names the deadline, and two terms are added. The new <code>MEANINGS</code> order is: Room for N homes, Homes by a date, From your policy, Current law, The goal, The goal + 15%, The deadline, Units.</p>
+      <pre><code data-lang="ts">{
+  term: 'The goal',
+  body:
+    `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the deadline, ` +
+    `counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so homes built since then count. ` +
+    "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
+    `Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`,
+  source: { label: goalSource.label, url: goalSource.url }
+},
+{
+  term: 'The deadline',
+  body:
+    `When the goal must be met. The first is the end of the ${WINDOW_MONTHS / 12}-year ` +
+    'window; each later one is five or more years earlier. Taking the next one is your choice.'
+},
+{
+  term: 'Units',
+  body:
+    'Homes you collected during a run. Every completed home counts toward the goal; only ' +
+    'collected homes become units to spend in the tree.'
+}
+
+/** Using it: the game, in order. */
+export const GAME_STEPS: readonly string[] = [
+  'Paint room for the goal. Meeting it starts your first run.',
+  'A run plays the forecast from today to the deadline. Sweep the pointer over finished projects to collect their homes before they fade.',
+  'After a run, the tally shows homes by the deadline, the units you collected and where the other homes stand.',
+  'Between runs, spend units in the tree. What you buy is in force from today, and you can switch it off and on.',
+  'Meet the goal to be offered an earlier deadline. Taking it is your choice.'
+];
+
+export const GAME_NOTES: readonly string[] = [
+  'Painting happens once, at the start, to show how much has to be built. The simulation runs your policy.',
+  'Collect for me, behind the unit count, collects every drop as it appears.',
+  'A deadline once met stays met after a data update.',
+  'A published policy plays in full for everyone.'
+];
+
+export const SAVED_GAMES: readonly string[] = [
+  `Each saved game has its own plan, policy, units, purchases and deadlines met. You can keep ${MAX_SAVES}.`,
+  'The unit count in the header opens your saved games.',
+  'Games are saved in this browser, and to your account from your first win.'
+];</code></pre>
+      <ul>
+        <li><code>GAME_NOTES</code> has four lines; the run's keys are in the Run table below.</li>
+        <li><code>LEVELS</code> and <code>LEVEL_NOTES</code> are renamed <code>GAME_STEPS</code> and <code>GAME_NOTES</code>.</li>
+        <li><code>AboutUsing</code>'s section keeps <code>id={ABOUT_ID.levels}</code> (<code>about-levels</code>) and its heading becomes "The game": an ordered list of <code>GAME_STEPS</code>, then one paragraph per <code>GAME_NOTES</code> line.</li>
+        <li>The order of Using it is Keyboard shortcuts, The game, Saved games, Your plans.</li>
+      </ul>
+      <p>The run's keys join About's shortcut tables as a third table, captioned "Run", after "Painting" and "Timeline":</p>
+      <pre><code data-lang="ts">// src/lib/about/copy.ts
+/** About's Run table: the keys of a run (R1). */
+export const RUN_SHORTCUTS: readonly { keys: string; action: string }[] = [
+  { keys: '← ↑ → ↓', action: 'Move the collecting ring (during a run)' },
+  { keys: 'Shift + ← ↑ → ↓', action: 'Move the collecting ring further' }
+];
+
+// src/lib/about/AboutUsing.svelte
+const tables = [
+  { caption: 'Painting', rows: SHORTCUTS },
+  { caption: 'Timeline', rows: TIMELINE_SHORTCUTS },
+  { caption: 'Run', rows: RUN_SHORTCUTS }
+];</code></pre>
+      <ul>
+        <li>The rows are About's words for R1's rule; <code>run-play</code>'s step sizes are not named.</li>
+        <li><code>ABOUT_ID</code>, <code>ABOUT_INTRO</code>, <code>PART_HEADING</code>, <code>YOUR_PLANS</code> and the shortcut tables do not change. <code>MAX_SAVES</code> still comes from <code>$lib/game/saves</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-accent">
+      <h3>The theme check</h3>
+      <p><code>THEMED_FILES</code> in <code>src/lib/shell/accent.spec.ts</code> gains the six <code>tally-tree</code> components, so each pairs every gray, white or black utility with a <code>dark:</code> class:</p>
+      <pre><code data-lang="ts">'src/lib/game/ui/Tally.svelte',
+'src/lib/game/ui/Tree.svelte',
+'src/lib/game/ui/GoalHeadline.svelte',
+'src/lib/game/ui/OpeningCard.svelte',
+'src/lib/game/ui/GameCell.svelte',
+'src/lib/game/ui/GamePanel.svelte',</code></pre>
+    </section>
+
+    <section id="sec-design-testids">
+      <h3>Test hooks</h3>
+      <ul>
+        <li>Added: <code>data-testid="home-frame"</code> on <code>/</code>'s empty frame before mount; <code>data-testid="opening-card-box"</code> on the opening card's wrapper. <code>opening-card</code> is <code>OpeningCard</code>'s own root (U1).</li>
+        <li>Removed: <code>data-testid="paint-win"</code>, <code>data-level-dot</code>, <code>data-step-locked</code>, <code>data-step-number</code>, the "Steps" navigation, <code>header-level</code>, <code>header-level-up</code>, <code>header-level-panel</code>.</li>
+        <li>Unchanged: <code>data-header-menu</code>, <code>data-header-status</code>, <code>data-header-account</code>, <code>data-header-about</code>, <code>data-header-keep-open</code>, <code>score-bar</code>, <code>save-state</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <section id="sec-files-write">
+      <h3>Written</h3>
+      <ul>
+        <li><code>src/routes/+page.svelte</code>: the switch of <a href="#sec-design-address">One address</a>.</li>
+        <li><code>src/routes/+page.ts</code>: <code>HomeData</code>.</li>
+        <li>The specs and hosts of <code>/</code>: <code>src/routes/page.spec.ts</code> (with <code>/sim</code>'s redirect), <code>page.svelte.spec.ts</code>, <code>page.game.svelte.spec.ts</code>, <code>page.header.svelte.spec.ts</code>, <code>page.rest-text.svelte.spec.ts</code>, <code>page.undo.svelte.spec.ts</code>, <code>page.view.svelte.spec.ts</code>, <code>src/routes/test/PageHost.svelte</code> (a <code>game</code> prop, default a new game in the opening), <code>PaintHeaderHost.svelte</code>, <code>page-worker.ts</code>.</li>
+        <li><code>src/routes/sim/+page.ts</code> and <code>+page.svelte</code>: the redirect.</li>
+        <li><code>src/routes/s/[id]/+page.svelte</code> and <code>+error.svelte</code>: the titles' name only, from <code>SITE_NAME</code>, after <code>game-sim</code>.</li>
+        <li><code>src/routes/about/+page.svelte</code>: the title imports <code>SITE_NAME</code>.</li>
+        <li><code>src/lib/shell/SiteHeader.svelte</code>, <code>layout.ts</code>, <code>layout.spec.ts</code>, <code>SiteHeader.svelte.spec.ts</code>, <code>SiteHeader.ssr.spec.ts</code>, <code>accent.spec.ts</code>.</li>
+        <li><code>src/lib/shell/test/seeded-game.ts</code>: <code>seededGame({ state?: Partial&lt;GameState&gt;; saves?; plan?; policy?; sync? })</code>, the first game current with <code>{ ...NEW_GAME, ...state }</code>, the others <code>NEW_GAME</code>, each written as a G1 <code>GameSave</code> with its <code>SaveEntry</code> in the index <code>saves.ts</code> reads. <code>seeded-game.svelte.spec.ts</code> follows.</li>
+        <li><code>src/lib/shell/test/SimRowGameHeader.svelte</code> (comment: <code>GameCell</code> sits in the row), <code>HeaderScoreHeader.svelte</code> (<code>routeId="/"</code>).</li>
+        <li><code>src/lib/brush/BrushEditor.svelte</code>: the <code>camera()</code> export, and its comments without Remix.</li>
+        <li><code>src/lib/brush/messages.ts</code> and <code>messages.spec.ts</code>: <code>MSG.readOnly</code> is <code>'Read-only.'</code>.</li>
+        <li><code>src/routes/p/[id]/+page.svelte</code>, <code>+error.svelte</code>, <code>page.view.svelte.spec.ts</code>, <code>test/PageHost.svelte</code>.</li>
+        <li><code>src/lib/sharing/SharedBanner.svelte</code>, <code>SharedBanner.svelte.spec.ts</code>, <code>copy.ts</code>, <code>copy.spec.ts</code>.</li>
+        <li><code>src/lib/about/copy.ts</code>, <code>AboutUsing.svelte</code>, <code>AboutParts.svelte.spec.ts</code>.</li>
+        <li><code>src/lib/server/auth/brand.ts</code>; <code>src/lib/plan/schema.ts</code> and <code>schema.spec.ts</code> (the one message); <code>wrangler.jsonc</code> (the two <code>SES_FROM</code> lines).</li>
+      </ul>
+    </section>
+    <section id="sec-files-create">
+      <h3>Created</h3>
+      <ul>
+        <li><code>src/lib/shell/name.ts</code> and <code>name.spec.ts</code>.</li>
+        <li><code>src/lib/shell/PaintOpening.svelte</code>.</li>
+        <li><code>src/lib/shell/test/GameHeaderHost.svelte</code>: <code>LevelCellHost</code>'s content under a new name.</li>
+      </ul>
+    </section>
+    <section id="sec-files-delete">
+      <h3>Deleted</h3>
+      <ul>
+        <li><code>src/lib/shell/LevelCell.svelte</code>, <code>LevelCell.svelte.spec.ts</code>, <code>test/LevelCellHost.svelte</code>.</li>
+        <li><code>src/lib/game/LevelPanel.svelte</code> and its colocated <code>LevelPanel.svelte.spec.ts</code>.</li>
+        <li><code>src/lib/sharing/remix.ts</code>, <code>remix.spec.ts</code>.</li>
+      </ul>
+    </section>
+    <p><code>src/routes/+layout.svelte</code> and <code>src/lib/config.ts</code> are not written. The <code>SharedBanner</code> call on <code>/s/[id]</code> is <code>game-sim</code>'s.</p>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <section id="sec-tests-unit">
+      <h3>Unit</h3>
+      <ul>
+        <li><code>isFullHeightRoute</code> is true for <code>/</code>, <code>/p/[id]</code>, <code>/s/[id]</code> and false for <code>/sim</code>, <code>/sim/x</code>, <code>/lesscars</code>, <code>/fzp</code>, <code>/about</code>, <code>/attribution</code>, <code>null</code>. The stale title about <code>/fzp</code> redirecting goes.</li>
+        <li><code>SITE_NAME</code> is <code>'SF Housing'</code>; <code>PRODUCT_NAME</code> and <code>PASSKEY_RP_NAME</code> equal it.</li>
+        <li><code>FUTURE_SCHEMA_MESSAGE</code> is the new sentence word for word.</li>
+        <li><code>/</code>'s load: an empty plan on the current version, the manifest and the calibration; a manifest failure gives <code>manifestError</code> and no calibration and does not throw; a calibration failure gives <code>calibrationError</code> with the plan and the manifest; an invalid dataset version is a 500; no <code>fellBack</code> key.</li>
+        <li><code>/sim</code>'s load throws a redirect with status 308 and location <code>/</code>.</li>
+        <li>The share copy: the new <code>dialogBody</code> and N5 for both kinds; <code>copyFor('sim').startHref</code> is <code>/</code>; no export names Remix.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-component">
+      <h3>Component</h3>
+      <ul>
+        <li>Header: no "Steps" navigation and no link to <code>/sim</code> at 375, 800, 1024 and 1280 px; the name link's text and accessible name are "SF Housing" at each.</li>
+        <li>Header: <code>GameCell</code> is in the bar at 1024 px and in the open Menu at 800 px; there is none before mount (server render) and none for the open game.</li>
+        <li>Header: the Menu button is named "Menu" and has no <code>data-level-dot</code> whatever the game holds.</li>
+        <li>Header: a button inside <code>data-header-keep-open</code> leaves the Menu open; a link closes it.</li>
+        <li><code>/</code> on the server: the heading "SF Housing" and <code>home-frame</code>; no brush frame and no simulation.</li>
+        <li><code>/</code> with the open game: <code>SimRoute</code> mounts in edit mode (a stub for <code>$lib/sim-page/SimRoute.svelte</code> records its props); no <code>BrushEditor</code>.</li>
+        <li><code>/</code> with a game in <code>'runs'</code>: <code>SimRoute</code> mounts with <code>initialFrame</code> undefined.</li>
+        <li><code>/</code> with a new game: the brush editor, the pinned "Room for 0 homes", Publish for the plan and the save state.</li>
+        <li>The opening: a complete score at the goal opens <code>opening-card-box</code> holding <code>opening-card</code> and calls <code>won()</code> once; an incomplete score opens nothing; a win while a pointer is held opens on release; a complete score below the goal closes it.</li>
+        <li>Start: <code>startRuns()</code> is called, the phase becomes <code>'runs'</code>, <code>SimRoute</code> mounts, and <code>BrushEditor</code> is gone. With a stub opening that calls <code>onstart(FRAME)</code>, <code>SimRoute</code> receives <code>initialFrame</code> equal to <code>FRAME</code>.</li>
+        <li>A refused start leaves the opening and shows "This browser refused to save."</li>
+        <li>The opening keeps today's autosave tests: restore, N1 to N3, <code>touched()</code> after a write, one <code>beforeLeave</code> registered and removed on unmount.</li>
+        <li><code>/p/[id]</code>: no Remix button and no "Open with current data"; the read-only line reads "Read-only."; "Your game" links <code>/</code>; the title is "&lt;title&gt; · SF Housing"; the 404 title is "Plan not found · SF Housing".</li>
+        <li><code>SharedBanner</code>: the title line, "Your game" to <code>/</code>, and the N5 or N6 line with no button, for both kinds.</li>
+        <li>About: the terms in the new order with their bodies word for word; "The game" with its five steps and four notes; "Saved games" with its three lines and the 12 from <code>MAX_SAVES</code>; the order Keyboard shortcuts, The game, Saved games, Your plans; the shortcut tables captioned Painting, Timeline and Run, the Run table with its two rows.</li>
+        <li>The theme check covers the six <code>src/lib/game/ui</code> components.</li>
+      </ul>
+    </section>
+    <section id="sec-tests-e2e">
+      <h3>End to end (written by <code>closing</code>)</h3>
+      <ul>
+        <li>A new visitor with a seeded goal paints to it, sees the opening card, presses Start, and the first run starts at <code>/</code>; the address never changes.</li>
+        <li><code>/sim</code> answers 308 to <code>/</code>, and a query on it is dropped.</li>
+        <li>The header has no steps, and its name reads "SF Housing", at phone and desktop widths.</li>
+        <li><code>/p/&lt;id&gt;</code> opens a published plan in full with no Remix.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>The name lives in <code>src/lib/shell/name.ts</code>.</strong> <code>config.ts</code> is an input of the dataset version (<code>pipeline/lib/version.ts:41-50</code>), so it is left alone and <code>APP_NAME</code> stays unused.</li>
+      <li><strong><code>schema.ts</code> writes the name as a literal.</strong> <code>src/lib/plan/purity.spec.ts</code> lets <code>plan/</code> code import only its siblings and a named list, which keeps the plan model free of app modules; <code>schema.spec.ts</code> pins the whole sentence, so the literal cannot drift from <code>SITE_NAME</code> unseen.</li>
+      <li><strong>Both data loads in <code>+page.ts</code>.</strong> The server cannot know the phase, and the simulation is every visit after the first win.</li>
+      <li><strong>The body is chosen after mount.</strong> The server holds the open game; any earlier choice mismatches at hydration.</li>
+      <li><strong><code>/sim</code> is a 308 from a universal load, the query dropped.</strong> The only query it read is retired; 308 matches <code>/attribution</code>; the universal load keeps the redirect inside the two files this subsystem holds.</li>
+      <li><strong>The opening is its own component.</strong> Its header registration must exist only while it is mounted, or the simulation's header would be preceded by Paint's.</li>
+      <li><strong>The card stays while the goal is met.</strong> <code>OpeningCard</code> has no dismiss, and the map stays usable under the non-modal card.</li>
+      <li><strong>No remount on a change of the current id.</strong> The sync's rekey keeps the same game; a real switch loads the page.</li>
+      <li><strong>No dot on the Menu button.</strong> Nothing in the Menu acts on an offered rung or an affordable node.</li>
+      <li><strong>The Remix-free N5:</strong> "Made with map data X, older than the current data (Y)." It states the fact the old line hung Remix on.</li>
+      <li><strong>The About section keeps its id <code>about-levels</code>.</strong> Ids are link targets, and two specs name it.</li>
+      <li><strong>The run's keys are a third table, "Run".</strong> The two existing tables list Paint's and the timeline's keys; a run is neither.</li>
+      <li><strong>"Five or more years"</strong> in The deadline's body: the first step runs from the window's end to a 31 December, and when more than four five-year steps fit, the ladder keeps four years with wider steps between them (G6), so no step is shorter than five years and some can be longer.</li>
+      <li><strong><code>remix.ts</code> is deleted.</strong> No page imports it, and Remix is gone.</li>
+      <li><strong><code>SharedBanner</code> keeps its unused <code>id</code> prop.</strong> Dropping it would change <code>/s/[id]</code> for no gain.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>The simulation's states, the run, the tally, the tree, the workshop, Publish of the policy, <code>GoalHeadline</code>'s registration, the removal of the locked page in <code>SimRoute</code>, the tests and hosts under <code>src/routes/sim</code>, <code>initialFrame</code> through <code>SimRoute</code>, <code>SimPage</code> and <code>TimelineMode</code>, <code>/s/[id]</code> other than the titles of <code>+page.svelte</code> and <code>+error.svelte</code>, and focus after Start (into the map box): <code>game-sim</code>.</li>
+      <li><code>GameCell</code>, <code>GamePanel</code>, <code>OpeningCard</code> and their words, focus and Escape handling: <code>tally-tree</code>.</li>
+      <li><code>won()</code>, <code>startRuns()</code>, the open game's state, the save sync, <code>e2eGoalAmount</code>, <code>MAX_SAVES</code>, <code>e2e/helpers/game.ts</code>: <code>game-save</code>.</li>
+      <li>The run view and its camera memory: <code>map-run</code>.</li>
+      <li>Every e2e spec and helper other than <code>e2e/helpers/game.ts</code>, <code>docs/dev/*.md</code>, <code>CLAUDE.md</code>, <code>README.md</code> and the other documents that carry the old name, and the Google Auth Platform app name noted in <code>docs/dev/deploy.md:177</code>: <code>closing</code>.</li>
+      <li><code>GameCell</code>'s <code>data-header-keep-open</code> and <code>GamePanel</code>'s load of <code>/</code>: <code>tally-tree</code>.</li>
+      <li>The message on the simulation with no scenario (<code>src/lib/timeline/TimelineMode.svelte</code>) carries no link: <code>loose-ends</code>.</li>
+      <li>The email templates and the passkey configuration: unchanged; only the constant they read changes.</li>
+    </ul>
+  </section>
+</article>

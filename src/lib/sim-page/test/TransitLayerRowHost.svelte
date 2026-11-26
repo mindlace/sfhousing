@@ -7,6 +7,7 @@
   import type { LotStatus } from '$lib/paint/rows';
   import type { ZoningRule } from '../policy';
   import TransitLayerRow from '../TransitLayerRow.svelte';
+  import type { TransitCap } from '../transit-edit';
 
   interface Props {
     rule: ZoningRule;
@@ -17,6 +18,8 @@
     onedit?: (next: ZoningRule, coalesce?: string) => void;
     onremove?: () => void;
     onretry?: (keys: string[]) => void;
+    cap?: TransitCap;
+    part?: 'all' | 'stops' | 'bands';
   }
 
   let {
@@ -27,7 +30,9 @@
     onselect = () => {},
     onedit = undefined,
     onremove = () => {},
-    onretry = () => {}
+    onretry = () => {},
+    cap = undefined,
+    part = undefined
   }: Props = $props();
 
   // The prop only seeds the host's own rule, as a page's store would.
@@ -48,5 +53,7 @@
     }}
     {onremove}
     {onretry}
+    {cap}
+    {part}
   />
 </ol>

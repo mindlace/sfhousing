@@ -1,0 +1,152 @@
+<article>
+  <header>
+    <h1>Main merge retake implementation plan</h1>
+    <p>Takes every result of record again on main's dataset version with cars on: the ladder, the tuning, the reach check, the run bench and the purchase-to-ready wait.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> the measured ladder, the tuned numbers and the game's bench lines, taken on <code>2026-11-25-76c90397</code> with cars on, and the docs' results replaced with them.</li>
+      <li><strong>Architecture:</strong> no code changes. The scripts <code>reach-measure</code>, <code>tree-balance</code> and <code>reach-check</code> and the bench <code>e2e/bench/game-run.bench.ts</code> already exist and run with cars on by default; this plan runs them, edits the two measured files by the rules, and records the results.</li>
+      <li><strong>Tech Stack:</strong> TypeScript scripts via <code>npx tsx</code>, Vitest, Playwright bench (<code>npm run bench:map</code>).</li>
+      <li><strong>Spec:</strong> <code>docs/superpowers/specs/2026-11-25-main-merge-design.html</code> §sec-design-retake, §sec-files, §sec-tests; <code>docs/superpowers/specs/2026-11-24-tree-catalogue-design.html</code> §sec-design-balance-side, §sec-design-balance-prices, §sec-tests-tuning. Read both from the package worktree <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop</code>.</li>
+      <li><strong>Dataset:</strong> <code>V = 2026-11-25-76c90397</code> (main's version; the merged tree's version).</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <p>Interface row (from the assignment): <strong>T1</strong> taken again on main's dataset with cars (no unit waits on it).</p>
+    <p>Copied verbatim from the main-merge spec:</p>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+    <p>Retake rules (main-merge §sec-design-retake, verbatim):</p>
+    <ul>
+      <li><code>npx tsx scripts/reach-measure.ts --version &lt;v&gt; --write</code>: <code>LADDER_YEARS</code> by G6's rule. A change of years moves the rings by <code>ringOf</code>; no code changes for it.</li>
+      <li><code>npx tsx scripts/tree-balance.ts --version &lt;v&gt;</code> exits 0, with <code>tuning.ts</code> edited by hand under tree-catalogue's rules (§ The lump and the side goals, § Starting values and who tunes them): the gated plays, the 1.25 raise rule, the left-out rule and the hand-back when no numbers pass.</li>
+      <li>The run bench ("run with drops, citywide, moving pointer", p95 at most 16.7 ms) and "purchase to ready", on the live version, on a quiet machine, port 4173 left to its owner. A purchase-to-ready median above <code>CLOCK.buyS</code> is reported beside the line for the owner.</li>
+      <li>The results replace the earlier ones under "Results" in <code>docs/dev/map-perf.md</code> and in <code>docs/dev/game.md</code>'s tuning and reach-check sections.</li>
+      <li>A miss is the defect of the unit on its path, as closing assigns it; a cost <code>main</code> itself adds (the car step, about 1.2 s of fill) is recorded and is not this build's.</li>
+    </ul>
+    <p>Division of the timed work (assignment): the budgets of <code>npm run test:perf</code> and <code>npm run bench:map</code> held to main are taken by the conductor, not by this plan's tasks. Upload no dataset. If tree-balance cannot reach exit 0 by the tuning rules, stop and report; never change a rule.</p>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li>A raised side-goal target that is not exactly 1.25 × current law's value rounded up to the next 1,000.</li>
+      <li>A side goal left out while another tuning would have met it above its floor, or a ring left with no offered goal (must stop instead).</li>
+      <li>A price edit that breaks a rule: whole above 0, rising within a node, cheapest level shown at rung 0 at or under <code>RUNG_LUMP</code>.</li>
+      <li>A bench line taken while the 1-minute load was 2 or more and not labelled ballpark.</li>
+      <li>A docs result row still naming <code>2026-11-14-09ca30c8</code> as the current result of record (dated history rows elsewhere may stay).</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: The ladder and the reach check on V</h2>
+    <ul>
+      <li>Modify: <code>src/lib/game/catalogue/ladder-years.ts</code> (written by the script, never by hand)</li>
+      <li>Modify: <code>docs/dev/game.md</code> § The reach check (a dated result paragraph)</li>
+    </ul>
+    <ul>
+      <li>Consumes: nothing.</li>
+      <li>Produces: <code>LADDER_YEARS</code> measured on V, which Task 2's plays read.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Measure and write the ladder (cars on is the script's default; it takes no switch). Save the full stdout to the SDD dir.
+        <pre><code data-lang="sh">npx tsx scripts/reach-measure.ts --version 2026-11-25-76c90397 --write</code></pre>
+        Expected: exit 0, a <code>LADDER_YEARS = [...]</code> line and <code>Wrote src/lib/game/catalogue/ladder-years.ts</code>; the file's comment names V.</li>
+      <li id="t1-s2"><input type="checkbox"> Run the reach check of record and save its five lines.
+        <pre><code data-lang="sh">npx tsx scripts/reach-check.ts --version 2026-11-25-76c90397</code></pre>
+        Expected: exit 0, line 5 <code>Filled in N.N s (cars on)</code>. Exit 1 stops the task: report "blocked: the reach check misses" with the lines.</li>
+      <li id="t1-s3"><input type="checkbox"> In <code>docs/dev/game.md</code> § The reach check, add a short dated result: date 2026-11-25, dataset V, cars on, the five lines verbatim, and the ladder <code>LADDER_YEARS</code> it ran against. If an earlier dated result for <code>2026-11-14-09ca30c8</code> exists there, replace it.</li>
+      <li id="t1-s4"><input type="checkbox"> Run the catalogue tests: they name no year, so they pass on any measured ladder.
+        <pre><code data-lang="sh">npx vitest run src/lib/game</code></pre>
+        Expected: all pass.</li>
+      <li id="t1-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/game/catalogue/ladder-years.ts docs/dev/game.md
+git commit -m "chore(game): ladder years and reach check on 2026-11-25-76c90397 with cars"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Tuning on V until tree-balance exits 0</h2>
+    <p>Delivers row T1.</p>
+    <ul>
+      <li>Modify: <code>src/lib/game/catalogue/tuning.ts</code> (<code>RUNG_LUMP</code>, <code>SIDE_TUNING</code>, <code>PRICES</code> only)</li>
+      <li>Modify: <code>src/lib/game/catalogue/tuning.spec.ts</code> only if a side goal is left out (held to tree-catalogue §sec-tests-tuning)</li>
+      <li>Modify: <code>docs/dev/game.md</code> § Tuning (a dated result paragraph)</li>
+    </ul>
+    <ul>
+      <li>Consumes: Task 1's <code>LADDER_YEARS</code>.</li>
+      <li>Produces: <code>tuning.ts</code> under which <code>npx tsx scripts/tree-balance.ts --version 2026-11-25-76c90397</code> exits 0.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Run the balance on V and save the report (text and <code>--json</code>) in the SDD dir.
+        <pre><code data-lang="sh">npx tsx scripts/tree-balance.ts --version 2026-11-25-76c90397</code></pre>
+        If it exits 0 with today's <code>tuning.ts</code>, skip to step 4.</li>
+      <li id="t2-s2"><input type="checkbox"> Edit <code>tuning.ts</code> by hand, by these rules only (tree-catalogue §sec-design-balance-side and §sec-design-balance-prices):
+        <ul>
+          <li>A goal flagged <code>at-or-below-current-law</code>: set its target to the report's <code>raiseTo</code> (1.25 × current law's value, rounded up to the next 1,000).</li>
+          <li>A goal <code>never-met</code> in every gated <code>hand</code> play with its target at or above its floor, under any tuning tried: remove its entry from <code>SIDE_TUNING</code>, then tune every remaining goal again. Never empty a ring (each ring from 0 to the last keeps one offered goal); if the rule would, stop and report.</li>
+          <li>A failing pacing check or a <code>stuck</code>/<code>too-long</code> play: change prices, <code>RUNG_LUMP</code> or side rewards. Prices are whole above 0 and rise within a node; the cheapest level shown at rung 0 stays at or under <code>RUNG_LUMP</code>.</li>
+          <li>Never change a rule, <code>SHARE</code>, <code>CLOCK</code>, <code>TARGETS</code>, a node or the script.</li>
+        </ul></li>
+      <li id="t2-s3"><input type="checkbox"> Rerun step 1's command; repeat step 2 until exit 0. If no set of numbers passes, stop and report BLOCKED with the last report and the checks that fail (the hand-back to the owner).</li>
+      <li id="t2-s4"><input type="checkbox"> If a goal was left out, hold <code>tuning.spec.ts</code> to §sec-tests-tuning (its ids test lists exactly the ids with an entry, in order; each ring keeps one). Then run:
+        <pre><code data-lang="sh">npx vitest run src/lib/game</code></pre>
+        Expected: all pass.</li>
+      <li id="t2-s5"><input type="checkbox"> In <code>docs/dev/game.md</code> § Tuning, add a short dated result: 2026-11-25, dataset V, cars on, exit 0, each gated play's runs/purchases/clock, each goal left out with the highest value a gated hand play reached, its floor and the deadline read at. Replace any result for <code>2026-11-14-09ca30c8</code>.</li>
+      <li id="t2-s6"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add src/lib/game/catalogue/tuning.ts src/lib/game/catalogue/tuning.spec.ts docs/dev/game.md
+git commit -m "chore(game): tuning on 2026-11-25-76c90397 with cars"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: The run bench and purchase to ready on V</h2>
+    <ul>
+      <li>Modify: <code>docs/dev/map-perf.md</code> § The game's runs › Results</li>
+    </ul>
+    <ul>
+      <li>Consumes: Task 2's <code>PRICES</code> (the purchase-to-ready case reads stop-rail's rung-0 price).</li>
+      <li>Produces: four bench lines for the hand-back.</li>
+    </ul>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Copy V into local R2.
+        <pre><code data-lang="sh">npm run data:local -- 2026-11-25-76c90397</code></pre></li>
+      <li id="t3-s2"><input type="checkbox"> Before each run: <code>uptime</code> shows a 1-minute load below 2 and <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> prints nothing. While either fails, wait in background <code>sleep 300</code> stretches; never kill a listener. If the load will not drop after an hour, run anyway and label the rows ballpark.</li>
+      <li id="t3-s3"><input type="checkbox"> Run each case twice, headed, one after another; save each <code>bench:map</code> line.
+        <pre><code data-lang="sh">env SFH_BENCH_DATASET=2026-11-25-76c90397 npm run bench:map -- -g "run with drops"
+env SFH_BENCH_DATASET=2026-11-25-76c90397 npm run bench:map -- -g "purchase to ready"</code></pre>
+        Expected: <code>case=run ... PASS</code> (p95 at most 16.7 ms); <code>case=buy-to-ready ... median=&lt;ms&gt; buyS=4000ms</code>. A run p95 above 16.7 ms is a defect: report it, do not tune it away. A median above <code>buyS</code> is reported, not a failure.</li>
+      <li id="t3-s4"><input type="checkbox"> Replace the four rows under "The game's runs" › Results with the new four (machine, head sha, date 2026-11-25, live V, case, line, label with DPR, renderer, load, and "median above <code>buyS</code>" when so). Port 4173 left with nothing listening.</li>
+      <li id="t3-s5"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/map-perf.md
+git commit -m "docs(map-perf): run bench and purchase to ready on 2026-11-25-76c90397 with cars"</code></pre></li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: The budgets held to main</h2>
+    <p>The conductor takes the figures (<code>npm run test:perf</code> and <code>npm run bench:map</code>, main with cars and this branch back to back). This task only records them.</p>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> After Task 3, the operator sends <code>ready for budgets</code> with the head sha and waits for the figures.</li>
+      <li id="t4-s2"><input type="checkbox"> Record them in <code>docs/dev/map-perf.md</code> under Results as the conductor sends them: each budget, main's figure, the branch's, within 10% or not; a cost main adds recorded as main's.</li>
+      <li id="t4-s3"><input type="checkbox"> Commit.
+        <pre><code data-lang="sh">git add docs/dev/map-perf.md
+git commit -m "docs(map-perf): budgets held to main with cars"</code></pre></li>
+    </ol>
+  </section>
+</article>

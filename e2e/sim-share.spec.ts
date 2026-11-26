@@ -1,7 +1,8 @@
-// /sim publishing e2e (plan 5, Task 7; schema 4 since timeline-ui rule 40): publish a policy and
-// open its /s/<id> link, Remix, the autosave across a reload, a tampered and a gone-dataset policy
-// seeded through the e2e-only route, the /p -> /s redirect, schema 2 documents (a link and an
-// autosave record) opening with the "upgraded" notice, storage refused, and the accessibility and
+// Policy publishing e2e (plan 5, Task 7; schema 4 since timeline-ui rule 40): publish a policy from
+// the simulation on `/` and open its /s/<id> link (no Remix), the autosave across a reload, a
+// tampered and a gone-dataset policy seeded through the e2e-only route, the /p -> /s redirect,
+// schema 2 documents (a link and an autosave record) opening with the "upgraded" notice, storage
+// refused, and the accessibility and
 // layout checks on the read-only view. Runs against the VITE_E2E build on fixture-0. Seeded
 // documents are captured from the app's own autosave, never hand-written, so they follow the
 // SimDoc4 shape.
@@ -9,7 +10,6 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { seedGame } from './helpers/game';
 import { addPolicy, openKind, waitFilled } from './helpers/run';
 import { SIM_KEY, SIM_KEY_V1, openPublish, seedPlanRow, type Win } from './helpers/sharing';
 import { PLUS_NAME } from '../src/lib/timeline/test/plus';
@@ -55,7 +55,7 @@ async function waitReady(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Win).__sfhMap?.map);
 }
 
-async function gotoSim(page: Page, path = '/sim', { map = true } = {}): Promise<void> {
+async function gotoSim(page: Page, path = '/', { map = true } = {}): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
@@ -102,12 +102,12 @@ const storedDoc = (page: Page): Promise<Doc | null> =>
   }, SIM_KEY);
 
 /**
- * A fixture-0 policy with the San Diego preset, as the app autosaves it: added on /sim, then read
+ * A fixture-0 policy with the San Diego preset, as the app autosaves it: added on `/`, then read
  * back from storage once written.
  */
 async function capturePresetDoc(page: Page): Promise<Doc> {
   // The autosave needs no map (the tests that open the seeded policy wait for theirs).
-  await gotoSim(page, '/sim', { map: false });
+  await gotoSim(page, '/', { map: false });
   await choosePreset(page);
   await expect
     .poll(async () => (await storedDoc(page))?.policy.kinds.permitting[0]?.preset)
@@ -171,10 +171,10 @@ async function publish(page: Page, title?: string): Promise<string> {
   return link;
 }
 
-// ---- publish, open, Remix -------------------------------------------------------------------------
+// ---- publish, open -------------------------------------------------------------------------------
 
 test('publish round trip', async ({ page, browser }, testInfo) => {
-  await gotoSim(page, '/sim', { map: false });
+  await gotoSim(page, '/', { map: false });
   await choosePreset(page);
   await closeEditor(page);
   const link = await publish(page, 'SD permits');
@@ -205,6 +205,8 @@ test('publish round trip', async ({ page, browser }, testInfo) => {
     expect(res?.status()).toBe(200);
     await expect(sharedBanner(visitor)).toContainText('SD permits · Shared policy');
     await expect(visitor.locator('html')).toHaveAttribute('data-hydrated', '');
+    // Mounted, the banner offers no Remix.
+    await expect(sharedBanner(visitor).getByRole('button', { name: 'Remix' })).toHaveCount(0);
     await waitSession(visitor);
     // The shared policy, read-only: its editor has no switch, no Remove and no "+".
     const view = await selectPolicy(visitor, 'Permitting', PRESET);
@@ -216,26 +218,6 @@ test('publish round trip', async ({ page, browser }, testInfo) => {
   } finally {
     await ctx.close();
   }
-});
-
-test('Remix on /s/<id> opens /sim on a copy of the policy', async ({ page }) => {
-  await seedGame(page, 3);
-  const id = await seedPolicy(page, { ...(await capturePresetDoc(page)), title: 'SD permits' });
-  // Clear the current game's policy, so the preset /sim shows can only be the remixed one.
-  await page.evaluate((k) => localStorage.removeItem(k), SIM_KEY);
-  const errors = pageErrors(page);
-  await page.goto(`/s/${id}`);
-  // Hydrated, so the Remix click is not lost to SSR markup.
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
-  await sharedBanner(page).getByRole('button', { name: 'Remix' }).click();
-  await expect(page).toHaveURL(/\/sim$/);
-  // The /sim header is whole after the page load from /s/<id>.
-  await expect(page.getByTestId('score-bar')).toBeVisible();
-  await waitSession(page);
-  const view = await selectPolicy(page, 'Permitting', PRESET);
-  await expect(view.getByTestId('timing-label')).toHaveText(PRESET);
-  await expect(view.getByRole('button', { name: 'Remove policy' })).toBeVisible();
-  expect(errors).toEqual([]);
 });
 
 test('a shared link opens with everything ahead unseen', async ({ page }) => {
@@ -351,16 +333,13 @@ const paintedCount = (page: Page): Promise<number> =>
       .reduce((n, s) => n + (s.what.tag === 'brushes' ? s.what.brushes.length : 0), 0)
   );
 
-test('a stored schema-2 policy opens with the upgraded notice and remixes as schema 4', async ({
-  page
-}) => {
+test('a stored schema-2 policy opens with the upgraded notice', async ({ page }) => {
   const id = await seedPlanRow(page.request, {
     body: SCHEMA2_TEXT,
     datasetVersion: 'fixture-0',
     kind: 'sim'
   });
   const errors = pageErrors(page);
-  await seedGame(page, 3);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const res = await page.goto(`/s/${id}`);
   expect(res?.status()).toBe(200);
@@ -369,12 +348,6 @@ test('a stored schema-2 policy opens with the upgraded notice and remixes as sch
   await expect(notices(page).filter({ hasText: UPGRADED })).toHaveCount(1);
   expect(await paintedCount(page)).toBe(1);
   await expectNoA11yViolations(page);
-
-  await sharedBanner(page).getByRole('button', { name: 'Remix' }).click();
-  await expect(page).toHaveURL(/\/sim$/);
-  await waitSession(page);
-  expect(await paintedCount(page)).toBe(1);
-  await expect.poll(async () => (await storedDoc(page))?.schema).toBe(4);
   expect(errors).toEqual([]);
 });
 
@@ -388,7 +361,7 @@ test('a schema-2 autosave record opens, is stored back as schema 4 and publishes
     },
     [SIM_KEY_V1, SCHEMA2_TEXT] as const
   );
-  await gotoSim(page, '/sim', { map: false });
+  await gotoSim(page, '/', { map: false });
   expect(await paintedCount(page)).toBe(1);
   await expect(notices(page).filter({ hasText: UPGRADED })).toHaveCount(1);
   await expect.poll(async () => (await storedDoc(page))?.schema).toBe(4);

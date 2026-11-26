@@ -79,7 +79,7 @@ export interface TimelineHostDeps {
   load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
   /**
    * Default 'on': both worlds run the dataset's car system when it ships cars.bin and
-   * `calibration.cars`. 'off': no car system at all (`level2-check --cars off`).
+   * `calibration.cars`. 'off': no car system at all (`reach-check --cars off`).
    */
   cars?: 'on' | 'off';
 }

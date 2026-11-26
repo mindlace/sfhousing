@@ -343,7 +343,7 @@ The award rule is the fallback award with full-coverage odds and the closing fix
 | Affordable completions a year, 2031-40 | 626                        | 687                      |
 | Dec 2035: net / funded / affordable    | 30,715 / 1,891 / 2,204     | 31,553 / 2,729 / 3,037   |
 | Dec 2060: net / funded / affordable    | 68,665 / 12,989 / 15,604   | 72,058 / 16,262 / 19,245 |
-| Level 2 goal (82,069) reached          | Jun 2065                   | Oct 2061                 |
+| Goal (82,069) reached                  | Jun 2065                   | Oct 2061                 |
 
 Affordable homes a year are (Dec 2040 − Dec 2030) ÷ 10: 32 at Dec 2030, 6,903 at Dec 2040. The spec
 measured about 560 a year under the old rule on the pre-cars dataset `2026-11-14-09ca30c8`. The

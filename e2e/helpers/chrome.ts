@@ -35,14 +35,27 @@ export async function expectAboutReachable(page: Page): Promise<void> {
 }
 
 /**
- * The phone header (375 px) on a page that pins an item: 48 px tall, nothing overflows the bar or
- * the page, no two visible items overlap, and the site name is in the Menu, not the bar. Leaves
- * the Menu closed.
+ * The phone header (375 px) on a page that pins an item: the bar fits (`expectHeaderRowFits`), and
+ * the site name is in the Menu, not the bar. Leaves the Menu closed.
  */
 export async function expectPhoneHeaderFits(page: Page): Promise<void> {
   const banner = page.getByRole('banner');
   const name = banner.getByRole('link', { name: /SF Housing/ });
   await expect(name).toHaveCount(0);
+  await expectHeaderRowFits(page);
+  await openHeaderMenu(page);
+  await expect(banner.getByRole('link', { name: 'SF Housing', exact: true })).toBeVisible();
+  const menu = banner.getByRole('button', { name: 'Menu', exact: true });
+  await menu.click();
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+}
+
+/**
+ * The header's bar at any width: 48 px tall, nothing overflows the bar or the page, and no two
+ * visible items overlap.
+ */
+export async function expectHeaderRowFits(page: Page): Promise<void> {
+  const banner = page.getByRole('banner');
   expect((await banner.boundingBox())!.height).toBe(48);
   const fit = await banner.evaluate((b) => ({
     bar: b.scrollWidth - b.clientWidth,
@@ -66,9 +79,4 @@ export async function expectPhoneHeaderFits(page: Page): Promise<void> {
     expect(row[i].left, `"${row[i].name}" overlaps "${row[i - 1].name}"`).toBeGreaterThanOrEqual(
       row[i - 1].right - 0.5
     );
-  await openHeaderMenu(page);
-  await expect(banner.getByRole('link', { name: 'SF Housing Simulator' })).toBeVisible();
-  const menu = banner.getByRole('button', { name: 'Menu', exact: true });
-  await menu.click();
-  await expect(menu).toHaveAttribute('aria-expanded', 'false');
 }

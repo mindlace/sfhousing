@@ -1,4 +1,4 @@
-// /sim's public money e2e (funding-ui spec 6, tests 1 to 10) on the timeline: the Public money
+// The simulation's public money e2e (funding-ui spec 6, tests 1 to 10) on the timeline: the Public money
 // kind's policies (City funding scale, a preset's fund, your own pool, market terms), each edited
 // in the inspector, the Details money and tier blocks with the market paragraph and the sources
 // dialog, the published policy's read-only summary, a schema-2 document's notice and a calibration
@@ -83,8 +83,11 @@ async function waitSession(page: Page): Promise<void> {
   await waitFilled(page);
 }
 
-/** /sim (or `path`), the session ready. The map is not waited for: no test here reads it. */
-async function gotoSim(page: Page, path = '/sim'): Promise<void> {
+/**
+ * The simulation at `/` (the open game: no game seeded), or `path`, the session ready. The map is
+ * not waited for: no test here reads it.
+ */
+async function gotoSim(page: Page, path = '/'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(path);
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
@@ -662,8 +665,8 @@ test('10. no baselineFunding: no Public money kind, funding-off notice', async (
   });
   await gotoHydrated(page, '/about');
   await openHeaderMenu(page);
-  await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
-  await expect(page).toHaveURL(/\/sim$/);
+  await page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
   await waitSession(page);
 
   const off = fundingNotices({

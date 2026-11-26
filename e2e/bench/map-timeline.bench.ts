@@ -7,6 +7,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { SfhBrushDebug } from '../../src/lib/brush/debug';
 import type { SfhMapDebug } from '../../src/lib/map/debug';
 import type { BarMode } from '../../src/lib/map/types';
+import { newVisitor } from '../helpers/game';
 import { BAR_MS, pct, transitLayersOn, verdict } from './bench-util';
 
 type Win = Window & { __sfhMap?: SfhMapDebug; __sfhBrush?: SfhBrushDebug };
@@ -125,6 +126,7 @@ const cityField = (city: boolean, c: { cityMarkers: number }) =>
 for (const { name, daysPerS, limits, halos, city, far, camera } of CASES)
   test(`bench:map: timeline ${name}`, async ({ page }) => {
     await transitLayersOn(page);
+    await newVisitor(page);
     await page.goto('/');
     await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready', {
       timeout: 30_000

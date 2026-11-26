@@ -219,7 +219,8 @@ function before(c: SeriesChunk, n: number): SeriesChunk | null {
     planEffect: c.planEffect.slice(0, k),
     money: c.money ? c.money.slice(0, k) : null,
     tiers: c.tiers ? c.tiers.slice(0, k) : null,
-    cars: c.cars ? c.cars.slice(0, k) : null
+    cars: c.cars ? c.cars.slice(0, k) : null,
+    waiting: c.waiting ? c.waiting.slice(0, k) : null
   };
 }
 
@@ -291,7 +292,7 @@ describe('edits', () => {
     r.runner.dispose();
   });
 
-  it('an edit at month 100 after filling to 300: one refill from the first month not final at 99, no earlier month reposted, money included, equal to a fresh open', async () => {
+  it('an edit at month 100 after filling to 300: one refill from the first month not final at 99, no earlier month reposted, money and cars included, equal to a fresh open', async () => {
     const months = 320;
     const r = makeRunner();
     r.runner.open(1, baseDoc(), {}, months);
@@ -318,7 +319,12 @@ describe('edits', () => {
     expect(r.runner.ensembles().plan!.world).not.toBe(w1);
     const view = viewFrom(r.posts);
     expect(view.money).not.toBeNull();
-    expect(view).toEqual(await fresh(doc, {}, months));
+    expect(view.cars).not.toBeNull();
+    expect(view.waitingMoney).not.toBeNull();
+    const open = await fresh(doc, {}, months);
+    expect(view.cars).toEqual(open.cars);
+    expect(view.waitingMoney).toEqual(open.waitingMoney);
+    expect(view).toEqual(open);
     expect(view).not.toEqual(await fresh(baseDoc(), {}, months));
     r.runner.dispose();
   });

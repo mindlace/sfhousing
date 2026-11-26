@@ -1,0 +1,108 @@
+<article>
+  <header>
+    <h1>Run frame: the timeline in one pair of layers while locked</h1>
+    <p>The fix round that brings the run case ("run with drops, citywide, moving pointer") to p95 at most 16.7 ms.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> while the run view is on, the timeline controller draws every cell's parts as one solid layer and one ghost layer. That is about 6 deck draws a frame in place of about 500, and the picture is unchanged.</li>
+      <li><strong>Architecture:</strong> <code>TimelineController.setMerged(on)</code> joins the installed cells' packs and encoded attributes, in cell-id order, into one merged pack. <code>emit</code> then sends <code>timeline-solid-run</code> and <code>timeline-ghost-run</code>, built by the same <code>makeLayer</code> props as a per-cell layer. The join is rebuilt only when a cell's layers were rebuilt or removed while merged, never on <code>setTime</code>. <code>SimMap.setRunView</code> switches it.</li>
+      <li><strong>Tech stack:</strong> TypeScript, deck.gl <code>SolidPolygonLayer</code> with binary attributes, Svelte 5, Vitest (server and browser projects), and the Playwright bench.</li>
+      <li><strong>Spec:</strong> the map-run spec, in the package worktree at <code>/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-feel/.claude/worktrees/incremental-loop/docs/superpowers/specs/2026-11-24-map-run-design.html</code>. Sections: §sec-design-merged, §sec-design-visible, §sec-tests-merged, §sec-tests-component (last item), §sec-files, §sec-decisions. Also closing <code>2026-11-24-closing-design.html</code> §sec-design-bench.</li>
+      <li><strong>Evidence:</strong> <code>.superpowers/sdd/2026-11-25-run-frame/trace-1.md</code>. In the experiment that left out the cell layers while locked, the case passed at p95 9.9 ms.</li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>The run-frame row, copied: "<code>closing</code> §sec-design-bench (the case "run with drops, citywide, moving pointer" at p95 at most 16.7 ms on the live dataset, by the agent on a quiet machine with port 4173 left to its owner; admitted only when the case fails with the run layer under <code>RUN_FRAME_P95_MS</code>; a Chrome trace of the case on the same machine places the excess; the bar is not restated), <code>run-play</code> §sec-d-budget (the layer is under its budget, so <code>maxDrawn</code> stays); … in <code>map-lane</code>: <code>city-net</code> §sec-design-store, §sec-design-index, <code>map-run</code> §sec-design-picking, §sec-design-refit, §sec-design-events, with the behaviour and every test unchanged; the result line under "Results" in <code>docs/dev/map-perf.md</code> is <code>closing</code>'s file and is reported in the hand-back, not written".</li>
+      <li>Writes (map-lane, from the ruling): <code>src/lib/map/{SimMap.svelte,timeline-controller.ts,city-delta.ts,timelapse/city.ts}</code>, <code>src/lib/timeline/activity.ts</code>, <code>src/lib/sim/world/city-feed.ts</code> and their specs. No other file.</li>
+      <li>Produces rows: E1 and M1 at the run case's bar (<code>map-perf</code> waits on them). These interface rows are unchanged; <code>setMerged</code> is internal to the map.</li>
+      <li>From the spec, verbatim: "The picture is the same pixel for pixel as the per-cell layers draw it: same geometry, same parts, same extrusion, same passes in the same order (every solid, then every ghost)."</li>
+      <li>From the spec, verbatim: "Merged layers are not culled per cell"; "<code>TIMELINE_PART_LAYER</code> still names only per-cell layer ids".</li>
+      <li>From the ruling: if the merged layers alone do not reach 16.7 ms p95, that is a new question, not a licence to change the picture.</li>
+      <li>No <code>setTimeout</code> or <code>setInterval</code> in specs or test helpers. <code>npx chreode timing-check --head HEAD</code> must be clean after each task's last commit.</li>
+      <li>Conventional Commits, and no Claude attribution.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review focus</h2>
+    <ul>
+      <li>A cell re-encoded by <code>setLookups</code> while merged (the reencode slice path) must refresh the join, or the run shows stale stages. Pinned in Task 1, test "re-encode while merged".</li>
+      <li>A theme change while merged must rebuild the merged layers with the new fill. Pinned in Task 1, test "theme while merged".</li>
+      <li>A cell removed while merged must leave the join, and an all-empty city must emit no merged layer. Pinned in Task 1, tests "remove while merged" and "no parts".</li>
+      <li>A controller made while locked (timeline mode entered after <code>setRunView(true)</code>, or a remount while locked) must start merged. Pinned in Task 2, the component test's remount line.</li>
+      <li><code>startIndices</code> offsets must count vertices, not parts. A wrong offset joins polygons across cells. Pinned in Task 1, test "join layout".</li>
+    </ul>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: setMerged and the merged layers in the timeline controller</h2>
+    <ul>
+      <li>Modify: <code>src/lib/map/timeline-controller.ts</code> (<code>makeLayer</code> 720-740, <code>emit</code> 746-763, the install, remove and re-encode paths near 560-600).</li>
+      <li>Test: <code>src/lib/map/timeline-controller.spec.ts</code>, using its existing fake deps (<code>src/lib/map/test/fake-timeline-deps.ts</code>) and cell builders.</li>
+      <li>Produces: <code>TimelineController.setMerged(on: boolean): void</code>, public, doc comment "One merged solid and ghost layer over every cell while on; per-cell layers while off." Layer ids are <code>timeline-solid-run</code> and <code>timeline-ghost-run</code>.</li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in a <code>describe('setMerged')</code> block. Each one is one bullet of §sec-tests-merged, plus the Review Focus tests:
+        <ul>
+          <li>"emits one merged pair": with cells A and B installed (both with parts), <code>setMerged(true)</code> makes the last <code>setLayers</code> ids equal <code>['timeline-solid-run', 'timeline-ghost-run', 'timeline-bars'?, 'timeline-halos'?, ...overlay ids]</code>, the same tail as unmerged, and no id matches <code>TIMELINE_PART_LAYER</code>.</li>
+          <li>"join layout": the merged <code>data.length</code> is the sum of the cells' <code>partCount</code>. <code>attributes.getPolygon.value</code> is A's positions then B's. <code>startIndices</code> is A's then B's offset by A's vertex count (positions length / 2). <code>getElevation</code>, <code>getFillColor</code> and <code>getTlA</code>/<code>getTlB</code>/<code>getTlC</code> at merged index <code>A.partCount + i</code> equal B's per-cell accessor at <code>i</code>.</li>
+          <li>"same props": every prop of a merged layer except <code>id</code>, <code>data</code>, the accessor functions and <code>updateTriggers.getTlC</code> deep-equals the matching per-cell layer's. That includes <code>extruded</code>, <code>_normalize</code>, <code>_windingOrder</code>, <code>elevationScale</code>, <code>extensions</code> (the same extension instance), <code>timelapsePass</code>, <code>pickable</code>, <code>autoHighlight</code>/<code>highlightColor</code> on the solid, <code>parameters</code> on the ghost, and <code>beforeId</code>.</li>
+          <li>"unmerge": <code>setMerged(false)</code> emits layers whose ids and props equal those of a controller given the same updates and never merged.</li>
+          <li>"apply while merged": an <code>applyTimeline</code> that changes B, run through its slices, gives a new merged data object holding B's new parts. "setTime while merged": <code>setTime</code> leaves the merged data object identical (<code>toBe</code>) and calls <code>setLayers</code> no more times than unmerged does.</li>
+          <li>"update then unmerge": B updated while merged, then <code>setMerged(false)</code>, gives B's per-cell layers with the updated pack.</li>
+          <li>"idempotent": a second <code>setMerged(true)</code> calls <code>setLayers</code> 0 more times, and so does <code>setMerged(false)</code> on a fresh controller.</li>
+          <li>"re-encode while merged": <code>setLookups</code> with new lookups, its slices run, changes the merged <code>getTlC</code> values to the re-encoded ones.</li>
+          <li>"theme while merged": <code>setTheme</code> to the other theme gives merged fill colours of that theme.</li>
+          <li>"remove while merged": B removed leaves a join of A only. "no parts": every cell with <code>partCount</code> 0 emits no merged layer.</li>
+        </ul>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Run them and see them fail on <code>setMerged</code> not existing.
+        <pre><code data-lang="sh">npx vitest run src/lib/map/timeline-controller.spec.ts</code></pre>
+      </li>
+      <li id="t1-s3"><input type="checkbox"> Implement:
+        <ul>
+          <li><code>private merged = false</code>; <code>private mergedLayers: { solid: Layer; ghost: Layer } | null</code>; <code>private mergeDirty = true</code>.</li>
+          <li>Set <code>mergeDirty = true</code> wherever a cell's layers are built (<code>buildCellLayers</code>) or a cell is deleted from <code>this.cells</code>.</li>
+          <li>The join is a <code>TimedPackedCell</code>-shaped object with <code>cellId: 'run'</code>. It concatenates <code>positions</code>, <code>startIndices</code> (offset by vertices), <code>partTopM</code>, <code>partTypology</code> and <code>partAppearance</code>, and holds the concatenated <code>enc</code> (<code>tlA</code>, <code>tlB</code>, <code>tlC</code>). It is fed through the same <code>accessorsFor</code> and <code>vec4Accessor</code> builders. <code>makeLayer</code> gains the id suffix as a parameter, so a per-cell layer and a merged layer share every other prop. Use a fresh merge counter for <code>updateTriggers.getTlC</code>.</li>
+          <li>Whether to bypass <code>registerCellBounds</code> for the join or make <code>generatedCellFilter</code> keep ids without a registered bound: read <code>src/lib/map/cull.ts</code>. Choose whichever leaves per-cell culling unchanged and never culls the merged pair. If it needs an edit to <code>cull.ts</code>, stop and report: that file is outside the write set.</li>
+          <li>In <code>emit</code>, when merged and some cell has parts: if <code>mergeDirty</code>, rebuild the join and both layers and clear the flag. Emit them in place of the per-cell solids and ghosts. <code>setMerged(on)</code> returns if <code>on === this.merged</code>; otherwise it sets the flag (and <code>mergeDirty = true</code> when turning on) and calls <code>emit</code>.</li>
+        </ul>
+      </li>
+      <li id="t1-s4"><input type="checkbox"> Run the controller spec and the other map specs; all pass.
+        <pre><code data-lang="sh">npx vitest run src/lib/map</code></pre>
+      </li>
+      <li id="t1-s5"><input type="checkbox"> <code>npm run check</code> and <code>npm run lint</code> are clean. Commit with <code>feat(map): draw the timeline as one merged pair while asked</code>, then run <code>npx chreode timing-check --head HEAD</code>.</li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: the run view merges the timeline, and the run case passes</h2>
+    <p>Delivers row E1. Delivers row M1. Both at the run case's bar.</p>
+    <ul>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code> (<code>setRunView</code> 474-501, the timeline controller's creation near 990-1010).</li>
+      <li>Test: <code>src/lib/map/SimMap.run-view.svelte.spec.ts</code> (add one test).</li>
+      <li>Consumes: <code>TimelineController.setMerged(on: boolean): void</code> from Task 1.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing component test "merged timeline layers while locked". Locked with timeline cells applied, the overlay's layers hold exactly one <code>timeline-solid-run</code> and one <code>timeline-ghost-run</code> and no id matching <code>TIMELINE_PART_LAYER</code>. After <code>setRunView(false)</code>, they hold the per-cell layers again. Then a remount by a new manifest while locked, with cells re-applied, again shows the merged pair. Follow the file's existing render and timeline-update helpers.</li>
+      <li id="t2-s2"><input type="checkbox"> Run it and see it fail.
+        <pre><code data-lang="sh">npx vitest run --project client src/lib/map/SimMap.run-view.svelte.spec.ts</code></pre>
+      </li>
+      <li id="t2-s3"><input type="checkbox"> Implement. <code>setRunView(on)</code> calls <code>setMerged(on)</code> on the live controller when it is a <code>TimelineController</code>. Where the timeline controller is created, call <code>setMerged(true)</code> on it when <code>runView</code> is true, before the queued updates are applied. A call with the value in force stays a no-op.</li>
+      <li id="t2-s4"><input type="checkbox"> All map, timeline and sim-page specs pass. <code>npm run check</code> and <code>npm run lint</code> are clean.
+        <pre><code data-lang="sh">npx vitest run src/lib/map src/lib/timeline src/lib/sim-page src/lib/game</code></pre>
+      </li>
+      <li id="t2-s5"><input type="checkbox"> Commit with <code>perf(map): merge the timeline cells while the run view is on</code>, then run <code>npx chreode timing-check --head HEAD</code>.</li>
+      <li id="t2-s6"><input type="checkbox"> The operator, not the implementer, runs the bench. Check <code>uptime</code> and <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code> first. The line to report is the "run with drops, citywide, moving pointer" one, which passes at p95 ≤ 16.7 ms.
+        <pre><code data-lang="sh">env SFH_BENCH_DATASET=2026-11-14-09ca30c8 npm run bench:map -- -g "run with drops"</code></pre>
+      </li>
+    </ol>
+  </section>
+</article>

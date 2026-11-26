@@ -1,0 +1,1141 @@
+<article>
+  <header>
+    <h1>Game save: the store, the sync and the table for the incremental loop</h1>
+    <p>The browser's game store, its sync, the server store, the <code>game_save</code> table and <code>/api/game</code> carry the v2 game state; Remix and the five-level rule files go.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This unit keeps a player's game between visits and between devices. It holds the <code>GameState</code> of G1 in the browser (G7) and on the account (G8), and nothing else about the game's rules: buying, limits, the ladder and settling are the pure functions of <code>game-core</code> and <code>tree-catalogue</code>, which the store calls and then writes.</p>
+    <ul>
+      <li><strong>P13</strong>: the store's <code>remix</code> and its "Remix of" default name go.</li>
+      <li><strong>P15</strong>: a save, an index entry and a table row are v2 only. Five-level saves in a browser are removed unread; five-level rows on the server are dropped with the table.</li>
+      <li><strong>D7</strong>: the account is made at the first win. <code>won()</code> sets <code>state.firstWinAt</code>; <code>PUT</code> answers <code>no_win</code> without it.</li>
+      <li><strong>D8, D14</strong>: saved games stay separate, up to 12, with switch, rename, delete and new unchanged.</li>
+      <li><strong>Call 9</strong>: the open game is built here from the catalogue: the last rung met, every node bought, no units.</li>
+    </ul>
+    <p>This unit is the first part of one lane: one unit, merged once. Its parts, in dependency order, are <code>game-save</code>, part B of <code>tally-tree</code>, <code>game-sim</code> and <code>game-shell</code>; the unit's plan orders its tasks across the parts as its tests need, inside the lane's write set, and each file ends as the spec that owns it says (design, <code>sec-write-sets</code>). It deletes <code>levels.ts</code>, <code>progress.ts</code>, <code>standing.ts</code>, <code>allowed.ts</code>, <code>copy.ts</code> and <code>navigate.ts</code>, and removes store members that pages read. The application does not build or type-check after this unit alone. <a href="#sec-design-lane">The lane</a> names every importer left broken and the unit that mends it.</p>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>Produces G7 and G8. Needs G1, G2, G3, G4 and G6. Copied from the design with no change.</p>
+    <table id="tbl-interfaces">
+      <caption>Interface table</caption>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col">Owner</th><th scope="col">Layer</th><th scope="col">Summary</th><th scope="col">Contract</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">G1</th><td><code>game-core</code></td><td>Model commitment</td><td>The game's state and the saved game</td><td><a href="#sec-if-g1">G1</a></td></tr>
+        <tr><th scope="row">G2</th><td><code>game-core</code></td><td>Model commitment</td><td>Units by kind: balances, prices, spending</td><td><a href="#sec-if-g2">G2</a></td></tr>
+        <tr><th scope="row">G3</th><td><code>tree-catalogue</code></td><td>Model commitment</td><td>The tree: nodes, what is shown, buying</td><td><a href="#sec-if-g3">G3</a></td></tr>
+        <tr><th scope="row">G4</th><td><code>game-core</code></td><td>Model commitment</td><td>Limits from what is bought; whether a policy runs</td><td><a href="#sec-if-g4">G4</a></td></tr>
+        <tr><th scope="row">G6</th><td><code>game-core</code></td><td>Model commitment</td><td>The ladder, side goals, a run's result, settling</td><td><a href="#sec-if-g6">G6</a></td></tr>
+        <tr><th scope="row">G7</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The browser's game store</td><td><a href="#sec-if-g7">G7</a></td></tr>
+        <tr><th scope="row">G8</th><td><code>game-save</code></td><td>Decomposition choice</td><td>The save API and the <code>game_save</code> table</td><td><a href="#sec-if-g8">G8</a></td></tr>
+      </tbody>
+    </table>
+
+    <section id="sec-if-g1">
+      <h3>G1 The game's state and the saved game</h3>
+      <pre><code data-lang="ts">// src/lib/game/state.ts
+import type { Day } from '$lib/timelapse/time';
+import type { RunResult } from './run-result';
+
+export type UnitKind = 'home';
+export const UNIT_KINDS: readonly UnitKind[] = ['home'];
+export type Units = Partial&lt;Record&lt;UnitKind, number&gt;&gt;;
+export type NodeId = string;
+
+export interface MetRung {
+  rung: number;
+  reachedOn: Day;
+  datasetVersion: string;
+  at: string;
+}
+
+export interface GameState {
+  v: 2;
+  phase: 'opening' | 'runs';
+  firstWinAt: string | null;
+  bought: Record&lt;NodeId, number&gt;;
+  units: Units;
+  rung: number;
+  met: MetRung[];
+  side: Record&lt;string, string&gt;;
+  runs: number;
+  last: RunResult | null;
+}
+
+export const NEW_GAME: GameState;
+
+// src/lib/game/save-shape.ts
+export interface GameSave {
+  v: 2;
+  id: string;
+  name: string;
+  nameIsDefault: boolean;
+  state: GameState;
+  plan: string | null;
+  policy: string | null;
+  savedAt: string;
+}
+
+export type SaveEntry = Pick&lt;GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'&gt; &amp;
+  Pick&lt;GameState, 'phase' | 'rung'&gt;;
+
+export function parseGameSave(json: unknown): GameSave | null;</code></pre>
+      <dl>
+        <dt><code>phase</code></dt><dd><code>'opening'</code> until the first run starts.</dd>
+        <dt><code>firstWinAt</code></dt><dd>ISO time the room goal was first met. The server makes the account on the first save that has it (D7).</dd>
+        <dt><code>bought</code></dt><dd>The level bought of each node, 1 or more. A node not bought has no entry.</dd>
+        <dt><code>units</code></dt><dd>The balance to spend.</dd>
+        <dt><code>rung</code></dt><dd>The index in the ladder of the deadline in play.</dd>
+        <dt><code>met</code></dt><dd>One entry per rung met, ascending by rung, each recorded once.</dd>
+        <dt><code>side</code></dt><dd>Side goal id to the ISO time it was first met.</dd>
+        <dt><code>last</code></dt><dd>The latest run's result, which the header shows between runs.</dd>
+      </dl>
+      <ul>
+        <li><code>NEW_GAME</code> is the opening with nothing bought, no units, rung 0 and no runs.</li>
+        <li><code>parseGameSave</code> returns null unless <code>v</code> is 2 at both levels (P15).</li>
+        <li>The result is rebuilt from the known fields. An unknown field is dropped.</li>
+        <li><code>parseGameSave</code> checks the shape only. It keeps a node, a level, a side goal or a rung the catalogue does not have; <code>fitGame</code> (G6) drops those in the browser.</li>
+        <li>The server stores what <code>parseGameSave</code> returns.</li>
+        <li>Unit amounts and <code>runs</code> are whole numbers of 0 or more.</li>
+        <li><code>plan</code> and <code>policy</code> stay opaque text, as they are today.</li>
+      </ul>
+      <p><strong>Removed:</strong> <code>Level</code>, <code>Progress</code>, <code>Banked</code>, <code>Bar</code>, <code>barOf</code>, <code>roundComplete</code>, <code>levelUp</code>, <code>standing</code>, <code>beats</code>.</p>
+    </section>
+
+    <section id="sec-if-g2">
+      <h3>G2 Units</h3>
+      <pre><code data-lang="ts">// src/lib/game/units.ts
+import type { Units } from './state';
+
+export function credit(a: Units, b: Units): Units;
+export function affords(have: Units, price: Units): boolean;
+export function spend(have: Units, price: Units): Units;
+export function shortBy(have: Units, price: Units): Units;
+export function total(u: Units): number;</code></pre>
+      <ul>
+        <li>A missing kind is 0.</li>
+        <li><code>spend</code> throws <code>RangeError</code> when <code>affords</code> is false.</li>
+        <li><code>shortBy</code> holds only the kinds the balance is short of.</li>
+        <li>No function changes its arguments.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g3">
+      <h3>G3 The tree</h3>
+      <pre><code data-lang="ts">// src/lib/game/tree.ts
+import type { PresetId } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { GameState, NodeId, Units } from './state';
+
+export type Branch = 'permitting' | 'zoning' | 'money' | 'hands';
+
+export type Grant =
+  | { tag: 'preset'; preset: PresetId }
+  | { tag: 'measure'; preset: string }
+  | { tag: 'stop'; stop: StopType }
+  | { tag: 'bands'; max: 2 | 3 }
+  | { tag: 'stories'; max: number }
+  | { tag: 'reach'; maxM: number }
+  | { tag: 'hands'; what: 'radius' | 'linger'; value: number }
+  | { tag: 'hands'; what: 'auto' };
+
+export interface NodeLevel {
+  price: Units;
+  grant: Grant;
+  step: string;
+}
+
+export interface TreeNode {
+  id: NodeId;
+  branch: Branch;
+  label: string;
+  line: string;
+  after: NodeId[];
+  ring: number;
+  levels: NodeLevel[];
+  source: { text: string; href: string | null } | null;
+}
+
+export interface NodeView {
+  node: TreeNode;
+  level: number;
+  state: 'ready' | 'short' | 'done';
+  short: Units | null;
+}
+
+export type Bought =
+  | { ok: true; state: GameState; grant: Grant }
+  | { ok: false; reason: 'unknown' | 'hidden' | 'done' | 'short' };
+
+export function treeView(s: GameState, nodes?: readonly TreeNode[]): NodeView[];
+export function buy(s: GameState, id: NodeId, nodes?: readonly TreeNode[]): Bought;
+
+// src/lib/game/catalogue/nodes.ts
+export const NODES: readonly TreeNode[];</code></pre>
+      <dl>
+        <dt><code>after</code></dt><dd>The node is shown once any of these is bought. Empty: shown from the start.</dd>
+        <dt><code>ring</code></dt><dd>The node is shown once <code>GameState.rung</code> is at least this.</dd>
+        <dt><code>step</code></dt><dd>The words for the level, such as "8 stories".</dd>
+        <dt><code>line</code></dt><dd>One line saying what the node does.</dd>
+        <dt><code>source</code></dt><dd>Where the value comes from. Null for a step in what the player may choose.</dd>
+      </dl>
+      <ul>
+        <li><code>treeView</code> returns the shown nodes only, in catalogue order.</li>
+        <li><code>level</code> is the level bought, 0 for none. <code>state</code> speaks of the next level: <code>'ready'</code> when affordable, <code>'short'</code> when not, <code>'done'</code> when there is none.</li>
+        <li><code>buy</code> buys the next level: it spends its price and records the level. It changes nothing else.</li>
+        <li><code>nodes</code> defaults to <code>NODES</code>.</li>
+        <li>Every preset and measure node has a <code>source</code>. No grant multiplies homes.</li>
+        <li>Levels of one node are bought in order.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g4">
+      <h3>G4 Limits</h3>
+      <pre><code data-lang="ts">// src/lib/game/limits.ts
+import type { StopType } from '$lib/sim/levers/brushes';
+import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
+import type { GameState } from './state';
+import type { TreeNode } from './tree';
+
+export interface Hands {
+  radiusPx: number;
+  lingerMs: number;
+  auto: boolean;
+}
+
+export interface Limits {
+  open: boolean;
+  presets: ReadonlySet&lt;string&gt;;
+  measures: ReadonlySet&lt;string&gt;;
+  stops: ReadonlySet&lt;StopType&gt;;
+  bands: number;
+  stories: number;
+  reachM: number;
+  custom: boolean;
+  hands: Hands;
+}
+
+export const OPEN_LIMITS: Limits;
+export const BASE_HANDS: Hands;
+export const START_BANDS = 1;
+export const START_STORIES = 4;
+export const START_REACH_M = 402;
+export const FREE_MEASURES: readonly string[];
+
+export function limitsOf(s: GameState, nodes?: readonly TreeNode[]): Limits;
+export function within(kind: PolicyKind, p: Policy, l: Limits): boolean;
+export function runnable(doc: SimPolicy4, l: Limits): SimPolicy4;
+export function isGiven(p: Policy): boolean;</code></pre>
+      <dl>
+        <dt><code>open</code></dt><dd>The open game: every control, no limit (call 9).</dd>
+        <dt><code>presets</code>, <code>measures</code></dt><dd>The permitting preset ids and funding preset ids that run.</dd>
+        <dt><code>bands</code>, <code>stories</code>, <code>reachM</code></dt><dd>The most bands a transit rule may have, its tallest band and its furthest band. All 0 before the first stop type is bought.</dd>
+        <dt><code>custom</code></dt><dd>Custom timing and custom route shares may be set.</dd>
+        <dt><code>FREE_MEASURES</code></dt><dd><code>state-off</code> and <code>federal-credits-off</code>.</dd>
+      </dl>
+      <ul>
+        <li><code>limitsOf</code> folds the grants of every level bought. The largest <code>stories</code>, <code>reach</code>, <code>bands</code>, <code>radius</code> and <code>linger</code> win.</li>
+        <li>Once a stop type is bought, <code>bands</code>, <code>stories</code> and <code>reachM</code> are at least <code>START_BANDS</code>, <code>START_STORIES</code> and <code>START_REACH_M</code>.</li>
+        <li><code>BASE_HANDS</code> is a radius of 48 px, a linger of 4,000 ms and no auto. Every Hands step in the catalogue is above it.</li>
+        <li>Once the last rung is met, <code>stories</code> is 80, <code>bands</code> 3, <code>reachM</code> 3219, every stop type is in, <code>custom</code> is true, and <code>presets</code> also holds <code>observed</code>, the preset a custom timing policy carries.</li>
+        <li><code>within</code> does not read a policy's <code>on</code>.</li>
+        <li>A permitting policy is within the limits when its preset is in <code>presets</code>, and, unless <code>custom</code>, it has no custom edit and no custom route shares.</li>
+        <li>A transit rule is within the limits when its stop types are in <code>stops</code>, it has at most <code>bands</code> bands, no band is taller than <code>stories</code> and none is further than <code>reachM</code>.</li>
+        <li>A protection is within the limits once <code>stops</code> is not empty.</li>
+        <li>A painted area is within the limits only when <code>open</code> (P11).</li>
+        <li>A money policy is within the limits when it is given and its preset is in <code>measures</code>, or its preset is in <code>FREE_MEASURES</code> and <code>measures</code> is not empty. Any other money policy only when <code>open</code> (D4).</li>
+        <li><code>runnable</code> keeps the policies within the limits and returns the same document when it drops none.</li>
+        <li>With <code>OPEN_LIMITS</code>, <code>within</code> is always true.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> <code>isGiven</code>. <strong>Removed:</strong> <code>Allowed</code>, <code>ALL_ALLOWED</code>, <code>allowedAt</code>, <code>unlocksAt</code>, <code>runs</code>, <code>playable</code>, <code>levelNeeded</code>, <code>simLocked</code>, <code>needsHigher</code>.</p>
+    </section>
+
+    <section id="sec-if-g6">
+      <h3>G6 The ladder, side goals and a run's result</h3>
+      <pre><code data-lang="ts">// src/lib/game/catalogue/ladder-years.ts
+export const LADDER_YEARS: readonly number[];
+
+// src/lib/game/catalogue/tuning.ts
+import type { Units } from '../state';
+export const RUNG_LUMP: Units;
+export const SIDE_TUNING: Record&lt;string, { target: number; reward: Units }&gt;;
+
+// src/lib/game/ladder.ts
+import type { Goal } from '$lib/goal/goal';
+import type { Day } from '$lib/timelapse/time';
+import type { SideGoal } from './side-goals';
+import type { GameState, Units } from './state';
+import type { TreeNode } from './tree';
+
+export interface Rung {
+  deadline: Day;
+  label: string;
+}
+
+export const RUNGS: number;
+
+export function ladder(asOf: Day): Rung[];
+export function goalAt(asOf: Day, rung: number, amount?: number): Goal;
+export function finished(s: GameState): boolean;
+export function takeNext(s: GameState): GameState;
+export function fitGame(
+  s: GameState,
+  nodes?: readonly TreeNode[],
+  goals?: readonly SideGoal[]
+): GameState;
+
+// src/lib/game/run-result.ts
+import type { TimelineView } from '$lib/sim/world/score/types';
+import type { Stage } from '$lib/timelapse/types';
+
+export interface RunTake {
+  dropped: Units;
+  collected: Units;
+}
+
+export interface RunReading {
+  homes: number;
+  reachedOn: Day | null;
+  stages: Record&lt;Exclude&lt;Stage, 'complete'&gt;, number&gt;;
+  waitingMoney: number | null;
+}
+
+export interface RunResult extends RunTake, RunReading {
+  rung: number;
+  amount: number;
+  datasetVersion: string;
+  at: string;
+  lump: Units | null;
+  side: { id: string; reward: Units }[];
+}
+
+export function readRun(view: TimelineView, goal: Goal): RunReading | null;
+export function resultOf(
+  s: GameState,
+  reading: RunReading,
+  take: RunTake,
+  input: SideInput,
+  meta: { amount: number; datasetVersion: string; at: string }
+): RunResult;
+export function settle(s: GameState, r: RunResult): GameState;
+
+// src/lib/game/side-goals.ts
+export interface SideInput {
+  view: TimelineView;
+  index: number;
+  take: RunTake;
+  inForce: boolean;
+}
+
+export interface SideGoal {
+  id: string;
+  label: string;
+  ring: number;
+  reward: Units;
+  read(i: SideInput): { value: number; target: number } | null;
+}
+
+export const SIDE_GOALS: readonly SideGoal[];
+export const SIDE_SHOWN = 3;
+export function sideShown(s: GameState, goals?: readonly SideGoal[]): SideGoal[];</code></pre>
+      <dl>
+        <dt><code>LADDER_YEARS</code></dt><dd>The deadline years after the window's end, latest first, at most four. The measurement in <code>tree-catalogue</code> sets them.</dd>
+        <dt><code>RUNG_LUMP</code>, <code>SIDE_TUNING</code></dt><dd>The numbers the balance script tunes: the lump for a rung first met, and each side goal's target and reward by its id.</dd>
+        <dt><code>RUNGS</code></dt><dd><code>LADDER_YEARS.length + 1</code>.</dd>
+        <dt><code>homes</code></dt><dd>The goal's measure at the deadline's month.</dd>
+        <dt><code>reachedOn</code></dt><dd>The day the amount was first met at or before the deadline, or null.</dd>
+        <dt><code>stages</code></dt><dd>Homes in each stage short of complete at the deadline's month.</dd>
+        <dt><code>waitingMoney</code></dt><dd>Homes waiting for money at the deadline's month; null when the view has no such series.</dd>
+        <dt><code>lump</code></dt><dd><code>RUNG_LUMP</code> when this run is the first to meet its rung, else null.</dd>
+        <dt><code>index</code></dt><dd>The deadline's month in the view.</dd>
+        <dt><code>inForce</code></dt><dd>A policy of the document the view was forecast from is on with a span in force: <code>!nothingInForce(doc)</code> of the runnable document.</dd>
+      </dl>
+      <ul>
+        <li>Rung 0's deadline is <code>defaultGoal(asOf).deadline</code>. Rung <em>k</em> is the last day of December of <code>LADDER_YEARS[k - 1]</code>.</li>
+        <li>A rung's deadline is never after the rung before it and never before the dataset date's month.</li>
+        <li>The first ladder year is the largest multiple of five that is at least five years before the window's end year. The last is the first multiple of five at or after the measured year. When more than four five-year steps fit, the first and last are kept with two evenly between.</li>
+        <li>The cheapest node shown at rung 0 costs no more than <code>RUNG_LUMP</code>.</li>
+        <li>A side goal's <code>reward</code> and target are read from <code>SIDE_TUNING</code> by its id.</li>
+        <li><code>goalAt</code> is <code>defaultGoal(asOf)</code> with the rung's deadline, and with <code>amount</code> when given.</li>
+        <li><code>readRun</code> returns null until the view is filled through the deadline's month. That month is read clamped to the view's months, and every rung's deadline lies inside them: rung 0's is the view's last calendar month, and no rung's is later or before the dataset date's month.</li>
+        <li><code>resultOf</code> lists a side goal when it is shown, not yet met, and its <code>value</code> is at least its <code>target</code>.</li>
+        <li><code>settle</code> credits <code>collected</code>, <code>lump</code> and each side reward; records the rung in <code>met</code> when <code>reachedOn</code> is set and the rung is not there; records each side goal; adds 1 to <code>runs</code>; sets <code>last</code>.</li>
+        <li><code>settle</code> never removes a met rung (call 8).</li>
+        <li><code>settle</code> pays a lump or a side reward only when it also records it, so a result settled twice pays its lump and its side rewards once. The store refuses a second settle of one result (G7).</li>
+        <li><code>takeNext</code> moves to the next rung when the rung in play is met and a next one exists. Otherwise it returns the same state.</li>
+        <li><code>finished</code> is true once the last rung is in <code>met</code>.</li>
+        <li><code>fitGame</code> drops a <code>bought</code> entry for a node the catalogue does not have and lowers a level above the node's last to it.</li>
+        <li><code>fitGame</code> drops a <code>side</code> entry for an id <code>SIDE_GOALS</code> does not have.</li>
+        <li><code>fitGame</code> lowers a rung at <code>RUNGS</code> or above to <code>RUNGS - 1</code> and drops met rungs at <code>RUNGS</code> or above.</li>
+        <li><code>fitGame</code> returns the same object when nothing is dropped or lowered.</li>
+        <li><code>sideShown</code> returns the first <code>SIDE_SHOWN</code> goals whose ring is open and which are not met.</li>
+        <li>A side goal's <code>read</code> returns null when the view lacks what it reads.</li>
+        <li>A goal that reads the policy's effect (<code>planEffect</code>) reads 0 while <code>inForce</code> is false: the view's twin is then the old zoning, not current law.</li>
+      </ul>
+    </section>
+
+    <section id="sec-if-g7">
+      <h3>G7 The browser's game store</h3>
+      <pre><code data-lang="ts">// src/lib/game/store.svelte.ts
+export type StoreChange = { ok: true } | { ok: false; reason: 'full' | 'storage' | 'changed' };
+
+export class GameStore {
+  constructor(opts: { storage: Storage | null; sync: SaveSync; now?: () =&gt; Date });
+  get state(): GameState;
+  get limits(): Limits;
+  get open(): boolean;
+  get saves(): readonly SaveEntry[];
+  get currentId(): string;
+  get sync(): SaveSync;
+  won(): void;
+  startRuns(): StoreChange;
+  buy(id: NodeId): Bought;
+  settle(r: RunResult): StoreChange;
+  takeNext(): StoreChange;
+  touched(): void;
+  beforeLeave(fn: () =&gt; void): () =&gt; void;
+  newGame(): StoreChange;
+  switchTo(id: string): StoreChange;
+  rename(id: string, name: string): void;
+  remove(id: string): StoreChange;
+  read(id: string): GameSave | null;
+  adopt(saves: readonly GameSave[]): StoreChange;
+  rekey(id: string, newId: string): StoreChange;
+}
+
+export function openGame(): GameStore;
+export function provideGame(store: GameStore): void;
+export function useGame(): GameStore;</code></pre>
+      <ul>
+        <li><code>state</code> and <code>limits</code> are reactive. <code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code>.</li>
+        <li>Every save the store reads, from storage or from the server, passes through <code>parseGameSave</code> and then its state through <code>fitGame</code> (G6).</li>
+        <li><code>won</code> sets <code>firstWinAt</code> once and writes.</li>
+        <li><code>startRuns</code> sets <code>phase</code> to <code>'runs'</code>. It does nothing while <code>firstWinAt</code> is null.</li>
+        <li><code>buy</code> writes the new state when the purchase is good and returns what <code>buy</code> of G3 returns. A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing.</li>
+        <li>The store does not hold the policy document. The page applies the grant (G5).</li>
+        <li>Each write calls <code>sync.changed(id)</code>, as today.</li>
+        <li>The open game is in phase <code>'runs'</code> with the last rung met, every node bought and no units; its methods that write do nothing.</li>
+        <li><code>settle</code> does nothing for a result already settled.</li>
+      </ul>
+      <p><strong>Unchanged:</strong> the saved-games methods, <code>touched</code>, <code>beforeLeave</code>, the storage keys, <code>SaveSync</code>. <strong>Removed:</strong> <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>, <code>Offer</code>.</p>
+    </section>
+
+    <section id="sec-if-g8">
+      <h3>G8 The save API and table</h3>
+      <pre><code data-lang="ts">// src/lib/server/db/schema/gameSave.ts
+export const gameSave = sqliteTable(
+  'game_save',
+  {
+    identityId: text('identity_id').notNull().references(() =&gt; userIdentity.id),
+    id: text('id').notNull(),
+    rev: integer('rev').notNull(),
+    name: text('name').notNull(),
+    phase: text('phase').notNull(),
+    rung: integer('rung').notNull(),
+    body: text('body').notNull(),
+    savedAt: integer('saved_at', { mode: 'timestamp_ms' }).notNull(),
+    removedAt: integer('removed_at', { mode: 'timestamp_ms' })
+  },
+  (t) =&gt; [primaryKey({ columns: [t.identityId, t.id] })]
+);</code></pre>
+      <ul>
+        <li>The routes, methods, statuses, limits and rate limit of <code>/api/game</code> are as they are today.</li>
+        <li>Every body that carried a v1 save carries a <code>GameSave</code> of G1. A list entry carries <code>phase</code> and <code>rung</code> where it carried <code>level</code>.</li>
+        <li><code>PUT</code> answers 422 <code>no_win</code> for a signed-out save whose <code>state.firstWinAt</code> is null.</li>
+        <li>The migration is generated with <code>npm run db:generate</code>. Rows made under the five levels are not kept (P15).</li>
+      </ul>
+    </section>
+
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <p>Read on the branch <code>worktree-incremental-feel</code> at <code>4d22bf96</code>. The files of G1 to G6 (<code>state.ts</code>, <code>save-shape.ts</code>, <code>units.ts</code>, <code>tree.ts</code>, <code>limits.ts</code>, <code>ladder.ts</code>, <code>run-result.ts</code>, <code>side-goals.ts</code>, <code>catalogue/</code>) do not exist yet; <code>contracts</code> and <code>game-core</code> make them before this unit starts.</p>
+
+    <section id="sec-found-store">
+      <h3>The browser store</h3>
+      <ul>
+        <li>The store imports <code>allowedAt</code> and <code>ALL_ALLOWED</code> from <code>allowed.ts</code> and <code>NEW_GAME</code>, <code>levelUp</code>, <code>Banked</code> and <code>Progress</code> from <code>progress.ts</code> (<code>src/lib/game/store.svelte.ts:4-5</code>).</li>
+        <li><code>Offer</code> is <code>{ on: Day | null; datasetVersion: string }</code> (<code>store.svelte.ts:21-26</code>).</li>
+        <li>The reactive state is <code>#progress</code>, <code>#currentId</code>, <code>#offer</code>, <code>#saves</code>, and <code>#allowed</code> derived from the level (<code>store.svelte.ts:236-240</code>).</li>
+        <li>An index entry is <code>{ id, name, nameIsDefault, savedAt, level }</code> (<code>entryOf</code>, <code>store.svelte.ts:149-157</code>); <code>sameEntry</code> compares all five (<code>:159-167</code>).</li>
+        <li><code>parseIndex</code> refuses an index whose <code>v</code> is not 1 or whose entry level is not an integer from 1 to 5 (<code>store.svelte.ts:181</code>, <code>:191</code>). The index is written as <code>{ v: 1, current, saves }</code> (<code>:409</code>).</li>
+        <li>An invalid index is copied to a corrupt key and the store rebuilds from every <code>sfhousing:save:</code> key; a value that does not parse goes to a corrupt key (<code>store.svelte.ts:355-373</code>). In a valid index, an entry's save that does not parse goes to a corrupt key too (<code>:375-386</code>).</li>
+        <li>The open game is <code>{ v: 1, level: 5, banked: {}, firstWinAt: null }</code> under the name "Game" in memory mode (<code>store.svelte.ts:211</code>, <code>:249-251</code>).</li>
+        <li><code>#write</code> stores the changed save with the two records copied in, rewrites the index and calls <code>sync.changed(id)</code> through <code>#commit</code>; a refused write leaves memory as it was and calls nothing (<code>store.svelte.ts:460-489</code>).</li>
+        <li><code>#makeCurrent</code> clears the offer (<code>store.svelte.ts:543</code>); <code>adopt</code> of the current id clears it too (<code>:754-757</code>).</li>
+        <li><code>won()</code> sets <code>progress.firstWinAt</code> once and writes (<code>store.svelte.ts:595-600</code>). <code>setOffer</code> and <code>levelUp</code> are at <code>:602-617</code>; <code>remix</code> at <code>:651-671</code>.</li>
+        <li>In memory mode <code>newGame</code>, <code>switchTo</code> of another id, <code>remix</code>, <code>remove</code>, <code>adopt</code> and <code>rekey</code> answer <code>storage</code> (<code>store.svelte.ts:633</code>, <code>:645</code>, <code>:652</code>, <code>:680</code>, <code>:720</code>, <code>:762</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-saves">
+      <h3>The saved game and the sync</h3>
+      <ul>
+        <li><code>saves.ts</code> holds <code>GameSave</code> (<code>v: 1</code>, with <code>progress</code>), <code>SaveEntry</code> (with <code>level</code>), the keys and limits, <code>parseGameSave</code> and <code>defaultSaveName</code> (<code>src/lib/game/saves.ts:5-29</code>, <code>:93-134</code>).</li>
+        <li><code>saves.ts</code> repeats <code>LAST_LEVEL = 5</code> so that its only value import is <code>base58</code> (<code>saves.ts:46-47</code>); <code>e2e/helpers/game.ts</code> loads it under Playwright by relative path, and <code>saves.spec.ts:190-196</code> checks the rule.</li>
+        <li><code>defaultSaveName</code> takes <code>new</code>, <code>remix</code> or <code>conflict</code> (<code>saves.ts:109-119</code>).</li>
+        <li><code>save-api.ts</code> types the routes from <code>saves.ts</code> (<code>src/lib/game/save-api.ts:1</code>). Its <code>PutGame</code> has no 500 and no bodies for 403 and 415 (<code>:32-38</code>); its <code>DeleteGame</code> has only 204 and 401 (<code>:41</code>). The route answers all of these (<code>src/routes/api/game/[id]/+server.ts:26-27</code>, <code>:58</code>, <code>:88-100</code>).</li>
+        <li>The sync reads <code>save.progress.firstWinAt</code> in three places: at attach (<code>src/lib/game/save-sync.svelte.ts:265</code>), in <code>changed</code> (<code>:308</code>) and in <code>#put</code> (<code>:653</code>).</li>
+        <li>The sync reads only <code>id</code>, <code>savedAt</code> and <code>rev</code> of a list entry (<code>save-sync.svelte.ts:94-106</code>). Its record under <code>sfhousing:saves:revs</code> is its own <code>v: 1</code> shape keyed by save id (<code>:25</code>, <code>:35-41</code>).</li>
+        <li>The e2e seam <code>e2eOpen</code> and <code>e2eGoalAmount</code> read no saved game (<code>src/lib/game/e2e.ts:1-27</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-server">
+      <h3>The server and the table</h3>
+      <ul>
+        <li>The <code>game_save</code> table has an integer <code>level</code> column, NOT NULL (<code>src/lib/server/db/schema/gameSave.ts:13</code>; <code>migrations/d1/20261123043045_cloudy_devos.sql:1-12</code>). It references <code>user_identity(id)</code> with no <code>ON DELETE</code> action, and no table references it.</li>
+        <li><code>schema/index.ts</code> re-exports the table (<code>src/lib/server/db/schema/index.ts:7</code>).</li>
+        <li><code>listGames</code> reads <code>level</code> from its column and casts it to <code>Level</code> (<code>src/lib/server/game/store.ts:57</code>, <code>:80</code>).</li>
+        <li><code>putGame</code> inserts <code>save.progress.level</code> in raw SQL and sets it on update (<code>store.ts:122-132</code>, <code>:140-148</code>).</li>
+        <li><code>moveGames</code> rewrites only the body's top-level <code>id</code>; <code>removeGame</code> and <code>deleteGamesOf</code> touch no level (<code>store.ts:157-214</code>).</li>
+        <li><code>PUT /api/game/[id]</code> parses with <code>parseGameSave</code> of <code>saves.ts</code> and answers <code>no_win</code> when <code>save.progress.firstWinAt</code> is null (<code>src/routes/api/game/[id]/+server.ts:4</code>, <code>:48-49</code>, <code>:54</code>).</li>
+        <li><code>GET /api/game</code> returns the account line with <code>listGames</code>'s lists (<code>src/routes/api/game/+server.ts:6-14</code>).</li>
+        <li><code>npm run db:generate</code> runs <code>drizzle-cf-migrations generate d1</code>: drizzle-kit, then the classifier, then the flattener (<code>package.json:27</code>, <code>drizzle-cf.config.ts</code>). The package's doctrine allows <code>ADD COLUMN</code> only when nullable or NOT NULL with a constant default, and flags a table rebuild (<code>node_modules/@planafoot/drizzle-cf-migrations/README.md</code>, the doctrine table, read in the main checkout).</li>
+        <li>Server tests run the flattened <code>migrations/d1/*.sql</code> on better-sqlite3 (<code>src/lib/server/test/d1.ts:15-22</code>); <code>auth-schema.spec.ts:31-67</code> expects the table <code>game_save</code> and its foreign key to <code>user_identity</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-found-e2e">
+      <h3>The e2e helper and the outside readers</h3>
+      <ul>
+        <li><code>seedGame(page, level: 1 | 2 | 3 | 4 | 5)</code> writes a v1 save with banked bars at <code>SEED_BAR_DAY</code> and the index, only when the index key is absent (<code>e2e/helpers/game.ts:10-70</code>). It imports <code>Banked</code> from <code>progress.ts</code> (<code>:7</code>).</li>
+        <li><code>newVisitor</code> and <code>seedGoalAmount</code> write only the e2e keys (<code>e2e/helpers/game.ts:73-99</code>).</li>
+        <li>Playwright resolves no <code>$lib</code> alias: every helper imports source by relative path (<code>e2e/helpers/account.ts:3</code>, <code>game.ts:3-7</code>).</li>
+        <li><code>AccountOffer.svelte</code> and its spec import <code>syncText</code> from <code>./copy</code> (<code>src/lib/game/AccountOffer.svelte:10</code>, <code>AccountOffer.svelte.spec.ts:8</code>).</li>
+        <li><code>src/lib/game/test/StoreHost.svelte:3-4</code> imports <code>LevelPanel</code> and <code>WinCard</code>; <code>store.svelte.spec.ts</code> uses it only with <code>show: 'none'</code> (<code>store.svelte.spec.ts:523</code>, <code>:536-537</code>).</li>
+        <li><code>better-auth.spec.ts</code> and <code>deletion.spec.ts</code> build v1 saves with <code>parseGameSave</code> of <code>saves.ts</code> (<code>src/lib/server/auth/better-auth.spec.ts:9</code>, <code>:282-293</code>; <code>src/lib/server/user-store/deletion.spec.ts:6</code>, <code>:34-45</code>).</li>
+        <li><code>docs/dev/game-save.md</code> names <code>level</code> (<code>:24</code>, <code>:43</code>), <code>progress.firstWinAt</code> (<code>:86</code>, <code>:160</code>), the offer (<code>:207</code>, <code>:220</code>), levelling up (<code>:275</code>, <code>:300</code>) and <code>seedGame(page, 2)</code> (<code>:306</code>, <code>:315</code>).</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-saves">
+      <h3><code>saves.ts</code> after <code>save-shape.ts</code></h3>
+      <p><code>save-shape.ts</code> (G1, <code>game-core</code>) holds the saved game's shape and parser. <code>words.ts</code> (<code>game-core</code>) holds the words the store and the sync use. <code>saves.ts</code> keeps the keys and the limits, and imports nothing.</p>
+      <pre><code data-lang="ts">// src/lib/game/saves.ts
+export const SAVES_KEY = 'sfhousing:saves:v1';
+export const saveKey = (id: string): string =&gt; `sfhousing:save:${id}`;
+export const MAX_SAVES = 12;
+export const SAVE_NAME_MAX = 60;
+export const SHORT_MONTHS: readonly string[]; // 'Jan' to 'Dec', as today</code></pre>
+      <ul>
+        <li>Kept with no change: <code>SAVES_KEY</code>, <code>saveKey</code>, <code>MAX_SAVES</code>, <code>SAVE_NAME_MAX</code>, <code>SHORT_MONTHS</code>. <code>save-shape.ts</code> reads <code>SAVE_NAME_MAX</code> and <code>words.ts</code> reads <code>MAX_SAVES</code> and <code>SHORT_MONTHS</code> from here.</li>
+        <li>Moved to <code>save-shape.ts</code>: <code>GameSave</code>, <code>SaveEntry</code>, <code>parseGameSave</code>.</li>
+        <li>Moved to <code>words.ts</code>, under the same names: <code>defaultSaveName</code> and its names "Game, 22 Nov" and "{name} (this device)", the suffixes " (2)", " (3)" and the cut to 60 code points, with <code>DefaultFrom</code> of kinds <code>new</code> and <code>conflict</code> only. The <code>remix</code> kind and its names "Remix" and "Remix of {title}" are gone.</li>
+        <li>Moved from <code>copy.ts</code> to <code>words.ts</code>, under the same names and strings: <code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code>, <code>STORAGE_TEXT</code>.</li>
+        <li>Deleted with no successor: <code>parseProgress</code>, <code>parseBanked</code>, the local <code>LAST_LEVEL</code>, and the <code>Level</code>, <code>Banked</code>, <code>Progress</code> and <code>isValidId</code> imports.</li>
+        <li><code>saves.ts</code> re-exports nothing. Every importer of a moved name imports it from <code>$lib/game/save-shape</code> or <code>$lib/game/words</code> (inside <code>src/lib/game</code>, from <code>./save-shape</code> or <code>./words</code>).</li>
+        <li><code>saves.ts</code> has no import at all, so <code>e2e/helpers/game.ts</code> can load it under Playwright.</li>
+        <li><code>AccountOffer.svelte</code> changes one line, <code>import { syncText } from './words';</code>; its spec changes the same import.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-keys">
+      <h3>Storage keys and five-level records</h3>
+      <p>The keys keep their names (G7). A five-level record found under one is deleted at load (call 24), never read and never moved aside.</p>
+      <table id="tbl-keys">
+        <caption>The browser's keys after this unit</caption>
+        <thead>
+          <tr><th scope="col">Key</th><th scope="col">Holds</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>sfhousing:saves:v1</code></th><td>The index, now <code>v: 2</code> (<a href="#sec-design-index">The index</a>)</td></tr>
+          <tr><th scope="row"><code>sfhousing:save:&lt;id&gt;</code></th><td>One v2 <code>GameSave</code> as JSON</td></tr>
+          <tr><th scope="row"><code>sfhousing:save:corrupt:&lt;ISO&gt;</code></th><td>The raw text of a save or index that does not parse and is not a v1 record</td></tr>
+          <tr><th scope="row"><code>sfhousing:saves:revs</code></th><td>The sync's record, unchanged</td></tr>
+          <tr><th scope="row"><code>sfhousing:plan:v1</code>, <code>sfhousing:sim:v2</code>, <code>sfhousing:sim:v1</code>, <code>sfhousing:sim:corrupt:&lt;ISO&gt;</code></th><td>Unchanged</td></tr>
+          <tr><th scope="row"><code>sfhousing:e2e:game</code>, <code>sfhousing:e2e:goal</code></th><td>Unchanged</td></tr>
+          <tr><th scope="row"><code>sfhousing:e2e:run-ms</code></th><td>The run's wall time on an e2e build; <code>game-sim</code> reads it, <code>seedRunMs</code> writes it</td></tr>
+        </tbody>
+      </table>
+      <pre><code data-lang="ts">// src/lib/game/store.svelte.ts (module private)
+/** A JSON object whose `v` is 1: a save or an index of the five-level game (P15). */
+function isV1(text: string): boolean {
+  try {
+    const json: unknown = JSON.parse(text);
+    return isPlain(json) &amp;&amp; json.v === 1;
+  } catch {
+    return false;
+  }
+}</code></pre>
+      <ul>
+        <li>An index text for which <code>isV1</code> holds is treated as an invalid index (construction step 4), except that it is not copied to a corrupt key. The rebuilt index overwrites it.</li>
+        <li>In that rebuild, and in a valid index's entries (step 5), a save text for which <code>isV1</code> holds is removed (<code>[key, null]</code> in the same write sequence) instead of being copied to a corrupt key.</li>
+        <li>Every other text that does not parse goes to a corrupt key, as today.</li>
+        <li>So a browser that held only five-level games ends with one new game made from the two record keys (step 6), the five-level save keys removed, and no corrupt key added.</li>
+        <li>The plan and policy records are not saved games and are kept. The first game made from them starts in the opening with nothing bought; what of its policy runs is <code>runnable</code>'s rule (G4), applied by <code>game-sim</code>.</li>
+        <li>The sync's record keeps its key and its <code>v: 1</code> shape. Entries it holds for removed five-level ids are never consulted again, because new ids are fresh. An id left in its <code>deleting</code> list is sent as a <code>DELETE</code>, which answers 204 for an unknown id, and is then dropped.</li>
+        <li>An existing <code>sfhousing:save:corrupt:</code> key is left as it is.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-index">
+      <h3>The index</h3>
+      <pre><code data-lang="ts">// The text under SAVES_KEY
+interface Index {
+  v: 2;
+  current: string;
+  saves: SaveEntry[]; // SaveEntry of save-shape.ts: id, name, nameIsDefault, savedAt, phase, rung
+}</code></pre>
+      <ul>
+        <li><code>entryOf(save)</code> is <code>{ id, name, nameIsDefault, savedAt, phase: save.state.phase, rung: save.state.rung }</code>.</li>
+        <li><code>sameEntry</code> compares those six fields. Where the index and the save differ, the save wins and the index is rewritten, as today.</li>
+        <li><code>parseIndex</code> refuses unless <code>v</code> is 2, <code>current</code> is a string, <code>saves</code> is an array, and each entry has a string <code>id</code> not seen before, a string <code>name</code>, a boolean <code>nameIsDefault</code>, a string <code>savedAt</code>, <code>phase</code> equal to <code>'opening'</code> or <code>'runs'</code>, and <code>rung</code> a whole number of 0 or more.</li>
+        <li>The order is unchanged: latest first, ties by id; the current entry carries its played time.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-store">
+      <h3>The store (G7)</h3>
+      <p>The store keeps its structure: every saved game in memory by id, one current id, <code>#write</code> and <code>#commit</code> for every change, <code>#makeCurrent</code> for a change of current game, the eight construction steps. A save it builds is <code>{ v: 2, id, name, nameIsDefault, state, plan, policy, savedAt }</code>.</p>
+      <pre><code data-lang="ts">// src/lib/game/store.svelte.ts (imports)
+import { NODES } from './catalogue/nodes';
+import { RUNGS, fitGame, takeNext as nextRung } from './ladder';
+import { OPEN_LIMITS, limitsOf, type Limits } from './limits';
+import { settle as settleRun, type RunResult } from './run-result';
+import { parseGameSave, type GameSave, type SaveEntry } from './save-shape';
+import { MAX_SAVES, SAVES_KEY, SAVE_NAME_MAX, saveKey } from './saves';
+import { NEW_GAME, type GameState, type NodeId } from './state';
+import { buy as buyNode, type Bought } from './tree';
+import { defaultSaveName } from './words';
+
+// reactive fields
+#state = $state.raw&lt;GameState&gt;(NEW_GAME);
+#currentId = $state.raw('');
+#saves = $state.raw&lt;readonly SaveEntry[]&gt;([]);
+#limits = $derived(this.#open ? OPEN_LIMITS : limitsOf(this.#state));</code></pre>
+
+      <section id="sec-design-store-read">
+        <h4>What it shows</h4>
+        <ul>
+          <li><code>state</code> is the current game's <code>state</code>, set by <code>#settle</code> wherever <code>#progress</code> was set today.</li>
+          <li><code>limits</code> is <code>OPEN_LIMITS</code> for the open game, else <code>limitsOf(state)</code> with the default catalogue.</li>
+          <li><code>open</code>, <code>saves</code>, <code>currentId</code> and <code>sync</code> are as today.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-won">
+        <h4><code>won()</code></h4>
+        <ul>
+          <li>When <code>state.firstWinAt</code> is set, it does nothing.</li>
+          <li>Otherwise it calls <code>#write</code> with <code>state.firstWinAt</code> and <code>savedAt</code> both the current time.</li>
+          <li>A refused write leaves memory as it was: <code>firstWinAt</code> stays null, no sync call is made, and the next <code>won()</code> tries again.</li>
+          <li>In memory mode it changes memory and calls <code>sync.changed</code>, as today.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-start">
+        <h4><code>startRuns()</code></h4>
+        <ul>
+          <li>While <code>state.firstWinAt</code> is null it writes nothing and answers <code>{ ok: false, reason: 'storage' }</code>. The only way to get there after <code>won()</code> is a refused write, so the page shows the storage words.</li>
+          <li>When <code>state.phase</code> is already <code>'runs'</code> it writes nothing and answers <code>{ ok: true }</code>.</li>
+          <li>Otherwise it calls <code>#write</code> with <code>state.phase</code> set to <code>'runs'</code> and <code>savedAt</code> now, and answers <code>{ ok: true }</code>.</li>
+          <li>A refused write answers <code>{ ok: false, reason: 'storage' }</code> and changes nothing.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-buy">
+        <h4><code>buy(id)</code></h4>
+        <ul>
+          <li>It calls <code>buy(state, id)</code> of G3 with the default catalogue.</li>
+          <li>A refusal (<code>unknown</code>, <code>hidden</code>, <code>done</code>, <code>short</code>) is returned as it is, with nothing written.</li>
+          <li>An accepted purchase calls <code>#write</code> with the returned state and <code>savedAt</code> now, and returns G3's answer.</li>
+          <li>A refused write returns <code>{ ok: false, reason: 'short' }</code> and changes nothing (G7).</li>
+          <li>The store never reads or writes the policy record. The page applies the returned <code>grant</code> (G5).</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-settle">
+        <h4><code>settle(r)</code></h4>
+        <ul>
+          <li>When <code>state.last</code> is not null and its <code>at</code> and <code>rung</code> equal <code>r.at</code> and <code>r.rung</code>, the run is already settled: it writes nothing and answers <code>{ ok: true }</code>.</li>
+          <li>Otherwise it calls <code>#write</code> with <code>settle(state, r)</code> of G6 and <code>savedAt</code> now, and answers <code>{ ok: true }</code>.</li>
+          <li>It does not check <code>phase</code>, the rung or the dataset version: the page builds <code>r</code> with <code>resultOf</code>.</li>
+          <li>A refused write answers <code>{ ok: false, reason: 'storage' }</code> and changes nothing; the page may call it again with the same <code>r</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-next">
+        <h4><code>takeNext()</code></h4>
+        <ul>
+          <li>It calls <code>takeNext(state)</code> of G6.</li>
+          <li>When that returns the same state, it writes nothing and answers <code>{ ok: true }</code>; the page reads <code>state.rung</code> to see that nothing moved.</li>
+          <li>Otherwise it calls <code>#write</code> with the new state and <code>savedAt</code> now, and answers <code>{ ok: true }</code>.</li>
+          <li>A refused write answers <code>{ ok: false, reason: 'storage' }</code> and changes nothing.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-kept">
+        <h4>The methods that stay</h4>
+        <ul>
+          <li><code>touched</code>, <code>beforeLeave</code>, <code>newGame</code>, <code>switchTo</code>, <code>rename</code>, <code>remove</code>, <code>read</code>, <code>adopt</code> and <code>rekey</code> behave as today, with <code>state</code> where <code>progress</code> was.</li>
+          <li>A new game, from <code>newGame</code>, from the records at construction, from <code>remove</code> of the last game, or in memory mode, has <code>structuredClone(NEW_GAME)</code> as its state.</li>
+          <li><code>adopt</code> parses with <code>parseGameSave</code> of <code>save-shape.ts</code>, so it skips a v1 save.</li>
+          <li><code>#makeCurrent</code> and <code>adopt</code> of the current id no longer touch an offer; they still set <code>#left</code>.</li>
+          <li>Only <code>touched</code> checks <code>#left</code>. <code>won</code>, <code>startRuns</code>, <code>buy</code>, <code>settle</code> and <code>takeNext</code> do not, because after a change of current game the caller loads a page in full.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-changes">
+        <h4>Changes that write</h4>
+        <table id="tbl-store-changes">
+          <caption>The new changes; every other change writes and calls the sync as today, without <code>remix</code></caption>
+          <thead>
+            <tr><th scope="col">Change</th><th scope="col">Writes</th><th scope="col">Sync</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row"><code>startRuns()</code> from the opening, after a win</th><td>Current save with the records copied in; the index</td><td><code>changed(current)</code></td></tr>
+            <tr><th scope="row"><code>buy(id)</code> that G3 accepts</th><td>Current save with the records copied in; the index</td><td><code>changed(current)</code></td></tr>
+            <tr><th scope="row"><code>settle(r)</code> of a run not yet settled</th><td>Current save with the records copied in; the index</td><td><code>changed(current)</code></td></tr>
+            <tr><th scope="row"><code>takeNext()</code> that moves the rung</th><td>Current save with the records copied in; the index</td><td><code>changed(current)</code></td></tr>
+            <tr><th scope="row"><code>won()</code>, <code>firstWinAt</code> null</th><td>Current save with the records copied in; the index</td><td><code>changed(current)</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sec-design-store-fit">
+        <h4>Fitting a save to the catalogue</h4>
+        <pre><code data-lang="ts">// src/lib/game/store.svelte.ts (module private)
+/** A save as the store holds it: parsed, then its state fitted to the catalogue (G6). */
+function fitted(json: unknown): GameSave | null {
+  const save = parseGameSave(json);
+  if (save === null) return null;
+  const state = fitGame(save.state);
+  return state === save.state ? save : { ...save, state };
+}</code></pre>
+        <ul>
+          <li>The store takes a save in at two places, and both call <code>fitted</code>: <code>parseSaveText</code>, which construction uses for every save key it reads (steps 4 and 5), and <code>adopt</code>, for every save from the account.</li>
+          <li>Every other read (<code>read</code>, <code>switchTo</code>, <code>remove</code>, <code>rekey</code>, <code>#makeCurrent</code>, <code>state</code>, <code>saves</code>) reads the games in memory, which are fitted already.</li>
+          <li>A fitted state that differs from the stored one is held in memory and is not written at once. The save's key is rewritten with the fitted state at the next ordinary write of that save (<code>#write</code>, a copy out, <code>rekey</code>, <code>adopt</code>).</li>
+          <li>Fitting does not change <code>savedAt</code>. So the sync does not see a fitted save as changed here, and no <code>PUT</code> goes until the player changes the game. The account's copy is fitted when it is next sent.</li>
+          <li>The index entry carries the fitted <code>rung</code>. When it differs from the stored entry, construction rewrites the index (step 7), as for any entry that differs from its save.</li>
+          <li>The sync parses the account's answers with <code>parseGameSave</code> and passes them to <code>adopt</code>, which fits them. The sync itself never calls <code>fitGame</code>.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-open">
+        <h4>The open game</h4>
+        <pre><code data-lang="ts">// src/lib/game/store.svelte.ts (module private)
+const OPEN_AT = '1970-01-01T00:00:00.000Z';
+
+/** The open game's state: the last rung met, every node at its last level, no units (call 9). */
+function openState(): GameState {
+  return {
+    ...structuredClone(NEW_GAME),
+    phase: 'runs',
+    bought: Object.fromEntries(NODES.map((n) =&gt; [n.id, n.levels.length])),
+    rung: RUNGS - 1,
+    met: Array.from({ length: RUNGS }, (_, rung) =&gt; ({
+      rung,
+      reachedOn: 0,
+      datasetVersion: 'open',
+      at: OPEN_AT
+    }))
+  };
+}</code></pre>
+        <ul>
+          <li><code>openGame()</code> builds one game named "Game" with <code>openState()</code> in memory mode, <code>open</code> true and a sync that does nothing, as today.</li>
+          <li><code>firstWinAt</code> is null and <code>units</code> is empty, so nothing would make an account or show a balance.</li>
+          <li><code>won</code>, <code>startRuns</code>, <code>settle</code>, <code>takeNext</code>, <code>touched</code> and <code>rename</code> do nothing in the open game. The three that answer return <code>{ ok: true }</code>.</li>
+          <li><code>buy(id)</code> in the open game writes nothing. It returns G3's refusal for <code>id</code>, which is <code>done</code> for a catalogue node and <code>unknown</code> otherwise; should G3 accept, it returns <code>{ ok: false, reason: 'done' }</code>.</li>
+          <li><code>newGame</code>, <code>switchTo</code> of another id, <code>remove</code>, <code>adopt</code> and <code>rekey</code> answer <code>storage</code> in the open game, as in memory mode today.</li>
+          <li><code>useGame()</code> outside a provider returns a new <code>openGame()</code>, as today.</li>
+        </ul>
+      </section>
+
+      <section id="sec-design-store-removed">
+        <h4>What goes</h4>
+        <ul>
+          <li>Members: <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>remix</code>.</li>
+          <li>Types: <code>Offer</code>.</li>
+          <li>Private state: <code>#progress</code>, <code>#offer</code>, <code>#allowed</code>, <code>OPEN_PROGRESS</code>, and the offer clearing in <code>#makeCurrent</code> and <code>adopt</code>.</li>
+          <li>Imports: everything from <code>allowed.ts</code> and <code>progress.ts</code>; <code>GameSave</code>, <code>SaveEntry</code> and <code>parseGameSave</code> from <code>saves.ts</code>.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-sync">
+      <h3>The sync</h3>
+      <p>The sync changes only where it reads the saved game's shape. Its behaviour, record, states, timers and answers are as today.</p>
+      <ul>
+        <li>The three reads of <code>save.progress.firstWinAt</code> (attach, <code>changed</code>, <code>#put</code>) read <code>save.state.firstWinAt</code>.</li>
+        <li><code>GameSave</code> and <code>parseGameSave</code> come from <code>./save-shape</code>; <code>defaultSaveName</code> comes from <code>./words</code>.</li>
+        <li><code>#keepBoth</code> and <code>#keepRemoved</code> keep their behaviour. Their comments that say the offer is kept go, since there is no offer.</li>
+        <li><code>#keepBoth</code> names the browser's copy with <code>defaultSaveName({ kind: 'conflict', name: mine.name }, taken)</code>, where <code>taken</code> is every name in <code>store.saves</code> and the account copy's name. A name near 60 code points loses " (this device)" to the cut, and <code>taken</code> then gives it a " (2)" suffix, so the two copies never share a name.</li>
+        <li><code>SyncRecord</code>, <code>SAVE_REVS_KEY</code>, <code>SyncState</code>, <code>syncReload</code> and <code>createSaveSync</code> are unchanged.</li>
+        <li>A purchase or a settled run is one <code>changed(id)</code>, debounced 2 seconds like any edit.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-server">
+      <h3>The server store and the table (G8)</h3>
+      <ul>
+        <li><code>store.ts</code> imports <code>parseGameSave</code>, <code>GameSave</code> and <code>SaveEntry</code> from <code>$lib/game/save-shape</code>, <code>MAX_SAVES</code> from <code>$lib/game/saves</code>, and <code>GameState</code> as a type from <code>$lib/game/state</code>. The <code>Level</code> import goes.</li>
+        <li><code>listGames</code> selects <code>phase</code> and <code>rung</code> in place of <code>level</code> and returns each entry as <code>{ id, name, nameIsDefault, savedAt, phase, rung, rev }</code>, <code>phase</code> cast to <code>GameState['phase']</code>.</li>
+        <li><code>putGame</code> copies <code>save.state.phase</code> and <code>save.state.rung</code> into their columns on insert and on update, where it copied <code>save.progress.level</code>.</li>
+        <li><code>PUT</code> stores what <code>parseGameSave</code> returns, and <code>readGame</code> answers what it parses from the body. The server never calls <code>fitGame</code>: a node or rung the catalogue lacks is kept on the account, and the browser fits it on adopt.</li>
+        <li><code>readGame</code>, <code>removeGame</code>, <code>moveGames</code>, <code>deleteGamesOf</code>, <code>accountLine</code> and <code>REMOVED_LIST_DAYS</code> are unchanged.</li>
+        <li>The server never reads inside <code>state</code> beyond those two copies and the route's <code>firstWinAt</code> check.</li>
+      </ul>
+      <pre><code data-lang="sql">INSERT INTO game_save (identity_id, id, rev, name, phase, rung, body, saved_at, removed_at)
+SELECT ${identityId}, ${save.id}, 1, ${save.name}, ${save.state.phase}, ${save.state.rung}, ${body},
+  ${savedAt.getTime()}, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM game_save WHERE identity_id = ${identityId} AND id = ${save.id}
+  )
+  AND (
+    SELECT count(*) FROM game_save WHERE identity_id = ${identityId} AND removed_at IS NULL
+  ) &lt; ${MAX_SAVES}
+RETURNING rev</code></pre>
+
+      <section id="sec-design-migration">
+        <h4>The migration</h4>
+        <p>The table is dropped and created again, in two generated migrations. No row is kept (P15). Nothing is written by hand.</p>
+        <ol>
+          <li>Delete the table from <code>gameSave.ts</code>, with its two imports, so the file exports nothing. Run <code>npm run db:generate</code>. The migration must be the drop alone. Nothing is committed between the steps.</li>
+          <li>Write <code>gameSave.ts</code> as G8 gives it. Run <code>npm run db:generate</code>. The migration must be the create alone.</li>
+          <li>Run <code>npm run db:migrate</code> on the local database.</li>
+        </ol>
+        <pre><code data-lang="sql">-- migration 1, as drizzle-kit emits it
+DROP TABLE `game_save`;
+
+-- migration 2
+CREATE TABLE `game_save` (
+	`identity_id` text NOT NULL,
+	`id` text NOT NULL,
+	`rev` integer NOT NULL,
+	`name` text NOT NULL,
+	`phase` text NOT NULL,
+	`rung` integer NOT NULL,
+	`body` text NOT NULL,
+	`saved_at` integer NOT NULL,
+	`removed_at` integer,
+	CONSTRAINT `game_save_pk` PRIMARY KEY(`identity_id`, `id`),
+	CONSTRAINT `fk_game_save_identity_id_user_identity_id_fk` FOREIGN KEY (`identity_id`) REFERENCES `user_identity`(`id`)
+);</code></pre>
+        <ul>
+          <li>Neither step asks a rename question: step 1 only removes a table and step 2 only adds one.</li>
+          <li>The drop is safe on D1: no table references <code>game_save</code>, so the drop fires no foreign-key action.</li>
+          <li>A NOT NULL column with no default is safe in a <code>CREATE TABLE</code>; it is <code>ALTER TABLE ADD COLUMN</code> that SQLite refuses without a default.</li>
+          <li>Staging's rows, made under the five levels, go with the drop. Production applies the same two migrations to its empty table.</li>
+          <li>The foreign key and its name are as before, so <code>auth-schema.spec.ts</code> passes unchanged.</li>
+          <li>If the classifier refuses step 1, or drizzle-kit emits anything other than the SQL above, the implementer stops and reports to the conductor. The migrations are not edited.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section id="sec-design-api">
+      <h3>The routes and their types</h3>
+      <ul>
+        <li>The routes, methods, statuses, order of checks, size limit, rate limit and session gate are as today (G8).</li>
+        <li><code>PUT /api/game/[id]</code> parses <code>save</code> with <code>parseGameSave</code> of <code>save-shape.ts</code>. A v1 save is 422 <code>{ error: 'invalid' }</code>.</li>
+        <li>With no <code>locals.user</code> and no <code>sfh_known</code> cookie, a save whose <code>state.firstWinAt</code> is null is 422 <code>{ error: 'no_win' }</code>, before any mint.</li>
+        <li><code>GET /api/game</code> answers <code>{ handle, handleClaimed, saves, removed }</code> with each entry <code>{ id, name, nameIsDefault, savedAt, phase, rung, rev }</code>.</li>
+        <li><code>GET /api/game/[id]</code>, a 409 and a 200 of <code>PUT</code> carry a v2 <code>GameSave</code>.</li>
+      </ul>
+      <p>The types now say what the routes answer.</p>
+      <pre><code data-lang="ts">// src/lib/game/save-api.ts
+import type { GameSave, SaveEntry } from './save-shape';
+
+export const MAX_SAVE_BYTES = 600_000;
+
+export interface AccountLine {
+  handle: string;
+  handleClaimed: boolean;
+}
+
+export type ListGames =
+  | {
+      status: 200;
+      body: AccountLine &amp; { saves: (SaveEntry &amp; { rev: number })[]; removed: string[] };
+    }
+  | { status: 401 };
+
+export type GetGame =
+  { status: 200; body: { rev: number; save: GameSave } } | { status: 401 | 404 | 410 };
+
+export interface PutGameBody {
+  baseRev: number | null;
+  save: GameSave;
+}
+
+export type PutGame =
+  | { status: 200; body: AccountLine &amp; { rev: number } }
+  | { status: 409; body: { rev: number; save: GameSave } }
+  | { status: 410 }
+  | { status: 401; body: { error: 'sign_in' } }
+  | { status: 422; body: { error: 'invalid' | 'too_many' | 'no_win' } }
+  | { status: 403 | 415 | 500; body: { error: string } }
+  | { status: 413 | 429 };
+
+export type DeleteGame =
+  | { status: 204 }
+  | { status: 401 | 429 }
+  | { status: 403 | 415; body: { error: string } };</code></pre>
+    </section>
+
+    <section id="sec-design-e2e">
+      <h3>The e2e seam</h3>
+      <p><code>src/lib/game/e2e.ts</code> is unchanged. The helper changes its signature; <code>closing</code> rewrites the specs that call it.</p>
+      <pre><code data-lang="ts">// e2e/helpers/game.ts
+import type { Page } from '@playwright/test';
+import { newId } from '../../src/lib/ids/base58';
+import { E2E_GAME_KEY, E2E_GOAL_KEY } from '../../src/lib/game/e2e';
+import { SAVES_KEY, saveKey } from '../../src/lib/game/saves';
+import { NEW_GAME, type GameState } from '../../src/lib/game/state';
+import type { GameSave } from '../../src/lib/game/save-shape';
+import { E2E_RUN_MS_KEY } from '../../src/lib/sim-page/e2e-run';
+
+export async function seedGame(page: Page, state?: Partial&lt;GameState&gt;): Promise&lt;void&gt;;
+export async function newVisitor(page: Page): Promise&lt;void&gt;;
+export async function seedGoalAmount(page: Page, amount: number): Promise&lt;void&gt;;
+export async function seedRunMs(page: Page, ms: number): Promise&lt;void&gt;;</code></pre>
+      <ul>
+        <li><code>seedGame</code> throws <code>seedGame: this page already has a game</code> when the page was seeded or made a new visitor before.</li>
+        <li>The stored state is <code>{ ...NEW_GAME, ...state, v: 2 }</code>, a shallow merge.</li>
+        <li>When <code>state</code> names no <code>firstWinAt</code> and the merged <code>phase</code> is <code>'runs'</code>, <code>firstWinAt</code> is the seeding time: a game past the opening has won, so the sync sends it at attach and the first <code>PUT</code> mints the account.</li>
+        <li>The save is <code>{ v: 2, id: newId(), name: 'Seeded game', nameIsDefault: false, state, plan: null, policy: null, savedAt: now }</code>.</li>
+        <li>The index is <code>{ v: 2, current: id, saves: [{ id, name: 'Seeded game', nameIsDefault: false, savedAt: now, phase, rung }] }</code>.</li>
+        <li>An init script sets <code>E2E_GAME_KEY</code> to <code>'1'</code> and, only when <code>SAVES_KEY</code> is absent, writes the save then the index, as today. A storage refusal writes nothing more and the page still loads.</li>
+        <li>The helper does not parse the state. A state <code>parseGameSave</code> refuses is moved aside by the store at load, which makes a new game; a spec that seeds asserts what it sees.</li>
+        <li><code>newVisitor</code> and <code>seedGoalAmount</code> are unchanged.</li>
+        <li><code>seedRunMs(page, ms)</code> accepts a safe integer from 100 to 20,000, the range <code>e2eRunMs</code> of <code>game-sim</code> accepts.</li>
+        <li>For any other <code>ms</code> it throws an <code>Error</code> with this message:
+          <pre><code data-lang="text">seedRunMs: ms must be a whole number from 100 to 20000</code></pre>
+        </li>
+        <li>For an accepted <code>ms</code>, an init script writes <code>String(ms)</code> under <code>E2E_RUN_MS_KEY</code> (<code>sfhousing:e2e:run-ms</code>).</li>
+        <li>A storage refusal writes nothing and the page still loads.</li>
+        <li><code>seedRunMs</code> may be called on a seeded page and on a new visitor.</li>
+        <li><code>SEED_BAR_DAY</code> and the read of the fixture's <code>calibration.json</code> are removed: there are no bars.</li>
+        <li>No ladder seam is added. A spec that needs the ending seeds <code>rung</code> and <code>met</code> directly and plays one short run with <code>seedRunMs</code>, with <code>seedGoalAmount</code> making the goal reachable on the fixture.</li>
+        <li>The helper value-imports <code>NEW_GAME</code> from <code>state.ts</code> and <code>E2E_RUN_MS_KEY</code> from <code>e2e-run.ts</code> by relative path. <code>state.ts</code> imports other modules as types only (design, Contracts); <code>e2e-run.ts</code> imports nothing (<code>game-sim</code>).</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-lane">
+      <h3>The lane: what this unit leaves broken</h3>
+      <p>This unit deletes six files and removes store members. Every file outside its write set that imports them is listed here with the unit that mends it. Nothing in this table is edited by <code>game-save</code>. The census is the survey's section b, checked again by grep on this branch.</p>
+      <table id="tbl-lane">
+        <caption>Importers left broken, by unit</caption>
+        <thead>
+          <tr><th scope="col">File</th><th scope="col">What it uses that goes</th><th scope="col">Mended by</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row"><code>src/lib/sim-page/SimPage.svelte</code></th><td><code>ALL_ALLOWED</code>, <code>playable</code>, <code>runs</code>, <code>Allowed</code>, <code>unlockText</code>, <code>roundComplete</code>; store <code>progress</code>, <code>allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/sim-page/SimRoute.svelte</code></th><td><code>simLocked</code>; store <code>progress</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/sim-page/funding-presets.ts</code></th><td><code>isGiven</code> (now in <code>limits.ts</code>)</td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/TimelineMode.svelte</code></th><td><code>ALL_ALLOWED</code>, <code>unlockText</code>, <code>Level</code>, <code>barOf</code>, <code>roundComplete</code>, <code>standing</code>; store <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>progress</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/TimelineMode.game.svelte.spec.ts</code></th><td><code>unlockText</code>, <code>roundComplete</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/Timeline.svelte</code></th><td><code>ALL_ALLOWED</code>, <code>runs</code>, <code>Allowed</code>, <code>lockedLane</code>, <code>Level</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/Timeline.svelte.spec.ts</code></th><td><code>allowedAt</code>, <code>isGiven</code>, <code>Allowed</code>, <code>lockedLane</code>, <code>Level</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/Inspector.svelte</code></th><td><code>ALL_ALLOWED</code>, <code>isGiven</code>, <code>Allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/Inspector.svelte.spec.ts</code></th><td><code>allowedAt</code>, <code>Allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/test/InspectorHost.svelte</code></th><td><code>Allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/AddMenu.svelte</code></th><td><code>ALL_ALLOWED</code>, <code>Allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/add.ts</code></th><td><code>ALL_ALLOWED</code>, <code>isGiven</code>, <code>Allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/add.spec.ts</code></th><td><code>ALL_ALLOWED</code>, <code>allowedAt</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/activity-view.ts</code></th><td><code>ALL_ALLOWED</code>, <code>Allowed</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/activity-view.spec.ts</code></th><td><code>allowedAt</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/game-copy.ts</code></th><td><code>Level</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/lib/timeline/test/game.ts</code></th><td><code>Level</code>; store <code>setOffer</code>, <code>levelUp</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/routes/sim/game.svelte.spec.ts</code></th><td>Store <code>offer</code>, <code>setOffer</code>, <code>levelUp</code>, <code>progress</code></td><td><code>game-sim</code> (moves it under <code>src/lib/sim-page</code>)</td></tr>
+          <tr><th scope="row"><code>src/routes/s/[id]/+page.svelte</code></th><td><code>needsHigher</code>, <code>simLocked</code>, <code>STORAGE_TEXT</code>, <code>gamePath</code>, <code>loadPage</code>, <code>remixPath</code>; store <code>remix</code>, <code>progress</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/routes/s/[id]/page.view.svelte.spec.ts</code></th><td><code>FULL_TEXT</code>, <code>STORAGE_TEXT</code>, the mock of <code>$lib/game/navigate</code></td><td><code>game-sim</code></td></tr>
+          <tr><th scope="row"><code>src/routes/+page.svelte</code></th><td><code>simLocked</code>, <code>unlockText</code>, <code>paintWon</code>; store <code>setOffer</code>, <code>levelUp</code>, <code>progress</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/page.game.svelte.spec.ts</code></th><td>Store <code>offer</code>, <code>levelUp</code>, <code>progress</code>; <code>seededGame</code> by level</td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/p/[id]/+page.svelte</code></th><td><code>STORAGE_TEXT</code>, <code>gamePath</code>, <code>loadPage</code>, <code>remixPath</code>; store <code>remix</code>, <code>progress</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/routes/p/[id]/page.view.svelte.spec.ts</code></th><td><code>FULL_TEXT</code>, the mock of <code>$lib/game/navigate</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/lib/sharing/SharedBanner.svelte</code> and its spec</th><td><code>FULL_TEXT</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/lib/shell/SiteHeader.svelte</code></th><td><code>simLocked</code>, <code>roundComplete</code>; store <code>progress</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/lib/shell/LevelCell.svelte</code></th><td><code>levelText</code>, <code>roundComplete</code>; store <code>levelUp</code>, <code>progress</code></td><td><code>game-shell</code> (deletes it)</td></tr>
+          <tr><th scope="row"><code>src/lib/shell/test/seeded-game.ts</code></th><td><code>Level</code>, <code>Progress</code>, a v1 <code>GameSave</code> and index entry</td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/lib/shell/test/seeded-game.svelte.spec.ts</code></th><td><code>roundComplete</code>; <code>parseGameSave</code> from <code>saves.ts</code></td><td><code>game-shell</code></td></tr>
+          <tr><th scope="row"><code>src/lib/game/LevelPanel.svelte</code> and its spec</th><td><code>copy.ts</code>, <code>navigate.ts</code>, <code>roundComplete</code>, <code>levels.ts</code>; store <code>offer</code>, <code>levelUp</code></td><td><code>game-shell</code> (deletes them)</td></tr>
+          <tr><th scope="row"><code>e2e/*.spec.ts</code> that call <code>seedGame(page, level)</code> or read <code>SEED_BAR_DAY</code></th><td>The old helper signature</td><td><code>closing</code></td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><code>activity-view.ts</code> builds the add menu's starters, not the city index (<code>activity.ts</code>), so it is <code>game-sim</code>'s and not <code>city-net</code>'s.</li>
+        <li>The surviving words of <code>copy.ts</code> (<code>syncText</code>, <code>playedText</code>, <code>FULL_TEXT</code>, <code>STORAGE_TEXT</code>) are in <code>words.ts</code> of <code>game-core</code> under the same names. Each importer above switches its import there.</li>
+        <li><code>AccountOffer.svelte</code>, its spec, <code>test/StoreHost.svelte</code>, <code>better-auth.spec.ts</code> and <code>deletion.spec.ts</code> also import what goes; they are in this unit's write set and are mended here (<a href="#sec-files">Files</a>).</li>
+        <li><code>paintWon(net, amount)</code> was <code>net &gt;= amount</code>; <code>game-shell</code> writes the comparison where <code>+page.svelte</code> needs it, or takes it from <code>game-core</code>.</li>
+        <li>Importers of kept names (<code>SAVES_KEY</code>, <code>saveKey</code>, <code>MAX_SAVES</code>, <code>e2eOpen</code>, <code>e2eGoalAmount</code>, <code>createSaveSync</code>, <code>GameStore</code>, <code>openGame</code>, <code>provideGame</code>, <code>useGame</code>, <code>FakeSync</code>) are not broken by this unit.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-doc">
+      <h3>The document</h3>
+      <p><code>docs/dev/game-save.md</code> is rewritten where it names the old shape. Each change is one line or one row.</p>
+      <ul>
+        <li>The table: <code>phase</code> ("A copy of <code>save.state.phase</code>") and <code>rung</code> ("A copy of <code>save.state.rung</code>") in place of <code>level</code>.</li>
+        <li>A line under the table: the table was dropped and created again by two generated migrations when the saved game became v2; no five-level row was kept.</li>
+        <li><code>listGames</code>'s entry shape with <code>phase</code> and <code>rung</code>.</li>
+        <li>The <code>PUT</code> step 6: <code>save.state.firstWinAt</code> null.</li>
+        <li>Attach: <code>state.firstWinAt</code>.</li>
+        <li>Keep both and Removal: the words about the offer go.</li>
+        <li>State: "no state blocks play or buying".</li>
+        <li>The account offer: it sits on the tally; "Nothing in the offer blocks buying or closes the tally".</li>
+        <li>e2e seams: <code>seedGame(page, { phase: 'runs' })</code> stores a won game never sent; <code>seedRunMs(page, ms)</code> shortens the run; "Any spec that seeds a game past the opening now sends it 2 seconds after load".</li>
+        <li>A short section "Five-level records" saying that a v1 save or index in a browser is removed at load, unread (P15).</li>
+      </ul>
+      <p><code>docs/dev/game.md</code>, which describes the store's construction, changes and the open game, is <code>closing</code>'s. Its store sections follow <a href="#sec-design-store">The store</a> and <a href="#sec-design-keys">Storage keys</a>.</p>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <table id="tbl-files">
+      <caption>Files this unit writes, creates and deletes</caption>
+      <thead>
+        <tr><th scope="col">File</th><th scope="col">Action</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row"><code>src/lib/game/store.svelte.ts</code></th><td>Write: <a href="#sec-design-store">The store</a></td></tr>
+        <tr><th scope="row"><code>src/lib/game/store.svelte.spec.ts</code></th><td>Write</td></tr>
+        <tr><th scope="row"><code>src/lib/game/save-sync.svelte.ts</code></th><td>Write: <a href="#sec-design-sync">The sync</a></td></tr>
+        <tr><th scope="row"><code>src/lib/game/save-sync.svelte.spec.ts</code></th><td>Write</td></tr>
+        <tr><th scope="row"><code>src/lib/game/saves.ts</code>, <code>saves.spec.ts</code></th><td>Write: <a href="#sec-design-saves">saves.ts</a></td></tr>
+        <tr><th scope="row"><code>src/lib/game/save-api.ts</code></th><td>Write: <a href="#sec-design-api">The routes</a></td></tr>
+        <tr><th scope="row"><code>src/lib/game/e2e.ts</code>, <code>e2e.spec.ts</code></th><td>Unchanged</td></tr>
+        <tr><th scope="row"><code>src/lib/server/game/store.ts</code>, <code>store.spec.ts</code></th><td>Write: <a href="#sec-design-server">The server store</a></td></tr>
+        <tr><th scope="row"><code>src/lib/server/db/schema/gameSave.ts</code></th><td>Write: G8</td></tr>
+        <tr><th scope="row"><code>migrations/d1/**</code></th><td>Create: two generated migrations and their snapshots</td></tr>
+        <tr><th scope="row"><code>src/routes/api/game/+server.ts</code>, <code>server.spec.ts</code></th><td>Write (the spec; the route's code is unchanged)</td></tr>
+        <tr><th scope="row"><code>src/routes/api/game/[id]/+server.ts</code>, <code>server.spec.ts</code></th><td>Write</td></tr>
+        <tr><th scope="row"><code>e2e/helpers/game.ts</code></th><td>Write: <a href="#sec-design-e2e">The e2e seam</a></td></tr>
+        <tr><th scope="row"><code>docs/dev/game-save.md</code></th><td>Write: <a href="#sec-design-doc">The document</a></td></tr>
+        <tr><th scope="row"><code>src/lib/game/{levels,progress,standing,allowed,copy,navigate}.ts</code> and their six specs</th><td>Delete</td></tr>
+        <tr><th scope="row"><code>src/lib/game/AccountOffer.svelte</code>, <code>AccountOffer.svelte.spec.ts</code></th><td>Write one import line each: <code>syncText</code> from <code>./words</code></td></tr>
+        <tr><th scope="row"><code>src/lib/game/test/StoreHost.svelte</code></th><td>Write: drop the <code>panel</code> and <code>card</code> cases and their imports; keep <code>store</code>, <code>onuse</code>, <code>onescape</code> and <code>show: 'none'</code></td></tr>
+        <tr><th scope="row"><code>src/lib/server/auth/better-auth.spec.ts</code>, <code>src/lib/server/user-store/deletion.spec.ts</code></th><td>Write: <code>gameOf()</code> builds a v2 save checked with <code>parseGameSave</code> of <code>save-shape.ts</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+
+    <section id="sec-tests-unit">
+      <h3>Unit (server project)</h3>
+      <ul>
+        <li><code>saves.ts</code> has no import line at all.</li>
+        <li><code>defaultSaveName</code> gives "Game, 22 Nov", "{name} (this device)", " (2)" on a clash, and the cut to 60 code points; it has no remix kind.</li>
+        <li>A freshly migrated database's <code>game_save</code> has the columns <code>identity_id</code>, <code>id</code>, <code>rev</code>, <code>name</code>, <code>phase</code>, <code>rung</code>, <code>body</code>, <code>saved_at</code>, <code>removed_at</code>, and no <code>level</code> (<code>PRAGMA table_info</code>, in <code>src/lib/server/game/store.spec.ts</code>).</li>
+        <li><code>putGame</code> of a new id stores <code>phase</code> and <code>rung</code> from <code>save.state</code>; an update with a matching <code>baseRev</code> stores the new ones.</li>
+        <li><code>listGames</code> returns each live entry as <code>{ id, name, nameIsDefault, savedAt, phase, rung, rev }</code>, newest first.</li>
+        <li><code>readGame</code> returns the v2 save stored; the conflict answer carries it too.</li>
+        <li>Every other test of <code>store.spec.ts</code> passes with a v2 save in place of the v1 fixture.</li>
+        <li><code>PUT /api/game/[id]</code>: a v1 save is 422 <code>invalid</code>; with no session, a v2 save with <code>state.firstWinAt</code> null is 422 <code>no_win</code> with no mint, no cookie and no row; with it set, the mint happens and the answer is 200 at rev 1.</li>
+        <li><code>GET /api/game</code> answers entries with <code>phase</code> and <code>rung</code>.</li>
+        <li>Every other route test passes with v2 saves.</li>
+        <li>A <code>PUT</code> of a save whose <code>bought</code> names a node the catalogue lacks is stored and read back with that entry kept.</li>
+        <li><code>better-auth.spec.ts</code> (a join moves the rows) and <code>deletion.spec.ts</code> (deletion removes them) pass with their <code>gameOf()</code> building a v2 save.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-client">
+      <h3>Unit (client project)</h3>
+      <ul>
+        <li>Construction with a v1 index and v1 saves: the save keys are removed, no <code>sfhousing:save:corrupt:</code> key is added, one new game from the two record keys is current, and the index is <code>v: 2</code>.</li>
+        <li>Construction with a v2 index whose entry's save is v1: that key is removed, not moved aside; the other games stay.</li>
+        <li>A save that is neither v1 nor valid still goes to a corrupt key.</li>
+        <li><code>parseIndex</code> refuses a bad <code>phase</code>, a negative or fractional <code>rung</code>, and <code>v</code> other than 2.</li>
+        <li>An index entry that differs from its save in <code>phase</code> or <code>rung</code> is rewritten from the save.</li>
+        <li>A stored save with a <code>bought</code> node the catalogue lacks, a level above a node's last, an unknown side goal id or a rung at <code>RUNGS</code> or above loads fitted: <code>state</code> equals <code>fitGame</code> of it. Its key still holds the unfitted text after construction, and holds the fitted state after the next <code>touched()</code>.</li>
+        <li>A fitted save's <code>savedAt</code> is unchanged, and construction calls no sync method for it.</li>
+        <li><code>adopt</code> of a save with a node the catalogue lacks stores and shows the fitted state.</li>
+        <li>A save that needs no fitting is held as the same object <code>parseGameSave</code> returned.</li>
+        <li><code>state</code> after construction is the current save's state; <code>limits</code> is <code>limitsOf(state)</code>, and <code>OPEN_LIMITS</code> for <code>openGame()</code>.</li>
+        <li><code>won()</code> sets <code>firstWinAt</code> once, writes, and calls <code>changed</code> once; a second call writes nothing; a refused write leaves it null and calls nothing.</li>
+        <li><code>startRuns()</code>: refused with <code>storage</code> while <code>firstWinAt</code> is null; sets <code>phase</code> and calls <code>changed</code> after a win; <code>ok</code> with no write when already in runs; <code>storage</code> on a refused write with memory unchanged.</li>
+        <li><code>buy(id)</code>: G3's refusals pass through with no write; an accepted purchase writes the new <code>bought</code> and <code>units</code> and calls <code>changed</code>; a refused write answers <code>short</code> with memory unchanged; the plan and policy records are not written.</li>
+        <li><code>settle(r)</code> writes G6's result once; the same <code>r</code> again writes nothing and answers <code>ok</code>; a refused write answers <code>storage</code>.</li>
+        <li><code>takeNext()</code> writes when the rung moves and writes nothing when it does not.</li>
+        <li>The open game: <code>state</code> has every catalogue node at its last level, <code>rung</code> <code>RUNGS - 1</code>, one <code>met</code> entry per rung, no units; its writing methods change nothing and call no sync method; <code>buy</code> answers <code>done</code>.</li>
+        <li><code>newGame</code>, <code>switchTo</code>, <code>rename</code>, <code>remove</code>, <code>read</code>, <code>adopt</code>, <code>rekey</code>, <code>touched</code> and <code>beforeLeave</code> keep their tests, with v2 saves; <code>adopt</code> skips a v1 save.</li>
+        <li>The store has no member <code>progress</code>, <code>allowed</code>, <code>offer</code>, <code>setOffer</code>, <code>levelUp</code> or <code>remix</code> (a type-level check with <code>@ts-expect-error</code>).</li>
+        <li><code>AccountOffer.svelte.spec.ts</code> passes unchanged apart from its import of <code>syncText</code>.</li>
+        <li>The sync: with no session, a save whose <code>state.firstWinAt</code> is null is not sent by <code>changed</code>, at attach or by a held send; with it set it is sent and the 200 makes the session. Every other sync test passes with v2 saves.</li>
+        <li>A 409 on a save whose name is 60 code points keeps both copies under different names: the browser's copy is named with " (2)", and its name differs from the account copy's name also when that copy was renamed on another device.</li>
+      </ul>
+    </section>
+
+    <section id="sec-tests-e2e">
+      <h3>End to end</h3>
+      <p>The helper's tests are in <code>e2e/game-helpers.spec.ts</code>, which <code>closing</code> rewrites. They must prove:</p>
+      <ul>
+        <li><code>seedGame(page)</code> stores one v2 save in the opening and a <code>v: 2</code> index naming it current.</li>
+        <li><code>seedGame(page, { phase: 'runs', units: { home: 500 } })</code> stores that state with <code>firstWinAt</code> set, and the page loads it as the current game.</li>
+        <li>A second <code>seedGame</code> or <code>newVisitor</code> on the same page throws.</li>
+        <li>A reload does not overwrite what the page stored since.</li>
+        <li><code>seedRunMs(page, 500)</code> stores <code>'500'</code> under <code>sfhousing:e2e:run-ms</code> before the page loads; <code>seedRunMs(page, 99)</code> and <code>seedRunMs(page, 1.5)</code> throw.</li>
+        <li><code>e2e/game-save.spec.ts</code>'s account path runs with <code>seedGame(page, { phase: 'runs' })</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li><strong>A v1 record is removed in the write sequence and never copied to a corrupt key.</strong> Call 24 deletes it at load; copying it aside would keep the five-level data P15 drops.</li>
+      <li><strong>The index becomes <code>v: 2</code>.</strong> Its entries carry <code>phase</code> and <code>rung</code>, so the version says which shape it holds.</li>
+      <li><strong>The two migrations come from removing the table, then adding it back.</strong> Each step is a schema change <code>npm run db:generate</code> turns into one statement with no rename question, and SQLite takes a NOT NULL column with no default only in a <code>CREATE TABLE</code>.</li>
+      <li><strong><code>startRuns</code> answers <code>storage</code> while <code>firstWinAt</code> is null.</strong> The only path there after <code>won()</code> is a refused write, and an <code>ok</code> would let the page start a run the store never recorded.</li>
+      <li><strong>A fitted state is written at the next ordinary write, not at once.</strong> Writing at load would change every stored save after a catalogue update with no act of the player's.</li>
+      <li><strong>A result is already settled when its <code>at</code> and <code>rung</code> equal those of <code>last</code>.</strong> Every result carries its own <code>at</code>, so the pair names one run.</li>
+      <li><strong><code>takeNext</code> with nothing to take answers <code>ok</code> and writes nothing.</strong> It matches <code>levelUp</code> today, which wrote nothing when progress did not change.</li>
+      <li><strong>The open game's met rungs carry <code>reachedOn: 0</code>, <code>datasetVersion: 'open'</code> and the epoch as <code>at</code>.</strong> They are never saved or shown; only their rung numbers matter (<code>finished</code>).</li>
+      <li><strong>The open game's answering methods return <code>{ ok: true }</code>, and <code>buy</code> returns <code>done</code>.</strong> They do nothing (G7), and no page shows a game part for the open game.</li>
+      <li><strong><code>save-api.ts</code>'s types are corrected</strong> to the 500 and the error bodies the routes already send, since the file is rewritten anyway.</li>
+      <li><strong><code>seedGame</code> takes a partial state and sets <code>firstWinAt</code> for a game past the opening.</strong> It keeps today's rule that a seeded game past the first win is a won game the sync sends.</li>
+      <li><strong>No ladder seam.</strong> Seeding <code>rung</code> and <code>met</code> reaches any rung in one load, and <code>seedRunMs</code> makes the run short.</li>
+      <li><strong><code>seedRunMs</code> refuses a value outside 100 to 20,000.</strong> <code>e2eRunMs</code> would ignore it silently, and a spec would then wait for a 20-second run.</li>
+      <li><strong>The sync record is left as it is.</strong> Its stale entries are harmless and its shape did not change.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li><code>GameState</code>, <code>save-shape.ts</code>, <code>parseGameSave</code>, <code>NEW_GAME</code>, units, limits, the ladder, <code>settle</code> and <code>takeNext</code> as pure functions, and the game's words in <code>words.ts</code>: <code>game-core</code>.</li>
+      <li><code>NODES</code>, <code>buy</code> of G3, and applying a grant to the policy document: <code>tree-catalogue</code>.</li>
+      <li>Calling <code>won</code>, <code>startRuns</code>, <code>buy</code>, <code>settle</code> and <code>takeNext</code> from the page, applying the grant, the run seam, and what of an old policy record runs: <code>game-sim</code>.</li>
+      <li>The game panel's saved-game list, New game and the full-page load after a switch: <code>tally-tree</code> builds <code>GamePanel</code>; <code>game-shell</code> mounts it.</li>
+      <li>The header, the opening on <code>/</code>, what <code>/</code> shows for the open game, and Remix on <code>/p</code>: <code>game-shell</code>. Remix on <code>/s</code>: <code>game-sim</code>.</li>
+      <li><code>docs/dev/game.md</code> and every e2e spec other than the helper: <code>closing</code>.</li>
+      <li>The account offer's own behaviour: unchanged; <code>Tally</code> mounts it.</li>
+    </ul>
+  </section>
+</article>

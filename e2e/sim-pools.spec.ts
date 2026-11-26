@@ -1,4 +1,4 @@
-// /sim's pool levels (timeline-ui, "A pool's bar shows its level"): with A housing bond added, its
+// The simulation's pool levels (the open game at `/`; timeline-ui, "A pool's bar shows its level"): with A housing bond added, its
 // bar in the open Public money kind is full until its money is used and drains after Play, and
 // "General revenue, yearly" drains too (a yearly payment never refills it); the bar's name carries
 // ", N% left" at the playhead's month. axe on the rows, light and dark.
@@ -14,7 +14,7 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
 async function gotoSim(page: Page, colorScheme: 'light' | 'dark' = 'light'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme });
-  await page.goto('/sim');
+  await page.goto('/');
   await page.waitForFunction(() => (window as FzpWin).__sfhFzp?.phase === 'ready');
   await waitFilled(page);
 }

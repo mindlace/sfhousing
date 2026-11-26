@@ -11,7 +11,7 @@ import fixture0CalibrationJson from '../../../e2e/fixtures/data/fixture-0/scenar
 import PermittingSection from './PermittingSection.svelte';
 import { DEFAULT_POLICY, type SimPolicy } from './policy';
 import { PolicyStore } from './policy-store.svelte';
-import { setStageMonths } from './timing';
+import { PRESETS, resolvePreset, setStageMonths, type PresetId } from './timing';
 
 const load = (): Calibration =>
   parseCalibration(structuredClone(fixture0CalibrationJson) as unknown);
@@ -209,6 +209,54 @@ describe('PermittingSection', () => {
         .toBeVisible();
       const prov = calibration.pathwayForNew.provenance;
       await expect.element(page.getByText(`${prov.label} (tier ${prov.tier})`)).toBeVisible();
+    });
+  });
+
+  describe('under limits', () => {
+    const P = 'benchmarkPermits';
+    const Q = 'noDiscretionary';
+    function renderSection(extra: Record<string, unknown>) {
+      const calibration = load();
+      const store = new PolicyStore(DEFAULT_POLICY);
+      if (extra.current) {
+        const set = resolvePreset(extra.current as PresetId, calibration);
+        store.apply((p) => ({ ...p, timing: { ...p.timing, current: set } }), 'Set');
+      }
+      const { current: _current, ...rest } = extra;
+      void render(PermittingSection, {
+        props: { store, calibration, announce: vi.fn(), ...rest }
+      });
+      return { store, calibration };
+    }
+    const optionValues = () =>
+      [...(preset().element() as unknown as HTMLSelectElement).options].map((o) => o.value);
+
+    it('with custom false: shares as text, no Revert, no months input, no handles', async () => {
+      renderSection({ custom: false });
+      expect(page.getByRole('spinbutton', { name: /share, %/ }).elements()).toHaveLength(0);
+      await expect.element(page.getByText(/^Discretionary share: \d+ %$/)).toBeVisible();
+      expect(page.getByRole('button', { name: /^Revert to/ }).elements()).toHaveLength(0);
+      await page
+        .getByRole('group', { name: 'Discretionary timeline' })
+        .getByRole('button', { name: /^Permit review/ })
+        .click();
+      await expect.element(page.getByText(/^Typical: /)).toBeVisible();
+      expect(page.getByRole('spinbutton', { name: /Typical months/ }).elements()).toHaveLength(0);
+      expect(document.querySelectorAll('[data-testid^="handle-"]')).toHaveLength(0);
+    });
+
+    it("the preset select lists bought presets and the policy's own", async () => {
+      renderSection({ presets: new Set([P]), current: Q });
+      await expect.element(preset()).toBeVisible();
+      expect(optionValues()).toEqual(
+        PRESETS.filter((p) => p.available && (p.id === P || p.id === Q)).map((p) => p.id)
+      );
+    });
+
+    it('presets null lists every available preset', async () => {
+      renderSection({ presets: null });
+      await expect.element(preset()).toBeVisible();
+      expect(optionValues()).toEqual(PRESETS.filter((p) => p.available).map((p) => p.id));
     });
   });
 

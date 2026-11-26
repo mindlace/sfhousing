@@ -80,6 +80,8 @@ export interface CityDelta {
   lngLat: Float32Array; // 2 per changed row: the anchor lot's label point
   days: Float32Array; // 3 per changed row (CITY_DAY): NaN = not (yet)
   homes: Uint16Array; // per changed row: the final revision's units, capped at 65535
+  /** Per changed row: the homes the project replaces after the dataset date, capped at 65535. 0 until it enters construction, and when it entered on or before the dataset date. */
+  existing: Uint16Array;
   flags: Uint8Array; // per changed row: SLOT_FLAG bits
 }
 
@@ -144,6 +146,8 @@ export interface SimMapHandle {
    * appearing); a no-op before the map.
    */
   collapseCredit(): void;
+  /** M1: the run view (map-interfaces.md, "The run view"). true fits the whole city flat and north up and locks the camera; false unlocks and returns to the camera before. */
+  setRunView(on: boolean): void;
 }
 
 /** How the progress bars draw (docs/dev/map-interfaces.md "Bar modes"). */

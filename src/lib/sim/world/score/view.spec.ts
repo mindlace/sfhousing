@@ -101,7 +101,8 @@ describe('viewOf', () => {
     ];
     const moneyChunk = (from: number, money: MoneyRow[]): SeriesChunk => ({
       ...c(from, from + money.length - 1),
-      money
+      money,
+      waiting: money.map((_, i) => 10 * (from + i))
     });
     const moneyStatics = { ...statics, limits: [], debts: [] } as unknown as ScoreStatics;
 
@@ -112,6 +113,47 @@ describe('viewOf', () => {
         a: null,
         b: null
       });
+    });
+
+    it('viewOf joins waiting into waitingMoney with filledThrough + 1 entries', () => {
+      const v = viewOf(
+        [moneyChunk(0, rows.slice(0, 2)), moneyChunk(2, rows.slice(2))],
+        moneyStatics
+      );
+      expect(v.waitingMoney).toEqual([0, 10, 20]);
+      expect(v.waitingMoney).toHaveLength(v.filledThrough + 1);
+    });
+
+    it("waitingMoney is null when the view's money is null", () => {
+      const v = viewOf([c(0, 3)], statics);
+      expect(v.money).toBeNull();
+      expect(v.waitingMoney).toBeNull();
+      const withWaiting: SeriesChunk = { ...c(0, 3), waiting: [1, 2, 3, 4] };
+      expect(viewOf([withWaiting], statics).waitingMoney).toBeNull();
+    });
+
+    it('waitingMoney is null when a chunk with money lacks waiting (absent or null)', () => {
+      const absent = moneyChunk(0, rows);
+      delete absent.waiting;
+      expect(viewOf([absent], moneyStatics).money).not.toBeNull();
+      expect(viewOf([absent], moneyStatics).waitingMoney).toBeNull();
+      const nulled: SeriesChunk = { ...moneyChunk(0, rows), waiting: null };
+      expect(viewOf([nulled], moneyStatics).waitingMoney).toBeNull();
+      const second: SeriesChunk = { ...moneyChunk(2, rows.slice(2)), waiting: null };
+      expect(
+        viewOf([moneyChunk(0, rows.slice(0, 2)), second], moneyStatics).waitingMoney
+      ).toBeNull();
+    });
+
+    it('chunksBefore trims waiting, and a refill gives the same view as a fresh fill', () => {
+      const all = [moneyChunk(0, rows.slice(0, 2)), moneyChunk(2, rows.slice(2))];
+      const cut = chunksBefore(all, 1);
+      expect(cut).toHaveLength(1);
+      expect(cut[0].waiting).toEqual([0]);
+      expect(all[0].waiting).toEqual([0, 10]);
+      const rest = [moneyChunk(1, rows.slice(1, 2)), moneyChunk(2, rows.slice(2))];
+      expect(viewOf([...cut, ...rest], moneyStatics)).toEqual(viewOf(all, moneyStatics));
+      expect(viewOf([...cut, ...rest], moneyStatics).waitingMoney).toEqual([0, 10, 20]);
     });
 
     it('MoneyView.shut has one entry per filled month, false for a row without shut', () => {

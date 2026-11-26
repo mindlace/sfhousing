@@ -49,14 +49,13 @@ function autosaveNotice(n: AutosaveNotice | null): SimNotice | null {
 
 /**
  * The document to load and its notices, in order (funding-ui 4.15): the autosave's, the funding
- * notices built from the load report (added, dropped, off), the timing refit's, then the Remix
- * toast. The report is returned too. `cal` null (the calibration failed to load) skips the
+ * notices built from the load report (added, dropped, off), the timing refit's. The report is
+ * returned too. `cal` null (the calibration failed to load) skips the
  * reconcile: the timelines cannot run then, and the next load reconciles.
  */
 export function restoreSimDoc(
   r: { plan: SimDoc; notice: AutosaveNotice | null; upgradedFrom?: number },
-  cal: Calibration | null,
-  remixFrom?: string
+  cal: Calibration | null
 ): { doc: SimDoc; notices: SimNotice[]; funding: FundingLoadReport } {
   const notices: SimNotice[] = [];
   const first = autosaveNotice(r.notice);
@@ -90,7 +89,5 @@ export function restoreSimDoc(
       });
   }
 
-  if (remixFrom !== undefined)
-    notices.push({ id: 'remix', text: SIM.remixedToast(remixFrom), tone: 'toast' });
   return { doc, notices, funding };
 }

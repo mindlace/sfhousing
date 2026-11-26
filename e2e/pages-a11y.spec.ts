@@ -12,8 +12,9 @@ async function expectCleanPage(page: Page, path: string): Promise<void> {
   ).toBe(true);
 }
 
-// The map pages have no footer; the header's About entry stands in for its links.
-const MAP = new Set(['/', '/sim']);
+// The map pages have no footer; the header's About entry stands in for its links. The game's own
+// states are in game-a11y.spec.ts.
+const MAP = new Set(['/']);
 
 for (const path of MAP) {
   test(`${path} has no a11y violations, no horizontal overflow, no footer and the About entry`, async ({

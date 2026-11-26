@@ -11,12 +11,12 @@
   import AboutMeanings from '$lib/about/AboutMeanings.svelte';
   import AboutUsing from '$lib/about/AboutUsing.svelte';
   import { ABOUT_INTRO, ABOUT_TITLE } from '$lib/about/copy';
-  import { APP_NAME } from '$lib/config';
+  import { SITE_NAME } from '$lib/shell/name';
 
   let { data }: { data: PageData } = $props();
 </script>
 
-<svelte:head><title>{ABOUT_TITLE} · {APP_NAME}</title></svelte:head>
+<svelte:head><title>{ABOUT_TITLE} · {SITE_NAME}</title></svelte:head>
 
 <h1 class="text-2xl font-semibold">{ABOUT_TITLE}</h1>
 <p class="mt-3">{ABOUT_INTRO}</p>

@@ -1,4 +1,5 @@
-// timelapse-sim spec §6, deferred to the page, on /sim's timeline: what the worker fetches, and
+// timelapse-sim spec §6, deferred to the page, on the simulation's timeline (the open game at
+// `/`): what the worker fetches, and
 // that the same document after a reload fills the same forecast. Runs against the VITE_E2E build
 // (window.__sfhFzp, src/lib/fzp/debug.ts). The first month's wall-clock budget lives in
 // e2e/perf/first-month.perf.spec.ts.
@@ -19,10 +20,10 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   };
 };
 const { fzp } = manifest.scenarios;
-// /sim reads these six: the timelapse's three, the lever engine's policy.bin, and gross.bin and
-// the car system's cars.bin, each fetched only when the manifest names it (fixture-0 names both).
-// The brush catalog (asked for when the editor first shows something) reads only transit.json and
-// neighborhoods.geojson, never frontage.bin.
+// The simulation reads these six: the timelapse's three, the lever engine's policy.bin, and
+// gross.bin and the car system's cars.bin, each fetched only when the manifest names it (fixture-0
+// names both). The brush catalog (asked for when the editor first shows something) reads only
+// transit.json and neighborhoods.geojson, never frontage.bin.
 const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.gross!, fzp.cars!];
 
 /** The world's completed net homes per filled month (`__sfhFzp.completedNet()`). */
@@ -68,11 +69,12 @@ test('fetches only the viewport chunks, the scenario files, policy.bin, gross.bi
   });
   const chunkRequests = () => urls.filter((u) => u.includes('/parcels/'));
 
-  // SvelteKit replays the server's manifest on a first load, so reach /sim by a client
-  // navigation from a page that loads none (as in e2e/fzp.spec.ts's no-scenario test).
+  // SvelteKit replays the server's manifest on a first load, so reach the simulation (the open
+  // game at `/`) by a client navigation, by the site name, from a page that loads none (as in
+  // e2e/fzp.spec.ts's no-scenario test).
   await gotoHydrated(page, '/about');
   await openHeaderMenu(page);
-  await page.getByRole('banner').getByRole('link', { name: 'Simulate', exact: true }).click();
+  await page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true }).click();
   await waitReady(page);
   // `ready` is the worker's first months; the map can still be loading.
   await page.waitForFunction(
@@ -110,7 +112,7 @@ test('fetches only the viewport chunks, the scenario files, policy.bin, gross.bi
 });
 
 test('the same document after a reload fills an identical forecast', async ({ page }) => {
-  await page.goto('/sim');
+  await page.goto('/');
   await waitReady(page);
   await waitFilled(page);
   const first = await completedOf(page);

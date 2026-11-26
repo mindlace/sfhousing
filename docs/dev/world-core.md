@@ -204,8 +204,8 @@ held +64.1 MB and took 12 to 25 s.
 Speed: a month whose frame differs from the month before only in `parking`
 (`PolicyTimeline.parkingOnly`; funding's closing view keeps it when no pool opens or closes that
 month) replans only `touched(month)`, the changed zones' lots, even in a funded month, and calls no
-whole-city `skipBound`. Every other lot's clocks are unchanged. On the live build, `level2-check`'s
-fill (two funded worlds) takes 3.9-4.0 s with cars on, 3.5 s with the link off and 2.3 s without
+whole-city `skipBound`. Every other lot's clocks are unchanged. On the live build, `reach-check`'s
+fill line (two funded worlds) takes 3.9-4.0 s with cars on, 3.5 s with the link off and 2.3 s without
 cars (`docs/dev/cars.md`, Measured cost); it was 8.7 s with cars on before.
 
 ## Tests
@@ -249,7 +249,7 @@ of every world and is printed apart. The asserted median excludes it by design: 
 ordinary month. The bench also prints the one-frame median and, with a live city, `createWorld`
 plus `planDue` through month 480 for one world and one live month for 48 worlds (no bars).
 
-Measured 2026-11-13, quiet (measurement lock held), two runs each. The bench's 48 worlds are its own set; `/sim` runs one world per side.
+Measured 2026-11-13, quiet (measurement lock held), two runs each. The bench's 48 worlds are its own set; the simulation runs one world per side.
 
 | Case                                     | Before (Task 13)   | After (Task 14)     |
 | ---------------------------------------- | ------------------ | ------------------- |
