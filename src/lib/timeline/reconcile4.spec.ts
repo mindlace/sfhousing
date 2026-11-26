@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { OBSERVED_TIMING, resolvePreset, type TimingSet } from '$lib/sim-page/timing';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { monthFirstDay, monthLastDay, monthOfDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Programme } from '$lib/timelapse/types';

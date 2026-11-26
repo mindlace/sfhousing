@@ -15,7 +15,7 @@ import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import type { CameraFrame, CityDelta, TimelineUpdate } from '$lib/map/types';
 import type { GamePhase, PhaseEvent } from '$lib/sim-page/game-phase';
 import { planDrops, type Marker } from '$lib/game/run/drops';
-import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import { NODES } from '$lib/game/catalogue/nodes';
 import { RUNGS, goalAt, ladder } from '$lib/game/ladder';

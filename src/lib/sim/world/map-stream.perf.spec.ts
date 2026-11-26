@@ -4,8 +4,8 @@
 // `massingFor` (the unsplittable unit of a sliced flush).
 import { describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '$lib/data/parcel';
-import { massingFor } from '$lib/sim/scenario/massing';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { massingFor } from '$lib/sim/world/massing';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { planDue } from './due';
 import { createMapStream } from './map-stream';
 import { monthLastDay } from './months';

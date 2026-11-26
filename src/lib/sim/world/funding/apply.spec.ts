@@ -1,7 +1,7 @@
 // world-funding Task 4: the funding system, `planLot` and applications (spec rules 5, 6, 8, 9).
 import { describe, expect, it } from 'vitest';
-import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funding';
-import { seedHash } from '$lib/sim/scenario/rng';
+import { NEVER_KEY_DAY, lineKey } from '$lib/sim/world/rules/funding';
+import { seedHash } from '$lib/sim/world/rules/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
 import { monthFirstDay, monthLastDay } from '../months';
@@ -22,7 +22,7 @@ import { kindClock } from './clocks';
 import { KIND_AFFORDABLE, KIND_MARKET, fundOf, initFunding } from './columns';
 import { createFundingSystem } from './system';
 import { fundedMini, oneMoneyTimeline } from './test/fixtures';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 
 const input = fundedMini();
 const statics = staticsOf(input);

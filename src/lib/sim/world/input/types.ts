@@ -21,7 +21,7 @@ import type {
   Stage,
   TierUnits
 } from '$lib/timelapse/types';
-import type { StageScale } from '../levers/timers';
+import type { StageScale } from '../../levers/timers';
 
 // T5
 export interface Schedule {

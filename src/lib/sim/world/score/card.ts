@@ -5,9 +5,14 @@ import type { ParcelId } from '$lib/data/parcel';
 import { envelopeOf } from '$lib/data/scenario-codec';
 import type { Lookups } from '$lib/sim/levers/apply';
 import type { ParcelSummary } from '$lib/sim/protocol';
-import { chooseProject, projectCard, revisionAt, type CardCtx } from '$lib/sim/scenario/card';
+import {
+  chooseProject,
+  projectCard,
+  revisionAt,
+  type CardCtx
+} from '$lib/sim/world/score/project-card';
 import type { Master } from '$lib/sim/world/read';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { PolicyFrame } from '../policy/frame';

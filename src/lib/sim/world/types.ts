@@ -296,6 +296,6 @@ export interface CarSystem {
 }
 
 export interface WorldOptions {
-  /** Default true. The referee against the older engine runs with false. */
+  /** Default true. Tests that compare against a fixed expectation without the closing run with false. */
   poolClosing?: boolean;
 }

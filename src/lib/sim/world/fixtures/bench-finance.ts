@@ -14,7 +14,7 @@ import type {
   Programme,
   Provenance
 } from '$lib/timelapse/types';
-import type { SimInput } from '../types';
+import type { SimInput } from '../input/types';
 
 type Finance = NonNullable<SimInput['finance']>;
 

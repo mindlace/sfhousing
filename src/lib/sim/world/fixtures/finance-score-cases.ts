@@ -15,11 +15,11 @@ import type {
   TierUnits
 } from '$lib/timelapse/types';
 import type { BundleItem } from '../../finance';
-import type { TierCtx } from '../finance-score';
+import type { TierCtx } from '../score/finance';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import { monthsOf } from '../score';
+import { monthsOf } from '../score/targets';
 import { MINI_AS_OF } from './mini-projects';
-import type { Schedule, SimInput } from '../types';
+import type { Schedule, SimInput } from '../input/types';
 
 /** A `ResolvedTerms` with every term set (test values, not sourced). */
 export const TEST_TERMS: ResolvedTerms = {

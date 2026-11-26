@@ -2,7 +2,7 @@
 import { fromPolicyText, scoreAt } from '$lib/fzp/score-view';
 import type { ScoreAt } from '$lib/fzp/types';
 import { TODAY, goalName, goalText, readGoal, type Goal, type GoalReading } from '$lib/goal/goal';
-import type { TimelineScore } from '$lib/sim/scenario/types';
+import type { TimelineScore } from '$lib/sim/world/input/types';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import type { TierUnits } from '$lib/timelapse/types';

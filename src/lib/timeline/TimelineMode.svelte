@@ -149,7 +149,7 @@
     type CityMarkerRow
   } from './activity';
   import { loadPlaces, placeOf } from './places';
-  import { datasetUrl } from '$lib/sim/scenario/load';
+  import { datasetUrl } from '$lib/sim/world/input/load';
   import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
   import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, WAITING_NOTE } from './copy';
@@ -203,7 +203,7 @@
   import { moneyFigureAt } from '$lib/fzp/money-view';
   import type { CameraFrame } from '$lib/map/types';
   import { RUN_VIEW, type GamePhase, type PhaseEvent } from '$lib/sim-page/game-phase';
-  import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+  import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 
   interface Props {
     manifest: Manifest | null;

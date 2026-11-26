@@ -3,8 +3,8 @@ import { GAME_TRANSIT_ID } from '$lib/game/grant';
 import { NEW_GAME } from '$lib/game/state';
 import type { TreeNode } from '$lib/game/tree';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import {

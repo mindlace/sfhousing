@@ -12,8 +12,8 @@ import {
 } from '$lib/sim/finance';
 import { FINANCE_LIMITS, LAST_DAY } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
+import { dayOf } from '$lib/sim/world/dates';
 import type {
   Calibration,
   Day,

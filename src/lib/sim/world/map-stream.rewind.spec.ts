@@ -8,9 +8,9 @@ import { makeFakeTimelineDeps, type FakeTimelineDeps } from '$lib/map/test/fake-
 import { validateTimedCell } from '$lib/map/timelapse/encode';
 import { TimelineController } from '$lib/map/timeline-controller';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
-import { precomputeOf } from '$lib/sim/scenario/input';
-import { cellAnchorParcel } from '$lib/sim/scenario/massing';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf } from '$lib/sim/world/input/build';
+import { cellAnchorParcel } from '$lib/sim/world/massing';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 import { createMapStream, type MapStream } from './map-stream';
 import {

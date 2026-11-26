@@ -11,7 +11,7 @@
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
   import { OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
-  import { marketLevel } from '$lib/sim/scenario/market';
+  import { marketLevel } from '$lib/sim/world/input/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
   import type { Day } from '$lib/timelapse/time';

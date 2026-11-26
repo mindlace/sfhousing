@@ -4,8 +4,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { envelopeOf } from '$lib/data/scenario-codec';
 import type { Master } from '$lib/sim/world/read';
-import { chooseProject, isVisible, projectCard, type CardCtx } from '$lib/sim/scenario/card';
-import type { Massing, SimInput } from '$lib/sim/scenario/types';
+import {
+  chooseProject,
+  isVisible,
+  projectCard,
+  type CardCtx
+} from '$lib/sim/world/score/project-card';
+import type { Massing, SimInput } from '$lib/sim/world/input/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Effect, Policy } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';

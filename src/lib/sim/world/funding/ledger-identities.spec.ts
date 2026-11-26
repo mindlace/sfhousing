@@ -2,7 +2,7 @@
 // bench city (`synthCity`) with its baseline money and with the bench funding set, and on the e2e
 // fixture city (fixture-0) with its baseline funding. Nothing statistical.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';
 import type { PolicyTimeline } from '../policy/frame';

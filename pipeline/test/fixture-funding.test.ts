@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { decodeScenarioPayload } from '../../src/lib/data/scenario-codec';
-import { buildSimInput } from '../../src/lib/sim/scenario/input';
+import { buildSimInput } from '../../src/lib/sim/world/input/build';
 import { oneMoneyTimeline, runFunded } from '../../src/lib/sim/world/funding/test/fixtures';
 import { staticsOf } from '../../src/lib/sim/world/statics';
 import { horizonMonth } from '../../src/lib/sim/world/test/run';

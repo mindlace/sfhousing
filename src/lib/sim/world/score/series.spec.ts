@@ -2,8 +2,8 @@
 // final months and the range of `rows`.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HORIZON } from '$lib/fzp/time';
-import { monthIndexer } from '$lib/sim/scenario/score';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { monthIndexer } from '$lib/sim/world/score/targets';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import { scheduleAt } from '../read';
 import { staticsOf, type Statics } from '../statics';

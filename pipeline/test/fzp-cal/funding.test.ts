@@ -24,7 +24,7 @@ import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
 import type { RawRow } from '../../project-records/types';
 import { isoOf } from '../../project-records/parse';
 import { BASELINE_ID_RE, checkPool, checkProgramme } from '../../../src/lib/timelapse/model';
-import { inflowArrivals } from '../../../src/lib/sim/scenario/funding';
+import { inflowArrivals } from '../../../src/lib/sim/world/rules/funding';
 import type { Bound } from '../../enrichment/funding-schema';
 import type { IncomeTier, Pool } from '../../../src/lib/timelapse/types';
 

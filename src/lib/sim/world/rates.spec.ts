@@ -4,9 +4,9 @@ import {
   piecewiseMonth,
   precomputeOf,
   regimeMonths
-} from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, simEntity, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/input/build';
+import { P, drawOn, seedHash, simEntity, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { log } from '$lib/timelapse/math';
 import { MONTH_DAYS } from '$lib/timelapse/time';
 import { monthFirstDay, monthLastDay, monthOfDay } from './months';

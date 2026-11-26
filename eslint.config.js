@@ -69,7 +69,6 @@ export default defineConfig(
     // sign, imul, clz32) stay allowed.
     files: [
       'src/lib/timelapse/**',
-      'src/lib/sim/scenario/**',
       'src/lib/sim/world/**',
       'src/lib/sim/cars/**',
       'pipeline/lib/fzp-cal/**',

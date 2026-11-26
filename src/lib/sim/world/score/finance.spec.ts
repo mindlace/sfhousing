@@ -1,9 +1,9 @@
 // finance-score: homes by income tier (spec 4.1-4.3; section 6 tests 1-13) and the per-pool money
 // series (spec 4.4; test 16).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ASSUMED_TENURE, INCLUSIONARY, fundBundle, prototypeFor } from '../finance';
-import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
-import { tinyStack } from './fixtures/tiny-queue';
+import { ASSUMED_TENURE, INCLUSIONARY, fundBundle, prototypeFor } from '../../finance';
+import { MINI_AS_OF, MINI_HORIZON } from '../fixtures/mini-projects';
+import { tinyStack } from '../fixtures/tiny-queue';
 import {
   AFFORDABLE_CASES as A,
   CITY_DEBT,
@@ -23,12 +23,12 @@ import {
   pipeline,
   schedule,
   type MoneyCase
-} from './fixtures/finance-score-cases';
+} from '../fixtures/finance-score-cases';
 import { checkMoneyIdentities } from './test/money-identities';
 import type { Pool, TierUnits } from '$lib/timelapse/types';
-import { dayOf } from './dates';
-import { DISPLACEMENT_RANGE, debtService, limitStatements } from '../finance';
-import { PIPELINE_FUNDED } from './funding';
+import { dayOf } from '../dates';
+import { DISPLACEMENT_RANGE, debtService, limitStatements } from '../../finance';
+import { PIPELINE_FUNDED } from '../rules/funding';
 import {
   MONEY_SOURCES,
   TIER_SOURCES,
@@ -44,13 +44,13 @@ import {
   tierBaselineLabel,
   tierContext,
   tiersOf
-} from './finance-score';
-import { monthIndexer, monthsOf } from './score';
+} from './finance';
+import { monthIndexer, monthsOf } from './targets';
 import { moneyOf, shownSeries, tierSeries } from '$lib/sim/world/score/test/oracles';
-import type { Schedule, SimInput } from './types';
+import type { Schedule, SimInput } from '../input/types';
 
-vi.mock('../finance', async (orig) => {
-  const m = await orig<typeof import('../finance')>();
+vi.mock('../../finance', async (orig) => {
+  const m = await orig<typeof import('../../finance')>();
   return { ...m, fundBundle: vi.fn(m.fundBundle) };
 });
 

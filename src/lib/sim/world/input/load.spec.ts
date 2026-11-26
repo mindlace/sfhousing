@@ -1,5 +1,5 @@
-// The scenario load's car data (car-ownership Task 11) on fixture-0: `scenarioUrls` names cars.bin
-// and car-zones.json, `loadScenario` fetches and decodes cars.bin only for /sim (`opts.cars`) and
+// The scenario load's car data (car-ownership Task 11) on fixture-0: `simInputUrls` names cars.bin
+// and car-zones.json, `loadSimInput` fetches and decodes cars.bin only for /sim (`opts.cars`) and
 // only when the manifest names it, and a bad file is `scenario-invalid`.
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -8,19 +8,14 @@ import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import { scenarioRecordOf } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
-import { datasetFetch } from '../world/runner/test/harness';
-import {
-  MINI_FRONTAGE_URL,
-  MINI_POLICY_URL,
-  grossBinOf,
-  miniDataset
-} from '../world/test/mini-dataset';
-import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { MINI_GROSS_URL } from './fixtures/mini-gross';
-import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from './fixtures/mini-parcels';
-import { miniPolicy } from './fixtures/mini-policy';
-import { MINI_INVALID_INDEX, miniProjectsJson } from './fixtures/mini-projects';
-import { loadScenario, scenarioUrls, type Loaded, type LoadDeps, type LoadFailure } from './load';
+import { datasetFetch } from '../runner/test/harness';
+import { MINI_FRONTAGE_URL, MINI_POLICY_URL, grossBinOf, miniDataset } from '../test/mini-dataset';
+import miniCalibrationJson from '../fixtures/mini-calibration.json';
+import { MINI_GROSS_URL } from '../fixtures/mini-gross';
+import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from '../fixtures/mini-parcels';
+import { miniPolicy } from '../fixtures/mini-policy';
+import { MINI_INVALID_INDEX, miniProjectsJson } from '../fixtures/mini-projects';
+import { loadSimInput, simInputUrls, type Loaded, type LoadDeps, type LoadFailure } from './load';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 
@@ -65,30 +60,30 @@ function loaded(r: Loaded | LoadFailure): Loaded {
   return r;
 }
 
-describe('scenarioUrls', () => {
+describe('simInputUrls', () => {
   it('names cars.bin and car-zones.json when the manifest does', () => {
     const m = manifest();
-    const u = scenarioUrls(m)!;
+    const u = simInputUrls(m)!;
     expect(u.cars).toBe(`/data/${m.datasetVersion}/scenarios/fzp/cars.bin`);
     expect(u.carZones).toBe(`/data/${m.datasetVersion}/scenarios/fzp/car-zones.json`);
   });
 
   it('gives null for both without them, or outside /data/<v>/', () => {
     const m = manifest();
-    const u = scenarioUrls(withoutCars(m))!;
+    const u = simInputUrls(withoutCars(m))!;
     expect(u.cars).toBeNull();
     expect(u.carZones).toBeNull();
     const fzp = { ...m.scenarios!.fzp, cars: '/data/other/cars.bin' };
-    expect(scenarioUrls({ ...m, scenarios: { fzp } })!.cars).toBeNull();
+    expect(simInputUrls({ ...m, scenarios: { fzp } })!.cars).toBeNull();
   });
 });
 
-describe('loadScenario: cars', () => {
+describe('loadSimInput: cars', () => {
   it('with cars: decodes cars.bin against the parcels', async () => {
     const m = manifest();
     const deps = depsOf();
     const r = loaded(
-      await loadScenario(deps, scenarioUrls(m)!, () => false, { policy: true, cars: true })
+      await loadSimInput(deps, simInputUrls(m)!, () => false, { policy: true, cars: true })
     );
     expect(r.cars).not.toBeNull();
     expect(r.cars!.zones.length).toBeGreaterThan(0);
@@ -100,30 +95,30 @@ describe('loadScenario: cars', () => {
 
   it('without the manifest naming it: cars null, never fetched', async () => {
     const deps = depsOf();
-    const urls = scenarioUrls(withoutCars(manifest()))!;
-    const r = loaded(await loadScenario(deps, urls, () => false, { policy: true, cars: true }));
+    const urls = simInputUrls(withoutCars(manifest()))!;
+    const r = loaded(await loadSimInput(deps, urls, () => false, { policy: true, cars: true }));
     expect(r.cars).toBeNull();
     expect(deps.fetched.some((u) => u.endsWith('/cars.bin'))).toBe(false);
   });
 
   it('without opts.cars (not /sim): cars null, never fetched', async () => {
     const deps = depsOf();
-    const urls = scenarioUrls(manifest())!;
-    const r = loaded(await loadScenario(deps, urls, () => false, { policy: true }));
+    const urls = simInputUrls(manifest())!;
+    const r = loaded(await loadSimInput(deps, urls, () => false, { policy: true }));
     expect(r.cars).toBeNull();
     expect(deps.fetched.some((u) => u.endsWith('/cars.bin'))).toBe(false);
   });
 
   it('a cars.bin that does not decode is scenario-invalid', async () => {
-    const urls = scenarioUrls(manifest())!;
+    const urls = simInputUrls(manifest())!;
     const deps = depsOf({ [urls.cars!]: new Uint8Array([1, 2, 3]) });
-    const r = await loadScenario(deps, urls, () => false, { policy: true, cars: true });
+    const r = await loadSimInput(deps, urls, () => false, { policy: true, cars: true });
     expect('code' in r && r.code).toBe('scenario-invalid');
     expect((r as LoadFailure).message.startsWith('scenario cars.bin: ')).toBe(true);
   });
 });
 
-// The load's failure paths on the mini city, asserted on `loadScenario` and `scenarioUrls`
+// The load's failure paths on the mini city, asserted on `loadSimInput` and `simInputUrls`
 // directly: fetch failures after the retries, files that fail to decode or validate, and the
 // manifest's URLs.
 const URLS = MINI_SCENARIO_URLS;
@@ -183,20 +178,20 @@ function miniDeps(bodies: Map<string, unknown>, o: { retryDelaysMs?: readonly nu
 }
 
 const miniUrls = (o?: { policy?: boolean; gross?: boolean }) =>
-  scenarioUrls(miniDataset(o).manifest())!;
+  simInputUrls(miniDataset(o).manifest())!;
 
-describe('scenarioUrls on the mini manifest', () => {
+describe('simInputUrls on the mini manifest', () => {
   const base = { ...URLS, policy: null, gross: null, cars: null, carZones: null };
 
   it('returns the three URLs, and ignores scenarios.fzp.frontage', () => {
     const m = miniDataset().manifest();
     expect(m.scenarios!.fzp.frontage).toBe(MINI_FRONTAGE_URL); // an older dataset names it
-    expect(scenarioUrls(m)).toEqual(base);
+    expect(simInputUrls(m)).toEqual(base);
   });
 
   it('is null without scenarios.fzp, or with a missing or outside URL', () => {
     const m = miniDataset().manifest();
-    expect(scenarioUrls({ ...m, scenarios: undefined })).toBeNull();
+    expect(simInputUrls({ ...m, scenarios: undefined })).toBeNull();
     const fzp = m.scenarios!.fzp;
     for (const bad of [
       { ...fzp, parcels: '/data/fixture-1/scenarios/fzp/parcels.bin' },
@@ -204,12 +199,12 @@ describe('scenarioUrls on the mini manifest', () => {
       { ...fzp, calibration: undefined as unknown as string },
       { ...fzp, calibration: 7 as unknown as string }
     ]) {
-      expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toBeNull();
+      expect(simInputUrls({ ...m, scenarios: { fzp: bad } })).toBeNull();
     }
   });
 
   it('names the policy URL when the manifest has one, else null', () => {
-    expect(scenarioUrls(miniDataset({ policy: true }).manifest())).toEqual({
+    expect(simInputUrls(miniDataset({ policy: true }).manifest())).toEqual({
       ...base,
       policy: MINI_POLICY_URL
     });
@@ -217,26 +212,26 @@ describe('scenarioUrls on the mini manifest', () => {
     const m = miniDataset().manifest();
     for (const policy of ['/data/fixture-1/scenarios/fzp/policy.bin', 7]) {
       const bad = { ...m.scenarios!.fzp, policy: policy as string };
-      expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual(base);
+      expect(simInputUrls({ ...m, scenarios: { fzp: bad } })).toEqual(base);
     }
   });
 
   it('names the gross URL when the manifest has one, else null', () => {
-    expect(scenarioUrls(miniDataset({ gross: true }).manifest())).toEqual({
+    expect(simInputUrls(miniDataset({ gross: true }).manifest())).toEqual({
       ...base,
       gross: MINI_GROSS_URL
     });
     const m = miniDataset().manifest();
     const bad = { ...m.scenarios!.fzp, gross: '/data/fixture-1/scenarios/fzp/gross.bin' };
-    expect(scenarioUrls({ ...m, scenarios: { fzp: bad } })).toEqual(base);
+    expect(simInputUrls({ ...m, scenarios: { fzp: bad } })).toEqual(base);
   });
 });
 
-describe('loadScenario on the mini city: fetch failures (internal)', () => {
+describe('loadSimInput on the mini city: fetch failures (internal)', () => {
   it('retries a parcels.bin whose body read rejects on the delays, then gives internal (network)', async () => {
     const d = miniDeps(miniDataset().bodies, { retryDelaysMs: [1000, 4000, 16000] });
     d.fail(URLS.parcels, 4, 'body');
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect(r).toEqual({
       code: 'internal',
       message: `scenario fetch failed: ${URLS.parcels} (network)`
@@ -251,7 +246,7 @@ describe('loadScenario on the mini city: fetch failures (internal)', () => {
     const d = miniDeps(miniDataset().bodies, { retryDelaysMs: [1, 1, 1] });
     d.fail(URLS.parcels, 2, 'body');
     d.fail(URLS.calibration, 3, 'body');
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect('code' in r).toBe(false);
     expect(d.requested.filter((u) => u === URLS.parcels)).toHaveLength(3);
     expect(d.requested.filter((u) => u === URLS.calibration)).toHaveLength(4);
@@ -261,7 +256,7 @@ describe('loadScenario on the mini city: fetch failures (internal)', () => {
     const ds = miniDataset();
     ds.bodies.delete(URLS.projects);
     const d = miniDeps(ds.bodies, { retryDelaysMs: [10, 20] });
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect(r).toEqual({
       code: 'internal',
       message: `scenario fetch failed: ${URLS.projects} (HTTP 404)`
@@ -273,7 +268,7 @@ describe('loadScenario on the mini city: fetch failures (internal)', () => {
   it('gives internal (network) when the request itself keeps rejecting', async () => {
     const d = miniDeps(miniDataset().bodies, { retryDelaysMs: [5] });
     d.fail(URLS.calibration, 2, 'reject');
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect(r).toEqual({
       code: 'internal',
       message: `scenario fetch failed: ${URLS.calibration} (network)`
@@ -285,7 +280,7 @@ describe('loadScenario on the mini city: fetch failures (internal)', () => {
     const d = miniDeps(miniDataset().bodies, { retryDelaysMs: [5] });
     d.fail(URLS.parcels, 1, 'reject');
     d.fail(URLS.parcels, 1, { status: 503 });
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect(r).toMatchObject({
       code: 'internal',
       message: `scenario fetch failed: ${URLS.parcels} (HTTP 503)`
@@ -295,7 +290,7 @@ describe('loadScenario on the mini city: fetch failures (internal)', () => {
   it('a gross.bin that 404s on every attempt fails the load', async () => {
     const d = miniDeps(miniDataset({ gross: true }).bodies, { retryDelaysMs: [1, 1, 1] });
     d.fail(MINI_GROSS_URL, 4, { status: 404 });
-    const r = await loadScenario(d.deps, miniUrls({ policy: true, gross: true }), () => false, {
+    const r = await loadSimInput(d.deps, miniUrls({ policy: true, gross: true }), () => false, {
       policy: true
     });
     expect(r).toMatchObject({ code: 'internal' });
@@ -304,10 +299,10 @@ describe('loadScenario on the mini city: fetch failures (internal)', () => {
   });
 });
 
-describe('loadScenario on the mini city: decode and validation (scenario-invalid, not retried)', () => {
+describe('loadSimInput on the mini city: decode and validation (scenario-invalid, not retried)', () => {
   async function invalid(bodies: Map<string, unknown>) {
     const d = miniDeps(bodies, { retryDelaysMs: [1, 1, 1] });
-    const r = await loadScenario(d.deps, miniUrls({ policy: true, gross: true }), () => false, {
+    const r = await loadSimInput(d.deps, miniUrls({ policy: true, gross: true }), () => false, {
       policy: true
     });
     expect(r).toMatchObject({ code: 'scenario-invalid' });
@@ -395,10 +390,10 @@ describe('loadScenario on the mini city: decode and validation (scenario-invalid
   });
 });
 
-describe('loadScenario on the mini city: policy.bin and the projects', () => {
+describe('loadSimInput on the mini city: policy.bin and the projects', () => {
   it('with opts.policy, fetches policy.bin once and returns it bound to the parcels', async () => {
     const d = miniDeps(miniDataset({ policy: true }).bodies);
-    const r = await loadScenario(d.deps, miniUrls({ policy: true }), () => false, { policy: true });
+    const r = await loadSimInput(d.deps, miniUrls({ policy: true }), () => false, { policy: true });
     if ('code' in r) throw new Error(r.message);
     expect(d.requested.filter((u) => u === MINI_POLICY_URL)).toHaveLength(1);
     expect(r.policy).not.toBeNull();
@@ -408,7 +403,7 @@ describe('loadScenario on the mini city: policy.bin and the projects', () => {
 
   it('without opts.policy, never requests the policy URL and returns no policy', async () => {
     const d = miniDeps(miniDataset({ policy: true }).bodies);
-    const r = await loadScenario(d.deps, miniUrls({ policy: true }), () => false);
+    const r = await loadSimInput(d.deps, miniUrls({ policy: true }), () => false);
     if ('code' in r) throw new Error(r.message);
     expect(d.requested).not.toContain(MINI_POLICY_URL);
     expect(d.requested).toHaveLength(3);
@@ -417,7 +412,7 @@ describe('loadScenario on the mini city: policy.bin and the projects', () => {
 
   it('gives scenario-missing for opts.policy without scenarios.fzp.policy', async () => {
     const d = miniDeps(miniDataset().bodies);
-    const r = await loadScenario(d.deps, miniUrls(), () => false, { policy: true });
+    const r = await loadSimInput(d.deps, miniUrls(), () => false, { policy: true });
     expect(r).toEqual({
       code: 'scenario-missing',
       message: 'dataset has no policy.bin (scenarios.fzp.policy)'
@@ -431,7 +426,7 @@ describe('loadScenario on the mini city: policy.bin and the projects', () => {
     (json.projects as Json[])[2].units = 0;
     ds.bodies.set(URLS.projects, json);
     const d = miniDeps(ds.bodies);
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     if ('code' in r) throw new Error(r.message);
     expect(d.warned.filter((w) => w.startsWith('projects.json: skipped'))).toEqual([
       'projects.json: skipped 2 invalid project(s); first: projects[2].units: must be >= 1',
@@ -449,7 +444,7 @@ describe('loadScenario on the mini city: policy.bin and the projects', () => {
     for (const p of json.projects as Json[]) p.units = -1;
     ds.bodies.set(URLS.projects, json);
     const d = miniDeps(ds.bodies);
-    const r = await loadScenario(d.deps, miniUrls(), () => false);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     if ('code' in r) throw new Error(r.message);
     const n = (json.projects as unknown[]).length;
     expect(d.warned).toContain(

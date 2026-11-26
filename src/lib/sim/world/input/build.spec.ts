@@ -16,9 +16,9 @@ import { MONTH_DAYS } from '$lib/timelapse/time';
 import { initiationHazard, initiationLogit, parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, type Calibration, type FeatureId } from '$lib/timelapse/types';
-import { miniBin } from './fixtures/mini-bin';
-import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniFunding, miniMarket } from './fixtures/mini-market';
+import { miniBin } from '../fixtures/mini-bin';
+import miniCalibrationJson from '../fixtures/mini-calibration.json';
+import { miniFunding, miniMarket } from '../fixtures/mini-market';
 import { resolveTerms, MARKET_TERMS } from '$lib/sim/finance';
 import {
   FUNDING_WITHOUT_MARKET_WARNING,
@@ -40,7 +40,7 @@ import {
   MINI_SCENARIO_URLS,
   MINI_VERSION,
   miniCity
-} from './fixtures/mini-parcels';
+} from '../fixtures/mini-parcels';
 import {
   MINI_ABSENT_PARCEL_IDS,
   MINI_AS_OF,
@@ -48,15 +48,15 @@ import {
   MINI_INVALID_INDEX,
   MINI_PROJECTS,
   miniProjectsJson
-} from './fixtures/mini-projects';
+} from '../fixtures/mini-projects';
 import {
-  ScenarioInputError,
+  SimInputError,
   buildSimInput,
   lastInitiationMonth,
   parcelRankOf,
   precomputeOf
-} from './input';
-import { P, draw, simEntity } from './rng';
+} from './build';
+import { P, draw, simEntity } from '../rules/rng';
 
 const F = FILL_LEVELS.length;
 const NO_CAP = 0xffff;
@@ -351,16 +351,16 @@ describe('buildSimInput', () => {
     } catch (e) {
       err = e;
     }
-    expect(err).toBeInstanceOf(ScenarioInputError);
-    expect((err as ScenarioInputError).file).toBe('calibration.json');
-    expect((err as ScenarioInputError).message).toMatch(/fillLevels/);
+    expect(err).toBeInstanceOf(SimInputError);
+    expect((err as SimInputError).file).toBe('calibration.json');
+    expect((err as SimInputError).message).toMatch(/fillLevels/);
     const shorter = miniFiles();
     shorter.calibration.size.fillLevels = [0.5, 1];
-    expect(() => buildSimInput(shorter)).toThrow(ScenarioInputError);
+    expect(() => buildSimInput(shorter)).toThrow(SimInputError);
     const t11 = miniFiles();
     t11.parcels.fillLevels = [0.5, 1];
     expect(() => buildSimInput(t11)).toThrow(
-      expect.objectContaining({ name: 'ScenarioInputError', file: 'parcels.bin' })
+      expect.objectContaining({ name: 'SimInputError', file: 'parcels.bin' })
     );
   });
 

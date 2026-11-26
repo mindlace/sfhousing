@@ -32,12 +32,12 @@ import {
   prototypeFor,
   type Borrowing,
   type BundleItem
-} from '../finance';
-import { isoOf } from './dates';
-import { PIPELINE_FUNDED, inflowArrivals } from './funding';
-import { monthIndexer } from './score';
+} from '../../finance';
+import { isoOf } from '../dates';
+import { PIPELINE_FUNDED, inflowArrivals } from '../rules/funding';
+import { monthIndexer } from './targets';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import type { Schedule, SimInput, TimelineScore } from './types';
+import type { Schedule, SimInput, TimelineScore } from '../input/types';
 
 export type { LedgerEvent } from '$lib/sim/world/types';
 
@@ -142,7 +142,7 @@ export function tierContext(input: Pick<SimInput, 'projects' | 'finance'>): Tier
         a,
         row.phases.map((p) => p.units)
       );
-      // engine.ts:195: a phase's projectId is '<id>:phase:<j + 1>' (1-based)
+      // A phase's projectId is '<id>:phase:<j + 1>' (1-based)
       shares.forEach((s, j) => {
         if (s > 0) affordable.set(`${row.id}:phase:${j + 1}`, s);
       });

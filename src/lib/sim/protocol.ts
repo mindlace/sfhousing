@@ -7,7 +7,7 @@ import type { BBox, Envelope, Plan, PlanOp } from '$lib/plan';
 import type { Score } from '$lib/scoreboard';
 import type { Lookups } from './levers/apply';
 import type { LotOutlines } from './outlines';
-import type { ProjectCard } from './scenario/types';
+import type { ProjectCard } from './world/input/types';
 
 export type Rev = number; // strictly increasing per client, starting at 1
 export type SimRequest =
@@ -102,4 +102,4 @@ type Assert<T extends true> = T;
 export type ParcelSummaryIsLike = Assert<ParcelSummary extends ParcelSummaryLike ? true : false>;
 
 // The card and score types the page reads through the protocol.
-export type { ProjectCard, TimelineScore } from './scenario/types';
+export type { ProjectCard, TimelineScore } from './world/input/types';

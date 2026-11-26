@@ -1,7 +1,7 @@
 // Closing a spent pool: when a pool last receives money, and the timeline view in which the
 // programmes of the world's closed pools are not offered.
 import { prototypeFor } from '$lib/sim/finance';
-import { asksOf, inflowArrivals } from '$lib/sim/scenario/funding';
+import { asksOf, inflowArrivals } from '$lib/sim/world/rules/funding';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool } from '$lib/timelapse/types';
 import { lotRow } from '../columns';

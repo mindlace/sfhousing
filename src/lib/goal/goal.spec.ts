@@ -4,7 +4,7 @@ import { EMPTY_LOG, logCompiled, logFilled, viewOfLog } from '$lib/timeline/chun
 import { calendarMonths, chunk, cut, statics } from '$lib/timeline/test/fixtures';
 import { dayFromUtc } from '$lib/fzp/time';
 import type { Day } from '$lib/timelapse/time';
-import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 import type { TimelineView } from '$lib/sim/world/score/types';
 import {
@@ -28,7 +28,7 @@ import {
 } from './goal';
 import { trackMax } from '$lib/scoreboard/view';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
-import { monthsOf } from '$lib/sim/scenario/score';
+import { monthsOf } from '$lib/sim/world/score/targets';
 import { windowHorizon } from '$lib/sim/world/months';
 
 function whole(): TimelineView {

@@ -1,5 +1,4 @@
-// The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): modelled on
-// the old engine's `segValue` and `kindLatentInto` (`funded.ts:452-478, 772-871`), evaluated over
+// The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): evaluated over
 // policy frames instead of finance segment days; level 1 and coverage above 1 differ (see the
 // award-rule spec). Nothing is stored: a clock is recomputed from the spell.
 import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
@@ -11,9 +10,9 @@ import {
   type Prototype,
   type PrototypeId
 } from '$lib/sim/finance';
-import { NEVER_KEY_DAY, cappedShift, coverageLevel } from '$lib/sim/scenario/funding';
-import { lastInitiationMonth, piecewiseMonth, sizeCumAgainst } from '$lib/sim/scenario/input';
-import { P, drawOn } from '$lib/sim/scenario/rng';
+import { NEVER_KEY_DAY, cappedShift, coverageLevel } from '$lib/sim/world/rules/funding';
+import { lastInitiationMonth, piecewiseMonth, sizeCumAgainst } from '$lib/sim/world/input/build';
+import { P, drawOn } from '$lib/sim/world/rules/rng';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Calibration, ProjectKind } from '$lib/timelapse/types';
@@ -166,7 +165,7 @@ function merged(bounds: readonly number[], vals: readonly number[]): [number[], 
   return [b, v];
 }
 
-/** One segment's values (`segValue`, `funded.ts:452-478`, on a frame). */
+/** One segment's values (`segValue`, on a frame). */
 interface Seg {
   ord: number;
   rate: number;

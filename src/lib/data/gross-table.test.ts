@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
 import { rectRing } from '$lib/generator/fixtures/geom';
 import type { ParcelId, ParcelRecord } from './parcel';
 import { scenarioRecordOf } from './scenario-codec';

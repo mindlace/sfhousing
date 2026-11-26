@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MARKET_TERMS, AVERAGE_DRAWN, DRAW_UP_FRONT, resolveTerms } from '$lib/sim/finance';
-import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
-import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
-import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { MONEY_SOURCES } from '$lib/sim/world/score/finance';
+import { PIPELINE_FUNDED } from '$lib/sim/world/rules/funding';
+import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { formatCount } from '$lib/scoreboard/format';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 import { cumulativeIncidence, parseCalibration } from '$lib/timelapse/model';
@@ -48,8 +48,8 @@ import {
 
 /** `marketLevel` as built unless a test forces a level (spec 6: the level is stubbed). */
 const forced = vi.hoisted(() => ({ level: null as 'all' | 'private' | null }));
-vi.mock('$lib/sim/scenario/market', async (importOriginal) => {
-  const real = await importOriginal<typeof import('$lib/sim/scenario/market')>();
+vi.mock('$lib/sim/world/input/market', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/sim/world/input/market')>();
   return {
     ...real,
     marketLevel: (c: Parameters<typeof real.marketLevel>[0]) => forced.level ?? real.marketLevel(c)

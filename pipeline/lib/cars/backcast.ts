@@ -18,7 +18,7 @@ import {
   type CarModel,
   type CarState
 } from '../../../src/lib/sim/cars';
-import { drawOn, seedHash, streamOf, zoneEntity } from '../../../src/lib/sim/scenario/rng';
+import { drawOn, seedHash, streamOf, zoneEntity } from '../../../src/lib/sim/world/rules/rng';
 import type { ProjectHistory } from '../../../src/lib/timelapse/types';
 import type { AcsRow } from './population';
 import type { MoverRow } from './rates';

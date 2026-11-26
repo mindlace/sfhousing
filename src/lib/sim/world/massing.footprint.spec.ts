@@ -14,7 +14,7 @@ import { createLru } from '../lru';
 import { miniCity, MINI_SAME_CELL_PAIR } from './fixtures/mini-parcels';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { MINI_AS_OF, miniProjectsJson } from './fixtures/mini-projects';
-import { buildSimInput } from './input';
+import { buildSimInput } from './input/build';
 import {
   cellAnchorParcel,
   footprintOf,
@@ -25,7 +25,7 @@ import {
   simKey,
   type MassingCtx
 } from './massing';
-import type { Massing, Schedule, SimInput } from './types';
+import type { Massing, Schedule, SimInput } from './input/types';
 
 const city = miniCity();
 const input: SimInput = buildSimInput({

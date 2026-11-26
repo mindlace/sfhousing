@@ -1,6 +1,6 @@
 // The render-time remaps of the public-money texts that hashed files keep (rule 38).
 import { describe, expect, it } from 'vitest';
-import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
+import { MONEY_SOURCES } from '$lib/sim/world/score/finance';
 import { COVERAGE_OFF_SHORT_SENTENCE4, PER_HOME_SOURCE, perHomeMethod } from './money-copy';
 
 describe('COVERAGE_OFF_SHORT_SENTENCE4', () => {

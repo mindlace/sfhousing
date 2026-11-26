@@ -8,7 +8,7 @@ import { initiationLogit } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Calibration, FeatureId } from '$lib/timelapse/types';
-import { isoOf } from './dates';
+import { isoOf } from '../dates';
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
 import {
   FUNDING_WITHOUT_MARKET_WARNING,
@@ -16,14 +16,14 @@ import {
   marketSteps,
   NO_MARKET_WARNING
 } from './market';
-import { simEntity } from './rng';
+import { simEntity } from '../rules/rng';
 import type { SimInput } from './types';
 
 type ScenarioFile = 'parcels.bin' | 'projects.json' | 'calibration.json';
 
 /** A decoded file that cannot run: the host maps it to `scenario-invalid`. */
-export class ScenarioInputError extends Error {
-  name = 'ScenarioInputError';
+export class SimInputError extends Error {
+  name = 'SimInputError';
   constructor(
     readonly file: ScenarioFile,
     message: string // the first problem
@@ -42,7 +42,7 @@ function fillLevelsMismatch(levels: readonly number[]): number {
 function checkFillLevels(file: ScenarioFile, name: string, levels: readonly number[]): void {
   const k = fillLevelsMismatch(levels);
   if (k >= 0) {
-    throw new ScenarioInputError(
+    throw new SimInputError(
       file,
       `${name} [${levels.join(', ')}] differs from FILL_LEVELS ` +
         `[${FILL_LEVELS.join(', ')}] at index ${k}`
@@ -51,7 +51,7 @@ function checkFillLevels(file: ScenarioFile, name: string, levels: readonly numb
 }
 
 /**
- * The FZP SimInput (spec §4.2 step 6). Throws `ScenarioInputError` when the calibration's (or
+ * The FZP SimInput (spec §4.2 step 6). Throws `SimInputError` when the calibration's (or
  * T11's) fill levels differ from `FILL_LEVELS`. The run's `asOf` is `projects.asOf`; a different
  * `calibration.asOf` is logged once.
  */

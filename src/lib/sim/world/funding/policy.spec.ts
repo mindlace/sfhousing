@@ -2,12 +2,12 @@
 // waiting applications re-made or lapsed under the new frame, a lapsed kind's new spell, and what
 // a change leaves alone.
 import { describe, expect, it } from 'vitest';
-import { lineKey } from '$lib/sim/scenario/funding';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
+import { lineKey } from '$lib/sim/world/rules/funding';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/world/fixtures/tiny-queue';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import { seedHash, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { seedHash, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';

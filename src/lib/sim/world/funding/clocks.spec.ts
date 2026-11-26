@@ -1,11 +1,11 @@
 // world-funding Task 3: the market and affordable funded clocks (spec rules 2, 3, 4, 5, 7).
 import { describe, expect, it } from 'vitest';
 import { PROTOTYPES } from '$lib/sim/finance';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { NEVER_KEY_DAY, financeIndexOf } from '$lib/sim/scenario/funding';
-import { lastInitiationMonth, precomputeOf } from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { NEVER_KEY_DAY, financeIndexOf } from '$lib/sim/world/rules/funding';
+import { lastInitiationMonth, precomputeOf } from '$lib/sim/world/input/build';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { ProjectKind } from '$lib/timelapse/types';

@@ -43,10 +43,10 @@ import {
 import type { LimitOwner } from '$lib/sim/levers/source';
 import type { Lru } from '$lib/sim/lru';
 import { packOutlines } from '$lib/sim/outlines';
-import { lotAtPoint } from '$lib/sim/scenario/lot-at';
-import { brushQueryProblem, datasetUrl, fetchWithRetry } from '$lib/sim/scenario/load';
-import { massingFor, simKey } from '$lib/sim/scenario/massing';
-import type { Massing, Schedule } from '$lib/sim/scenario/types';
+import { lotAtPoint } from '$lib/sim/world/runner/lot-at';
+import { brushQueryProblem, datasetUrl, fetchWithRetry } from '$lib/sim/world/input/load';
+import { massingFor, simKey } from '$lib/sim/world/massing';
+import type { Massing, Schedule } from '$lib/sim/world/input/types';
 import type {
   BrushLotsResult,
   LotAtResult,

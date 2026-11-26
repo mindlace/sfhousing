@@ -6,7 +6,7 @@
  * table lands there. Worker-safe.
  */
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import type { PolicyOp } from '../scenario/policy';
+import type { PolicyOp } from '../world/input/policy';
 import type { EnvelopeTable, LayerCtx } from './layers';
 import type { SimLevers } from './types';
 

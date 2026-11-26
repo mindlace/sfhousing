@@ -3,7 +3,7 @@ import { emptyWorld, lotRow } from './columns';
 import { planDue } from './due';
 import { block, holdEnd, holdStart, passToPhases } from './holds';
 import type { RowStatics } from './pipeline';
-import { seedHash } from '$lib/sim/scenario/rng';
+import { seedHash } from '$lib/sim/world/rules/rng';
 import { ordinaryStart } from './rates';
 import { staticsOf } from './statics';
 import { fixtureInput } from './test/cities.node';

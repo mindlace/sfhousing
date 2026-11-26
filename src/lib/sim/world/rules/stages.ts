@@ -50,7 +50,7 @@ export function revisionRatio(h: Histogram, u: number): number {
 
 /**
  * Rows the engine does not run (§4.4.3): already complete, or permitOnly at a Planning stage.
- * `loadScenario` counts them once per load for its log line; the engine itself writes nothing.
+ * `loadSimInput` counts them once per load for its log line; the engine itself writes nothing.
  */
 export function isSkipped(p: InFlightProject): boolean {
   return (

@@ -4,11 +4,11 @@ import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
-import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniCity } from './fixtures/mini-parcels';
-import { miniMarket } from './fixtures/mini-market';
-import { miniProjectsJson } from './fixtures/mini-projects';
-import { buildSimInput, precomputeOf } from './input';
+import miniCalibrationJson from '../fixtures/mini-calibration.json';
+import { miniCity } from '../fixtures/mini-parcels';
+import { miniMarket } from '../fixtures/mini-market';
+import { miniProjectsJson } from '../fixtures/mini-projects';
+import { buildSimInput, precomputeOf } from './build';
 import { applyPolicies, baseZoning, type PolicyOp } from './policy';
 import type { SimInput } from './types';
 

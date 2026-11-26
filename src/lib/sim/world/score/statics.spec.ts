@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { addMonths, dayOf } from '$lib/sim/scenario/dates';
-import { REFERENCES, monthsOf, phasingOf } from '$lib/sim/scenario/score';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { addMonths, dayOf } from '$lib/sim/world/dates';
+import { REFERENCES, monthsOf, phasingOf } from '$lib/sim/world/score/targets';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { HORIZON } from '$lib/fzp/time';
 import { monthLastDay, monthOfDay } from '../months';
 import { fixtureInput } from '../test/cities.node';

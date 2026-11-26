@@ -48,7 +48,7 @@ export const PATHS: readonly string[] = [
   'src/lib/plan/types.ts',
   'src/lib/sim/finance',
   'src/lib/sim/cars',
-  'src/lib/sim/scenario/rng.ts',
+  'src/lib/sim/world/rules/rng.ts',
   'src/lib/transit'
 ];
 /** Inputs and outputs under `pipeline`, not code: never part of the code hash. */

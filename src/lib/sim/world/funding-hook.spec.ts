@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance/terms';
-import { P, drawOn, seedHash } from '$lib/sim/scenario/rng';
+import { P, drawOn, seedHash } from '$lib/sim/world/rules/rng';
 import { sampleAdvance } from '$lib/timelapse/model';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import { lotRow } from './columns';

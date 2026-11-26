@@ -7,17 +7,13 @@ import type { Manifest } from '$lib/data/manifest';
 import { encodePolicyPayload } from '$lib/data/policy-codec';
 import { encodeScenarioPayload, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { encodeTransit } from '$lib/data/transit-codec';
-import { miniBin } from '$lib/sim/scenario/fixtures/mini-bin';
-import { miniNeighborhoods, miniTransit } from '$lib/sim/scenario/fixtures/mini-brushes';
-import { MINI_GROSS_URL, miniGross } from '$lib/sim/scenario/fixtures/mini-gross';
-import {
-  MINI_SCENARIO_URLS,
-  MINI_VERSION,
-  miniCity
-} from '$lib/sim/scenario/fixtures/mini-parcels';
-import { miniPolicy } from '$lib/sim/scenario/fixtures/mini-policy';
-import { miniProjectsJson } from '$lib/sim/scenario/fixtures/mini-projects';
-import miniCalibration from '$lib/sim/scenario/fixtures/mini-calibration.json';
+import { miniBin } from '$lib/sim/world/fixtures/mini-bin';
+import { miniNeighborhoods, miniTransit } from '$lib/sim/world/fixtures/mini-brushes';
+import { MINI_GROSS_URL, miniGross } from '$lib/sim/world/fixtures/mini-gross';
+import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from '$lib/sim/world/fixtures/mini-parcels';
+import { miniPolicy } from '$lib/sim/world/fixtures/mini-policy';
+import { miniProjectsJson } from '$lib/sim/world/fixtures/mini-projects';
+import miniCalibration from '$lib/sim/world/fixtures/mini-calibration.json';
 
 /** Where `miniDataset` serves `miniPolicy` as policy.bin (in the manifest with `policy`). */
 export const MINI_POLICY_URL = `/data/${MINI_VERSION}/scenarios/fzp/policy.bin`;

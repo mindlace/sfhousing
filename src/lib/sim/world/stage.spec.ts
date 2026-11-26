@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
 import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
-import { revisionRatio } from '$lib/sim/scenario/engine';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { revisionRatio } from '$lib/sim/world/rules/stages';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { sampleAdvance } from '$lib/timelapse/model';
 import { PATHWAYS, STAGE_ORDER, type Calibration, type Stage } from '$lib/timelapse/types';
 import { addProject, emptyWorld, pushRev, revisionsOf } from './columns';

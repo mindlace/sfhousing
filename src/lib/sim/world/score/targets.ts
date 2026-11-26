@@ -6,8 +6,8 @@ import { M1_TARGETS, RHNA_TIER_TARGETS } from '$lib/scoreboard/targets';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { TierUnits } from '$lib/timelapse/types';
-import { addMonths, dayOf, firstOfMonth } from './dates';
-import type { TargetProgressAt, TimelineScore } from './types';
+import { addMonths, dayOf, firstOfMonth } from '../dates';
+import type { TargetProgressAt, TimelineScore } from '../input/types';
 
 type Shown = TimelineScore['shown'];
 

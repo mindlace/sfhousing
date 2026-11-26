@@ -10,9 +10,9 @@ import {
   tiersOf,
   type Money,
   type TierCtx
-} from '$lib/sim/scenario/finance-score';
-import { monthIndexer } from '$lib/sim/scenario/score';
-import type { Schedule, SimInput, TimelineScore } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/score/finance';
+import { monthIndexer } from '$lib/sim/world/score/targets';
+import type { Schedule, SimInput, TimelineScore } from '$lib/sim/world/input/types';
 import type { LedgerEvent } from '$lib/sim/world/types';
 import type { Master } from '$lib/sim/world/read';
 

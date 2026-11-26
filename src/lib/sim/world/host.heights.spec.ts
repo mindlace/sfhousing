@@ -1,14 +1,14 @@
 // The timeline host's height limits (ensemble-runner Task 9, spec S14): `heights` for the zoning in
 // force at the last `viewMonth` (month 1 before any), posted again when that zoning changes, and
 // `heightLids` answered for it by staged lid builds in the runner's slices. Fixture-0, one world,
-// a fake clock that charges compute time; a differential against the old host's posts.
+// a fake clock that charges compute time.
 import { describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { FetchLike } from '$lib/sim/chunks';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { SRC_PAINT } from '$lib/sim/levers/source';
-import { scenarioUrls } from '$lib/sim/scenario/load';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY4, queriesOf4, type SimPolicy4 } from '$lib/timeline/policy4';
@@ -50,7 +50,7 @@ const PAINT: CustomBrush = {
 
 async function asOfOf(): Promise<Day> {
   const f = datasetFetch(FIXTURE);
-  const body = (await (await f.fetch(scenarioUrls(f.manifest)!.projects)).json()) as {
+  const body = (await (await f.fetch(simInputUrls(f.manifest)!.projects)).json()) as {
     asOf: Day;
   };
   return body.asOf;

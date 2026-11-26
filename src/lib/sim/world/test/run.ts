@@ -2,7 +2,7 @@
 // today's engine lists them. Browser-safe.
 import { HORIZON } from '$lib/fzp/time';
 import type { Master } from '$lib/sim/world/read';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import { planDue } from '../due';
 import { monthOfDay } from '../months';

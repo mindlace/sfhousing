@@ -1,11 +1,11 @@
 // Pipeline rows, masters and phases (spec rules 3 and 13; today's `pipelineRow`, `masterOf`,
-// `phaseFiledDay` and `phaseSchedule`, scenario/engine.ts:661-898): made at the dataset date,
+// `phaseFiledDay` and `phaseSchedule`): made at the dataset date,
 // followed through their stages month by month, and phases filed as their days come.
 import type { ParcelId } from '$lib/data/parcel';
 import * as scenarioCodecModule from '$lib/data/scenario-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import * as engineModule from '$lib/sim/scenario/engine';
-import * as rngModule from '$lib/sim/scenario/rng';
+import * as stagesModule from '$lib/sim/world/rules/stages';
+import * as rngModule from '$lib/sim/world/rules/rng';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import * as timelapseTypesModule from '$lib/timelapse/types';
@@ -22,7 +22,7 @@ import type { StepSink, World } from './types';
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
 const { FILL_LEVELS } = scenarioCodecModule;
-const { isSkipped, nextStage } = engineModule;
+const { isSkipped, nextStage } = stagesModule;
 const { P, drawOn, jobEntity, streamOf } = rngModule;
 const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
 const { addProject, pushRev } = columnsModule;

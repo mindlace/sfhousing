@@ -6,7 +6,7 @@
 // both plan and twin, then one chunk per calendar month (as the runner makes them when each month
 // becomes final). `SFH_PERF_QUIET=1` marks a run made while holding the measurement lock.
 import { describe, expect, it } from 'vitest';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { benchFunded } from '../funding/test/cities.node';
 import { oneMoneyTimeline } from '../funding/test/fixtures';
 import { staticsOf } from '../statics';

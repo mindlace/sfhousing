@@ -1,10 +1,10 @@
 // world-funding Task 5: pools, arrivals and money events (spec rules 12, 13, 14, 16).
 import { describe, expect, it } from 'vitest';
 import type { BundleFunding, ItemFunding } from '$lib/sim/finance';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { inflowArrivals, type Award } from '$lib/sim/scenario/funding';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { inflowArrivals, type Award } from '$lib/sim/world/rules/funding';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER } from '$lib/timelapse/types';

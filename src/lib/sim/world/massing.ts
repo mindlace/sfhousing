@@ -20,7 +20,7 @@ import {
 } from '$lib/generator';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Lru } from '../lru';
-import type { Massing, Schedule, SimInput } from './types';
+import type { Massing, Schedule, SimInput } from './input/types';
 
 /** What `massingFor` needs. The memo is shared across seeds and inits within one datasetVersion. */
 export interface MassingCtx {

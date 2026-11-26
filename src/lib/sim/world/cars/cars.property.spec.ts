@@ -2,9 +2,9 @@
 // one seed gives one population whatever the event order, a copy steps like its original, and a
 // rebuilt plan gives what a carried one does (rule 20). Mini and bench cities, seeds 1 to 5.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { createFundingSystem } from '../funding/system';
 import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import type { PolicyTimeline } from '../policy/frame';

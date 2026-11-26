@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
-import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniFunding, miniMarket } from './fixtures/mini-market';
+import miniCalibrationJson from '../fixtures/mini-calibration.json';
+import { miniFunding, miniMarket } from '../fixtures/mini-market';
 import { marketLevel, marketSteps } from './market';
 
 const cal = (): Calibration => parseCalibration(structuredClone(miniCalibrationJson) as unknown);

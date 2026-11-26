@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import { DEFAULT_POLICY4 } from '$lib/timeline/policy4';

@@ -70,7 +70,7 @@ import { cityTransferables } from '$lib/map/city-delta';
 import { packTimedTransferables } from '$lib/map/pack-timed';
 import { LeverFormatError } from '$lib/sim/levers/types';
 import type { Rev } from '$lib/sim/protocol';
-import { massingFor } from '$lib/sim/scenario/massing';
+import { massingFor } from '$lib/sim/world/massing';
 import { SLICE_PLAN_MS } from '$lib/sim/world/runner/budget';
 import type { HeightLidsResult } from '$lib/sim/timeline-protocol';
 import type { TimelineErrorCode, TimelineHostResponse } from '$lib/sim/timeline-protocol';

@@ -185,7 +185,7 @@ const millions = (d: number): string => `$${(d / 1e6).toFixed(1)} million`;
 const dayOfIso = (iso: string): Day => Date.parse(`${iso}T00:00:00Z`) / DAY_MS;
 
 /**
- * Anniversary k of asOf (k from 0), inflowArrivals' rule (src/lib/sim/scenario/funding.ts): the
+ * Anniversary k of asOf (k from 0), inflowArrivals' rule (src/lib/sim/world/rules/funding.ts): the
  * same UTC month and day k years later, 29 February becoming 28 February in a common year.
  */
 export function anniversary(asOf: Day, k: number): Day {

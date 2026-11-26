@@ -9,9 +9,9 @@ import type { Calibration } from '$lib/timelapse/types';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { miniCity } from './fixtures/mini-parcels';
 import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from './fixtures/mini-projects';
-import { buildSimInput } from './input';
+import { buildSimInput } from './input/build';
 import { districtOptsFor, pipeKey, type MassingCtx } from './massing';
-import type { Schedule, SimInput } from './types';
+import type { Schedule, SimInput } from './input/types';
 
 const P = MINI_PROJECTS;
 const city = miniCity();

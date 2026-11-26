@@ -9,7 +9,7 @@ import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
 import { resolveTerms } from '../../finance';
-import type { SimInput } from '../types';
+import type { SimInput } from '../input/types';
 import { miniCalibrationWithRoutes } from './mini-finance';
 import { miniCity } from './mini-parcels';
 import { MINI_AS_OF } from './mini-projects';

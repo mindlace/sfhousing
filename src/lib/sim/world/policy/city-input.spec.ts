@@ -10,7 +10,7 @@ import type { HeightLids } from '$lib/map/height/types';
 import type { BBox } from '$lib/plan/geometry';
 import { resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { limitSources, type LimitSources } from '$lib/sim/levers/source';
-import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
 import {
   compileLevers,
   customQuery,
@@ -114,7 +114,7 @@ const DOC: SimPolicy4 = miniDoc(
   pol('newer', { tag: 'category', category: 'newerThan' }, { tag: 'protect', years: 15 }, K)
 );
 
-/** The old host's lever state before and from month K. */
+/** The lever state before and from month K. */
 const BEFORE: SimPolicy = { ...structuredClone(DEFAULT_POLICY), rules: [RULE_METRO] };
 const AFTER: SimPolicy = {
   ...structuredClone(DEFAULT_POLICY),
@@ -129,8 +129,8 @@ function compileDoc(doc: SimPolicy4): PolicyTimeline {
   return c.result();
 }
 
-/** The old host's `cityOf` inputs for `p`. */
-function oldHost(p: SimPolicy): FrameCityInput {
+/** The `cityOf` inputs for `p`. */
+function directInput(p: SimPolicy): FrameCityInput {
   const levers = compileLevers(p, lots)!;
   const r = resolveEnvelopes(CTX.layers, levers, ASOF);
   return {
@@ -199,7 +199,7 @@ function lids(c: FrameCityInput, model: CityModel): HeightLids {
   return l;
 }
 
-describe('cityInputAt: the old host’s city inputs', () => {
+describe('cityInputAt: the city inputs', () => {
   const t = compileDoc(DOC);
   const cases: [number, SimPolicy][] = [
     [1, BEFORE],
@@ -208,14 +208,14 @@ describe('cityInputAt: the old host’s city inputs', () => {
     [W, AFTER]
   ];
 
-  it('stories, countable and sources equal the old host’s, before and after the change', () => {
+  it('stories, countable and sources equal the direct derivation, before and after the change', () => {
     for (const [m, p] of cases)
-      expect(plain(cityInputAt(t.frameAt(m))), `month ${m}`).toEqual(plain(oldHost(p)));
+      expect(plain(cityInputAt(t.frameAt(m))), `month ${m}`).toEqual(plain(directInput(p)));
   });
 
   it('the case is not vacuous', () => {
-    const b = oldHost(BEFORE);
-    const a = oldHost(AFTER);
+    const b = directInput(BEFORE);
+    const a = directInput(AFTER);
     expect(differ(b.stories, a.stories)).toBe(true);
     expect(differ(b.countable, a.countable)).toBe(true);
     expect(differ(b.sources.source, a.sources.source)).toBe(true);
@@ -232,14 +232,14 @@ describe('cityInputAt: the old host’s city inputs', () => {
     for (const i of r.protectedRows) expect(a.countable[i]).toBe(0);
   });
 
-  it('the city build and lid build give the old host’s result', () => {
+  it('the city build and lid build give the direct derivation result', () => {
     for (const [m, p] of cases) {
       const got = city(cityInputAt(t.frameAt(m)));
-      const want = city(oldHost(p));
+      const want = city(directInput(p));
       expect(got.model, `month ${m}`).toEqual(want.model);
       expect(got.city, `month ${m}`).toEqual(want.city);
       expect(lids(cityInputAt(t.frameAt(m)), got.model), `month ${m}`).toEqual(
-        lids(oldHost(p), want.model)
+        lids(directInput(p), want.model)
       );
     }
     // before and after build different cities and lids
@@ -297,7 +297,7 @@ describe('cityInputAt: frame objects', () => {
     const c = compileTimeline(miniDoc(), LOTS, CTX, 'preFzp');
     expect(c.step(Infinity)).toBe(true);
     const got = cityInputAt(c.result().frameAt(1));
-    expect(plain(got)).toEqual(plain(oldHost(structuredClone(DEFAULT_POLICY))));
+    expect(plain(got)).toEqual(plain(directInput(structuredClone(DEFAULT_POLICY))));
     const fzp: LimitSources = got.sources;
     expect(fzp.ruleIds).toEqual([]);
   });

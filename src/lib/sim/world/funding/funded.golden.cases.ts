@@ -5,7 +5,7 @@
  * (the server test and the client project's browser spec) reruns it and compares. Browser-safe:
  * the mini city only. Test support only: nothing in the app imports it.
  */
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
 import type { LedgerEvent } from '$lib/sim/world/types';
 import { staticsOf } from '../statics';
 import { fundedMini, oneMoneyTimeline, runFunded, type MonthEvent } from './test/fixtures';

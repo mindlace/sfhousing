@@ -24,7 +24,7 @@ import {
   provenanceSections
 } from '$lib/fzp/provenance';
 import { resolveTerms } from '$lib/sim/finance';
-import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
+import { PIPELINE_FUNDED } from '$lib/sim/world/rules/funding';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import { ABOUT_ID, ABOUT_TITLE, CARS_HEADING, PART_HEADING } from './copy';
 import AboutDialogHarness from './test/AboutDialogHarness.svelte';

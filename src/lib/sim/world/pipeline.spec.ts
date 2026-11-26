@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { monthOfDay } from './months';
 import { rowStaticsOf } from './pipeline';
 import { staticsOf } from './statics';

@@ -1,4 +1,4 @@
-import * as rngModule from '$lib/sim/scenario/rng';
+import * as rngModule from '$lib/sim/world/rules/rng';
 import * as monthsModule from './months';
 import * as pipelineModule from './pipeline';
 import type { PolicyFrame, PolicyTimeline } from './policy/frame';

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { NULL_CAP } from '$lib/data/policy-codec';
 import type { EnvelopeRow } from '$lib/data/envelope-row';
-import { miniCity } from '../scenario/fixtures/mini-parcels';
-import { MINI_HISTORIC_ID, MINI_SB79_ID, miniPolicy } from '../scenario/fixtures/mini-policy';
-import { dayOf } from '../scenario/dates';
+import { miniCity } from '../world/fixtures/mini-parcels';
+import { MINI_HISTORIC_ID, MINI_SB79_ID, miniPolicy } from '../world/fixtures/mini-policy';
+import { dayOf } from '../world/dates';
 import { stockTable, type EnvelopeTable, type LayerCtx } from './layers';
 import {
   allNeeds,

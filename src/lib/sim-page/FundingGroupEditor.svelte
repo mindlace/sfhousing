@@ -15,7 +15,7 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
-  import { dayOf, firstOfMonth } from '$lib/sim/scenario/dates';
+  import { dayOf, firstOfMonth } from '$lib/sim/world/dates';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import type { Day, Pool } from '$lib/timelapse/types';
   import {

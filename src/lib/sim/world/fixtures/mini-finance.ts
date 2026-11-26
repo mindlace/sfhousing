@@ -4,7 +4,7 @@ import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
 import { LEGACY_UNCAPPED_DOLLARS, parseCalibration } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Provenance } from '$lib/timelapse/types';
-import type { SimInput } from '../types';
+import type { SimInput } from '../input/types';
 import miniCalibrationJson from './mini-calibration.json';
 import { MINI_AS_OF } from './mini-projects';
 

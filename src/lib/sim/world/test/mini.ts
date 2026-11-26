@@ -1,8 +1,8 @@
-import { buildSimInput } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
-import { miniProjectsJson } from '$lib/sim/scenario/fixtures/mini-projects';
+import { buildSimInput } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
+import { miniProjectsJson } from '$lib/sim/world/fixtures/mini-projects';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 

@@ -19,12 +19,12 @@ import {
 import { SLOPE_FIXTURE } from '$lib/sim/finance/test/fixtures';
 import { MAX_DOLLARS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import { formatDollars, formatMonthYear } from '$lib/fzp/format';
 import { formatPercent } from '$lib/scoreboard/format';
 import { monthFirstDay } from '$lib/sim/world/months';
 import { DEFAULT_POLICY } from './sim-doc';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
 import { LEGACY_UNCAPPED_DOLLARS, isNoCeiling, parseCalibration } from '$lib/timelapse/model';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { addPreset, cityGrant, fundingPresets, yearsAfter } from './funding-presets';

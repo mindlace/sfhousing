@@ -4,7 +4,7 @@ import { packTimedCell, type TimedPackInput } from '../pack-timed';
 import { SLOT_FLAG } from '../types';
 import { cityGroup } from './city-grid';
 import { MARK_AREA_ZOOM } from './constants';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import { DYING_DAYS, OPEN_DAY, type Day } from '$lib/timelapse/time';
 
 /** Base day; stage days below are offsets from it. */

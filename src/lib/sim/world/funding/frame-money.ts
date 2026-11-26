@@ -1,7 +1,7 @@
 // What one frame's money offers, indexed for the funding step (spec rules 3 and 17).
 import { canonicalJson } from '$lib/sim-page/policy';
-import { financeIndexOf, type FinanceIndex } from '$lib/sim/scenario/funding';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { financeIndexOf, type FinanceIndex } from '$lib/sim/world/rules/funding';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Pool, ProjectKind } from '$lib/timelapse/types';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline } from '../policy/frame';
 

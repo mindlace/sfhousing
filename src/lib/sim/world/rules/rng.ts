@@ -1,6 +1,6 @@
 // Relative imports only: the pipeline's car back-cast imports this module (PATHS).
-import type { ParcelId } from '../../data/parcel';
-import { fnv1a32 } from '../../generator/seed';
+import type { ParcelId } from '../../../data/parcel';
+import { fnv1a32 } from '../../../generator/seed';
 
 /** MurmurHash3 32-bit finalizer. Returns a uint32. */
 export function fmix32(h: number): number {

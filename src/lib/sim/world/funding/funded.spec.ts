@@ -3,14 +3,14 @@
 // money, a ledger changes nothing, a spent pool left out, a cloned world, a permuted lot table, and
 // the plan world's calendar-month money series.
 import { describe, expect, it } from 'vitest';
-import { poolSeries } from '$lib/sim/scenario/finance-score';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { selectRows } from '$lib/sim/scenario/fixtures/select-rows';
-import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
+import { poolSeries } from '$lib/sim/world/score/finance';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { selectRows } from '$lib/sim/world/fixtures/select-rows';
+import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/world/fixtures/tiny-queue';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import { monthsOf } from '$lib/sim/scenario/score';
-import { checkMoneyIdentities } from '$lib/sim/scenario/test/money-identities';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { monthsOf } from '$lib/sim/world/score/targets';
+import { checkMoneyIdentities } from '$lib/sim/world/score/test/money-identities';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow } from '$lib/timelapse/types';
 import { monthLastDay } from '../months';
@@ -33,7 +33,7 @@ import { checkStep, type StepSums } from './test/identities';
 
 type Finance = NonNullable<SimInput['finance']>;
 
-/** 40 years of model months (the old engine's golden horizon is late 2066). */
+/** 40 years of model months (the golden horizon is late 2066). */
 const MONTHS = 480;
 const seeds = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 

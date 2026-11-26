@@ -15,9 +15,9 @@ import {
   type BundleFunding,
   type Prototype,
   type PrototypeId
-} from '../finance';
-import { dayOf } from './dates';
-import type { SimInput } from './types';
+} from '../../finance';
+import { dayOf } from '../dates';
+import type { SimInput } from '../input/types';
 
 /** `keyDay` of a latent that never starts, and the bound every later day compares equal to. */
 export const NEVER_KEY_DAY = 268_435_456; // 2^28

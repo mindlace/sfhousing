@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { precomputeOf } from '$lib/sim/scenario/input';
+import { precomputeOf } from '$lib/sim/world/input/build';
 import { miniInput } from './mini';
 import {
   IDENTITY,

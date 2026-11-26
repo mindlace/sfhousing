@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { parcelRankOf } from '../scenario/input';
+import { parcelRankOf } from './input/build';
 import { staticsOf } from './statics';
 import { miniFzpInput } from './test/mini';
 

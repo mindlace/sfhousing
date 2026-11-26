@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mulberry32 } from '../../generator/seed';
+import { mulberry32 } from '../../../generator/seed';
 import {
   PROTOTYPES,
   fundBundle,
@@ -7,9 +7,9 @@ import {
   projectDollars,
   resolveTerms,
   uncoveredPerHome
-} from '../finance';
+} from '../../finance';
 import type { Pool, PoolKind, Programme } from '$lib/timelapse/types';
-import { dayOf } from './dates';
+import { dayOf } from '../dates';
 import {
   PIPELINE_FUNDED,
   asksOf,
@@ -26,9 +26,9 @@ import {
   lineKey,
   type FinanceIndex
 } from './funding';
-import { benchBaseline, withBenchFunding } from './fixtures/bench-finance';
-import { tinyStack } from './fixtures/tiny-queue';
-import type { SimInput } from './types';
+import { benchBaseline, withBenchFunding } from '../fixtures/bench-finance';
+import { tinyStack } from '../fixtures/tiny-queue';
+import type { SimInput } from '../input/types';
 
 const P19 = 524_288;
 const P20 = 1_048_576;

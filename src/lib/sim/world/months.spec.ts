@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { SYNTH_AS_OF } from '../scenario/fixtures/synth-city';
+import { SYNTH_AS_OF } from './fixtures/synth-city';
 import { monthFirstDay, monthLastDay, monthOfDay, windowHorizon } from './months';
 
 it('matches the worked month boundaries at asOf 0', () => {

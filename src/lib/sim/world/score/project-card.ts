@@ -6,9 +6,9 @@ import type { GeneratedBuilding } from '$lib/generator';
 import type { InFlightProject, QualityRuleRef } from '$lib/timelapse/projects';
 import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
-import { districtOptsFor } from './massing';
+import { districtOptsFor } from '../massing';
 import type { Master } from '$lib/sim/world/read';
-import type { Massing, ProjectCard, Schedule, SimInput } from './types';
+import type { Massing, ProjectCard, Schedule, SimInput } from '../input/types';
 
 /** What `projectCard` reads: the run's inputs and the card-time seams. */
 export interface CardCtx {

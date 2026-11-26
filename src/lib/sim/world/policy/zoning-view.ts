@@ -23,8 +23,8 @@ import {
   type Resolution
 } from '$lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, LeverFormatError, type SimLevers } from '$lib/sim/levers/types';
-import { precomputeOf, type Precompute } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf, type Precompute } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { ZoningLevers } from './combine';
 import type { ZoningView } from './frame';
 import { murmur3x86_128, type ViewInfo } from './intern';

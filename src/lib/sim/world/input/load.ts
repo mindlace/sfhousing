@@ -10,10 +10,10 @@ import { readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-co
 import { parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
-import type { FetchLike } from '../chunks';
-import { STOP_TYPES } from '../levers/brushes';
-import { isSkipped } from './engine';
-import { ScenarioInputError, buildSimInput, precomputeOf } from './input';
+import type { FetchLike } from '../../chunks';
+import { STOP_TYPES } from '../../levers/brushes';
+import { isSkipped } from '../rules/stages';
+import { SimInputError, buildSimInput, precomputeOf } from './build';
 import { applyPolicies, baseZoning } from './policy';
 import type { SimInput } from './types';
 
@@ -33,7 +33,7 @@ export type LoadErrorCode =
  * outlines, fetched by the page, never the worker) are null when absent: datasets built before the
  * car model run without it.
  */
-export type ScenarioUrls = {
+export type SimInputUrls = {
   parcels: string;
   projects: string;
   calibration: string;
@@ -85,14 +85,14 @@ export function datasetUrl(m: Manifest, u: unknown): string | null {
  * session without levers never needs it, so it never makes the result null; the optional `gross`
  * URL likewise. `scenarios.fzp.frontage` (older datasets) is ignored.
  */
-export function scenarioUrls(m: Manifest): ScenarioUrls | null {
+export function simInputUrls(m: Manifest): SimInputUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;
   if (typeof fzp !== 'object' || fzp === null) return null;
   const f = fzp as Record<string, unknown>;
   const urls = { parcels: f.parcels, projects: f.projects, calibration: f.calibration };
   for (const u of Object.values(urls)) if (datasetUrl(m, u) === null) return null;
   return {
-    ...(urls as Pick<ScenarioUrls, 'parcels' | 'projects' | 'calibration'>),
+    ...(urls as Pick<SimInputUrls, 'parcels' | 'projects' | 'calibration'>),
     policy: datasetUrl(m, f.policy),
     gross: datasetUrl(m, f.gross),
     cars: datasetUrl(m, f.cars),
@@ -235,9 +235,9 @@ class Stopped {}
  * a load cancelled while waiting on a retry timer the caller cleared never settles. An
  * unexpected throw (not a decode or validation failure) rejects.
  */
-export async function loadScenario(
+export async function loadSimInput(
   deps: LoadDeps,
-  urls: ScenarioUrls,
+  urls: SimInputUrls,
   cancelled: () => boolean,
   opts?: { policy: boolean; cars?: boolean }
 ): Promise<Loaded | LoadFailure> {
@@ -390,7 +390,7 @@ export async function loadScenario(
   try {
     fzp = buildSimInput({ parcels, projects, calibration }, deps.warn);
   } catch (e) {
-    if (e instanceof ScenarioInputError) return invalid(e.file, e.message);
+    if (e instanceof SimInputError) return invalid(e.file, e.message);
     throw e;
   }
   const twin = applyPolicies([baseZoning], fzp);

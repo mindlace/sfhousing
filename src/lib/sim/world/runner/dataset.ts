@@ -3,7 +3,7 @@
 // model result comes from a function the hashed folders export.
 //
 // - createChunkSet: the loader and its deps, onChunk, failed cells, prefetch.
-// - loadDataset: loadScenario with `{ policy: true }`, the MassingCtx, LayerCtx, GrossCache and
+// - loadDataset: loadSimInput with `{ policy: true }`, the MassingCtx, LayerCtx, GrossCache and
 //   table; the memo itself is the caller's (cleared on another datasetVersion).
 // - the world core (car-ownership Task 11): `withFunding(createFundingSystem(), cars)`, built once
 //   per load because the car system is the dataset's (`carSystemOf`, world/cars/dataset.ts).
@@ -25,13 +25,13 @@ import {
 import type { Lru } from '$lib/sim/lru';
 import type { ChunksResponse } from '$lib/sim/protocol';
 import {
-  loadScenario,
+  loadSimInput,
   type FetchBytesLike,
   type Loaded,
   type LoadFailure,
-  type ScenarioUrls
-} from '$lib/sim/scenario/load';
-import type { MassingCtx } from '$lib/sim/scenario/massing';
+  type SimInputUrls
+} from '$lib/sim/world/input/load';
+import type { MassingCtx } from '$lib/sim/world/massing';
 import { carSystemOf } from '../cars/dataset';
 import { createFundingSystem } from '../funding';
 import type { CompileCtx, YieldSource } from '../policy/compile';
@@ -43,7 +43,7 @@ import type { WorldCore } from './ensemble';
 export interface DatasetDeps {
   fetch: FetchLike;
   fetchBytes: FetchBytesLike;
-  /** A timer the session can cancel (the old host's `Token.later`). */
+  /** A timer the session can cancel. */
   later(fn: () => void, ms: number): unknown;
   clearTimeout(h: unknown): void;
   now(): number;
@@ -59,8 +59,8 @@ export interface DatasetDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (the bench city); default `loadScenario(…, { policy, cars })`. */
-  load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
+  /** Seam: the load itself (the bench city); default `loadSimInput(…, { policy, cars })`. */
+  load?(urls: SimInputUrls): Promise<Loaded | LoadFailure>;
   /** True: no car system, even with cars.bin (`reach-check --cars off`). */
   carsOff?: boolean;
 }
@@ -92,7 +92,7 @@ export interface GenDeps {
 
 export interface Dataset {
   manifest: Manifest;
-  urls: ScenarioUrls;
+  urls: SimInputUrls;
   loaded: Loaded;
   /** `{ parcels: loaded.fzp.parcels, policy: loaded.policy }`. */
   layers: LayerCtx;
@@ -180,7 +180,7 @@ export function yieldSourceOf(
 
 export async function loadDataset(
   manifest: Manifest,
-  urls: ScenarioUrls,
+  urls: SimInputUrls,
   chunks: ChunkSet,
   deps: DatasetDeps,
   memo: Lru<string, GeneratedBuilding | null>,
@@ -188,8 +188,8 @@ export async function loadDataset(
 ): Promise<Dataset | LoadFailure> {
   const load =
     deps.load ??
-    ((u: ScenarioUrls) =>
-      loadScenario(
+    ((u: SimInputUrls) =>
+      loadSimInput(
         {
           fetch: deps.fetch,
           fetchBytes: deps.fetchBytes,
@@ -207,7 +207,7 @@ export async function loadDataset(
   const loaded = await load(urls);
   if ('code' in loaded) return loaded;
   if (loaded.policy === null) {
-    // loadScenario with `{ policy: true }` never answers so; only the `load` seam could
+    // loadSimInput with `{ policy: true }` never answers so; only the `load` seam could
     return {
       code: 'scenario-missing',
       message: 'dataset has no policy.bin (scenarios.fzp.policy)'

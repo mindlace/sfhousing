@@ -105,7 +105,7 @@ describe('codeTreeHash', () => {
     expect(committed).not.toBe(dirty);
   });
   it.each([
-    'src/lib/sim/scenario/engine.ts',
+    'src/lib/sim/world/rules/stages.ts',
     'src/lib/sim/levers/apply.ts',
     'src/lib/scoreboard/index.ts'
   ])('codeTreeHash ignores a change to %s', async (file) => {
@@ -114,6 +114,17 @@ describe('codeTreeHash', () => {
     writeFileSync(join(dir, file), 'export const changed = 1;\n');
     git('commit', '-q', '-am', 'change');
     expect(await codeTreeHash(dir)).toBe(clean);
+  });
+  it('codeTreeHash covers src/lib/sim/world/rules/rng.ts', async () => {
+    const { dir, git } = tempRepo();
+    mkdirSync(join(dir, 'src/lib/sim/world/rules'), { recursive: true });
+    writeFileSync(join(dir, 'src/lib/sim/world/rules/rng.ts'), 'export const r = 1;\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'rng');
+    const before = await codeTreeHash(dir);
+    writeFileSync(join(dir, 'src/lib/sim/world/rules/rng.ts'), 'export const r = 2;\n');
+    git('commit', '-q', '-am', 'rng 2');
+    expect(await codeTreeHash(dir)).not.toBe(before);
   });
   it('does not cover other sim code', async () => {
     const { dir, git } = tempRepo();

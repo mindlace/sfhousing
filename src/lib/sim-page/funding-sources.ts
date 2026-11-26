@@ -3,7 +3,7 @@
 // `Sourced` constant here, with its tier and where it was read; a number the user is left to
 // choose is a starting value at tier 4, labelled "custom, not sourced". `funding-presets.ts` reads
 // these by name, and `valueSource` reads the same names to say where a stored value came from.
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import type { Dollars, Inflow, PoolKind, Provenance } from '$lib/timelapse/types';
 import type { Evidence, Sourced } from './timing-sources';
 

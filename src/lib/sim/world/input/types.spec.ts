@@ -20,9 +20,9 @@ import type {
   Stage,
   TierUnits
 } from '$lib/timelapse/types';
-import type { StageScale } from '../levers/timers';
-import type * as Protocol from '../protocol';
-import type { ParcelSummary, SimRequest } from '../protocol';
+import type { StageScale } from '../../levers/timers';
+import type * as Protocol from '../../protocol';
+import type { ParcelSummary, SimRequest } from '../../protocol';
 import type * as Scenario from './types';
 
 type Equals<A, B> =

@@ -8,7 +8,7 @@ import {
   type CarModel,
   type TypeBands
 } from '$lib/sim/cars';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 
 const prov = { tier: 4 as const, label: 'Test car model', sources: [], method: 'invented' };
 

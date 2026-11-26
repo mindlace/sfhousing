@@ -13,7 +13,7 @@ import { leaveLine } from './apply';
 import { KIND_AFFORDABLE, addLineRow, fundOf, initFunding, type FundLine } from './columns';
 import { COMPACT_MIN, compact, isWaiting } from './line-index';
 import { createFundingSystem } from './system';
-import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
+import { withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 import { benchMoney, oneMoneyTimeline, type MonthEvent } from './test/fixtures';
 
 /** A funded line of `n` rows, row i on lot i. */

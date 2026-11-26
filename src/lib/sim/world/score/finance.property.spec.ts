@@ -11,14 +11,14 @@ import {
   caseCtx,
   pipeline,
   schedule
-} from './fixtures/finance-score-cases';
-import { TIER_FIELDS, poolSeries, tiersOf, type TierCtx } from './finance-score';
-import { ledgerModel } from './fixtures/ledger-model';
+} from '../fixtures/finance-score-cases';
+import { TIER_FIELDS, poolSeries, tiersOf, type TierCtx } from './finance';
+import { ledgerModel } from '../fixtures/ledger-model';
 import { checkMoneyIdentities } from './test/money-identities';
-import { MINI_AS_OF, MINI_HORIZON } from './fixtures/mini-projects';
-import { monthsOf } from './score';
+import { MINI_AS_OF, MINI_HORIZON } from '../fixtures/mini-projects';
+import { monthsOf } from './targets';
 import { shownSeries, tierSeries } from '$lib/sim/world/score/test/oracles';
-import type { Schedule } from './types';
+import type { Schedule } from '../input/types';
 
 const unitsArb = fc.integer({ min: 0, max: 2000 });
 

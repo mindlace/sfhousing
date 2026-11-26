@@ -24,7 +24,8 @@ export default defineConfig({
         'src/lib/timelapse/**',
         'src/lib/plan/types.ts',
         'src/lib/plan/geometry.ts',
-        'src/lib/sim/finance/**'
+        'src/lib/sim/finance/**',
+        'src/lib/sim/world/rules/rng.ts'
       ],
       triggers: ['lint', 'check', 'unit', 'e2e', 'pipeline', 'dataset']
     },
@@ -32,7 +33,7 @@ export default defineConfig({
     // pipeline/test/): not in the dataset version, so no dataset step, but test:pipeline runs.
     {
       match: [
-        'src/lib/sim/scenario/**',
+        'src/lib/sim/world/**',
         'src/lib/sim/levers/**',
         'src/lib/scoreboard/**',
         'src/lib/fzp/time.ts',

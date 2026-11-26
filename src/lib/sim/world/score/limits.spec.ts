@@ -5,17 +5,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { debtService, limitStatements } from '$lib/sim/finance';
 import { buildFinance } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import {
-  addedBorrowing,
-  cityOf,
-  displacedShare,
-  perAddedHome
-} from '$lib/sim/scenario/finance-score';
-import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { monthsOf } from '$lib/sim/scenario/score';
+import { addMonths, firstOfMonth } from '$lib/sim/world/dates';
+import { addedBorrowing, cityOf, displacedShare, perAddedHome } from '$lib/sim/world/score/finance';
+import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { monthsOf } from '$lib/sim/world/score/targets';
 import { moneyOf } from './test/oracles';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Effect, Policy } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool, Programme } from '$lib/timelapse/types';
@@ -418,7 +413,7 @@ describe('the money view at filledThrough (rule 12)', () => {
       const a = viewOf([chunk(r, twin(1), 0, ft)], score);
       const b = viewOf([chunk(r, twin(7), 0, ft)], score);
       const m = a.money!;
-      // The referee: today's figures over today's money as of that month.
+      // Today's figures over today's money as of that month.
       const horizon = lastDay(INPUT.asOf, ft);
       const today = moneyOf({
         ledger: r.feed.ledger,

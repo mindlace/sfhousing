@@ -19,12 +19,12 @@ import { createLru } from '$lib/sim/lru';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import type { ParcelSummary, Rev } from '$lib/sim/protocol';
 import {
-  scenarioUrls,
+  simInputUrls,
   type FetchBytesLike,
   type Loaded,
   type LoadFailure,
-  type ScenarioUrls
-} from '$lib/sim/scenario/load';
+  type SimInputUrls
+} from '$lib/sim/world/input/load';
 import { createToken, MEMO_CAP, PREVIEW_MAX_LOTS, type Token } from '$lib/sim/world/runner/budget';
 import {
   openTimelineProblem,
@@ -74,8 +74,8 @@ export interface TimelineHostDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (default `loadScenario(…, { policy: true, cars: true })`). */
-  load?(urls: ScenarioUrls): Promise<Loaded | LoadFailure>;
+  /** Seam: the load itself (default `loadSimInput(…, { policy: true, cars: true })`). */
+  load?(urls: SimInputUrls): Promise<Loaded | LoadFailure>;
   /**
    * Default 'on': both worlds run the dataset's car system when it ships cars.bin and
    * `calibration.cars`. 'off': no car system at all (`reach-check --cars off`).
@@ -101,7 +101,7 @@ interface Opening {
 interface Session {
   rev: Rev;
   manifest: Manifest;
-  urls: ScenarioUrls;
+  urls: SimInputUrls;
   token: Token;
   chunks: ChunkSet;
   ds: Dataset | null;
@@ -185,7 +185,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     if (shape !== null) return error(rev, 'manifest-invalid', shape);
     const manifest = req.manifest;
     const version = manifest.datasetVersion;
-    const urls = scenarioUrls(manifest);
+    const urls = simInputUrls(manifest);
     if (urls === null) {
       return error(rev, 'scenario-missing', `dataset ${version} has no fzp scenario`);
     }

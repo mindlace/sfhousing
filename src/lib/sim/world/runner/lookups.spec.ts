@@ -9,15 +9,15 @@ import {
 } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
-import { scenarioUrls } from '$lib/sim/scenario/load';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { MINI_TRANSIT_URL, miniDataset, type MiniDataset } from '../test/mini-dataset';
 import { createChunkSet, loadDataset, type Dataset, type DatasetDeps } from './dataset';
-import { MINI_AS_OF } from '$lib/sim/scenario/fixtures/mini-projects';
-import { massingFor } from '$lib/sim/scenario/massing';
+import { MINI_AS_OF } from '$lib/sim/world/fixtures/mini-projects';
+import { massingFor } from '$lib/sim/world/massing';
 import { PREVIEW_MAX_LOTS } from '$lib/sim/world/runner/budget';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import {
   buildableStories,
   cardDepsOf,
@@ -76,7 +76,7 @@ async function newDataset(h: MiniDataset, gen = generate): Promise<Dataset> {
   const chunks = createChunkSet(manifest, deps);
   const ds = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     chunks,
     deps,
     createLru<string, GeneratedBuilding | null>(1000),

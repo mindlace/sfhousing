@@ -5,13 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { M1_TARGETS, RHNA_TIER_TARGETS } from '$lib/scoreboard';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
-import { dayOf, isoOf } from './dates';
+import { dayOf, isoOf } from '../dates';
 import {
   MINI_AS_OF,
   MINI_HORIZON,
   MINI_PROJECTS,
   miniProjectsJson
-} from './fixtures/mini-projects';
+} from '../fixtures/mini-projects';
 import {
   REFERENCES,
   RHNA_DEADLINE,
@@ -20,11 +20,11 @@ import {
   phasingOf,
   targetsOf,
   tierTargetsOf
-} from './score';
-import { tierBaselineOf } from './finance-score';
+} from './targets';
+import { tierBaselineOf } from './finance';
 import { shownSeries } from '$lib/sim/world/score/test/oracles';
 import type { Master } from '$lib/sim/world/read';
-import type { Schedule, TimelineScore } from './types';
+import type { Schedule, TimelineScore } from '../input/types';
 
 const T0 = { veryLow: 0, low: 0, moderate: 0, aboveModerate: 0, unrecorded: 0 };
 const AS_OF = MINI_AS_OF; // 2026-10-16

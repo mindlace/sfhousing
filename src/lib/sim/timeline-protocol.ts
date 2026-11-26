@@ -20,7 +20,7 @@ import type {
   SimRequest,
   SimResponse
 } from './protocol';
-import type { LoadErrorCode } from './scenario/load';
+import type { LoadErrorCode } from './world/input/load';
 import type { ScoreStatics, SeriesChunk } from './world/score/types';
 
 /**

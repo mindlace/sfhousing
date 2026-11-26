@@ -10,7 +10,7 @@ import { DEFAULT_BANDS, type CustomBrush, type SimPolicy, type ZoningRule } from
 import PolicySummary from './PolicySummary.svelte';
 import { DEFAULT_POLICY } from './sim-doc';
 import { OBSERVED_TIMING, setStageMonths } from './timing';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import { monthFirstDay } from '$lib/sim/world/months';
 import { addPreset, fundingPresets } from './funding-presets';
 import {

@@ -1,6 +1,6 @@
 // Readers (spec S8, rule 22): a world's rows as today's `Schedule` and `Master`, as seen by a
 // reader standing on `day` (nothing dated after it).
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import {
   EXIT_ORDER,

@@ -7,10 +7,10 @@
 import { expect } from 'vitest';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool } from '$lib/timelapse/types';
-import type { Money } from '../finance-score';
+import type { Money } from '../finance';
 import type { LedgerEvent } from '$lib/sim/world/types';
-import { monthIndexer } from '../score';
-import type { SimInput } from '../types';
+import { monthIndexer } from '../targets';
+import type { SimInput } from '../../input/types';
 
 type Finance = NonNullable<SimInput['finance']>;
 

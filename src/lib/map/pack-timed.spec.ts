@@ -10,7 +10,7 @@ import { packCell } from './pack';
 import { SLOT_FLAG, TYPOLOGY_ORDER } from './types';
 import type { TimedPackedCell } from './types';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import { OPEN_DAY } from '$lib/timelapse/time';
 
 const B = gen as unknown as GeneratedBuilding[];

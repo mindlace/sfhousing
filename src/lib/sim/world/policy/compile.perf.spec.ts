@@ -25,11 +25,11 @@ import {
   benchFunding,
   benchMarket,
   benchRoutes
-} from '$lib/sim/scenario/fixtures/bench-finance';
-import { synthCity, synthPolicy, type SynthCity } from '$lib/sim/scenario/fixtures/synth-city';
-import { buildSimInput } from '$lib/sim/scenario/input';
-import { loadScenario, scenarioUrls } from '$lib/sim/scenario/load';
-import type { SimInput } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/fixtures/bench-finance';
+import { synthCity, synthPolicy, type SynthCity } from '$lib/sim/world/fixtures/synth-city';
+import { buildSimInput } from '$lib/sim/world/input/build';
+import { loadSimInput, simInputUrls } from '$lib/sim/world/input/load';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { decodeTransit } from '$lib/data/transit-codec';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import {
@@ -235,9 +235,9 @@ describe('compile slice on the live city', () => {
       );
       const prefix = `/data/${manifest.datasetVersion}/`;
       const pathOf = (url: string) => join(LIVE_DIR, url.slice(prefix.length));
-      const urls = scenarioUrls(manifest);
+      const urls = simInputUrls(manifest);
       if (!urls?.policy) throw new Error('manifest has no policy.bin');
-      const loaded = await loadScenario(
+      const loaded = await loadSimInput(
         {
           fetch: async (url) => ({
             ok: true,

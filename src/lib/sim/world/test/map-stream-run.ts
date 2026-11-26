@@ -9,7 +9,7 @@ import {
   type TimelineUpdate
 } from '$lib/map/types';
 import { validateTimedCell } from '$lib/map/timelapse/encode';
-import { cellAnchorParcel } from '$lib/sim/scenario/massing';
+import { cellAnchorParcel } from '$lib/sim/world/massing';
 import type { Day } from '$lib/timelapse/time';
 import { planDue } from '../due';
 import type { MapStream } from '../map-stream';

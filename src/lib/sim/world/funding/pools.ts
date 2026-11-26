@@ -2,7 +2,7 @@
 // `finance.arrivals`; an award's later money events (`money.ts:97-163`) are made when the project's
 // own event happens, with today's kinds, amounts, counters and within-event order.
 import { projectDollars } from '$lib/sim/finance';
-import type { Award } from '$lib/sim/scenario/funding';
+import type { Award } from '$lib/sim/world/rules/funding';
 import type { LedgerEvent } from '$lib/sim/world/types';
 import type { Day } from '$lib/timelapse/time';
 import { STAGE_ORDER, type Pool } from '$lib/timelapse/types';

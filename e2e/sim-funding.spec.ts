@@ -10,7 +10,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { marketShare } from '../src/lib/fzp/market-view';
 import { marketText } from '../src/lib/fzp/money-view';
-import { marketLevel } from '../src/lib/sim/scenario/market';
+import { marketLevel } from '../src/lib/sim/world/input/market';
 import type { FinanceLevers } from '../src/lib/sim/levers/types';
 import type { Calibration, Pool, Programme } from '../src/lib/timelapse/types';
 import {

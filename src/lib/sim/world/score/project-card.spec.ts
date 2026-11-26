@@ -8,8 +8,8 @@ import { chanceTable, parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import { DYING_DAYS, monthsIn, type Day } from '$lib/timelapse/time';
 import type { Calibration } from '$lib/timelapse/types';
-import { lookupsOf } from '../levers/apply';
-import type { StageScale } from '../levers/timers';
+import { lookupsOf } from '../../levers/apply';
+import type { StageScale } from '../../levers/timers';
 import {
   blockLot,
   chooseProject,
@@ -18,15 +18,19 @@ import {
   isVisible,
   projectCard,
   type CardCtx
-} from './card';
-import { dayOf } from './dates';
-import miniCalibrationJson from './fixtures/mini-calibration.json';
-import { miniCalibrationWithRoutes, miniFinance, withFederalYearly } from './fixtures/mini-finance';
-import { miniCity, MINI_LP_ID } from './fixtures/mini-parcels';
-import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from './fixtures/mini-projects';
-import { buildSimInput } from './input';
+} from './project-card';
+import { dayOf } from '../dates';
+import miniCalibrationJson from '../fixtures/mini-calibration.json';
+import {
+  miniCalibrationWithRoutes,
+  miniFinance,
+  withFederalYearly
+} from '../fixtures/mini-finance';
+import { miniCity, MINI_LP_ID } from '../fixtures/mini-parcels';
+import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from '../fixtures/mini-projects';
+import { buildSimInput } from '../input/build';
 import type { Master } from '$lib/sim/world/read';
-import type { Massing, Schedule, SimInput } from './types';
+import type { Massing, Schedule, SimInput } from '../input/types';
 
 const AS_OF = MINI_AS_OF;
 const P = MINI_PROJECTS;

@@ -9,11 +9,11 @@ import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { allNeeds, fillNeeds, resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { sameScale, type StageScale } from '$lib/sim/levers/timers';
 import { MAX_SCALE, MIN_SCALE, type TimedStage } from '$lib/sim/levers/types';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { miniFunding, miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
-import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
-import { precomputeOf, type Precompute } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { miniFunding, miniMarket } from '$lib/sim/world/fixtures/mini-market';
+import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/world/rules/funding';
+import { precomputeOf, type Precompute } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import {
   compileLevers,
   DEFAULT_POLICY,
