@@ -148,15 +148,16 @@ otherwise; 2 when it could not run. Only the hand plays of five orders gate the 
 `catalogue`, `permitting-first`, `zoning-first`, `hands-first`, `cheapest`). `tuning.ts` is
 kept at numbers under which it exits 0 on the production dataset.
 
-Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `be6467dc`), cars on, with
-`LADDER_YEARS = [2060, 2055, 2045, 2040]`: exit 0 with `tuning.ts` unchanged. Gated hand plays
-(runs, purchases, clock): `catalogue` 21, 17, 11:56; `permitting-first` 21, 17, 11:56;
-`zoning-first` 22, 19, 12:32; `hands-first` 11, 25, 7:48; `cheapest` 16, 31, 10:32. No side goal
-is flagged. `funded-homes` and `affordable-homes` are carried left out from
-`2026-11-14-09ca30c8`, where the bought sets seen reached about 12,460 funded and 16,230
-affordable homes against floors of about 15,000 and 17,000 by the deadline at which the plays
-first show them. They are not decided on this version: the script does not read a goal left out.
-The retake of the pass that merges main `083fb7ae` decides them, starting from all eleven ids.
+Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `083fb7ae`), cars on, with
+`LADDER_YEARS = [2060, 2055, 2045, 2040]`: exit 0 with all eleven side goals offered. Gated hand
+plays (runs, purchases, clock): `catalogue` 18, 16, 10:28; `permitting-first` 18, 16, 10:28;
+`zoning-first` 19, 16, 10:56; `hands-first` 10, 24, 7:16; `cheapest` 11, 26, 7:52. No side goal
+is flagged, and no goal is left out. Changes in `tuning.ts`: `funded-homes` (target 21,000) and
+`affordable-homes` (20,000) are back; `funded-homes` and `building-homes` (6,000) are raised to
+1.25 times current law at Dec 2060 (16,262 and 4,430); prices `no-discretionary` 28,000,
+`taller-1` 8,000 and 16,000, `reach-1` 12,000, `stop-rapid` 26,000, `taller-2` 24,000 and 29,000,
+so the catalogue, zoning-first and hands-first plays keep their early pace and three purchases
+between deadlines, and `policy-homes-3` comes into view in time to be met.
 
 ## Grants and the policy document
 
@@ -236,10 +237,9 @@ A met deadline stays met after a data update: `settle` never removes a `met` ent
 
 `side-goals.ts` defines small goals a run can meet beside its deadline. `SIDE_GOALS` is each
 goal's definition with its target and reward from `SIDE_TUNING` by id; a goal with no
-`SIDE_TUNING` entry is not offered. On the production dataset `funded-homes` and
-`affordable-homes` have none, so they are not offered. A goal has a `ring` (the first rung that
-shows it), a `label` and `read(input)`, which returns the value against the target or null when
-the view lacks what it reads.
+`SIDE_TUNING` entry is not offered; on the production dataset all eleven have one. A goal has a
+`ring` (the first rung that shows it), a `label` and `read(input)`, which returns the value against
+the target or null when the view lacks what it reads.
 
 `SideInput` is `{ view, index, take, inForce }`: the forecast's view, the deadline's month in it,
 the run's take, and whether any policy of the runnable document is in force. Each goal reads what
