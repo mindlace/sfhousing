@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
-import type { Deck } from '@deck.gl/core';
+import type { Deck, Layer } from '@deck.gl/core';
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { Manifest } from '$lib/data/manifest';
@@ -412,6 +412,48 @@ describe('SimMap run view', () => {
     expect(second.getCanvasContainer().classList.contains('sim-map-run-locked')).toBe(true);
     h.setRunView(false);
     sameCamera(camera(second), before);
+  });
+
+  it('merged timeline layers while locked', async () => {
+    const error = vi.spyOn(console, 'error');
+    const { h, map, screen, root } = await mountReady();
+    await until(() => deckOf(map)?.isInitialized === true);
+    const timelineIds = (m: MapLibreMap) =>
+      ((deckOf(m)?.props.layers ?? []) as Layer[])
+        .map((l) => l.id)
+        .filter((id) => /^timeline-(solid|ghost)-/.test(id));
+    h.setTimelineLookups(timelineLookups);
+    h.applyTimeline(pickTimeline);
+    h.setTime(FP_DAY);
+    h.setRunView(true);
+    await expect
+      .poll(() => timelineIds(map).sort())
+      .toEqual(['timeline-ghost-run', 'timeline-solid-run']);
+    h.setRunView(false);
+    await expect
+      .poll(() => timelineIds(map).sort())
+      .toEqual(['timeline-ghost-tl-P', 'timeline-solid-tl-P']);
+    // Deck initialises the per-cell layers again: no shader error from a reused, finalized layer.
+    await settle();
+    expect(error).not.toHaveBeenCalled();
+    h.setRunView(true);
+    await expect
+      .poll(() => timelineIds(map).sort())
+      .toEqual(['timeline-ghost-run', 'timeline-solid-run']);
+    // lock, unlock, lock again on real deck: the map stays ready, nothing logged.
+    await settle();
+    expect(root.dataset.state).toBe('ready');
+    expect(error).not.toHaveBeenCalled();
+    await screen.rerender({ manifest: structuredClone(manifest) });
+    await until(() => h.getMap() !== map && root.dataset.state === 'ready');
+    const second = h.getMap()!;
+    await until(() => deckOf(second)?.isInitialized === true);
+    h.setTimelineLookups(timelineLookups);
+    h.applyTimeline(pickTimeline);
+    h.setTime(FP_DAY);
+    await expect
+      .poll(() => timelineIds(second).sort())
+      .toEqual(['timeline-ghost-run', 'timeline-solid-run']);
   });
 
   it('locked, the host resized to 800 by 500: the zoom becomes runFrame(800, 500, 0).zoom', async () => {
