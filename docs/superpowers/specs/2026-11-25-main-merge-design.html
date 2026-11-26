@@ -1,0 +1,178 @@
+<article>
+  <header>
+    <h1>Main merge: the car ownership model in the incremental loop</h1>
+    <p>Brings <code>main</code> into the integration branch, with the car ownership model and the commits beside it, says what the merged code is where the two sides meet, and takes the results of record again on <code>main</code>'s dataset.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This unit runs after <code>loose-ends</code>, on the integration branch with every other unit of the <a href="../design/2026-11-24-2120-incremental-loop.html">design</a> merged. <code>main</code> carries four commits the package was not built on: freeway land is unpaintable (#149), permit-side pooled baselines fitted from 2015-01-01 (#150), the Pipeline workflow removed (#151), and the car ownership model with parking into start odds (#153, <code>docs/dev/cars.md</code>). It produces no interface row and needs none. It is built in two parts, in order:</p>
+    <ul>
+      <li><strong>The merge:</strong> <code>origin/main</code> merged into the unit's branch, every conflict resolved by the rules below, the application whole on the merged tree, and the reach check of record run.</li>
+      <li><strong>The retake:</strong> the measured ladder, the tuned numbers, the run bench, the purchase-to-ready wait and the budgets held to <code>main</code>, taken again on <code>main</code>'s dataset with cars in the world.</li>
+    </ul>
+    <p>It carries P1 (the game never changes what the simulation forecasts), P3 (new parts of the model join the tree as branches of nodes), D1 (current law reaches the first goal inside the window), R7 (one future; evidence ranks), call 10 (the measured ladder) and call 25 (every tuned number in <code>tuning.ts</code>).</p>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>Produced: none. Needed: none. Row E2 holds the chunk's fields as they are after the merge: <code>cars</code> is the car system's, <code>waiting</code> is E2's.</p>
+  </section>
+
+<section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <ul>
+      <li>The integration branch's merge base with <code>main</code> is <code>85e08e42</code>. <code>origin/main</code> is four commits on (226 files).</li>
+      <li>A merge conflicts in: <code>CLAUDE.md</code>, <code>docs/dev/map-interfaces.md</code>, <code>docs/dev/pipeline.md</code>, <code>docs/dev/testing.md</code>, <code>docs/dev/world-score.md</code>, <code>e2e/fzp-sim.spec.ts</code>, <code>e2e/game-sim.spec.ts</code>, <code>src/lib/about/AboutParts.svelte.spec.ts</code>, <code>src/lib/sim/timeline-client.host.spec.ts</code>, <code>src/lib/sim/world/host.edit.spec.ts</code>, <code>src/lib/sim/world/score/{chunk.spec,chunk,series,types,view}.ts</code>; and modify/delete on <code>scripts/level2-check.ts</code> and its spec (renamed <code>scripts/reach-check.ts</code> on the branch, given a <code>--cars on|off</code> switch and a fill line on <code>main</code>).</li>
+      <li>On <code>main</code>, <code>SeriesChunk</code> gains <code>cars: CarRow[] | null</code> (the plan world's cars, from its series) and <code>TimelineView</code> gains <code>cars: CarsView | null</code>; <code>WorldSeries.created(cars)</code> and <code>stepped(month, cars?)</code> take the car snapshot; <code>viewOf</code> throws when chunks mix cars and none; <code>chunksBefore</code> trims <code>cars</code>.</li>
+      <li>On <code>main</code>, <code>createTimelineHost</code> takes <code>cars?: 'on' | 'off'</code> (default <code>'on'</code>: both worlds run the dataset's car system when it ships one).</li>
+      <li>The car model adds no policy to the document and no lever to "+": the forecast's homes move only through the parking link in start odds (<code>docs/dev/cars.md</code>). It adds a Details row (<code>src/lib/timeline/cars-row.ts</code>), a map layer <code>cars-per-household</code> in the Layers panel, and a Cars section in About's assumptions.</li>
+      <li><code>main</code>'s dataset version hashes <code>src/lib/sim/cars</code>, <code>src/lib/sim/scenario/rng.ts</code> and <code>src/lib/transit</code> beside the paths the global constraints name (<code>pipeline/lib/version.ts</code>, <code>PATHS</code>). Its commits change the dataset version: <code>docs/dev/cars.md</code> records current law on <code>2026-11-25-76c90397</code> reaching the goal in Jun 2065 with cars, Jul 2065 without.</li>
+      <li>The package's results of record were taken on <code>2026-11-14-09ca30c8</code> without cars: <code>LADDER_YEARS</code> <code>[2060, 2055, 2045, 2040]</code>, the tuned <code>tuning.ts</code>, the reach check, the run bench and the purchase-to-ready wait.</li>
+    </ul>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-design-cars">
+      <h3>Cars and the game</h3>
+      <ul>
+        <li>Cars are part of the forecast, not a lever. The game reads them nowhere: no node, grant, limit, side goal, tally row or headline reads <code>cars</code>. A run's drops, the goal's homes and every rung's reading take the forecast as it is, cars included (P1, one future).</li>
+        <li>The car model joins the tree as a branch of nodes only once the document holds a car or parking policy for a node to act on (P3). None exists, so this round adds no node.</li>
+        <li>Details' cars row shows in the workshop and in the open game as <code>main</code> shows it on the simulation.</li>
+        <li>The <code>cars-per-household</code> layer is a Layers-panel preference like transit access: it is set in the workshop or the open game, and while on it draws in the run view as transit access does (call 19). The run neither turns it on nor off.</li>
+        <li>About keeps <code>main</code>'s Cars section in its assumptions beside the package's game sections.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-score">
+      <h3>The score series</h3>
+      <ul>
+        <li><code>SeriesChunk</code> is <code>{ from, rows, planEffect, money, tiers, cars, waiting? }</code>. <code>cars</code> is the plan series' car rows (<code>main</code>'s rule); <code>waiting</code> is the plan world's homes waiting for money (E2). Neither reads the other.</li>
+        <li><code>chunkOf</code> sets both keys; the chunk keys test lists the six.</li>
+        <li><code>TimelineView</code> carries <code>cars</code> (<code>main</code>'s, null for a world without a car system) and <code>waitingMoney</code> (E2). <code>viewOf</code> joins both, each by its own null rule; <code>chunksBefore</code> trims both.</li>
+        <li><code>WorldSeries</code> keeps <code>main</code>'s <code>created(cars)</code> and <code>stepped(month, cars?)</code>, and the extras keep both <code>cars(from, through)</code> and <code>waiting(world, from, through)</code>.</li>
+        <li>The <code>before</code> helpers of <code>host.edit.spec.ts</code> and <code>timeline-client.host.spec.ts</code> copy <code>cars</code> and <code>waiting</code>, each trimmed to the same months.</li>
+        <li>The waiting count is recorded at the end of the funding system's <code>shadow</code> hook. The car step runs between systems 3 and 4 and never writes the funding line, so the count's rule is unchanged with cars on.</li>
+        <li><code>docs/dev/world-score.md</code> documents both: <code>main</code>'s <code>cars</code> section and the package's "Homes waiting for money".</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-reach">
+      <h3>The reach check and the car switch</h3>
+      <ul>
+        <li><code>scripts/level2-check.ts</code> and its spec stay deleted. The reach check is <code>scripts/reach-check.ts</code>, and it carries <code>main</code>'s switch.</li>
+        <li>Usage: <code>npx tsx scripts/reach-check.ts &lt;datasetDir&gt; | --version &lt;v&gt; [--from &lt;origin&gt;] [--amount &lt;homes&gt;] [--cars on|off]</code>. <code>--cars</code> defaults to <code>on</code>; any other value is refused with exit 2 and the line <code>reach-check: --cars must be on or off, got &lt;value&gt;</code>.</li>
+        <li><code>openEngine(src, { warn?, timeoutMs?, cars? })</code> passes <code>cars</code> to <code>createTimelineHost</code>, default <code>'on'</code>. <code>Engine</code> gains <code>fillMs</code>: wall-clock milliseconds from <code>openTimeline</code> to the last month of the opening fill (current law).</li>
+        <li>The reach check prints a fifth line after its four: <code>Filled in &lt;s&gt; s (cars on|off)</code>, the seconds to one decimal. Its exit codes are unchanged.</li>
+        <li><code>reach-measure</code> and <code>tree-balance</code> run with cars on and take no switch: they measure the game a player plays.</li>
+        <li>Documents that name <code>level2-check</code> as a command name <code>reach-check</code>: <code>docs/dev/cars.md</code> (the off path is <code>reach-check --cars off</code>; the section "Level 2 with and without cars" is titled "Current law with and without cars"), <code>docs/dev/testing.md</code>, <code>docs/dev/pipeline.md</code> and <code>CLAUDE.md</code> (the cars entry reads "current law with and without cars"). A dated measurement keeps its figures and dataset.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-conflicts">
+      <h3>The other conflicts</h3>
+      <ul>
+        <li>Documents (<code>CLAUDE.md</code>, <code>docs/dev/{map-interfaces,pipeline,testing,world-score}.md</code>): both sides' statements are kept, each made true of the merged code. Where one side names a page, step, level, bar or Remix the package removed, the package's wording wins (closing's rules). <code>main</code>'s cars entries, its car layer in the map interfaces, its pipeline step for car zones and its removal of the Pipeline workflow stand.</li>
+        <li><code>e2e/game-sim.spec.ts</code> and <code>e2e/fzp-sim.spec.ts</code>: the package's text wins. A <code>main</code> change that asserts behaviour still true on the merged tree (freeway land unpaintable, the cars row, the cars layer) is kept, rewritten by closing's rules (address <code>/</code>, no header steps, the name "SF Housing", a new visitor for the opening, the open game for the simulation). A <code>main</code> change about levels, bars or the five-level game is dropped.</li>
+        <li><code>src/lib/about/AboutParts.svelte.spec.ts</code>: the package's game sections and terms, and <code>main</code>'s Cars section, each asserted.</li>
+        <li>Files that merge without a conflict are checked by the suite, not by reading.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-dataset">
+      <h3>The dataset</h3>
+      <ul>
+        <li>The package writes no file <code>main</code>'s <code>PATHS</code> hashes, <code>src/lib/sim/cars</code>, <code>src/lib/sim/scenario/rng.ts</code> and <code>src/lib/transit</code> included. So the merged tree's dataset version is <code>origin/main</code>'s, and <code>npx tsx scripts/dataset-version.ts --check</code> passes on it. A difference stops the unit and goes to the conductor.</li>
+        <li>That version is <code>main</code>'s to build and upload. The unit confirms <code>&lt;origin&gt;/data/&lt;v&gt;/manifest.json</code> answers 200 on production; when it does not, the unit stops and hands back "blocked: main's dataset &lt;v&gt; is not uploaded". It uploads nothing.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-merge-checks">
+      <h3>When the merge is done</h3>
+      <ul>
+        <li><code>npm run check</code> at 0 errors, <code>npm run lint</code>, <code>npm run build</code>, <code>npm run test:unit</code>, <code>npm run test:pipeline</code> and <code>npm run test:e2e</code> pass, no test only on retry.</li>
+        <li>Closing's final sweep finds nothing outside its allowed places, and <code>git grep -n 'level2-check'</code> finds only dated records (<code>docs/superpowers/**</code>, <code>.superpowers/**</code>, <code>CHANGELOG.md</code>).</li>
+        <li><code>npx tsx scripts/reach-check.ts --version &lt;v&gt;</code> on <code>main</code>'s version, cars on, exits 0; its five lines go in the hand-back. Exit 1 stops the unit: "blocked: the reach check misses", the remedy the owner's (D1).</li>
+        <li>The merge is a merge commit of <code>origin/main</code>; <code>main</code>'s history is not rewritten.</li>
+      </ul>
+    </section>
+
+    <section id="sec-design-retake">
+      <h3>The retake</h3>
+      <p>Every result of record below was taken without cars; each is taken again on <code>main</code>'s version with cars on.</p>
+      <ul>
+        <li><code>npx tsx scripts/reach-measure.ts --version &lt;v&gt; --write</code>: <code>LADDER_YEARS</code> by G6's rule. A change of years moves the rings by <code>ringOf</code>; no code changes for it.</li>
+        <li><code>npx tsx scripts/tree-balance.ts --version &lt;v&gt;</code> exits 0, with <code>tuning.ts</code> edited by hand under tree-catalogue's rules (§ The lump and the side goals, § Starting values and who tunes them): the gated plays, the 1.25 raise rule, the left-out rule and the hand-back when no numbers pass.</li>
+        <li>The run bench ("run with drops, citywide, moving pointer", p95 at most 16.7 ms) and "purchase to ready", on the live version, on a quiet machine, port 4173 left to its owner. A purchase-to-ready median above <code>CLOCK.buyS</code> is reported beside the line for the owner.</li>
+        <li>The wall-clock budgets of <code>npm run test:perf</code> and <code>npm run bench:map</code> held to <code>main</code> as closing holds them: <code>main</code> with cars and the branch run one after the other in one session on one quiet machine, within 10% of <code>main</code>'s figure.</li>
+        <li>The results replace the earlier ones under "Results" in <code>docs/dev/map-perf.md</code> and in <code>docs/dev/game.md</code>'s tuning and reach-check sections.</li>
+        <li>A miss is the defect of the unit on its path, as closing assigns it; a cost <code>main</code> itself adds (the car step, about 1.2 s of fill) is recorded and is not this build's.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <ul>
+      <li>The merge: the 17 conflicted files above; <code>scripts/reach-check.ts</code>, <code>scripts/reach-check.spec.ts</code>, <code>scripts/reach-measure.ts</code> and its spec (the <code>cars</code> option and <code>fillMs</code>); <code>docs/dev/cars.md</code>; any further file the suite shows disagreeing on the merged tree, named in the hand-back with the side it came from.</li>
+      <li>The retake: <code>src/lib/game/catalogue/ladder-years.ts</code>, <code>src/lib/game/catalogue/tuning.ts</code> and <code>tuning.spec.ts</code> (held to tree-catalogue's rule when a goal is left out), <code>docs/dev/map-perf.md</code>, <code>docs/dev/game.md</code>.</li>
+      <li>Deletes nothing; <code>scripts/level2-check.ts</code> and its spec stay deleted.</li>
+    </ul>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <ul>
+      <li>The chunk keys test lists <code>from</code>, <code>rows</code>, <code>planEffect</code>, <code>money</code>, <code>tiers</code>, <code>cars</code>, <code>waiting</code>; <code>main</code>'s <code>cars.spec.ts</code> and the package's waiting tests pass unchanged.</li>
+      <li>A refill with cars and money gives the same view as a fresh open, <code>cars</code> and <code>waitingMoney</code> included (<code>host.edit.spec.ts</code>).</li>
+      <li><code>reach-check.spec.ts</code>: <code>--cars off</code> and <code>--cars on</code> are accepted, <code>--cars maybe</code> gives exit 2 with its line; the fifth line reads <code>Filled in N.N s (cars on)</code>; the four lines and exits stay as they are.</li>
+      <li><code>reach-measure.spec.ts</code>: <code>openEngine</code> passes <code>cars</code> to the host and reports <code>fillMs</code> above 0.</li>
+      <li>Done when § When the merge is done holds, and for the retake when <code>tree-balance</code> exits 0 and the bench lines are in the hand-back.</li>
+    </ul>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li>One unit in two parts. The merge has to be whole before signoff can merge <code>origin/main</code> itself; the retake needs a quiet machine and may hand back to the owner, so it follows the merge.</li>
+      <li>Cars stay out of the game's rules. The model has no lever in the document, so a node would invent one; the game sees cars only as the forecast's homes.</li>
+      <li>The reach check takes <code>main</code>'s switch, not its name. Level 2 does not exist in the game; the check's question is the package's, and <code>--cars off</code> keeps <code>main</code>'s way of measuring the car system's cost.</li>
+      <li>The scripts that set numbers run with cars on. The ladder and the prices are for the forecast the player plays.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Building or uploading a dataset: <code>main</code>'s.</li>
+      <li>Car or parking policies, and nodes that act on them: a later round (P3).</li>
+      <li>Changing the car model, its costs or its layer.</li>
+      <li>Running <code>npm run signoff</code>: the conductor, after the hand-back.</li>
+    </ul>
+  </section>
+</article>

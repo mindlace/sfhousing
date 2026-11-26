@@ -38,6 +38,7 @@ export interface SeriesChunk {
   planEffect: PlanRow[];
   money: MoneyRow[] | null;
   tiers: TierUnits[] | null;
+  cars: CarRow[] | null;
   waiting?: number[] | null;
 }
 
@@ -46,6 +47,7 @@ export interface TimelineView {
   waitingMoney?: number[] | null;
 }</code></pre>
       <dl>
+        <dt><code>cars</code></dt><dd>The plan world's cars, from the car system (<code>docs/dev/cars.md</code>); null for a world without one. E2 leaves it as it is.</dd>
         <dt><code>waiting</code></dt><dd>Per calendar month of the chunk: homes in applications waiting in the plan's funding line at the end of the model month that holds the calendar month's last day.</dd>
       </dl>
       <ul>
