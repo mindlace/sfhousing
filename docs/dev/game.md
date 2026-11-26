@@ -148,6 +148,16 @@ otherwise; 2 when it could not run. Only the hand plays of five orders gate the 
 `catalogue`, `permitting-first`, `zoning-first`, `hands-first`, `cheapest`). `tuning.ts` is
 kept at numbers under which it exits 0 on the production dataset.
 
+Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `be6467dc`), cars on, with
+`LADDER_YEARS = [2060, 2055, 2045, 2040]`: exit 0 with `tuning.ts` unchanged. Gated hand plays
+(runs, purchases, clock): `catalogue` 21, 17, 11:56; `permitting-first` 21, 17, 11:56;
+`zoning-first` 22, 19, 12:32; `hands-first` 11, 25, 7:48; `cheapest` 16, 31, 10:32. No side goal
+is flagged. `funded-homes` and `affordable-homes` are carried left out from
+`2026-11-14-09ca30c8`, where the bought sets seen reached about 12,460 funded and 16,230
+affordable homes against floors of about 15,000 and 17,000 by the deadline at which the plays
+first show them. They are not decided on this version: the script does not read a goal left out.
+The retake of the pass that merges main `083fb7ae` decides them, starting from all eleven ids.
+
 ## Grants and the policy document
 
 The store does not hold the policy document; the page applies grants. `SimPage`'s `buy(id)` calls
@@ -545,6 +555,19 @@ number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
 
 It is run before every dataset upload, on the directory that is then uploaded, and must exit 0
 ([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`.
+
+Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `be6467dc`), cars on, against
+`LADDER_YEARS = [2060, 2055, 2045, 2040]` (measured by `reach-measure.ts` on the same version):
+
+```
+Dataset 2026-11-25-76c90397
+Goal: 82,069 homes
+Current law by Oct 2066: reached Jun 2065, 16 months early
+Full tree by Dec 2040: reached Jan 2040, 11 months early
+Filled in 5.4 s (cars on)
+```
+
+The fill time is ballpark: it was taken at a 1-minute load of 2.4.
 
 ## Words
 

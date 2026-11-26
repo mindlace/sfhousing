@@ -164,12 +164,52 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 
 ### Results
 
-| Machine                                           | Date       | Dataset                    | Case              | Line                                                                                                                            | Label                                      |
-| ------------------------------------------------- | ---------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Apple M5 Pro (macOS 27.2.1), head 3a5d5f79, run 1 | 2026-11-25 | live `2026-11-14-09ca30c8` | run with drops    | `bench:map case=run dataset=2026-11-14-09ca30c8 frames=2383 dropped=73808 collected=29376 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load ~2                |
-| same, run 2                                       | 2026-11-25 | same                       | run with drops    | `bench:map case=run dataset=2026-11-14-09ca30c8 frames=2382 dropped=73808 collected=29378 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load ~2                |
-| same, run 1                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-14-09ca30c8 node=stop-rail samples=758ms,837ms,857ms median=837ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load ~2 |
-| same, run 2                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-14-09ca30c8 node=stop-rail samples=857ms,883ms,785ms median=857ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load ~2 |
+| Machine                                           | Date       | Dataset                    | Case              | Line                                                                                                                            | Label                                        |
+| ------------------------------------------------- | ---------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Apple M5 Pro (macOS 27.2.1), head b0cfea6d, run 1 | 2026-11-25 | live `2026-11-25-76c90397` | run with drops    | `bench:map case=run dataset=2026-11-25-76c90397 frames=2384 dropped=73134 collected=33884 p50=8.3ms p95=10.1ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load 1.64                |
+| same, run 2                                       | 2026-11-25 | same                       | run with drops    | `bench:map case=run dataset=2026-11-25-76c90397 frames=2384 dropped=73134 collected=33886 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load 1.84                |
+| same, run 1                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=618ms,606ms,628ms median=618ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.79 |
+| same, run 2                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=616ms,795ms,600ms median=616ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.81 |
+
+### Budgets held to main (2026-11-25, with cars)
+
+Apple M5 Pro (dpr 2, ANGLE Metal); main `be6467dc` against branch `b8921ad4`, alternated main-1, branch-1, main-2, branch-2; one-minute load 1.35 to 1.86 at each start. Command: `npx vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1`. Figures are run 1, run 2.
+
+Verdict: every budget held to main is met. The hook means are met as within 10% of main on the mean of the two runs against main's mean of two (moneyIn as an absolute sub-µs difference, 0.2 against 0.15 µs, not a ratio); the rest are met as their bars state. The budgets that fail their own bar (map-stream worst flush, swap install cadence, compile step(20), world.bench 48 worlds) fail on main too (map-stream fails once on main and twice on the branch), and each is within 10% of main on the mean of the two runs or better: map-stream worst flush 33.68 against 36.37 ms, swap install cadence 398.2 against 394.9 ms, compile step(20) 47.65 against 60.75 ms, world.bench 3.052 against 3.111 ms (branch against main), so those are main's costs, not this build's. The funded world-month and shadow hook figures run under the branch's own bars (250 µs; main + 150 µs) and are met.
+
+| Budget                                          | Bar                     | Main                                     | Branch          | Verdict                                                                                                                      |
+| ----------------------------------------------- | ----------------------- | ---------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| funded world-month mean                         | branch 250 µs           | 97.4, 93.4 µs                            | 207.3, 205.2 µs | met (main's own bar 90 fails on main)                                                                                        |
+| shadow hook mean                                | main + 150 µs           | 0.5, 0.5 µs                              | 100.9, 103.5 µs | met                                                                                                                          |
+| planLot hook mean                               | mean within 10% of main | 19.2, 16.9 µs                            | 18.6, 18.7 µs   | met                                                                                                                          |
+| onProjectEvent hook mean                        | mean within 10% of main | 17.7, 16.2 µs                            | 16.7, 16.7 µs   | met                                                                                                                          |
+| serve hook mean                                 | mean within 10% of main | 8.9, 8.1 µs                              | 8.7, 8.3 µs     | met                                                                                                                          |
+| apply hook mean                                 | mean within 10% of main | 3.8, 3.5 µs                              | 3.8, 3.8 µs     | met                                                                                                                          |
+| moneyIn hook mean                               | sub-µs, absolute        | 0.1, 0.2 µs                              | 0.2, 0.2 µs     | met: 0.2 against 0.15 µs, absolute                                                                                           |
+| core (rest) hook mean                           | mean within 10% of main | 71.0, 62.1 µs                            | 60.9, 62.5 µs   | met                                                                                                                          |
+| host first cells                                | host.perf passes        | 920.8, 863.8 ms                          | 900.1, 910.7 ms | met                                                                                                                          |
+| host first filled                               | host.perf passes        | 991.2, 933.4 ms                          | 968.4, 979.6 ms | met                                                                                                                          |
+| longest not-accepted task                       | chunk.perf passes       | 0, 0 ms                                  | 0, 0 ms         | met                                                                                                                          |
+| map-stream worst flush                          | 30 ms                   | 29.46, 43.27 ms                          | 34.25, 33.11 ms | fails on main once, on the branch twice; branch's worse run (34.25) below main's worse (43.27); p95 level at 20.3 to 20.4 ms |
+| timeline swap install cadence (30,000 projects) | 50 ms                   | 396.4, 393.4 ms                          | 403.4, 392.9 ms | fails on main too; branch within 2%                                                                                          |
+| compile step(20) longest                        | 50 ms                   | 58.7, 62.8 ms                            | 44.2, 51.1 ms   | fails on main too; branch no worse                                                                                           |
+| world.bench 48 worlds median                    | 3 ms                    | 3.187, 3.034 ms                          | 3.005, 3.099 ms | fails on main too; branch no worse on the mean (3.052 against 3.111 ms)                                                      |
+| scenario.bench                                  | its cases               | case 2 failed once (30.42 against 30 ms) | passes both     | met                                                                                                                          |
+
+`bench:map`, one whole run in each tree, dataset `2026-11-25-76c90397`, load 1.83 (main) and 1.53 (branch), both exit 0 (main 11 passed, branch 13 passed); p50 8.3 ms in every bar case. p95, ms; every shared case is within 10% of main.
+
+| Case                      | Main | Branch |
+| ------------------------- | ---- | ------ |
+| complexity=representative | 9.9  | 10.2   |
+| complexity=worst          | 10.2 | 10.0   |
+| timeline=playback         | 10.0 | 9.7    |
+| timeline=drag             | 10.3 | 9.8    |
+| playback + limits         | 10.3 | 9.6    |
+| playback + halos          | 10.3 | 9.6    |
+| citywide playback         | 10.2 | 9.7    |
+| sim-timeline-docked       | 10.2 | 9.9    |
+
+The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) are within 3% of the run-bench rows of record in the game's runs Results table above (run p95 10.1 and 10.3 ms; buy-to-ready medians 618 and 616 ms).
 
 ## CI
 
