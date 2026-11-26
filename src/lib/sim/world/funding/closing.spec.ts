@@ -23,7 +23,7 @@ import {
   initFunding,
   reopenPool
 } from './columns';
-import { closeSpent, closedTimeline, lastArrivalOf } from './closing';
+import { closeSpent, closedTimeline, lastArrivalOf, spentAmong } from './closing';
 import { frameMoney } from './frame-money';
 import { availableOf } from './pools';
 import { serveLine } from './serve';
@@ -945,5 +945,24 @@ describe('reopenArrivals: a closed pool opens on its next arrival', () => {
     const before = structuredClone(w);
     expect(() => core.step(w, due, statics, stub, 1, { event() {} })).toThrow(RangeError);
     expect(structuredClone(w)).toEqual(before);
+  });
+});
+
+describe('spentAmong: a pool is spent only when no waiting ask fits', () => {
+  const money = new Map([[0, 100]]);
+  it('one ask fits: open', () => {
+    expect(spentAmong([new Map([[0, 150]]), new Map([[0, 80]])], money)).toEqual(new Set());
+  });
+  it('every ask is above: spent', () => {
+    expect(spentAmong([new Map([[0, 150]]), new Map([[0, 120]])], money)).toEqual(new Set([0]));
+  });
+  it('an exact fit holds it open', () => {
+    expect(spentAmong([new Map([[0, 150]]), new Map([[0, 100]])], money)).toEqual(new Set());
+  });
+  it('asked by no one: open', () => {
+    expect(spentAmong([new Map([[1, 5]])], money)).toEqual(new Set());
+  });
+  it('a zero ask does not count as asking', () => {
+    expect(spentAmong([new Map([[0, 0]]), new Map([[0, 120]])], money)).toEqual(new Set([0]));
   });
 });

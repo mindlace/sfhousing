@@ -166,7 +166,8 @@ order, cheap ones first. The pool closes when:
 2. the month begins after its last arrival (`last` not null and before `ctx.firstDay`);
 3. no money row of it is a loan or a guarantee (no loan out, no reserve held);
 4. some waiting row of a free lot, whose bundle (as the frame offers it whole) holds a programme
-   of the pool, asks it for more than serving's available money (`asksOf` for the whole bundle).
+   of the pool, asks it more than 0, and no such row asks it for serving's available money or
+   less (`asksOf` for the whole bundle; `spentAmong`: one ask that fits holds the pool open).
 
 **Where the check runs.** In system 5, inside `serveLine`'s `holdingReturns`, after the scan's last
 row (`serveLine(ctx, { closing })`): money returned during the scan has not reached the pool, and
