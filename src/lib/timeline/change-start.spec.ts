@@ -59,6 +59,16 @@ describe('changeStart', () => {
     expect(changeStart(doc([a, b]), doc([b, a]), ASOF)).toBe(d(2035, 1));
   });
 
+  it('a policy switched on, off or removed beside one that stays on counts alone', () => {
+    const a = policy('a', true, [d(2030, 1)]);
+    const bOn = policy('b', true, [d(2040, 1)]);
+    const bOff = policy('b', false, [d(2040, 1)]);
+    expect(changeStart(doc([a, bOff]), doc([a, bOn]), ASOF)).toBe(d(2040, 1));
+    expect(changeStart(doc([a, bOn]), doc([a, bOff]), ASOF)).toBe(d(2040, 1));
+    expect(changeStart(doc([a, bOn]), doc([a]), ASOF)).toBe(d(2040, 1));
+    expect(changeStart(doc([a]), doc([a, bOn]), ASOF)).toBe(d(2040, 1));
+  });
+
   it('a change in another kind is found, and the earliest of several wins', () => {
     const before = doc([policy('a', false)], [policy('p', false, [d(2032, 1)])]);
     const after = doc([policy('a', true, [d(2040, 1)])], [policy('p', true, [d(2032, 1)])]);

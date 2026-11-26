@@ -23,8 +23,11 @@ export function changeStart(before: SimPolicy4, after: SimPolicy4, asOf: Day): D
     const byId = (list: Policy[]) => new Map(list.map((p) => [p.id, p]));
     const ma = byId(a);
     const mb = byId(b);
-    const onIds = (list: Policy[]) => list.filter((p) => p.on).map((p) => p.id);
-    const reordered = canonicalJson(onIds(a)) !== canonicalJson(onIds(b));
+    // Only the relative order of policies on in both documents counts as a reorder.
+    const onIn = (list: Policy[], id: string) => list.some((p) => p.id === id && p.on);
+    const common = (list: Policy[], other: Policy[]) =>
+      list.filter((p) => p.on && onIn(other, p.id)).map((p) => p.id);
+    const reordered = canonicalJson(common(a, b)) !== canonicalJson(common(b, a));
     for (const id of new Set([...ma.keys(), ...mb.keys()])) {
       const p = ma.get(id);
       const q = mb.get(id);
