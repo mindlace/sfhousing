@@ -1,6 +1,7 @@
 // world-funding Task 3: the market and affordable funded clocks (spec rules 2, 3, 4, 5, 7).
 import { describe, expect, it } from 'vitest';
 import { runOf } from '$lib/sim/scenario/engine';
+import { PROTOTYPES } from '$lib/sim/finance';
 import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
 import {
   NEVER_KEY_DAY,
@@ -10,16 +11,18 @@ import {
   latentsWith,
   newKindOut
 } from '$lib/sim/scenario/funded';
+import { financeIndexOf } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, precomputeOf } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
+import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { monthFirstDay, monthOfDay } from '../months';
 import { lotEntity, ordinaryStart } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { changingAt, frameOf, limited } from '../test/timeline';
-import { kindClock, sizeIn, type Spell } from './clocks';
+import { STABLE_FROM, kindClock, logSurvival, sizeIn, type Spell } from './clocks';
 import { financeFrameOf, fundedMini, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -71,7 +74,7 @@ describe('kindClock', () => {
     const horizon = 1_099_511_627_776; // past every day the clocks give
     let compared = 0;
     let applying = 0;
-    let certain = 0;
+    let levelOne = 0;
     for (let seed = 1; seed <= 5; seed++) {
       const run = runOf(input, seed, horizon, true);
       const sh = seedHash(seed);
@@ -84,6 +87,20 @@ describe('kindClock', () => {
           const [u, v] = kind === 'market' ? [d.uO, d.vO] : [d.uA, d.vA];
           kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, -1, null);
           const k = kindClock(statics, t, 1, sh, spell, kind);
+          // A bundle at level 1 starts at the finite ordinary odds at full coverage here, the
+          // old kernel's rate is -Infinity there (retired engine, ruling option C): the key,
+          // bundle and level still agree; T and day are compared below level 1 only.
+          expect({ keyDay: k.keyDay, bundle: k.bundle, level: k.level }).toEqual({
+            keyDay: out.keyDay,
+            bundle: out.bundle,
+            level: out.level
+          });
+          if (k.level === 1) {
+            levelOne++;
+            compared++;
+            if (k.day !== null) applying++;
+            continue;
+          }
           expect({
             T: k.T,
             day: k.day,
@@ -109,13 +126,12 @@ describe('kindClock', () => {
           expect(k.month).toBe(k.day === null ? 0 : monthOfDay(asOf, k.day));
           compared++;
           if (k.day !== null) applying++;
-          if (k.certain) certain++;
         }
       });
     }
     expect(compared).toBeGreaterThan(100);
     expect(applying).toBeGreaterThan(0);
-    expect(certain).toBeGreaterThan(0);
+    expect(levelOne).toBeGreaterThan(0);
   });
 
   it('a market clock with nothing shifting is the ordinary clock', () => {
@@ -167,20 +183,80 @@ describe('kindClock', () => {
     );
   });
 
-  it('a certain bundle applies on the first day of lot-month T', () => {
+  it('a bundle at level 1 has a finite rate and its own day in the month', () => {
     const input = fundedMini();
     const asOf = input.asOf;
     const t = oneMoneyTimeline(input, input.finance!);
     const statics = staticsOf(input);
-    let certain = 0;
+    let levelOne = 0;
+    let later = 0;
     eachSpell(input, 5, asOf, (spell, sh) => {
       const k = kindClock(statics, t, 1, sh, spell, 'affordable');
-      if (!k.certain) return;
-      expect(k.day).toBe(spell.r + 1 + Math.floor((k.T - 1) * MONTH_DAYS));
-      expect(k.level).toBe(1);
-      certain++;
+      if (k.day === null) return;
+      const v = drawOn(spell.stream, P.INIT_DAY_AFFORDABLE, 0);
+      expect(k.day).toBe(spell.r + 1 + Math.floor((k.T - 1 + v) * MONTH_DAYS));
+      if (k.level !== 1) return;
+      levelOne++;
+      // under a rate of -Infinity every one passed in its first offered lot-month
+      if (k.T > 1) later++;
     });
-    expect(certain).toBeGreaterThan(0);
+    expect(levelOne).toBeGreaterThan(0);
+    expect(later).toBeGreaterThan(0);
+  });
+
+  it('a market loan above coverage 1 shifts as coverage 1 and never starts later than the ordinary clock', () => {
+    const asOf = fundedMini().asOf;
+    // The mini money's market loan raised to a cost share of 0.8 or 1, at no interest and a 1%
+    // required return: its bundle's coverage is above 1 for every prototype at either share.
+    const loanAt = (costShare: number): Finance => {
+      const fin = miniFinance(asOf);
+      return {
+        ...fin,
+        off: [],
+        programmes: fin.programmes.map((g) =>
+          g.id === 'm-bank-loan'
+            ? { ...g, instrument: { kind: 'loan', costShare, rate: 0, requiredReturn: 0.01 } }
+            : g
+        )
+      };
+    };
+    const [a, b] = [loanAt(0.8), loanAt(1)];
+    const fa = financeIndexOf(a);
+    const fb = financeIndexOf(b);
+    const market = a.programmes.flatMap((g, i) => (g.reach === 'market' ? [i] : []));
+    for (const p of PROTOTYPES) {
+      expect(fa.price('market', market, p.id).coverage).toBeGreaterThan(1);
+      expect(fb.price('market', market, p.id).coverage).toBeGreaterThan(
+        fa.price('market', market, p.id).coverage
+      );
+    }
+    const input = fundedMini(a);
+    const ta = oneMoneyTimeline(input, a);
+    const tb = oneMoneyTimeline(fundedMini(b), b);
+    const statics = staticsOf(input);
+    let applying = 0;
+    let later = 0;
+    let earlier = 0;
+    eachSpell(input, 5, asOf, (spell, sh) => {
+      const k = kindClock(statics, ta, 1, sh, spell, 'market');
+      // More coverage above 1 does not move the clock: the shift is that of coverage 1.
+      expect(kindClock(statics, tb, 1, sh, spell, 'market')).toEqual(k);
+      const os = ordinaryStart(statics, ta, 1, sh, spell.lot, asOf, 0);
+      if (k.day === null) return;
+      applying++;
+      expect(k.level).toBe(1);
+      // A finite rate: the day is drawn in the lot-month, and some pass after lot-month 1.
+      const vO = drawOn(spell.stream, P.INIT_DAY, 0);
+      expect(k.day).toBe(asOf + 1 + Math.floor((k.T - 1 + vO) * MONTH_DAYS));
+      if (k.T > 1) later++;
+      if (os !== null) {
+        expect(k.day).toBeLessThanOrEqual(os.day);
+        if (k.day < os.day) earlier++;
+      }
+    });
+    expect(applying).toBeGreaterThan(0);
+    expect(later).toBeGreaterThan(0);
+    expect(earlier).toBeGreaterThan(0);
   });
 
   it('rule 5: a programme opening at month m does not make an earlier pass apply', () => {
@@ -279,6 +355,35 @@ describe('kindClock', () => {
     // the guard is live: reading month 40 throws
     const spell = spellOf(statics, seedHash(1), precomputeOf(input).candidates[0], asOf, 0);
     expect(() => kindClock(statics, t, 40, seedHash(1), spell, 'market')).toThrow(RangeError);
+  });
+});
+
+describe('logSurvival', () => {
+  const plain = (x: number) => log(1 - 1 / (1 + exp(-x)));
+  it('is the plain form bit for bit up to STABLE_FROM', () => {
+    let n = 0;
+    for (let x = -30; x <= STABLE_FROM; x += 0.01) {
+      expect(logSurvival(x)).toBe(plain(x));
+      n++;
+    }
+    expect(n).toBeGreaterThan(4000);
+  });
+  it('is finite and negative at x = 50, where the plain form is -Infinity', () => {
+    expect(plain(50)).toBe(-Infinity);
+    const r = logSurvival(50);
+    expect(Number.isFinite(r)).toBe(true);
+    expect(r).toBeLessThan(0);
+    expect(r).toBeCloseTo(-50, 12);
+  });
+  it('falls as x rises, across the boundary and far past it', () => {
+    let prev = logSurvival(-30);
+    for (let x = -29.99; x <= 400; x += 0.01) {
+      const r = logSurvival(x);
+      expect(Number.isFinite(r)).toBe(true);
+      expect(r).toBeLessThanOrEqual(prev);
+      prev = r;
+    }
+    expect(Math.abs(logSurvival(STABLE_FROM + 1e-9) - plain(STABLE_FROM))).toBeLessThan(1e-8);
   });
 });
 

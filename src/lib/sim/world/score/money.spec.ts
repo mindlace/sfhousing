@@ -7,9 +7,9 @@ import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
 import { displacedShare, moneyOf, perAddedHome, poolSeries } from '$lib/sim/scenario/finance-score';
 import type { LedgerEvent } from '$lib/sim/scenario/money';
 import { monthIndexer, monthsOf } from '$lib/sim/scenario/score';
-import { simulateDetailed } from '$lib/sim/scenario/simulate';
 import type { SimInput } from '$lib/sim/scenario/types';
 import type { Day } from '$lib/timelapse/time';
+import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
 import { benchFunded } from '../funding/test/cities.node';
 import { createFundingSystem } from '../funding';
 import { fundOf, waitingAt } from '../funding/columns';
@@ -466,9 +466,19 @@ const TERMS: Policy = {
   spans: [span(fundedMini().asOf, 1, null, { tag: 'terms', terms: { guaranteeRateCut: 0.01 } })]
 };
 
+/**
+ * The mini city with its federal pool at 20,000,000 a year: every pool of an affordable bundle runs
+ * short at times, so applications wait on CLOSE_POOL (rule 16 as amended awards on whatever pool
+ * can pay, so a short CLOSE_POOL alone keeps no one waiting and never closes).
+ */
+const cappedMini = (): SimInput => {
+  const asOf = fundedMini().asOf;
+  return fundedMini(withFederalYearly(miniFinance(asOf), asOf, 20_000_000));
+};
+
 describe('plan world money, a pool that closes and opens', () => {
   it('closed and shut by month on a world that closes and opens a pool', () => {
-    const input = fundedMini();
+    const input = cappedMini();
     const once = (m: number, d: number) => ({ kind: 'once' as const, day: m, dollars: d });
     const doc = miniDoc(
       closingPolicy(input.asOf, [
@@ -510,7 +520,7 @@ describe('plan world money, a pool that closes and opens', () => {
   });
 
   it('a pool found spent in month m and opened in month m + 1: closed holds, rows stay final', () => {
-    const input = fundedMini();
+    const input = cappedMini();
     const asOf = input.asOf;
     const once = (d: Day, dollars: number) => ({ kind: 'once' as const, day: d, dollars });
     const first = [once(monthFirstDay(asOf, 2), ONE_PROJECT)];
@@ -584,48 +594,4 @@ describe('plan world money, funded bench', () => {
   it("perAddedHome and displacedShare by month are today's at each month", () => {
     expect(checkByMonth(c, r)).toBeGreaterThan(0);
   });
-});
-
-describe("rule 12 against today's engine, funded mini", () => {
-  it("seeds 1-50: perAddedHome and displacedShare at the horizon are today's where the money is", () => {
-    const c = cityOf(fundedMini(), 480);
-    const last = c.score.lastIndex;
-    const horizon = lastDay(c.input.asOf, last);
-    const months = monthsOf(c.input.asOf, horizon);
-    const same: number[] = [];
-    const nonNull: number[] = [];
-    for (let seed = 1; seed <= 50; seed++) {
-      // Today's engine never closes a pool: compared like for like (spec sec-design-option).
-      const r = run(c, seed, undefined, createFundingSystem({ poolClosing: false }));
-      const money = viewOf([chunkOf(r.series, r.series, r.feed, 0, last)], c.score).money!;
-      const old = simulateDetailed(c.input, seed, horizon);
-      const want = moneyOf({
-        ledger: old.ledger,
-        schedules: old.schedules,
-        finance: c.fin,
-        baseline: [],
-        asOf: c.input.asOf,
-        horizon,
-        months
-      });
-      // Compared only where the world's money is the old engine's (funded homes and money spent).
-      if (
-        money.fundedHomes[last] !== want.fundedHomes[last] ||
-        money.publicSpent[last] !== want.publicSpent[last]
-      )
-        continue;
-      same.push(seed);
-      expect(money.displacedHomesCompleted[last]).toBe(want.displacedHomes[last]);
-      expect(money.perAddedHome).toEqual({
-        all: perAddedHome(want, last, 'all'),
-        city: perAddedHome(want, last, 'city')
-      });
-      expect(money.displacedShare).toBe(displacedShare(want, last));
-      if (money.perAddedHome.all !== null) nonNull.push(seed);
-    }
-    // 49 of 50 on 2026-11-13 (seed 46's world differs: world-funding's tolerance).
-    expect(same.length).toBeGreaterThanOrEqual(49);
-    // Seeds 4 and 21 gave null under the mixed-timing denominator.
-    expect(nonNull).toEqual(expect.arrayContaining([4, 21]));
-  }, 120_000);
 });

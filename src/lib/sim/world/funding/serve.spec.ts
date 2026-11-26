@@ -122,13 +122,15 @@ function harness(
 
 /**
  * A new world whose federal pool has received month 1's arrival (ten trillion on `asOf`), as
- * system 2 gives it; the other pools hold nothing until a test gives them money.
+ * system 2 gives it; the other pools hold nothing until a test gives them money. With `federal`
+ * false the federal pool holds nothing either, so a row short on m-city waits (rule 16 as amended
+ * awards on whatever pool can pay).
  */
-function freshWorld(t: PolicyTimeline = timeline): World {
+function freshWorld(t: PolicyTimeline = timeline, federal = true): World {
   const w = withFunding(createFundingSystem()).createWorld(statics, t, SEED, { event() {} });
   const { pools } = fundOf(w);
   const q = pools.id.slice(0, pools.n).indexOf('federal');
-  if (q >= 0) {
+  if (q >= 0 && federal) {
     pools.received[q] = LEGACY_UNCAPPED_DOLLARS;
     pools.moneyDay[q] = statics.asOf;
     pools.moneyMonth[q] = 1;
@@ -219,8 +221,9 @@ describe('serveLine', () => {
     expect(awards).toEqual(h.starts().map((s) => s.row));
     expect(Array.from(line.gone.subarray(0, 3))).toEqual([1, 1, 1]);
 
-    // Money for the first only: A is awarded, B waits.
-    const w2 = freshWorld();
+    // Money for the first only: A is awarded, B waits (the federal pool empty, so every pool of
+    // B's bundle is short).
+    const w2 = freshWorld(timeline, false);
     const fl = fundOf(w2);
     joinLine(fl.line, 2, [
       app(a, 'affordable', day(2, 3), AFF),
@@ -267,7 +270,8 @@ describe('serveLine', () => {
     expect(askB).toBeGreaterThan(askC);
     expect(askA + askC).toBeGreaterThanOrEqual(askB);
 
-    const w = freshWorld();
+    // the federal pool empty: a row short on m-city waits
+    const w = freshWorld(timeline, false);
     const { line, pools } = fundOf(w);
     joinLine(line, 2, [
       app(a, 'affordable', day(2, 1), AFF),
@@ -328,7 +332,8 @@ describe('serveLine', () => {
       )
     };
     const t = oneMoneyTimeline(input, f);
-    const w = freshWorld(t);
+    // the federal pool empty: a row short on m-city waits
+    const w = freshWorld(t, false);
     const { line, pools } = fundOf(w);
     const [a] = LOTS;
     joinLine(line, 2, [app(a, 'affordable', day(2, 5), AFF)]);
@@ -364,7 +369,8 @@ describe('serveLine', () => {
       )
     };
     const t = oneMoneyTimeline(input, f);
-    const w = freshWorld(t);
+    // the federal pool empty: a row short on m-city waits
+    const w = freshWorld(t, false);
     const { line, pools } = fundOf(w);
     const [a, b] = LOTS;
     joinLine(line, 2, [app(a, 'affordable', day(2, 3), AFF), app(b, 'affordable', day(2, 9), AFF)]);
@@ -655,16 +661,25 @@ describe('rule 10 on the bench city', () => {
   const st = staticsOf(bench);
   const t = moneyTimeline(bench, doc);
 
-  it('synthCity bench funding set, seed 2: the award made on money returned in month 219 waits for month 220', () => {
-    const { world, events } = runFunded(st, t, 2, 220, { ledger: false });
+  it('synthCity bench funding set, seed 2: the award made on money returned in month 74 waits for month 75', () => {
+    const { world, events } = runFunded(st, t, 2, 75, { ledger: false });
     const awards = (m: number): number[] =>
       events
         .flatMap((e) => (e.kind === 'award' && e.month === m ? [world.projects.src[e.row]] : []))
         .sort((x, y) => x - y);
-    // In month 219 an award's chain exits in its award month and releases money to u-bench-fund
-    // inside the scan (same-scan investigation). Lot 4116 needs that money: it waits a month.
-    expect(awards(219)).toEqual([4048, 76989, 83994, 90704]);
-    expect(awards(220)).toEqual([4116]);
+    // In month 74 an award's chain exits in its award month and releases money to u-bench-fund
+    // inside the scan (same-scan investigation). Lot 4116 needs that money (u-bench-fund held
+    // 739,928 after the scan, 646,144 of it returned during it; 4116 asks 646,144): it waits a
+    // month and is awarded on month 75's first day.
+    expect(awards(74)).toEqual([
+      4048, 4689, 10447, 25393, 34568, 43504, 44211, 46818, 49094, 53980, 62418, 62734, 64654,
+      65454, 69174, 81369, 82431, 90765, 106017, 106491, 117035, 124018, 135114, 141113, 146135,
+      149655
+    ]);
+    expect(awards(75)).toEqual([
+      1368, 4116, 7993, 14131, 23342, 27035, 33489, 38025, 51713, 55785, 66347, 80210, 89705,
+      106194, 114367, 133320, 133710, 140858, 142174, 146564, 148689
+    ]);
   });
 });
 
@@ -699,7 +714,9 @@ const ROUTE_FIN: Finance = {
     }
   ],
   off: [],
-  slope: 3,
+  // A steep slope (test value): at full coverage the affordable odds pass within the three months
+  // on most lots (R2: the ordinary odds at full coverage, no longer certain).
+  slope: 50,
   terms: resolveTerms(MARKET_TERMS)
 };
 const ROUTE_INPUT = fundedMini(ROUTE_FIN);

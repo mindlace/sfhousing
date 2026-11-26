@@ -1,5 +1,5 @@
 // finance-engine Task 8: re-pricing, lapse and regimes of waiting applications (spec 4.6 "When
-// the line is served", "Known limit", "Leaving the line"; 4.8 step 3; 4.11; section 6 test 4).
+// the line is served", "Leaving the line"; 4.8 step 3; 4.11; section 6 test 4).
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import type { Day } from '$lib/timelapse/time';
@@ -113,8 +113,14 @@ describe('re-pricing days (FinancePre.repricing)', () => {
 describe('a programme opening later (spec 6 test 4)', () => {
   it('re-prices the waiting line in place, and the first ones in line are awarded that day', () => {
     const B = asOf + 365;
+    // every pool short before B (the federal and state money arrives on B), so the line waits
     const input = withStack(
-      { city: [], bond: { share: 0.5, from: B, inflows: [once(asOf, AMPLE)] } },
+      {
+        fed: [once(B, AMPLE)],
+        state: [once(B, AMPLE)],
+        city: [],
+        bond: { share: 0.5, from: B, inflows: [once(asOf, AMPLE)] }
+      },
       { logOdds: NEVER }
     );
     for (const seed of seeds(5)) {
@@ -147,7 +153,13 @@ describe('a programme opening later (spec 6 test 4)', () => {
 describe('a programme ending (spec 6 test 4)', () => {
   it('lapses its waiting applications on to + 1, and each re-spells on the federal and state shares', () => {
     const D = asOf + 61;
-    const input = withStack({ city: [], cityTo: D - 1 });
+    // every pool short before D (the federal and state money arrives on D), so the line waits
+    const input = withStack({
+      fed: [once(D, AMPLE)],
+      state: [once(D, AMPLE)],
+      city: [],
+      cityTo: D - 1
+    });
     let lapsed = 0;
     let again = 0;
     for (const seed of seeds(20)) {
@@ -184,8 +196,14 @@ describe('a programme ending (spec 6 test 4)', () => {
 describe('a pool switched off (spec 6 test 4)', () => {
   const D = asOf + 200;
   const E = asOf + 601;
+  // every pool short throughout (the state pool gets a dollar a year), so the line waits
+  const short = {
+    fed: [],
+    state: [{ kind: 'yearly', from: asOf, to: null, dollarsPerYear: 1 } as Inflow],
+    city: []
+  };
   const input = withStack(
-    { city: [], off: [{ pool: 't-state', from: D, to: E - 1 }] },
+    { ...short, off: [{ pool: 't-state', from: D, to: E - 1 }] },
     { logOdds: NEVER }
   );
 
@@ -224,7 +242,7 @@ describe('a pool switched off (spec 6 test 4)', () => {
   it('when the pool comes back on, waiting applications whose level rises keep their place', () => {
     // likelier starts, so some new spells apply before E at the federal and City level
     const likely = withStack(
-      { city: [], off: [{ pool: 't-state', from: D, to: E - 1 }] },
+      { ...short, off: [{ pool: 't-state', from: D, to: E - 1 }] },
       { logOdds: Array(5).fill(LOGODDS) }
     );
     let rose = 0;
@@ -249,6 +267,8 @@ describe('a pool switched off (spec 6 test 4)', () => {
   it('bond off while it shares the City tier lapses nothing: the level stays 1', () => {
     const off = withStack(
       {
+        fed: [],
+        state: [],
         city: [],
         bond: { share: 0.5, from: asOf, inflows: [] },
         off: [{ pool: 't-bond', from: D, to: null }]
@@ -270,48 +290,33 @@ describe('a pool switched off (spec 6 test 4)', () => {
   });
 });
 
-describe('the known limit: an application waits on a spent pool (spec 4.6)', () => {
+describe('a spent pool is left out of the award (spec 4.6, rule 16 as amended)', () => {
   const units = [10, 10, 10, 10, 10];
   const one = 300027 * 10;
   const city = [once(asOf, Math.round(one * 1.5))];
 
-  it('the second application is never awarded, never lapses, and waits to the horizon', () => {
+  it('one award spends the City inflow; the other four are awarded on the federal and state shares', () => {
     const input = withStack({ city }, { logOdds: NEVER, units });
     for (const seed of seeds(5)) {
       const c = run(input, seed);
-      expect(funded(c).length).toBe(1);
+      // the first day's awards, attempt 0 (a partial award can exit, and its lot apply again)
+      const got = funded(c).filter((s) => s.funding!.applied === asOf + 1);
+      expect(got.length).toBe(5);
+      expect(got.every((s) => s.projectId.endsWith(':0'))).toBe(true);
+      expect(c.stats.awards).toBeGreaterThanOrEqual(5);
       expect(c.stats.respells).toBe(0);
-      expect(c.stats.awards).toBe(1);
-      const end = c.line.get(H)!;
-      expect(end.length).toBe(4);
-      expect(end.every((a) => a.applied === asOf + 1 && a.level === 1)).toBe(true);
+      expect(c.line.get(H)!).toEqual([]);
+      const whole = got.filter((s) => s.funding!.programmes.includes('t-city'));
+      expect(whole.length).toBe(1);
+      expect(whole[0].funding!.programmes).toEqual(['t-fed', 't-state', 't-city']);
+      const partial = got.filter((s) => !s.funding!.programmes.includes('t-city'));
+      expect(partial.length).toBe(4);
+      for (const s of partial) {
+        expect(s.funding!.programmes).toEqual(['t-fed', 't-state']);
+        expect(s.funding!.certain).toBe(false);
+      }
       expect(c.ledger.filter((e) => e.kind === 'in' && e.pool === 't-city').length).toBe(1);
     }
-  });
-
-  it('ending the City programme later lapses it on to + 1 and redraws it as a new spell', () => {
-    const D = asOf + 61;
-    const input = withStack({ city, cityTo: D - 1 }, { units });
-    let lapsed = 0;
-    let again = 0;
-    for (const seed of seeds(20)) {
-      const c = run(input, seed);
-      const ids = byId(c.schedules);
-      const waiting = lineBefore(c, D);
-      expect(c.stats.respells).toBe(waiting.length);
-      for (const a of waiting) {
-        lapsed++;
-        const nl = spell(input, seed, a.lot, D);
-        const O = lat0(input, seed, a.lot).O;
-        const s = ids.get(sid(a.lot));
-        if (nl === null || (O !== null && O < nl.day!)) continue;
-        again++;
-        expect(s!.funding!.applied).toBe(nl.day);
-        expect(s!.funding!.programmes).toEqual(['t-fed', 't-state']);
-      }
-    }
-    expect(lapsed).toBeGreaterThan(20);
-    expect(again).toBeGreaterThan(0);
   });
 });
 
@@ -324,7 +329,13 @@ describe('regimes (spec 4.11)', () => {
     const input: SimInput = {
       ...base,
       regimes: [{ day: R, parcels: doubled }],
-      finance: tinyStack({ asOf, city: [once(X, AMPLE)] })
+      // every pool short before X, so the line waits
+      finance: tinyStack({
+        asOf,
+        fed: [once(X, AMPLE)],
+        state: [once(X, AMPLE)],
+        city: [once(X, AMPLE)]
+      })
     };
     for (const seed of seeds(5)) {
       const c = run(input, seed);
@@ -360,8 +371,11 @@ describe('review focus 2: change kinds on one day', () => {
     const input: SimInput = {
       ...base,
       regimes: [{ day: D, parcels: base.parcels }],
+      // every pool short before D (the federal money arrives on D)
       finance: tinyStack({
         asOf,
+        fed: [once(D, AMPLE)],
+        state: [],
         city: [],
         bond: { share: 0.5, from: D, inflows: [once(asOf, AMPLE)] },
         off: [{ pool: 't-state', from: D, to: null }]
@@ -389,8 +403,11 @@ describe('review focus 2: change kinds on one day', () => {
     const input: SimInput = {
       ...base,
       regimes: [{ day: D, parcels: base.parcels }],
+      // every pool short throughout, so the line waits
       finance: tinyStack({
         asOf,
+        fed: [],
+        state: [],
         city: [],
         cityTo: D - 1,
         off: [{ pool: 't-state', from: D, to: null }]
@@ -412,11 +429,12 @@ describe('review focus 2: change kinds on one day', () => {
 
 describe('stats', () => {
   it('respells is reset per run', () => {
+    // every pool short, so the line waits
     const lapsing = withStack(
-      { city: [], off: [{ pool: 't-state', from: asOf + 200, to: null }] },
+      { fed: [], state: [], city: [], off: [{ pool: 't-state', from: asOf + 200, to: null }] },
       { logOdds: NEVER }
     );
-    const quiet = withStack({ city: [] }, { logOdds: NEVER });
+    const quiet = withStack({ fed: [], state: [], city: [] }, { logOdds: NEVER });
     expect(run(lapsing, 1).stats.respells).toBe(5);
     expect(run(quiet, 1).stats.respells).toBe(0);
   });

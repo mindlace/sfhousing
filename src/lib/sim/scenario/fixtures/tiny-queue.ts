@@ -82,6 +82,8 @@ export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
 
 export interface TinyStackOpts {
   asOf: Day;
+  /** the federal pool's inflows; default an uncapped-sized yearly inflow */
+  fed?: Inflow[];
   state?: Inflow[];
   city?: Inflow[];
   cityTo?: Day | null;
@@ -92,6 +94,13 @@ export interface TinyStackOpts {
 }
 
 const TOTAL = 861525;
+
+/**
+ * A steep `slope` (test value) for a tiny queue at log-odds -12: a fully funded affordable
+ * bundle then starts at about logistic(10) a month (ordinary odds at full coverage), so its lots
+ * apply in their first month as good as surely, while no lot starts ordinarily.
+ */
+export const FAST_SLOPE = 50;
 
 export function tinyStack(o: TinyStackOpts): NonNullable<SimInput['finance']> {
   const ample = (): Inflow[] => [
@@ -124,9 +133,11 @@ export function tinyStack(o: TinyStackOpts): NonNullable<SimInput['finance']> {
     tiers: { veryLow: 0.5, low: 0.5, moderate: 0, aboveModerate: 0 }
   });
   const pools = [
-    pool('t-fed', 'federal', [
-      { kind: 'yearly', from: o.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }
-    ]),
+    pool(
+      't-fed',
+      'federal',
+      o.fed ?? [{ kind: 'yearly', from: o.asOf, to: null, dollarsPerYear: LEGACY_UNCAPPED_DOLLARS }]
+    ),
     pool('t-state', 'state', o.state ?? ample()),
     pool('t-city', 'generalRevenue', o.city ?? ample())
   ];
