@@ -164,12 +164,12 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 
 ### Results
 
-| Machine                                           | Date       | Dataset                    | Case              | Line                                                                                                                            | Label                                      |
-| ------------------------------------------------- | ---------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Apple M5 Pro (macOS 27.2.1), head 3a5d5f79, run 1 | 2026-11-25 | live `2026-11-14-09ca30c8` | run with drops    | `bench:map case=run dataset=2026-11-14-09ca30c8 frames=2383 dropped=73808 collected=29376 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load ~2                |
-| same, run 2                                       | 2026-11-25 | same                       | run with drops    | `bench:map case=run dataset=2026-11-14-09ca30c8 frames=2382 dropped=73808 collected=29378 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load ~2                |
-| same, run 1                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-14-09ca30c8 node=stop-rail samples=758ms,837ms,857ms median=837ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load ~2 |
-| same, run 2                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-14-09ca30c8 node=stop-rail samples=857ms,883ms,785ms median=857ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load ~2 |
+| Machine                                           | Date       | Dataset                    | Case              | Line                                                                                                                            | Label                                        |
+| ------------------------------------------------- | ---------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Apple M5 Pro (macOS 27.2.1), head b0cfea6d, run 1 | 2026-11-25 | live `2026-11-25-76c90397` | run with drops    | `bench:map case=run dataset=2026-11-25-76c90397 frames=2384 dropped=73134 collected=33884 p50=8.3ms p95=10.1ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load 1.64                |
+| same, run 2                                       | 2026-11-25 | same                       | run with drops    | `bench:map case=run dataset=2026-11-25-76c90397 frames=2384 dropped=73134 collected=33886 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load 1.84                |
+| same, run 1                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=618ms,606ms,628ms median=618ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.79 |
+| same, run 2                                       | 2026-11-25 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=616ms,795ms,600ms median=616ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.81 |
 
 ## CI
 
