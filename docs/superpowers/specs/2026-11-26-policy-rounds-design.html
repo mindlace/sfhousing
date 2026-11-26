@@ -493,9 +493,37 @@
         goal earlier than the round before. So a player who edits nothing can win every round. A
         report script prints each policy's effect alone and each round's, replacing
         <code>tree-balance</code>. My call.</p>
-      <p>The rounds are being measured with their fixed values now. If a round does not beat the
-        one before, the fix is to reorder the rounds or change a fixed value, and the owner
-        chooses; the check is not relaxed.</p>
+      <table id="tbl-rounds-measured">
+        <caption>The rounds measured at their fixed values, all on, dataset 2026-11-25-76c90397, cars on</caption>
+        <thead>
+          <tr><th scope="col">Rounds on</th><th scope="col">Goal month</th><th scope="col">Earlier than the row above</th><th scope="col">Homes by Oct 2066</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Current law</th><td>Oct 2061</td><td></td><td>88,061</td></tr>
+          <tr><th scope="row">1</th><td>Jun 2061</td><td>4 months</td><td>88,462</td></tr>
+          <tr><th scope="row">1 and 2</th><td>Aug 2052</td><td>106 months</td><td>103,514</td></tr>
+          <tr><th scope="row">1 to 3</th><td>Feb 2050</td><td>30 months</td><td>108,899</td></tr>
+          <tr><th scope="row">1 to 4</th><td>Feb 2048</td><td>24 months</td><td>112,496</td></tr>
+          <tr><th scope="row">1 to 4, every transit rule edited to 12 stories and its maximum reach</th><td>Nov 2039</td><td>99 months</td><td>171,729</td></tr>
+        </tbody>
+      </table>
+      <p>Heights use the app's rule of ten feet per story (<code>storiesFromFt</code>,
+        <code>pipeline/lib/heights.ts</code>). Every round beats the one before, so the check
+        passes with the rounds as proposed. Three findings need the owner's eye:</p>
+      <ul>
+        <li><strong>Round 1 together is worse than its rail rule alone.</strong> Taller near BART
+          and Caltrain alone reaches the goal 29 months early; with the SB 423 clock and the
+          housing bond also on, 4 months. The cause is being investigated.</li>
+        <li><strong>Four policies move nothing where they are offered:</strong> the SB 423 clock,
+          the revolving fund, the public bank and state-double. State-double gains 2 months
+          once no discretionary review is on. The public bank changed nothing in any case
+          measured.</li>
+        <li><strong>A longer reach can lose homes.</strong> Taking the Muni Metro rule's outer
+          band to 1,200 m reaches the goal 12 months earlier but leaves 1,892 fewer homes by
+          2066.</li>
+      </ul>
+      <p>If a later dataset makes a round fail the check, the fix is to reorder the rounds or
+        change a fixed value, and the owner chooses; the check is not relaxed.</p>
     </section>
   </section>
 
