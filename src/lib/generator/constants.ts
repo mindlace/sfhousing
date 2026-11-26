@@ -20,6 +20,29 @@ export const COVERAGE: Record<ReplacementTypology, number> = {
   midrise: 0.75,
   tower: 0.8
 };
+/**
+ * Base-footprint coverage of the block form: the midrise massing, step-back as today, at the
+ * coverage of San Francisco's tall new buildings and to any height (building-choice plan, Task 2).
+ * Tier 0: see `BLOCK_COVERAGE_PROVENANCE`.
+ */
+export const BLOCK_COVERAGE = 0.92;
+/** A `Provenance` (timelapse/types), written out so the generator imports no sim types. */
+export const BLOCK_COVERAGE_PROVENANCE = {
+  tier: 0 as const,
+  label: 'Ground coverage of buildings of 13 stories or more built 2005 to 2016',
+  sources: [
+    { label: 'DataSF Building Footprints (ynuv-fyni)', url: 'https://data.sf.gov/d/ynuv-fyni' },
+    {
+      label: 'SF assessor secured roll (DataSF wv5m-vpq2)',
+      url: 'https://data.sf.gov/d/wv5m-vpq2'
+    }
+  ],
+  method:
+    'Median over lots of footprint area ÷ lot area (0.923, IQR 0.73 to 0.99), lots with a ' +
+    'latest-roll building of 13 to 80 stories built 2005 to 2016 (the footprints are the 2016 ' +
+    'LiDAR capture); pipeline/lib/coverage-fit.ts',
+  n: 32
+};
 export const TOWER_COVERAGE = 0.35;
 export const TOWER_PLATE_MAX_M2 = 900;
 export const TOWER_PODIUM_STORIES = 5;

@@ -50,7 +50,7 @@ export function referenceComposition(
     if (inset([ring], 1.5).length) band.regions.push(ring);
   }
   if (bands.some((b) => !b.regions.length)) return null;
-  if (mass.typology === 'tower' && !validTowerBands(site, bands))
+  if (mass.typology === 'tower' && !validTowerBands(site, bands, opts?.plates))
     return referenceComposition(site, 'midrise', opts?.fallbackStories ?? 12, draws, opts);
   if (!bandsSupported(bands)) return null;
   return { family: 'simple', typology: mass.typology, stories: mass.stories, bands };
@@ -100,11 +100,14 @@ export function validComposition(
   return retainsCapacityAcrossHeights(candidate, reference);
 }
 
-/** Structural tower rules also apply to references; their geometry-budget exception remains. */
-function validTowerBands(site: Site, bands: FloorBand[]): boolean {
+/**
+ * Structural tower rules also apply to references; their geometry-budget exception remains. A
+ * reference of several plates (`MassOpts.plates`) may hold that many plates' area.
+ */
+function validTowerBands(site: Site, bands: FloorBand[], plates = 1): boolean {
+  const plateArea = Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
   for (const slice of floorSlices(bands).filter((b) => b.firstFloor >= 6)) {
-    if (domainArea(slice.regions) > Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A) + 0.01)
-      return false;
+    if (domainArea(slice.regions) > Math.max(1, plates) * plateArea + 0.01) return false;
     if (
       slice.regions.some(
         (r) => signedArea(r) < MIN_TOWER_PLATE_M2 || !inset([r], MIN_TOWER_CORE_INSET_M).length

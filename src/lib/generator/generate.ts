@@ -1,6 +1,14 @@
 import type { ParcelRecord } from '../data/parcel';
 import type { Envelope } from '../plan/types';
-import { ADU_MIN_OPEN_M2, ADU_GROSS_M2, DISTRICT_MIN_M2, FTF_M, MAX_STORIES } from './constants';
+import { TOWER_MIN_STORIES, type BuildingForm } from '../sim/choice/types';
+import {
+  ADU_MIN_OPEN_M2,
+  ADU_GROSS_M2,
+  BLOCK_COVERAGE,
+  DISTRICT_MIN_M2,
+  FTF_M,
+  MAX_STORIES
+} from './constants';
 import { compositionOptions, referenceComposition } from './compositions';
 import { drawComposition } from './composition-variety';
 import type { CompositionDraws, OccupiedComposition } from './composition-types';
@@ -16,13 +24,13 @@ import { districtArea, mayBeDistrict } from './district-layout';
 import { fnv1a32 } from './seed';
 import { roofAccents } from './roof';
 import { serializeComposition } from './serialize';
-import { massAdu } from './massing';
+import { massAdu, maxTowerPlates, type MassOpts } from './massing';
 import { canonicalRing } from './poly';
 import { domainArea } from './domain';
 import { physicalMaxStories } from './physical';
 import { selectTypology } from './select';
 import { normaliseSite, type Site } from './site';
-import type { BuildoutMode, GeneratedBuilding } from './types';
+import type { BuildoutMode, GeneratedBuilding, ReplacementTypology } from './types';
 import { drawVariety, type VarietyDraws } from './variety';
 
 export interface LocalPart {
@@ -52,10 +60,25 @@ export function aduOpenOk(parcel: ParcelRecord, A: number): boolean {
 /**
  * Internal options, deliberately not re-exported from `index.ts`. `skipPhysicalClamp` is for
  * recorded-project massing (`generateDistrictForUnits`): real buildings are their own evidence
- * (tier 0), so their stated stories are never reduced to the lot's physical max.
+ * (tier 0), so their stated stories are never reduced to the lot's physical max. `form` masses
+ * that form at the envelope's stories in place of `selectTypology` (`generateForm`): null when
+ * the form does not fit, and the building carries `plates`.
  */
 export interface GenerateInternal {
   skipPhysicalClamp?: boolean;
+  form?: BuildingForm;
+}
+
+/** A chosen form as the typology and massing options it is built with. */
+function formMassing(
+  site: Site,
+  form: BuildingForm
+): { typology: ReplacementTypology; opts?: MassOpts; plates: number } {
+  if (form === 'block')
+    return { typology: 'midrise', opts: { coverage: BLOCK_COVERAGE }, plates: 0 };
+  if (form !== 'tower') return { typology: form, plates: 0 };
+  const plates = Math.max(1, maxTowerPlates(site));
+  return { typology: 'tower', opts: plates > 1 ? { plates } : undefined, plates };
 }
 
 export function generateDetailed(
@@ -81,7 +104,12 @@ export function generateDetailed(
   // Physical max (§3a): a painted height above what the lot can hold builds at the lot's limit.
   if (!internal.skipPhysicalClamp) S = Math.min(S, physicalMaxStories(site));
 
-  const sel = selectTypology(S, site.A, parcel.existingUnits);
+  const form = internal.form;
+  if (form === 'tower' && S < TOWER_MIN_STORIES) return null;
+  const chosen = form ? formMassing(site, form) : null;
+  const sel = chosen
+    ? { typology: chosen.typology, stories: S }
+    : selectTypology(S, site.A, parcel.existingUnits);
   let reference: OccupiedComposition | null;
   if (sel.typology === 'adu') {
     if (!aduOpenOk(parcel, site.A)) return null;
@@ -98,8 +126,9 @@ export function generateDetailed(
         }
       ]
     };
-  } else reference = referenceComposition(site, sel.typology, sel.stories, draws);
-  if (!reference) return null;
+  } else reference = referenceComposition(site, sel.typology, sel.stories, draws, chosen?.opts);
+  // a tower that falls back to a midrise is not the chosen form
+  if (!reference || (chosen && reference.typology !== chosen.typology)) return null;
   const ref = reference;
   const evaluate = function* () {
     for (const candidate of compositionOptions(site, ref, compositionDraws)) {
@@ -109,7 +138,8 @@ export function generateDetailed(
         candidate,
         roofAccents(site, candidate, compositionDraws, draws.parapetM),
         compositionDraws.tone,
-        ref
+        ref,
+        chosen?.opts?.coverage
       );
       if (!output || !output.parts.length) continue;
       if (
@@ -178,7 +208,8 @@ export function generateDetailed(
       stories: candidate.stories,
       units,
       floorAreaM2,
-      replacesExisting
+      replacesExisting,
+      ...(chosen ? { plates: chosen.plates } : {})
     };
     return { building, local: output.local, site };
   }
@@ -217,7 +248,7 @@ export function generate(
     mayBeDistrict(polygon) &&
     districtArea(polygon) >= DISTRICT_MIN_M2
   ) {
-    const district = generateDistrict(parcel, env, seed);
+    const district = generateDistrict(parcel, env, seed, internal.form);
     if (district !== 'not-district') return district;
   }
   return generateWith(parcel, env, drawVariety(seed), mode, drawComposition(seed), internal);
