@@ -41,7 +41,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 
 ## The worker messages as the page uses them
 
-`TimelineClient` (`src/lib/sim/timeline-client.ts`) is what the simulation talks to the worker through. The old scenario messages (`initScenario`, `reroll`, `setLevers`) are routed only by the worker's `scenario` mode (`src/lib/sim/router.ts`), and no page sends them. `TimelineSession` takes its own client from `createWorker()` (also what a crash restart uses).
+`TimelineClient` (`src/lib/sim/timeline-client.ts`) is what the simulation talks to the worker through. `TimelineSession` takes its own client from `createWorker()` (also what a crash restart uses).
 
 - `open(manifest, doc, lots)` and `setPolicy(doc, lots)` return the rev the client used. `viewMonth(m)` goes through `MonthGate` (`playhead.ts`): at most four a second, only when the model month changes. `resyncMap()` is the map's `onResyncNeeded`. `retryChunks()` answers the "failed cells" notice.
 - `compiled`, `filled` and `refill` are applied in arrival order into a `ChunkLog`; `rev` is never assumed to rise, and `compiled` and `refill` are never deduped by `rev` (one `refill` per acceptance; an edit taken up again after a later one was rejected gets a second `compiled` and `refill`). A `filled` chunk belongs to the statics of the last `compiled` before it. The view exists once `compiled` has arrived.

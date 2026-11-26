@@ -59,7 +59,7 @@ Fetch the file when working in the relevant area:
 - **Scores from the step engine (WorldSeries, chunks, cars, homes waiting for money, TimelineView, cardAt)** — [docs/dev/world-score.md](docs/dev/world-score.md)
 - **Car ownership (zones and households, the choice, moves and fills, the car hook, parking into start odds, the back-cast, current law with and without cars, measured cost)** — [docs/dev/cars.md](docs/dev/cars.md)
 - **Car ownership data sources (ACS, PUMS, SF3 2000, crosswalks, DMV, archived GTFS, parking counts and cost per space, AMI), each verified** — [docs/dev/cars-data.md](docs/dev/cars-data.md)
-- **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, homes waiting, the retired tolerance referee)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
+- **Public money in the step engine (world-funding: the line by month, funded clocks over frames, money events at stage events, shadows, homes waiting)** — [docs/dev/world-funding.md](docs/dev/world-funding.md)
 - **Ensemble runner (the simulation's timeline worker host: openTimeline, setPolicy, filling, copies and refill, lookups)** — [docs/dev/ensemble-runner.md](docs/dev/ensemble-runner.md)
 - **The game (the page and its phases, the game's state, units, the tree, tuning, grants, limits and the runnable document, the ladder and side goals, a run, drops, the ring and sound, the screens and header parts, the store, saved games and storage, the open game, publishing, the e2e seams and journeys, the reach check)** — [docs/dev/game.md](docs/dev/game.md)
 - **Game save (`/api/game`, the `game_save` table, the browser's save sync, the account offer)** — [docs/dev/game-save.md](docs/dev/game-save.md)

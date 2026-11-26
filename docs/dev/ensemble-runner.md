@@ -6,7 +6,7 @@
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `src/lib/sim/timeline-protocol.ts`     | S14 messages, `openTimelineProblem`, `setPolicyProblem`, `TimelineErrorCode` (today's codes plus `'timeline'`) |
 | `src/lib/sim/timeline-client.ts`       | `TimelineClient`, `WINDOW_MONTHS = 480`                                                                        |
-| `src/lib/sim/lookup-requests.ts`       | The lookup promises `ScenarioClient` and `TimelineClient` share                                                |
+| `src/lib/sim/lookup-requests.ts`       | The lookup promises `TimelineClient` makes                                                                     |
 | `src/lib/sim/world/host.ts`            | Sessions, checks, the shared requests                                                                          |
 | `src/lib/sim/world/runner/runner.ts`   | Compiles, ensembles, slices, posts, edits, heights                                                             |
 | `src/lib/sim/world/runner/ensemble.ts` | One ensemble: units, feed logs, copies (`COPY_MONTHS`)                                                         |
@@ -19,11 +19,11 @@
 
 ### Messages
 
-To the worker: `openTimeline { rev, manifest, policy, lots, months }`, `setPolicy { rev, policy, lots }`, `viewMonth { month }`, `resyncMap`. From it: `compiling`, `compiled { capacity, unknownLots, statics }`, `filled { through, series }`, `refill { from }`, `cells { render }`, `lookups { month, lookups }`, plus today's `ready`, `chunks`, `heights`, `error`. Every other message of the scenario protocol keeps its shape and is answered for the plan frame at the last `viewMonth` (month 1 before any). `parcelSummary` reads the plan's world on the requested day (clamped to the last day stepped) and adds `lookups`.
+To the worker: `openTimeline { rev, manifest, policy, lots, months }`, `setPolicy { rev, policy, lots }`, `viewMonth { month }`, `resyncMap`. From it: `compiling`, `compiled { capacity, unknownLots, statics }`, `filled { through, series }`, `refill { from }`, `cells { render }`, `lookups { month, lookups }`, plus today's `ready`, `chunks`, `heights`, `error`. Every other request (the lookups, `parcelSummary`, `lotAt`, the brushes) is answered for the plan frame at the last `viewMonth` (month 1 before any). `parcelSummary` reads the plan's world on the requested day (clamped to the last day stepped) and adds `lookups`.
 
 `lots` holds the lots of every brush query the document needs (`queriesOf4`), resolved by the page with `resolveBrush`. The page reconciles the document (`openSimDoc4` with the dataset's calibration and `asOf`); an unreconciled one is `bad-request`.
 
-The router treats `openTimeline` as `initScenario`: it disposes the editor host's state, and shared requests go to the host of the latest init. A new `openTimeline` or `dispose` ends the session: timers cancelled, nothing more posted, waiting requests answered `no-session`.
+The router treats `openTimeline` as the start of a session: it disposes the editor host's state, and shared requests go to the timeline host. A new `openTimeline` or `dispose` ends the session: timers cancelled, nothing more posted, waiting requests answered `no-session`.
 
 ### Slicing
 
@@ -103,7 +103,7 @@ A consumer applies `filled` and `refill` in order (`refill` withdraws every mont
 
 ## Decisions
 
-- **D1** No hashed file changed: `runner/dataset.ts` and `runner/lookups.ts` compose exported functions; the old host's copy goes when `timeline-ui` switched the simulation.
+- **D1** `runner/dataset.ts` and `runner/lookups.ts` compose exported functions.
 - **D2** Series wait for their `ScoreStatics` (buffered feed logs).
 - **D3** Each ensemble's series use its own `ScoreStatics`; `compiled` carries the plan's.
 - **D4** A comparison `comparisonOf` gives unchanged is not recompiled; its world stays.
@@ -115,18 +115,6 @@ A consumer applies `filled` and `refill` in order (`refill` withdraws every mont
 - **D10** `lookups` on a change of permitting objects at the last `viewMonth`, and after every edit.
 - **D11** A compile throw other than `LeverFormatError` is `'timeline'`, as rule 21.
 - **D12** Warm the plan world's massings before each flush, one (row, revision) per unit (`runner/warm.ts`); a cold massing over 50 ms is reported, not split.
-
-## What the old host supplied
-
-Lines of `src/lib/sim/scenario/scenario-host.ts` each new file mirrors, so `timeline-ui` can retire it (full inventory: plan Appendix A).
-
-| New file             | Mirrors                                                                                                                                                                                                                 |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host.ts`            | 474-483, 530-534 (memo and log keys per dataset version); 518-583 (checks, `ready`); 630-664 (load); 1144-1156 (a `heightLids` before the load waits); 1704-1712 (`parcelSummary` throw); 1739-1747 (`handle`)          |
-| `runner/runner.ts`   | 235-246, 800-853 (scheduler, estimates); 325-335, 416 (limits state); 861-866 (heights before a pending revision); 960-962 (stall); 966-970 (missing lots); 1025-1156 (city and lid builds)                             |
-| `runner/dataset.ts`  | 555-574, 588-591, 602-603, 616-627 (chunk loader, prefetch); 630-664 (load); 681-687 (`MassingCtx`); 702-704, 935-947, 955 (layers, yields)                                                                             |
-| `runner/lookups.ts`  | 372-392, 501-505, 1462-1485, 1565-1694 (brushes); 1501-1509 (outlines); 1533-1562 (preview); 1445-1457 (`lotAt`); 1111-1133, 432-466 (lid lots, transfers); 1391-1405 (buildable); 255-256, 1330-1342, 1356 (card deps) |
-| `timeline-client.ts` | `scenario-client.ts` crash handling and lookups (left unchanged)                                                                                                                                                        |
 
 ## Timings
 
@@ -167,9 +155,9 @@ After warming per (row, revision) (`measure-1.md` §13, quiet, HEAD fc81bd7e): f
 - **Heap**: S16's 300 MB is not met (427.7 MB live set, 546.2 MB with the month-0 copy); the partner re-sets it. `HEAP_BOUND_MB` in `host.perf.spec.ts` is null until then and the heap case asserts only the leak margin.
 - **Rich money**: on the live city with world-funding's bench money set, `planDue` is 77.6 / 111.4 ms per world (median / max), the change month 154 to 188 ms per world unit, 96 creates 4.3 s (48 + 48 worlds, 2026-11-10): over the 50 ms unit bar. A bound inside the step (`StepCtx`) is world-core's, deferred.
 - **Cold massing**: `CASE:2007.0946PRX:phase:3` is one generator call of about 636 ms, accepted; warm-ahead moves it out of the flush.
-- **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`). The live overruns (warm 60.1 to 62.8 ms; `create` up to 57.9 ms in Task 8) come from this scheduling rule, inherited from the old host (D7); they are accepted, not chased.
+- **Estimates**: a unit costlier than its kind's last 4 can push a slice a few ms past 50 (`create`, `warm`). The live overruns (warm 60.1 to 62.8 ms; `create` up to 57.9 ms in Task 8) come from this scheduling rule (D7); they are accepted, not chased.
 - **`resyncMap`**: the snapshot is unbudgeted (rule 20): about 10 ms warm, 1.2 s with a cold memo.
-- **Load**: `loadScenario` precomputes the input outside any slice (`precomputeOf` 61 to 67 ms, as the old host's load).
+- **Load**: `loadSimInput` precomputes the input outside any slice (`precomputeOf` 61 to 67 ms).
 - **Late rejection of the open's document**: with nothing kept to take up, a compile in use that rejects the open's own document at a later month posts `bad-request` at the open's rev and stops filling (rule 21).
 - **Kept documents**: `kept` and the superseded documents grow by one `{policy, lots}` per edit until the compiles in use finish; no compile or timeline is kept.
 - **Rejection before the load**: an edit sent before the dataset loaded replaces the opening's document (host); if the compiler then rejects it, the earlier document is not taken up again. The runner's `queriesOf4` check does not run on the opening (`start`), so a folded document with a missing query is rejected by the compiler too; the host checks only the request's shape before the load.

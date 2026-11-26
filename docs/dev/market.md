@@ -160,7 +160,7 @@ on a project's first filing.
 ## The engine contract
 
 `SimInput.market?: MarketStep[]` (`{ from, logOdds }`, declared in `src/lib/timelapse/types.ts` and
-`src/lib/sim/scenario/types.ts`). `[]` and absent both mean shift 0.
+`src/lib/sim/world/input/types.ts`). `[]` and absent both mean shift 0.
 
 - **Validation** (`checkInput`, memoised as today): `runEngine` throws a `RangeError` when a step's
   `logOdds` is not finite, when steps are not strictly ascending by `from`, or when the first step
@@ -189,7 +189,7 @@ unchanged ([sim-levers.md](sim-levers.md)).
 
 ## `marketLevel`: the one rule for the level
 
-`marketLevel(calibration)` (`src/lib/sim/scenario/market.ts`) returns `'all'` or `'private'`. It
+`marketLevel(calibration)` (`src/lib/sim/world/input/market.ts`) returns `'all'` or `'private'`. It
 returns `'private'` exactly when the calibration has both `market` and `baselineFunding` (from
 Release 2; in Release 1 it returned `'all'` for every calibration), which is exactly when
 `buildSimInput` also sets `finance` ([finance-engine.md](finance-engine.md)). `buildSimInput` calls

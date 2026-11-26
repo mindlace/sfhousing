@@ -56,4 +56,4 @@ Seed 1, 480 months, quiet machine (lock held), Apple M5 Pro.
 
 ## Tests
 
-`map-stream.spec.ts`, `map-stream.rewind.spec.ts`, `map-stream.equality.spec.ts` (also on the live city under `SFH_WORLD_LIVE`: 1,931 schedules equal `simulateDetailed`). Timing: `map-stream.perf.spec.ts` (`npm run test:perf`), `scripts/map-stream-measure.ts`, `scripts/map-stream-live.ts`.
+`map-stream.spec.ts`, `map-stream.rewind.spec.ts`. Timing: `map-stream.perf.spec.ts` (`npm run test:perf`), `scripts/map-stream-measure.ts`, `scripts/map-stream-live.ts`.
