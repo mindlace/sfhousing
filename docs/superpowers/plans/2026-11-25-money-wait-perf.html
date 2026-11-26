@@ -84,4 +84,24 @@ git commit -m "perf(funding): count homes waiting in one pass over the line"
 npx chreode timing-check --head HEAD</code></pre></li>
     </ol>
   </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: The restated bench bar, measured</h2>
+    <p>Spec §sec-design-cost as it now reads: the one-pass count of Task 1 (commit <code>5f4d9d1b</code>) is the count and stands. The bars are now: one funded world-month at most 250 µs mean on the bench city (<code>funded-month.perf.spec.ts</code>, whose <code>BAR_US</code> this unit sets to 250, with its comment saying the month includes the waiting-homes record); the <code>shadow</code> hook at most 150 µs mean per funded world-month above <code>main</code>'s, the other hooks no more than <code>main</code>'s; <code>host.perf.spec.ts</code> and <code>chunk.perf.spec.ts</code> unchanged. The 10 µs and 10% bars are withdrawn. A miss of these bars stops the unit with its numbers; the counting rule is not changed. Delivers row E2 within its cost bars.</p>
+    <ul>
+      <li>Modify: <code>src/lib/sim/world/funding/funded-month.perf.spec.ts:1-5</code> (header comment), <code>:21</code> (<code>BAR_US</code>), <code>:78</code> (test name). Nothing else in the file changes, and no other file.</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Set <code>BAR_US</code> to 250. In the header comment, replace "90 µs" with "250 µs" and add that the month includes the waiting-homes record (<code>recordWaiting</code> in the <code>shadow</code> hook). Rename the test to <code>one funded world-month (with the waiting-homes record), mean at most 250 µs</code>.</li>
+      <li id="t2-s2"><input type="checkbox"> Measure: <code>uptime</code>, then <code>main</code> and this branch alternating, twice each, keeping each run's funded-month line and hook table:
+        <pre><code data-lang="sh">uptime
+npm --prefix /Users/mindlace/Projects/sfhousing run test:unit -- --project perf src/lib/sim/world/funding/funded-month.perf.spec.ts
+npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts src/lib/sim/world/score/chunk.perf.spec.ts src/lib/sim/world/host.perf.spec.ts</code></pre>
+        Pass: the branch's 250 µs test passes; its <code>shadow</code> mean minus <code>main</code>'s is at most 150 µs; no other hook's mean clearly above <code>main</code>'s; chunk and host perf files pass. Ballpark on a shared machine; write every run's lines with <code>uptime</code> to <code>$SDD_DIR/task-2-timing.md</code>.</li>
+      <li id="t2-s3"><input type="checkbox"> <code>npx eslint</code> and <code>npx prettier --check</code> on the file, commit, then the timing check:
+        <pre><code data-lang="sh">git add src/lib/sim/world/funding/funded-month.perf.spec.ts
+git commit -m "test(funding): funded-month bar 250 µs with the waiting-homes record"
+npx chreode timing-check --head HEAD</code></pre></li>
+    </ol>
+  </section>
 </article>
