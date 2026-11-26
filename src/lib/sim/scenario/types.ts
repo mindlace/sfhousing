@@ -1,12 +1,8 @@
-// Step 0 of the FZP timelapse build: the worker scenario protocol types (T5, T6, T8), types
-// only and worker-safe (no runtime exports). `protocol.ts` re-exports this module; fzp-mode and
-// timelapse-render import it. timelapse-sim implements behaviour against it from step 3.
-import type { Manifest } from '$lib/data/manifest';
+// The simulation's schedule, input, card and score types (T5, T8), types only and worker-safe (no
+// runtime exports). `protocol.ts` re-exports the card and the score.
 import type { ParcelId } from '$lib/data/parcel';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { HeightCity, HeightLids } from '$lib/map/height/types';
-import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
@@ -25,21 +21,7 @@ import type {
   Stage,
   TierUnits
 } from '$lib/timelapse/types';
-import type { LeverLookups } from '../levers/apply';
-import type { BrushCatalog, BrushQuery } from '../levers/brushes';
-import type { LeverCapacity } from '../levers/resolve';
-import type { LimitOwner } from '../levers/source';
 import type { StageScale } from '../levers/timers';
-import type { LotOutlines } from '../outlines';
-import type { SimLevers } from '../levers/types';
-import type {
-  ChunksResponse,
-  ParcelSummary,
-  ReadyResponse,
-  Rev,
-  SimRequest,
-  SimResponse
-} from '../protocol';
 
 // T5
 export interface Schedule {
@@ -132,150 +114,7 @@ export type SimInput = {
 };
 export type Simulate = (input: SimInput, seed: number, horizon: Day) => Schedule[];
 
-// T6
-export type ScenarioRequest =
-  | Extract<SimRequest, { type: 'prefetch' | 'retryChunks' }>
-  | {
-      type: 'initScenario';
-      rev: Rev;
-      manifest: Manifest;
-      scenario: 'fzp';
-      seed: number | null; // null = representative seed
-      horizon: Day;
-      levers?: SimLevers; // /sim (plan 2); absent = the base, which never fetches policy.bin
-      // Only with `levers`: run no revision from them; wait for the first `setLevers`, and post
-      // nothing but `ready`, errors and request answers until it is current (an `/s/<id>` open).
-      awaitLevers?: boolean;
-    }
-  // `swap` (the run slider): revision 0 goes out after one packing slice, viewport cells first,
-  // and the page installs it over the cells on the map; the rest follow in later revisions.
-  | { type: 'reroll'; rev: Rev; seed: number | null; swap?: true }
-  // A barrier rev like reroll; needs a session initialised with levers. The latest one wins.
-  | { type: 'setLevers'; rev: Rev; levers: SimLevers }
-  | {
-      type: 'parcelSummary';
-      reqId: number;
-      parcelId: ParcelId;
-      day: Day;
-      projectId?: string;
-    }
-  // Brushes (plan 3): answered only in a session initialised with levers, once it has loaded.
-  | { type: 'resolveBrush'; reqId: number; query: BrushQuery }
-  | { type: 'brushCatalog'; reqId: number }
-  // Map overlays (plan 2 Task 5): the ring outlines of lots, answered like `resolveBrush`.
-  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  // Live preview (plan 2 Task 6, sim UX plan 3 Task 4): the buildings a Paint stroke's lots could
-  // hold at `stories`. The page sends the lots nearest first.
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number }
-  // Glass lids (height-lids Task 8): the lids of the loaded lots in a view (lng/lat bbox),
-  // answered on the latest complete city of a session initialised with levers.
-  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] }
-  // Map selection (sim UX plan 4 Task 3): the lot under a point (lng, lat) and who sets its limit,
-  // answered at once from the limits the worker holds.
-  | { type: 'lotAt'; reqId: number; point: [number, number] };
-/**
- * The glass lids of a view, built on the latest complete city (`lids.limitsRev`). `missing`
- * counts the cells intersecting the bbox whose chunks are not loaded (the page asks again as they
- * load). `no-session`: no session with levers (or it ended before answering); `superseded`: a
- * newer `heightLids` replaced this one; `too-large`: the bbox spans too far for lids.
- */
-export type HeightLidsResult =
-  | { ok: true; lids: HeightLids; missing: number }
-  | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
-/**
- * The lot under a point, built or vacant, and the layer that sets its height limit. `parcelId` is
- * null where no loaded lot holds the point. `owner` is null when the lot has no row in the limits
- * table or the session has no limits yet. `no-session`: no session with levers.
- */
-export type LotAtResult =
-  | { ok: true; parcelId: ParcelId | null; owner: LimitOwner | null }
-  | { ok: false; reason: 'no-session'; message: string };
-/**
- * The buildings a preview's lots could hold, packed as one cell (`'preview'`), or null when none
- * builds. `built` counts the lots packed; `missing` the requested lots (within the cap) whose
- * record is not loaded. `no-session`: no session with levers (or it ended before answering).
- */
-export type PreviewResult =
-  | { ok: true; pack: PackedCell | null; built: number; missing: number }
-  | { ok: false; reason: 'no-session'; message: string };
-/**
- * The outlines of requested lots, for the dashed overlay while the eraser is chosen. `positions`
- * holds lng/lat pairs of every ring of every loaded lot (transferred); `starts` the vertex index
- * where each ring starts (rings + 1 entries); `ringLot` each ring's index into `lots` (the lots
- * answered, in request order). `missing` counts requested lots whose record is not loaded.
- * `no-session`: no session with levers (or it ended before answering).
- */
-export type LotOutlinesResult =
-  | (LotOutlines & { ok: true; missing: number })
-  | { ok: false; reason: 'no-session'; message: string };
-/**
- * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
- * session with levers (or it ended before answering); `data-missing`: a file the query needs is
- * absent from the manifest or failed to load; `bad-request`: the query is malformed.
- */
-export type BrushLotsResult =
-  | { ok: true; lots: ParcelId[]; points: Float64Array }
-  | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
-export type TimelineResponse = {
-  type: 'timeline';
-  rev: Rev;
-  seed: number;
-  render: TimelineUpdate;
-  score: TimelineScore;
-  bandRuns: number; // band runs finished so far; the band is provisional until bandRuns = bandRunsTotal
-  bandRunsTotal: number; // N
-  complete: boolean; // all loaded cells packed
-};
 export type Massing = GeneratedBuilding | { footprint: [lng: number, lat: number][] }; // timelapse-render's packTimedCell input entry
-export type ScenarioErrorCode =
-  'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal';
-export type ScenarioResponse =
-  | ReadyResponse
-  | ChunksResponse
-  | TimelineResponse
-  | { type: 'error'; rev: Rev; code: ScenarioErrorCode; message: string }
-  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
-  | { type: 'brushLots'; reqId: number; result: BrushLotsResult }
-  | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
-  | { type: 'lotOutlines'; reqId: number; result: LotOutlinesResult }
-  | { type: 'previewBuildings'; reqId: number; result: PreviewResult }
-  // A lever revision's height regions and contours, once per revision, before its `current`
-  // (a superseded revision may get none); the chain and label buffers are transferred.
-  | { type: 'heights'; rev: Rev; city: HeightCity }
-  | { type: 'heightLids'; reqId: number; result: HeightLidsResult }
-  | { type: 'lotAt'; reqId: number; result: LotAtResult }
-  // The band's runs ranked best to worst as seeds, once per band (each lever revision has its
-  // own), when its last FZP run is set; `rev` is the revision whose band it ranks.
-  | RanksResponse
-  | LeversResponse;
-export type RanksResponse = { type: 'ranks'; rev: Rev; seeds: number[] };
-/**
- * A lever revision's status (plan 2): `rev` is the `initScenario` or `setLevers` that named the
- * levers. `resolving` while touched-lot yields are recomputed (`failedCells`: needed chunks that
- * failed to load; `retryChunks` re-wants them); `current` once the levers are in force, before
- * any timeline computed on them. A superseded revision never gets `current`. Its height limits
- * go out separately, as `heights`.
- */
-export type LeversResponse =
-  | {
-      type: 'levers';
-      rev: Rev;
-      phase: 'resolving';
-      done: number;
-      total: number;
-      failedCells: string[];
-    }
-  | {
-      type: 'levers';
-      rev: Rev;
-      phase: 'current';
-      lookups: LeverLookups;
-      capacity: LeverCapacity;
-      unknownLots: number;
-    };
-export type WorkerRequest = SimRequest | ScenarioRequest;
-/** Everything the Worker posts: the editor's and the scenario host's. */
-export type WorkerResponse = SimResponse | ScenarioResponse;
 export type ProjectCard = {
   projectId: string;
   origin: 'pipeline' | 'simulated';

@@ -293,7 +293,7 @@ describe('limits (rule 12)', () => {
       terms: TERMS
     };
     const s = timelineStatics(INPUT, compiled(constantDoc()), W);
-    // as scenario-host.ts:1194-1202: the plan's finance against the twin's (the base's) pools
+    // the plan's finance against the twin's (the base's) pools
     const plan = buildFinance(INPUT.finance, levers, asOf)!;
     const want = limitStatements(addedBorrowing(plan, INPUT.finance!.pools, asOf, horizonOf(s)));
     expect(want.length).toBeGreaterThan(0);

@@ -11,16 +11,12 @@ import { createLru } from '$lib/sim/lru';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
 import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
 import { scenarioUrls } from '$lib/sim/scenario/load';
-import {
-  MINI_TRANSIT_URL,
-  makeScenarioHarness,
-  type ScenarioHarness
-} from '$lib/sim/scenario/test/host-harness';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
+import { MINI_TRANSIT_URL, miniDataset, type MiniDataset } from '../test/mini-dataset';
 import { createChunkSet, loadDataset, type Dataset, type DatasetDeps } from './dataset';
 import { MINI_AS_OF } from '$lib/sim/scenario/fixtures/mini-projects';
 import { massingFor } from '$lib/sim/scenario/massing';
-import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
+import { PREVIEW_MAX_LOTS } from '$lib/sim/world/runner/budget';
 import type { Schedule } from '$lib/sim/scenario/types';
 import {
   buildableStories,
@@ -60,8 +56,8 @@ const settle = async () => {
   for (let k = 0; k < 6; k++) await new Promise((r) => setImmediate(r));
 };
 
-/** The new dataset over the old harness's bodies, with `LOADED_CELL` loaded. */
-async function newDataset(h: ScenarioHarness, gen = generate): Promise<Dataset> {
+/** The dataset over the mini city's bodies, with `LOADED_CELL` loaded. */
+async function newDataset(h: MiniDataset, gen = generate): Promise<Dataset> {
   const manifest = h.manifest();
   const f = mapFetch(h.bodies);
   const deps: DatasetDeps = {
@@ -121,9 +117,9 @@ function brushService(
 
 describe('createBrushService files', () => {
   let ds: Dataset;
-  let h: ScenarioHarness;
+  let h: MiniDataset;
   beforeAll(async () => {
-    h = makeScenarioHarness({ policy: true });
+    h = miniDataset({ policy: true });
     ds = await newDataset(h);
   });
   const Q: BrushQuery = { kind: 'transit', stopTypes: ['metro'], maxM: 100 };
@@ -192,7 +188,7 @@ describe('createBrushService files', () => {
 describe('direct lookups on the mini city', () => {
   let ds: Dataset;
   beforeAll(async () => {
-    ds = await newDataset(makeScenarioHarness({ policy: true }));
+    ds = await newDataset(miniDataset({ policy: true }));
   });
 
   it('lotOutlinesResult answers the loaded lots and counts the missing', () => {

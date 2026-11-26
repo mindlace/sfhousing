@@ -1,5 +1,5 @@
 // Policy-timeline S13 addition: a frame's city inputs (`cityInputAt`), against what the old
-// host hands `createCityBuild` and `createLidBuild` (`scenario-host.ts` `cityOf`, `lidStep`).
+// host handed `createCityBuild` and `createLidBuild`.
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { toLngLat } from '$lib/generator/geo';
@@ -129,7 +129,7 @@ function compileDoc(doc: SimPolicy4): PolicyTimeline {
   return c.result();
 }
 
-/** The old host's `cityOf` inputs for `p` (`scenario-host.ts`). */
+/** The old host's `cityOf` inputs for `p`. */
 function oldHost(p: SimPolicy): FrameCityInput {
   const levers = compileLevers(p, lots)!;
   const r = resolveEnvelopes(CTX.layers, levers, ASOF);

@@ -64,8 +64,12 @@
   import { BUTTON, BUTTON_PRIMARY } from '$lib/shell/ui';
   import { getStorage } from '$lib/sharing/storage';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
-  import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
-  import type { BrushLotsResult, LotOutlinesResult, PreviewResult } from '$lib/sim/scenario/types';
+  import { PREVIEW_MAX_LOTS } from '$lib/sim/world/runner/budget';
+  import type {
+    BrushLotsResult,
+    LotOutlinesResult,
+    PreviewResult
+  } from '$lib/sim/timeline-protocol';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import type { Day } from '$lib/timelapse/time';
   import type { Calibration } from '$lib/timelapse/types';

@@ -2,7 +2,7 @@
 // D12): two compiles, two ensembles (the plan and its comparison), the map stream of the plan's
 // world, and the posts, in slices of a macrotask each.
 //
-// A slice runs units in this order: first, as the old host (scenario-host.ts:864-866), the height
+// A slice runs units in this order: first, the height
 // limits of the zoning in force at the last `viewMonth` (S14): a city build's inputs
 // (`cityInputAt`), its steps (posting `heights`), then a wanted `heightLids` view's lid build on
 // that city; these also run while an edit compiles (for the timeline in use) and after a throw
@@ -71,8 +71,8 @@ import { packTimedTransferables } from '$lib/map/pack-timed';
 import { LeverFormatError } from '$lib/sim/levers/types';
 import type { Rev } from '$lib/sim/protocol';
 import { massingFor } from '$lib/sim/scenario/massing';
-import { SLICE_PLAN_MS } from '$lib/sim/scenario/scenario-host';
-import type { HeightLidsResult } from '$lib/sim/scenario/types';
+import { SLICE_PLAN_MS } from '$lib/sim/world/runner/budget';
+import type { HeightLidsResult } from '$lib/sim/timeline-protocol';
 import type { TimelineErrorCode, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import type { Day } from '$lib/timelapse/time';
 import { canonicalJson } from '$lib/sim-page/policy';
@@ -104,7 +104,7 @@ export const COMPILE_STEP_MS = 20;
 export const FLUSH_EVERY_MS = 250;
 /** Budget of one flush (rule 9). */
 export const FLUSH_BUDGET_MS = 20;
-/** A kind's cost estimate is the largest of its last this many costs (D7, as scenario-host.ts). */
+/** A kind's cost estimate is the largest of its last this many costs (D7). */
 const COST_WINDOW = 4;
 
 export interface RunnerDeps {
@@ -356,7 +356,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     (s, k) => massingFor(s, k, ds.massing)
   );
 
-  // the height limits (S14), as scenario-host.ts:325-335, 416
+  // the height limits (S14)
   /** The city build of the zoning in view, until done. */
   let city: CityWork | null = null;
   /** The latest complete city, whose `heights` went out last. */
@@ -397,7 +397,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   function pick(): Unit | null {
-    // as the old host: a city, then a wanted lid view, before the timeline (scenario-host.ts:864-866)
+    // a city, then a wanted lid view, before the timeline
     const hk = heightsKind();
     if (hk !== null) return { kind: hk, side: null };
     if (plan === null || comp === null) return null;
@@ -443,8 +443,7 @@ export function createRunner(deps: RunnerDeps): Runner {
    * nor the recompute count moved. A step returns false for exactly two reasons: its budget is
    * spent (compile.ts:380, :383; zoning-view.ts:155-156), or a view job's recompute could not
    * finish (zoning-view.ts:124-128, the only unit that returns false); a recompute step computes
-   * every ready need it can, so one that returns at once with nothing done waits on chunks
-   * (scenario-host.ts:960-962). The other view-job units (twin, resolve, apply, precompute) move
+   * every ready need it can, so one that returns at once with nothing done waits on chunks. The other view-job units (twin, resolve, apply, precompute) move
    * neither count and can each spend the whole budget on the live city: that is progress.
    */
   function stepCompile(c: Compiling): boolean {
@@ -887,7 +886,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (u !== null) sendCells(u);
   }
 
-  // --- the height limits (S14; scenario-host.ts:1025-1156) ---
+  // --- the height limits (S14) ---
 
   /** What is left of the slice plan (a staged build always runs at least one unit). */
   const sliceLeft = () => Math.max(0, SLICE_PLAN_MS - (deps.now() - sliceStart));
@@ -961,7 +960,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   /**
-   * The city build of the zoning in view (scenario-host.ts:1035-1066): its inputs in a unit of
+   * The city build of the zoning in view: its inputs in a unit of
    * their own (`cityInputAt` on the plan frame in view, read now: never a frame held from an older
    * timeline), then its steps; once done, `heights` goes out and the city becomes `limits`. The
    * same view with the same attribution as `limits` needs no build and posts nothing (D2).
@@ -1003,7 +1002,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   /**
-   * One slice of the wanted lid view (scenario-host.ts:1072-1104). With none running, the job
+   * One slice of the wanted lid view. With none running, the job
    * starts one on the current limits (gathers its lots, allocates its raster) and ends: its units
    * run from the next one.
    */
@@ -1122,8 +1121,7 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   /**
    * A slice of an edit's compiles (rule 12): nothing steps; the edit may be accepted in it. Height
-   * units for the timeline in use run first, as the old host ran them ahead of a pending revision
-   * (scenario-host.ts:861-866): a `heightLids` never waits on an edit's compile.
+   * units for the timeline in use run first, ahead of a pending revision: a `heightLids` never waits on an edit's compile.
    */
   function editSlice(): void {
     const start = deps.now();

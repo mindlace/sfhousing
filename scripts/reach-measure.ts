@@ -21,7 +21,7 @@ import { defaultGoal, readGoal, TODAY, type Goal } from '../src/lib/goal/goal';
 import type { FetchLike } from '../src/lib/sim/chunks';
 import { canonicalJson } from '../src/lib/sim-page/policy';
 import { loadScenario, scenarioUrls, type FetchBytesLike } from '../src/lib/sim/scenario/load';
-import type { BrushLotsResult } from '../src/lib/sim/scenario/types';
+import type { BrushLotsResult } from '../src/lib/sim/timeline-protocol';
 import { WINDOW_MONTHS } from '../src/lib/sim/timeline-client';
 import type { TimelineHostRequest, TimelineHostResponse } from '../src/lib/sim/timeline-protocol';
 import { createTimelineHost } from '../src/lib/sim/world/host';

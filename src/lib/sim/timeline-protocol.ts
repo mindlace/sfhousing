@@ -1,22 +1,77 @@
-// Worker messages of the timeline host (ensemble-runner interface S14). They replace
-// `initScenario`, `reroll`, `setLevers`, `timeline`, `ranks` and `levers` on /sim; every other
-// message of the scenario protocol keeps its shape. Types only, besides the two request checks.
+// Worker messages of the timeline host (ensemble-runner interface S14) and the lookups it shares
+// with the editor's router. Types only, besides the two request checks.
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
-import type { TimelineUpdate } from '$lib/map/types';
+import type { HeightCity, HeightLids } from '$lib/map/height/types';
+import type { PackedCell, TimelineUpdate } from '$lib/map/types';
+import type { BBox } from '$lib/plan';
+import type { Day } from '$lib/timelapse/time';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import type { LeverLookups } from './levers/apply';
+import type { BrushCatalog, BrushQuery } from './levers/brushes';
 import type { LeverCapacity } from './levers/resolve';
-import type { Rev } from './protocol';
-import type { ScenarioErrorCode, ScenarioRequest, ScenarioResponse } from './scenario/types';
+import type { LimitOwner } from './levers/source';
+import type { LotOutlines } from './outlines';
+import type {
+  ChunksResponse,
+  ParcelSummary,
+  ReadyResponse,
+  Rev,
+  SimRequest,
+  SimResponse
+} from './protocol';
+import type { LoadErrorCode } from './scenario/load';
 import type { ScoreStatics, SeriesChunk } from './world/score/types';
 
-/** Today's error codes plus `'timeline'` (a failure of the timeline run itself). */
-export type TimelineErrorCode = ScenarioErrorCode | 'timeline';
+/**
+ * The glass lids of a view, built on the latest complete city (`lids.limitsRev`). `missing`
+ * counts the cells intersecting the bbox whose chunks are not loaded (the page asks again as they
+ * load). `no-session`: no session with levers (or it ended before answering); `superseded`: a
+ * newer `heightLids` replaced this one; `too-large`: the bbox spans too far for lids.
+ */
+export type HeightLidsResult =
+  | { ok: true; lids: HeightLids; missing: number }
+  | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
+/**
+ * The lot under a point, built or vacant, and the layer that sets its height limit. `parcelId` is
+ * null where no loaded lot holds the point. `owner` is null when the lot has no row in the limits
+ * table or the session has no limits yet. `no-session`: no session with levers.
+ */
+export type LotAtResult =
+  | { ok: true; parcelId: ParcelId | null; owner: LimitOwner | null }
+  | { ok: false; reason: 'no-session'; message: string };
+/**
+ * The buildings a preview's lots could hold, packed as one cell (`'preview'`), or null when none
+ * builds. `built` counts the lots packed; `missing` the requested lots (within the cap) whose
+ * record is not loaded. `no-session`: no session with levers (or it ended before answering).
+ */
+export type PreviewResult =
+  | { ok: true; pack: PackedCell | null; built: number; missing: number }
+  | { ok: false; reason: 'no-session'; message: string };
+/**
+ * The outlines of requested lots, for the dashed overlay while the eraser is chosen. `positions`
+ * holds lng/lat pairs of every ring of every loaded lot (transferred); `starts` the vertex index
+ * where each ring starts (rings + 1 entries); `ringLot` each ring's index into `lots` (the lots
+ * answered, in request order). `missing` counts requested lots whose record is not loaded.
+ * `no-session`: no session with levers (or it ended before answering).
+ */
+export type LotOutlinesResult =
+  | (LotOutlines & { ok: true; missing: number })
+  | { ok: false; reason: 'no-session'; message: string };
+/**
+ * A brush's lots: `points` holds each lot's label point (lng, lat), transferred. `no-session`: no
+ * session with levers (or it ended before answering); `data-missing`: a file the query needs is
+ * absent from the manifest or failed to load; `bad-request`: the query is malformed.
+ */
+export type BrushLotsResult =
+  | { ok: true; lots: ParcelId[]; points: Float64Array }
+  | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
+
+/** The load error codes plus `'timeline'` (a failure of the timeline run itself). */
+export type TimelineErrorCode = LoadErrorCode | 'timeline';
 
 /**
- * Opens a timeline session, routed and checked as `initScenario` is and, like it, disposing the
- * editor host's state.
+ * Opens a timeline session, disposing the editor host's state.
  *
  * `rev` is the page's count of policy edits (`open` is rev 1 of a session; each `setPolicy` is the
  * next): the worker drops work for an older `rev`. The client drops a `compiling` whose `rev` is
@@ -105,22 +160,23 @@ export type TimelineRequest =
   /** Answered by a `cells` whose update is revision 0 with every cell and the whole demolish list. */
   | { type: 'resyncMap' };
 
-/** Today's requests the timeline host also answers (shapes unchanged). */
-export type SharedRequest = Extract<
-  ScenarioRequest,
-  {
-    type:
-      | 'parcelSummary'
-      | 'resolveBrush'
-      | 'brushCatalog'
-      | 'lotOutlines'
-      | 'previewBuildings'
-      | 'heightLids'
-      | 'lotAt'
-      | 'prefetch'
-      | 'retryChunks';
-  }
->;
+/** The requests the timeline host answers beside its own (the editor's shapes, with `day`). */
+export type SharedRequest =
+  | { type: 'prefetch'; bbox: BBox }
+  | { type: 'retryChunks' }
+  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
+  | { type: 'resolveBrush'; reqId: number; query: BrushQuery }
+  | { type: 'brushCatalog'; reqId: number }
+  // The ring outlines of lots, for the overlay while the eraser is chosen.
+  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
+  // The buildings a Paint stroke's lots could hold at `stories`. The page sends the lots nearest
+  // first.
+  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number }
+  // The glass lids of the loaded lots in a view (lng/lat bbox), on the latest complete city.
+  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] }
+  // The lot under a point (lng, lat) and who sets its limit, answered at once from the limits the
+  // worker holds.
+  | { type: 'lotAt'; reqId: number; point: [number, number] };
 
 export type TimelineHostRequest = TimelineRequest | SharedRequest;
 
@@ -146,9 +202,27 @@ export type TimelineResponse =
   | { type: 'lookups'; month: number; lookups: LeverLookups }
   | { type: 'error'; rev: Rev; code: TimelineErrorCode; message: string };
 
-/** Everything the timeline host posts: its own messages and today's shared answers. */
-export type TimelineHostResponse =
-  TimelineResponse | Exclude<ScenarioResponse, { type: 'error' | 'timeline' | 'ranks' | 'levers' }>;
+/** The answers the timeline host posts beside its own messages. */
+export type SharedResponse =
+  | ReadyResponse
+  | ChunksResponse
+  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
+  | { type: 'brushLots'; reqId: number; result: BrushLotsResult }
+  | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
+  | { type: 'lotOutlines'; reqId: number; result: LotOutlinesResult }
+  | { type: 'previewBuildings'; reqId: number; result: PreviewResult }
+  // A policy revision's height regions and contours, once per revision; the chain and label
+  // buffers are transferred.
+  | { type: 'heights'; rev: Rev; city: HeightCity }
+  | { type: 'heightLids'; reqId: number; result: HeightLidsResult }
+  | { type: 'lotAt'; reqId: number; result: LotAtResult };
+
+/** Everything the timeline host posts: its own messages and the shared answers. */
+export type TimelineHostResponse = TimelineResponse | SharedResponse;
+
+/** Everything the Worker accepts and posts: the editor's and the timeline host's. */
+export type WorkerRequest = SimRequest | TimelineHostRequest;
+export type WorkerResponse = SimResponse | TimelineHostResponse;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);

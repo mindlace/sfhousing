@@ -3,18 +3,13 @@
 // function the hashed folders export; the parcels and the protection are parameters (the frame
 // in use), never levers.
 //
-// Mirrors the old host (src/lib/sim/scenario/scenario-host.ts), so timeline-ui can retire it:
-// - createBrushService: scenario-host.ts:372-392 (files, waiters), 1462-1485 (noSession, the
-//   request check), 1565-1635 (filesFor, startBrush, answerBrush), 1637-1694 (brushFile,
-//   fetchBrushFile), 501-505 (waiters answered no-session at the end).
-// - lotOutlinesResult: scenario-host.ts:1501-1509.
-// - previewResult: scenario-host.ts:1533-1562.
-// - lotAtResult: scenario-host.ts:1445-1457.
-// - lidLotsOf: scenario-host.ts:1111-1133; cityTransfer, lidsTransfer: scenario-host.ts:432-466.
-// - buildableStories: scenario-host.ts:1391-1405.
-// - cardDepsOf: scenario-host.ts:255-256, 1330-1342 (qualityRules, building, logOnce), 1356
-//   (record); `building`'s readiness check is `Geometry.allReady` (scenario/geometry.ts:231-240)
-//   over the chunk set's ready cells.
+// - createBrushService: the brush files and their waiters, the request check, filesFor,
+//   startBrush, answerBrush, brushFile and fetchBrushFile; waiters are answered no-session at the
+//   end.
+// - lotOutlinesResult, previewResult, lotAtResult, lidLotsOf, cityTransfer, lidsTransfer and
+//   buildableStories.
+// - cardDepsOf: qualityRules, building, logOnce and record; `building`'s readiness check is
+//   every cell of the chunk set's ready cells.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
@@ -51,14 +46,13 @@ import { packOutlines } from '$lib/sim/outlines';
 import { lotAtPoint } from '$lib/sim/scenario/lot-at';
 import { brushQueryProblem, datasetUrl, fetchWithRetry } from '$lib/sim/scenario/load';
 import { massingFor, simKey } from '$lib/sim/scenario/massing';
+import type { Massing, Schedule } from '$lib/sim/scenario/types';
 import type {
   BrushLotsResult,
   LotAtResult,
   LotOutlinesResult,
-  Massing,
-  PreviewResult,
-  Schedule
-} from '$lib/sim/scenario/types';
+  PreviewResult
+} from '$lib/sim/timeline-protocol';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import type { CardDeps } from '../score/types';
 import type { Dataset } from './dataset';
@@ -455,7 +449,7 @@ export function cardDepsOf(
     building: (sc, k) => (scheduleReady(ds, sc) ? massingFor(sc, k, ds.massing) : NOT_DRAWN),
     logOnce: (key, msg) => logOnce(`card:${key}`, msg),
     record: (id) => ds.chunks.records.get(id) ?? null,
-    // Null where nothing can be built (today's `LotLimits.buildable`, scenario-host.ts:1405);
+    // Null where nothing can be built (today's `LotLimits.buildable`);
     // `cardAt` passes it through to `limits.buildable`.
     buildable: (id, allowed, existingUnits) =>
       buildableStories(

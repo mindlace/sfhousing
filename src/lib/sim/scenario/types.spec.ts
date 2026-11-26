@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
-import type { HeightCity, HeightLids } from '$lib/map/height/types';
-import type { PackedCell, TimelineUpdate } from '$lib/map/types';
 import type { Target } from '$lib/scoreboard';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
@@ -23,15 +20,9 @@ import type {
   Stage,
   TierUnits
 } from '$lib/timelapse/types';
-import type { LeverLookups } from '../levers/apply';
-import type { BrushCatalog, BrushQuery } from '../levers/brushes';
-import type { LeverCapacity } from '../levers/resolve';
 import type { StageScale } from '../levers/timers';
-import type { LimitOwner } from '../levers/source';
-import type { SimLevers } from '../levers/types';
-import type { LotOutlines } from '../outlines';
 import type * as Protocol from '../protocol';
-import type { ChunksResponse, ParcelSummary, ReadyResponse, Rev, SimRequest } from '../protocol';
+import type { ParcelSummary, SimRequest } from '../protocol';
 import type * as Scenario from './types';
 
 type Equals<A, B> =
@@ -121,88 +112,7 @@ type RowProjectCard = {
   sources: { dataset: string; id: string; key?: string }[];
   quality: { label: string; tier: 2 | 3 | 4; valueTier: 0 | 1 | 2 | 3 | 4 | null }[];
 };
-type RowScenarioRequest =
-  | Extract<SimRequest, { type: 'prefetch' | 'retryChunks' }>
-  | {
-      type: 'initScenario';
-      rev: Rev;
-      manifest: Manifest;
-      scenario: 'fzp';
-      seed: number | null;
-      horizon: Day;
-      levers?: SimLevers; // plan 2 Task 12
-      awaitLevers?: boolean; // gross-table Task 6
-    }
-  | { type: 'reroll'; rev: Rev; seed: number | null; swap?: true } // run slider Task 3
-  | { type: 'setLevers'; rev: Rev; levers: SimLevers }
-  | { type: 'parcelSummary'; reqId: number; parcelId: ParcelId; day: Day; projectId?: string }
-  | { type: 'resolveBrush'; reqId: number; query: BrushQuery } // plan 3 Task 5
-  | { type: 'brushCatalog'; reqId: number }
-  | { type: 'lotOutlines'; reqId: number; lots: ParcelId[] }
-  | { type: 'previewBuildings'; reqId: number; lots: ParcelId[]; stories: number } // Task 6
-  | { type: 'heightLids'; reqId: number; bbox: [number, number, number, number] } // height lids Task 8
-  | { type: 'lotAt'; reqId: number; point: [number, number] }; // sim UX plan 4 Task 3
-type RowLotAtResult =
-  | { ok: true; parcelId: ParcelId | null; owner: LimitOwner | null }
-  | { ok: false; reason: 'no-session'; message: string };
-type RowHeightLidsResult =
-  | { ok: true; lids: HeightLids; missing: number }
-  | { ok: false; reason: 'no-session' | 'superseded' | 'too-large'; message: string };
-type RowPreviewResult =
-  | { ok: true; pack: PackedCell | null; built: number; missing: number }
-  | { ok: false; reason: 'no-session'; message: string };
-// `LotOutlines` is { lots: ParcelId[]; ringLot: Uint32Array; starts: Uint32Array;
-// positions: Float64Array } (sim/outlines.ts), shared with the editor's `opLots`.
-type RowLotOutlinesResult =
-  | (LotOutlines & { ok: true; missing: number })
-  | { ok: false; reason: 'no-session'; message: string };
-type RowBrushLotsResult =
-  | { ok: true; lots: ParcelId[]; points: Float64Array }
-  | { ok: false; reason: 'no-session' | 'data-missing' | 'bad-request'; message: string };
-type RowTimelineResponse = {
-  type: 'timeline';
-  rev: Rev;
-  seed: number;
-  render: TimelineUpdate;
-  score: RowTimelineScore;
-  bandRuns: number;
-  bandRunsTotal: number;
-  complete: boolean;
-};
 type RowMassing = GeneratedBuilding | { footprint: [lng: number, lat: number][] };
-type RowScenarioErrorCode =
-  'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal';
-type RowScenarioResponse =
-  | ReadyResponse
-  | ChunksResponse
-  | RowTimelineResponse
-  | { type: 'error'; rev: Rev; code: RowScenarioErrorCode; message: string }
-  | { type: 'parcelSummary'; reqId: number; summary: ParcelSummary | null }
-  | { type: 'brushLots'; reqId: number; result: RowBrushLotsResult } // plan 3 Task 5
-  | { type: 'brushCatalog'; reqId: number; catalog: BrushCatalog | null }
-  | { type: 'lotOutlines'; reqId: number; result: RowLotOutlinesResult }
-  | { type: 'previewBuildings'; reqId: number; result: RowPreviewResult }
-  | { type: 'ranks'; rev: Rev; seeds: number[] }
-  | { type: 'heights'; rev: Rev; city: HeightCity } // height lids Task 8
-  | { type: 'heightLids'; reqId: number; result: RowHeightLidsResult }
-  | { type: 'lotAt'; reqId: number; result: RowLotAtResult }
-  | {
-      type: 'levers';
-      rev: Rev;
-      phase: 'resolving';
-      done: number;
-      total: number;
-      failedCells: string[];
-    } // plan 2 Task 12
-  | {
-      type: 'levers';
-      rev: Rev;
-      phase: 'current';
-      lookups: LeverLookups;
-      capacity: LeverCapacity;
-      unknownLots: number;
-    };
-type RowWorkerRequest = SimRequest | RowScenarioRequest;
 
 // T8
 interface RowTimelineScore {
@@ -268,21 +178,9 @@ const rowsMatch: Assert<
     ? Equals<Scenario.SimInput, RowSimInput> extends true
       ? Equals<Scenario.Simulate, RowSimulate> extends true
         ? Equals<Scenario.ProjectCard, RowProjectCard> extends true
-          ? Equals<Scenario.ScenarioRequest, RowScenarioRequest> extends true
-            ? Equals<Scenario.TimelineResponse, RowTimelineResponse> extends true
-              ? Equals<Scenario.Massing, RowMassing> extends true
-                ? Equals<Scenario.ScenarioErrorCode, RowScenarioErrorCode> extends true
-                  ? Equals<Scenario.ScenarioResponse, RowScenarioResponse> extends true
-                    ? Equals<Scenario.WorkerRequest, RowWorkerRequest> extends true
-                      ? Equals<Scenario.TimelineScore, RowTimelineScore> extends true
-                        ? Equals<Scenario.TargetProgressAt, RowTargetProgressAt> extends true
-                          ? Equals<Scenario.HeightLidsResult, RowHeightLidsResult>
-                          : false
-                        : false
-                      : false
-                    : false
-                  : false
-                : false
+          ? Equals<Scenario.Massing, RowMassing> extends true
+            ? Equals<Scenario.TimelineScore, RowTimelineScore> extends true
+              ? Equals<Scenario.TargetProgressAt, RowTargetProgressAt>
               : false
             : false
           : false
@@ -291,30 +189,10 @@ const rowsMatch: Assert<
     : false
 > = true;
 
-// The names re-exported from protocol are the same types as the ones in ./types.
+// The names the protocol re-exports are the same types as the ones in ./types.
 const reExported: Assert<
-  Equals<Protocol.Schedule, Scenario.Schedule> extends true
-    ? Equals<Protocol.SimInput, Scenario.SimInput> extends true
-      ? Equals<Protocol.Simulate, Scenario.Simulate> extends true
-        ? Equals<Protocol.ProjectCard, Scenario.ProjectCard> extends true
-          ? Equals<Protocol.ScenarioRequest, Scenario.ScenarioRequest> extends true
-            ? Equals<Protocol.TimelineResponse, Scenario.TimelineResponse> extends true
-              ? Equals<Protocol.Massing, Scenario.Massing> extends true
-                ? Equals<Protocol.ScenarioErrorCode, Scenario.ScenarioErrorCode> extends true
-                  ? Equals<Protocol.ScenarioResponse, Scenario.ScenarioResponse> extends true
-                    ? Equals<Protocol.WorkerRequest, Scenario.WorkerRequest> extends true
-                      ? Equals<Protocol.TimelineScore, Scenario.TimelineScore> extends true
-                        ? Equals<Protocol.TargetProgressAt, Scenario.TargetProgressAt>
-                        : false
-                      : false
-                    : false
-                  : false
-                : false
-              : false
-            : false
-          : false
-        : false
-      : false
+  Equals<Protocol.ProjectCard, Scenario.ProjectCard> extends true
+    ? Equals<Protocol.TimelineScore, Scenario.TimelineScore>
     : false
 > = true;
 
@@ -358,7 +236,7 @@ const drawnShape: Assert<
 > = true;
 
 describe('compile-time row checks', () => {
-  it('scenario types equal the T5, T6 and T8 rows and protocol re-exports them', () => {
+  it('scenario types equal the T5 and T8 rows and protocol re-exports them', () => {
     expect([rowsMatch, reExported, editorUnchanged, cardOptional]).toEqual([
       true,
       true,

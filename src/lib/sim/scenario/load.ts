@@ -12,18 +12,19 @@ import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/
 import type { Calibration } from '$lib/timelapse/types';
 import type { FetchLike } from '../chunks';
 import { STOP_TYPES } from '../levers/brushes';
-import { parseSimLevers } from '../levers/types';
 import { isSkipped } from './engine';
 import { ScenarioInputError, buildSimInput, precomputeOf } from './input';
 import { applyPolicies, baseZoning } from './policy';
-import type { ScenarioErrorCode, ScenarioRequest, SimInput } from './types';
+import type { SimInput } from './types';
 
 /** `parcels.bin` goes through this, because `FetchLike` has only `json()` (§4.2 step 4). */
 export type FetchBytesLike = (
   url: string
 ) => Promise<{ ok: boolean; status: number; arrayBuffer(): Promise<ArrayBuffer> }>;
 
-export type InitRequest = Extract<ScenarioRequest, { type: 'initScenario' }>;
+export type LoadErrorCode =
+  'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal';
+
 /**
  * `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it);
  * `gross` likewise for `scenarios.fzp.gross` (optional even for /sim: without it lever revisions
@@ -53,7 +54,7 @@ export interface Loaded {
   cars: CarData | null;
 }
 export interface LoadFailure {
-  code: ScenarioErrorCode;
+  code: LoadErrorCode;
   message: string;
 }
 
@@ -69,45 +70,6 @@ export interface LoadDeps {
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
   /** The gross.bin decoder; default `readGrossTable`. The same kind of seam. */
   decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-}
-
-const SEED_END = 4294967296; // 2³², as a literal (ruling A3)
-
-/** null for a seed the request may carry: null or an integer in [0, 2³²). */
-export function seedProblem(seed: unknown): string | null {
-  if (seed === null) return null;
-  if (typeof seed === 'number' && Number.isInteger(seed) && seed >= 0 && seed < SEED_END) {
-    return null;
-  }
-  return 'seed must be null or an integer in [0, 4294967296)';
-}
-
-/** null for a lever document `parseSimLevers` accepts, else its problem (`bad-request`). */
-export function leversProblem(levers: unknown): string | null {
-  try {
-    parseSimLevers(levers);
-    return null;
-  } catch (e) {
-    return `levers ${e instanceof Error ? e.message : String(e)}`;
-  }
-}
-
-/**
- * §4.2 step 1: null when the request is acceptable, else its first problem (`bad-request`).
- * `levers` (plan 2) is checked only when present; `awaitLevers` must be a boolean, and true only
- * with `levers`.
- */
-export function validateInitRequest(req: InitRequest): string | null {
-  if (req.scenario !== 'fzp') return "scenario must be 'fzp'";
-  const seed = seedProblem(req.seed);
-  if (seed !== null) return seed;
-  if (!Number.isInteger(req.horizon)) return 'horizon must be an integer';
-  if (req.awaitLevers !== undefined && typeof req.awaitLevers !== 'boolean') {
-    return 'awaitLevers must be a boolean';
-  }
-  if (req.awaitLevers && req.levers === undefined) return 'awaitLevers needs levers';
-  if (req.levers !== undefined) return leversProblem(req.levers);
-  return null;
 }
 
 /** `u` when it is a URL under `/data/<datasetVersion>/` of `m`, else null. */

@@ -62,7 +62,7 @@ import {
   type WorldEvent
 } from './types';
 
-/** Massings kept (today's `MEMO_CAP`, scenario-host.ts:253). */
+/** Massings kept (`MEMO_CAP`). */
 export const MASSING_CAP = 60_000;
 
 export interface MapStreamDeps {

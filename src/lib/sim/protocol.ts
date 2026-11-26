@@ -101,5 +101,5 @@ export interface ParcelSummary {
 type Assert<T extends true> = T;
 export type ParcelSummaryIsLike = Assert<ParcelSummary extends ParcelSummaryLike ? true : false>;
 
-// Step 0: the scenario protocol types (T5, T6, T8). Type-only cycle with ./scenario/types.
-export type * from './scenario/types';
+// The card and score types the page reads through the protocol.
+export type { ProjectCard, TimelineScore } from './scenario/types';

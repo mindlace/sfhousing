@@ -1,7 +1,7 @@
 // PolicySync: the lots of the latest schema 4 document (resolve every brush query, debounce 250 ms).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import type { BrushLotsResult } from '$lib/sim/timeline-protocol';
 import { PolicySync } from './policy-sync.svelte';
 import { DEFAULT_POLICY4, queriesOf4, type Policy, type SimPolicy4 } from './policy4';
 

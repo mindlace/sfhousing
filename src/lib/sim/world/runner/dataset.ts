@@ -2,16 +2,12 @@
 // generator memo's massing context and the CompileCtx with its yield source. Wiring only: every
 // model result comes from a function the hashed folders export.
 //
-// Mirrors the old host (src/lib/sim/scenario/scenario-host.ts), so timeline-ui can retire it:
-// - createChunkSet: scenario-host.ts:555-574 (the loader and its deps), 588-591 (onChunk),
-//   602-603 (failed cells), 616-627 (prefetch, without the geometry's extra cells).
-// - loadDataset: scenario-host.ts:630-664 (loadScenario with `{ policy: true }`), 681-687 (the
-//   MassingCtx), 702-704 (LayerCtx, GrossCache, table); the memo itself is the caller's
-//   (scenario-host.ts:474-483, 530-534: cleared on another datasetVersion).
+// - createChunkSet: the loader and its deps, onChunk, failed cells, prefetch.
+// - loadDataset: loadScenario with `{ policy: true }`, the MassingCtx, LayerCtx, GrossCache and
+//   table; the memo itself is the caller's (cleared on another datasetVersion).
 // - the world core (car-ownership Task 11): `withFunding(createFundingSystem(), cars)`, built once
 //   per load because the car system is the dataset's (`carSystemOf`, world/cars/dataset.ts).
-// - yieldSourceOf: scenario-host.ts:935-947, 955 (table or chunk recompute, want its cells),
-//   603 (failed cells).
+// - yieldSourceOf: table or chunk recompute, want its cells, failed cells.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
 import type { GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';

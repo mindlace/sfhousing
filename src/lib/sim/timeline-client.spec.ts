@@ -1,12 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
-import type { ScenarioWorkerLike } from './scenario-client';
-import type { WorkerRequest } from './scenario/types';
 import { FIXTURE_1 } from './test/harness';
-import type { TimelineHostRequest, TimelineHostResponse } from './timeline-protocol';
-import { TimelineClient, type TimelineClientEvents } from './timeline-client';
+import type { TimelineHostRequest, TimelineHostResponse, WorkerRequest } from './timeline-protocol';
+import { TimelineClient, type TimelineClientEvents, type WorkerLike } from './timeline-client';
 
-interface FakeWorker extends ScenarioWorkerLike {
+interface FakeWorker extends WorkerLike {
   posts: (WorkerRequest | TimelineHostRequest)[];
   terminated: boolean;
   emit(resp: TimelineHostResponse): void;
