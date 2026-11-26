@@ -1,3 +1,0 @@
-Ruling written: `/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/game-sim-3.md`
-
-game-sim may make the one-line change to the test 8 locator in `e2e/sim-funding.spec.ts`, so it finds the bond's bar by the policy's label, "A housing bond". The rule that a policy takes its preset's label stays. The rest of the file still belongs to funding-measures, and the two units can run together. Whichever merges second keeps game-sim's locator and funding-measures' additions to test 8. The design doc's write sets and the game-sim and funding-measures specs now say this. Package commit is `1a991821`. Both units are marked as clarification only, and no interface row changed.

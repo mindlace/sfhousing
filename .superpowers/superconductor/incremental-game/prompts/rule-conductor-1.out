@@ -1,2 +1,0 @@
-Warning: Code Mode (experimental) isn't available: claude -p and Agent SDK apps get it only when CLAUDE_CODE_EXPERIMENTAL_CODE_MODE is in the env block of --settings (the SDK's settings option). Starting with the ordinary tools.
-/Users/mindlace/Projects/sfhousing/.claude/worktrees/incremental-game/.superpowers/superconductor/incremental-game/rulings/conductor-1.md
