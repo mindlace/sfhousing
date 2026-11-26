@@ -257,9 +257,9 @@ describe('Autosave restore', () => {
   it('restore(handoff) uses the handoff plan (rebased) over the stored one', () => {
     const s = seed(plan(4), { lastPublished: { id: 'abcdEFGH', hash: 'd'.repeat(64) } });
     const { a } = setup(s);
-    const handoff = serializePlan(plan(1, { datasetVersion: 'fixture-0', title: 'Remixed' }));
+    const handoff = serializePlan(plan(1, { datasetVersion: 'fixture-0', title: 'Handed off' }));
     const r = a.restore(handoff);
-    expect(r.plan).toEqual(plan(1, { title: 'Remixed' }));
+    expect(r.plan).toEqual(plan(1, { title: 'Handed off' }));
     expect(r.notice).toBeNull();
     expect(a.lastPublished).toBeUndefined();
     expect(stored(s).plan).toBe(serializePlan(r.plan));

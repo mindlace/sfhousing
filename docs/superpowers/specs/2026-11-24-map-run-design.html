@@ -362,7 +362,7 @@ let remembered: CameraFrame | null = null;</code></pre>
 
     <section id="sec-design-visible">
       <h3>What shows at the fitted zoom</h3>
-      <p>This unit changes no layer. The table says what the consumers get, for the desktop fit (about 11.6) and the phone fit (about 10.5), flat and north up.</p>
+      <p>No layer draws anything different in the run view; the timeline is drawn with fewer layers (<a href="#sec-design-merged">The timeline in one pair of layers while locked</a>). The table says what the consumers get, for the desktop fit (about 11.6) and the phone fit (about 10.5), flat and north up.</p>
       <table id="tbl-visible">
         <caption>Layers in the run view</caption>
         <thead>
@@ -389,6 +389,23 @@ let remembered: CameraFrame | null = null;</code></pre>
       </ul>
     </section>
 
+    <section id="sec-design-merged">
+      <h3>The timeline in one pair of layers while locked</h3>
+      <p>While the run view is on, the timeline controller draws every cell's parts in one solid layer and one ghost layer, in place of one pair per cell. The run view shows the whole city, so the per-cell pairs (about 124 cells on the live city, four draws each with the extruded sides and tops) would cost about 500 draws a frame, and every frame redraws because the run's clock moves the day.</p>
+      <pre><code data-lang="ts">// src/lib/map/timeline-controller.ts (added)
+/** One merged solid and ghost layer over every cell while on; per-cell layers while off. */
+setMerged(on: boolean): void;</code></pre>
+      <ul>
+        <li><code>SimMap</code>'s <code>setRunView(true)</code> calls <code>setMerged(true)</code> on the timeline controller once the map and controller exist, and <code>setRunView(false)</code> calls <code>setMerged(false)</code>. A controller made while locked starts merged. A call with the value already in force does nothing.</li>
+        <li>Merged, the controller emits <code>timeline-solid-run</code> and <code>timeline-ghost-run</code>: the same <code>SolidPolygonLayer</code> props, <code>TimelapseExtension</code>, uniforms and clock as the per-cell layers, over the cells' binary attributes joined in cell-id order. Bars, marks and the overlay layers follow as they do unmerged, in the same order.</li>
+        <li>The picture is the per-cell layers' picture: same geometry, same parts, same extrusion, and the same two passes in the same order, every solid, then every ghost. The solid pass is the same pixel for pixel, since solids are opaque and write depth. Within the ghost pass the merged layer draws every cell's sides, then every cell's tops, where the per-cell layers draw each cell's sides and tops in turn; ghosts are translucent and write no depth, so where the ghosts of two cells overlap on screen they blend in that other order. At the run view's pitch 0 a side face projects to about one pixel or less, so the difference is confined to slivers of about one pixel where neighbouring cells' ghosts meet. No other pixel differs.</li>
+        <li>Merged layers are not culled per cell; the fitted view holds the whole city, so culling would keep every cell anyway.</li>
+        <li>The joined attributes are built once when merging starts and again after each <code>applyTimeline</code> that changes a cell while merged. A <code>setTime</code> joins nothing.</li>
+        <li>Unmerged, the controller emits per-cell layers exactly as it does with no run view, so per-cell picking and culling work as before. A cell update while merged is held in the per-cell state too, so unmerging needs no rebuild of a cell.</li>
+        <li>Picking is off while locked (<a href="#sec-design-picking">Hover, taps, tooltips and cards</a>), so a merged layer never answers a pick, and <code>TIMELINE_PART_LAYER</code> still names only per-cell layer ids.</li>
+      </ul>
+    </section>
+
     <section id="sec-design-docs">
       <h3>The developer document</h3>
       <p><code>docs/dev/map-interfaces.md</code> gains a section "The run view", after "The dock's width and the bottom-left control". It holds:</p>
@@ -397,7 +414,7 @@ let remembered: CameraFrame | null = null;</code></pre>
         <li>The eight handlers, the hidden bottom-left controls and Reset view, <code>touch-action: none</code>, and that <code>setPanEnabled</code> takes effect at unlock.</li>
         <li>That nothing is picked, delivered or shown while locked.</li>
         <li>The remembered camera, the refit on resize or inset, and survival across a remount.</li>
-        <li>The table of what shows at the fitted zoom.</li>
+        <li>The table of what shows at the fitted zoom, and that the timeline draws as one solid and one ghost layer while locked.</li>
         <li>The root's <code>data-run-view="on"</code>.</li>
       </ul>
     </section>
@@ -413,7 +430,9 @@ let remembered: CameraFrame | null = null;</code></pre>
       <tbody>
         <tr><th scope="row"><code>src/lib/map/camera.ts</code></th><td>Adds <code>RUN_BOUNDS</code>, <code>RUN_PAD_PX</code>, <code>RUN_MIN_ZOOM</code> and <code>runFrame</code>.</td></tr>
         <tr><th scope="row"><code>src/lib/map/camera.spec.ts</code></th><td>Tests of <code>runFrame</code>.</td></tr>
-        <tr><th scope="row"><code>src/lib/map/SimMap.svelte</code></th><td>The run view: state, <code>setRunView</code>, <code>applyInteraction</code>, the picking guards, the refit, the markup and style rules.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/SimMap.svelte</code></th><td>The run view: state, <code>setRunView</code> (with the controller's <code>setMerged</code>), <code>applyInteraction</code>, the picking guards, the refit, the markup and style rules.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/timeline-controller.ts</code></th><td><code>setMerged</code> and the merged solid and ghost layers.</td></tr>
+        <tr><th scope="row"><code>src/lib/map/timeline-controller.spec.ts</code></th><td>Tests of <code>setMerged</code>.</td></tr>
         <tr><th scope="row"><code>src/lib/map/SimMap.run-view.svelte.spec.ts</code></th><td>Created: the component tests below.</td></tr>
         <tr><th scope="row"><code>src/lib/map/SimMap.svelte.spec.ts</code></th><td><code>HANDLE_FNS</code> gains <code>'setRunView'</code>.</td></tr>
         <tr><th scope="row"><code>src/lib/map/SimMap.ssr.spec.ts</code></th><td>The server render has no <code>data-run-view</code>.</td></tr>
@@ -444,6 +463,18 @@ let remembered: CameraFrame | null = null;</code></pre>
       </ul>
     </section>
 
+    <section id="sec-tests-merged">
+      <h3>Unit (<code>timeline-controller.spec.ts</code>)</h3>
+      <ul>
+        <li>With cells installed, <code>setMerged(true)</code> emits exactly one <code>timeline-solid-run</code> and one <code>timeline-ghost-run</code> layer, then the bars, the marks and the overlay layers in the same order as unmerged; no per-cell timeline layer.</li>
+        <li>The merged layers hold every installed cell's parts: their attribute lengths are the sums of the cells', in cell-id order, and their props and extension equal a per-cell layer's apart from id and data.</li>
+        <li><code>setMerged(false)</code> emits the per-cell layers equal to those of a controller never merged.</li>
+        <li>An <code>applyTimeline</code> that changes a cell while merged rebuilds the joined attributes; a <code>setTime</code> while merged rebuilds nothing.</li>
+        <li>A cell update while merged, then <code>setMerged(false)</code>, gives the per-cell layers of the updated cell.</li>
+        <li>A second <code>setMerged</code> with the value in force emits nothing new.</li>
+      </ul>
+    </section>
+
     <section id="sec-tests-component">
       <h3>Component (<code>SimMap.run-view.svelte.spec.ts</code>, real MapLibre on fixture-0)</h3>
       <ul>
@@ -463,6 +494,7 @@ let remembered: CameraFrame | null = null;</code></pre>
         <li>Locked, <code>setBottomInset(120)</code>: the zoom becomes <code>runFrame(600, 400, 120).zoom</code>.</li>
         <li>On a coarse pointer (<code>matchMedia</code> stubbed before render), "Reset view" is absent while locked and present after unlock.</li>
         <li>Lock and unlock raise no console error and no unhandled rejection.</li>
+        <li>Locked with timeline cells applied, the overlay's layers hold one <code>timeline-solid-run</code> and one <code>timeline-ghost-run</code> and no per-cell timeline layer; after unlock they hold the per-cell layers again.</li>
       </ul>
     </section>
 
@@ -497,6 +529,7 @@ let remembered: CameraFrame | null = null;</code></pre>
       <li><strong>The root carries <code>data-run-view="on"</code>.</strong> The style rule needs a hook, and e2e specs in <code>closing</code> can read it.</li>
       <li><strong><code>touch-action</code> comes from a class.</strong> The brush writes the same element's inline style; a class cannot be undone by it.</li>
       <li><strong>The cursor is <code>default</code> while locked.</strong> MapLibre's grab cursor would say the map can be dragged.</li>
+      <li><strong>The timeline draws as one solid and one ghost layer while locked.</strong> A per-cell pair costs four draws and per-draw uniform setup on every frame of a run; the whole city's cells would put the run's frame over the map's bar. Joining the cells keeps the picture, apart from the blend order of overlapping ghost slivers of about one pixel, and drops the draws to a handful; no small number of draws can keep each cell's sides and tops together. Per-cell layers return at unlock because picking and culling need them.</li>
       <li><strong>deck's picking is off while locked.</strong> Otherwise deck highlights parts under the ring and runs a picking pass on every pointer move, which no bench case measures.</li>
       <li><strong>A press begun while locked is never delivered.</strong> A tap is a whole gesture; half of it was made on a locked map.</li>
       <li><strong>"Survives a remount" means a remount by a new manifest inside one SimMap,</strong> as the pan state does; a new SimMap component starts unlocked.</li>
@@ -509,7 +542,7 @@ let remembered: CameraFrame | null = null;</code></pre>
       <li>When to call <code>setRunView</code>, hiding the map key, the dock or the timeline during a run, and what the page does with the citywide <code>moveend</code>: <code>game-sim</code>.</li>
       <li>Drops, the ring, its cursor, the canvas over the map and <code>RunFeed.project</code>: <code>run-play</code>.</li>
       <li>The run's bench case, e2e specs of a run and the journey: <code>closing</code>.</li>
-      <li>Any change to layers, bar gates, the existing-buildings fade or what cells the stream loads.</li>
+      <li>Any change to what a layer draws, bar gates, the existing-buildings fade or what cells the stream loads.</li>
       <li>Keeping the camera across the remount from the opening to the simulation page (call 6): the page that remounts the map.</li>
       <li>The citywide feed's <code>existing</code> field and the feed's part of <code>types.ts</code> and <code>map-interfaces.md</code>: <code>city-net</code>.</li>
     </ul>

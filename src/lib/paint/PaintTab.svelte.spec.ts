@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
+import { MSG } from '$lib/brush/messages';
 import { BrushState } from '$lib/brush/state.svelte';
 import PaintTab from './PaintTab.svelte';
 import type { PaintRow } from './rows';
@@ -260,12 +261,12 @@ describe('PaintTab', () => {
         eraseHint: 'x',
         readonly: true,
         rows,
-        intro: 'Read-only. Remix to edit.',
+        intro: MSG.readOnly,
         summary: '6 and 8 stories · 2 lots rebuilt'
       }
     });
     const lines = [...shared.container.firstElementChild!.children].map((e) => e.textContent);
-    expect(lines).toEqual(['Read-only. Remix to edit.', '6 and 8 stories · 2 lots rebuilt']);
+    expect(lines).toEqual([MSG.readOnly, '6 and 8 stories · 2 lots rebuilt']);
     expect(page.getByRole('list', { name: 'Painted areas' }).elements()).toHaveLength(0);
     expect(document.querySelector('[data-paint-row]')).toBeNull();
     expect(page.getByRole('radiogroup').elements()).toHaveLength(0);

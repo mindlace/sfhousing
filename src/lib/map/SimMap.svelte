@@ -475,6 +475,7 @@
     if (on === runView) return;
     runView = on;
     const l = live;
+    l?.timeline?.setMerged(on);
     if (on) {
       clearShown();
       unreportHover();
@@ -1065,6 +1066,7 @@
         else log.error(e.message, e.cause)();
       }
     });
+    if (runView) timeline.setMerged(true); // before the queued updates
     if (pendingDay !== null) timeline.setTime(pendingDay);
     timeline.setHalos(pendingHalos);
     timeline.setBarMode(pendingBarMode);

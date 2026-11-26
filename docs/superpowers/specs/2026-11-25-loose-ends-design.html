@@ -1,0 +1,124 @@
+<article>
+  <header>
+    <h1>Loose ends: the last untrue lines after closing</h1>
+    <p>Makes the developer documents name the simulation as it now is, drops a link that leads nowhere, keeps the focused skip link off the header's targets, and clears the words that still name Remix.</p>
+  </header>
+
+  <section id="sec-purpose">
+    <h2>Purpose</h2>
+    <p>This unit runs after <code>closing</code>, on the integration branch with every other unit of the <a href="../design/2026-11-24-2120-incremental-loop.html">design</a> merged. It produces no interface row and needs none. It carries P5 and call 6 (one address), P11 (the brush does not come back), P13 (no Remix) and the WCAG 2.2 AA global constraint.</p>
+  </section>
+
+  <section id="sec-interfaces">
+    <h2>Interfaces</h2>
+    <p>Produced: none. Needed: none. The unit changes words, one link, one class list and test fixtures.</p>
+  </section>
+
+<section id="sec-global-constraints">
+    <h2>Global constraints</h2>
+    <ul>
+      <li>One future: the same policy document always gives the same forecast. No game state reaches the worker except through the policy document.</li>
+      <li>No file the dataset version hashes is changed: <code>pipeline</code>, <code>src/lib/config.ts</code>, <code>src/lib/{data,generator,timelapse}</code>, <code>src/lib/plan/{geometry,types}.ts</code>, <code>src/lib/sim/finance</code> (<code>pipeline/lib/version.ts:41</code>). The dataset version stays as it is.</li>
+      <li>A policy node acts on a lever the code already has, at a value the code already sources. No node invents a value.</li>
+      <li>The painted area, own pools, the City funding scale and market terms are never offered in a game.</li>
+      <li>Published plans and policies open and play in full, as today.</li>
+      <li>WCAG 2.2 AA: everything works from the keyboard; targets are at least 24 px; motion follows the reduced-motion setting; nothing flashes more than three times a second.</li>
+      <li>Page text is short. A node is a name, a line and a price.</li>
+      <li>The CSP is not widened. Sound is made in the browser; no audio file, font or script is added.</li>
+      <li>A runtime dependency is not added without a credit in <code>src/lib/attribution.ts</code>. None is expected.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns.</li>
+      <li>Vitest runs with <code>expect.requireAssertions</code>. Tests are colocated.</li>
+      <li>A schema change goes through <code>npm run db:generate</code>. Migrations are never edited by hand.</li>
+      <li>Signoff fails on server stderr, on timing crutches and on retried flakes. Timing is measured only on a quiet machine.</li>
+      <li>Port 4173 belongs to whichever session started the preview. Never kill it; wait.</li>
+      <li>Commits use Conventional Commits and carry no Claude attribution.</li>
+      <li>Work happens in git worktrees under <code>.claude/worktrees/</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-found">
+    <h2>What the code is today</h2>
+    <ul>
+      <li><code>docs/dev/sim-page.md:1</code> is titled "/sim: the policy simulation page", and <code>docs/dev/timeline-ui.md:1</code> "The /sim timeline". Both, and <code>docs/dev/map-interfaces.md</code>, <code>docs/dev/map-stream.md</code>, <code>docs/dev/world-score.md</code> and <code>docs/dev/world-funding.md</code>, name the page "<code>/sim</code>" in their body.</li>
+      <li><code>docs/dev/sim-page.md:86</code> quotes the heading "Policies (<code>/sim</code>)" of <code>docs/dev/plan-sharing.md</code>, which now reads "Policies (the simulation)".</li>
+      <li><code>src/lib/timeline/TimelineMode.svelte:2091</code>: with no scenario, the message "The simulation isn't available for dataset …" carries a link "Go to the editor" to <code>/</code>, which is this page. <code>e2e/fzp.spec.ts:576</code> and <code>e2e/sim-activity.spec.ts:260</code> assert the link.</li>
+      <li><code>src/routes/+layout.svelte:43-47</code>: the skip link, once focused, is absolute at the top left (<code>focus:absolute focus:top-2 focus:left-2 focus:z-50</code>), over the header's site name and the unit count (<code>GameCell</code>); axe's <code>target-size</code> rule reports the covered targets while it has focus.</li>
+      <li><code>src/lib/sim-page/sim-doc.ts:2</code>: a comment calls the schema 3 document "The /sim policy document: what is autosaved, published and remixed".</li>
+      <li>Test fixtures that name Remix as words: <code>src/lib/paint/PaintTab.svelte.spec.ts:263,268</code> ("Read-only. Remix to edit."), <code>src/lib/sharing/NoticeStack.svelte.spec.ts:72-141</code> (a notice id <code>remix</code> with the words "Remixed" and "Remixed toast"), <code>src/lib/sharing/autosave.svelte.spec.ts:260-262</code> (a title "Remixed").</li>
+    </ul>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+    <section id="sec-design-docs">
+      <h3>The documents</h3>
+      <ul>
+        <li>In <code>docs/dev/{sim-page,timeline-ui,map-interfaces,map-stream,world-score,world-funding}.md</code>, "<code>/sim</code>" as the name of the page becomes "the simulation", and "<code>/sim</code>" as an address becomes <code>/</code>. Each sentence is made true of the code as it is.</li>
+        <li><code>docs/dev/sim-page.md</code>'s title becomes "The simulation page"; <code>docs/dev/timeline-ui.md</code>'s becomes "The simulation's timeline".</li>
+        <li><code>docs/dev/sim-page.md:86</code> quotes plan-sharing.md's heading as it now reads, "Policies (the simulation)".</li>
+        <li>"<code>/sim</code>" stays where a sentence says that <code>/sim</code> redirects to <code>/</code>, in a test name or path, and in a dated measurement row.</li>
+      </ul>
+    </section>
+    <section id="sec-design-editor-link">
+      <h3>The simulation with no scenario</h3>
+      <ul>
+        <li>The message "The simulation isn't available for dataset {version}. It needs data this dataset doesn't have." keeps its words, its role and <code>fzp-status</code>, and carries no action. The brush is the opening only (P11), and <code>/</code> is this page.</li>
+        <li>The message stays a card (<code>data-shape="card"</code>), as today.</li>
+        <li><code>e2e/fzp.spec.ts</code> and <code>e2e/sim-activity.spec.ts</code> assert the message has no link, where they asserted "Go to the editor".</li>
+      </ul>
+    </section>
+    <section id="sec-design-skip">
+      <h3>The skip link</h3>
+      <ul>
+        <li>The focused skip link covers no other target. It is in flow before the header while focused (<code>sr-only focus:not-sr-only</code>, no <code>focus:absolute</code>), so the header moves down by its height while it has focus and returns when focus leaves.</li>
+        <li>It keeps its words, its target <code>#main</code>, its look (<code>focus:bg-white focus:px-3 focus:py-2</code>) and its place as the first Tab stop.</li>
+        <li><code>e2e/game-a11y.spec.ts</code> adds one case: on the tree and in the opening, at 375 and 1280 px, with the skip link focused, <code>expectNoA11yViolations(page)</code> passes.</li>
+      </ul>
+    </section>
+    <section id="sec-design-words">
+      <h3>Words that name Remix</h3>
+      <ul>
+        <li>The comment at <code>src/lib/sim-page/sim-doc.ts:2</code> says what the file holds now: the simulation's schema 3 policy document, which stored rows and old autosaves still hold. It names neither <code>/sim</code> nor Remix.</li>
+        <li><code>PaintTab.svelte.spec.ts</code> uses the intro "Read-only.", <code>MSG.readOnly</code>.</li>
+        <li><code>NoticeStack.svelte.spec.ts</code> uses a notice id <code>saved</code> with the words "Saved" and "Saved toast"; <code>autosave.svelte.spec.ts</code> uses the title "Handed off". The behaviour each test checks is unchanged.</li>
+        <li>Not changed: <code>src/lib/config.ts</code> (<code>APP_NAME</code>, a hashed file, unused); the shared pages' <code>DatasetNotice</code> value <code>'remix'</code> (the name of the older-data notice N5 in <code>src/lib/server/sharing/shared-page.ts</code>, <code>SharedBanner.svelte</code>, <code>sim-session.ts</code> and their tests); tests that assert Remix is gone; and the 404 for <code>/favicon.ico</code>, since the site has never had a favicon and the package adds none.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-files">
+    <h2>Files</h2>
+    <ul>
+      <li>Changes: <code>docs/dev/{sim-page,timeline-ui,map-interfaces,map-stream,world-score,world-funding}.md</code>; <code>src/lib/timeline/TimelineMode.svelte</code> (the no-scenario message); <code>src/routes/+layout.svelte</code> (the skip link's classes); <code>src/lib/sim-page/sim-doc.ts</code> (one comment); <code>src/lib/paint/PaintTab.svelte.spec.ts</code>, <code>src/lib/sharing/NoticeStack.svelte.spec.ts</code>, <code>src/lib/sharing/autosave.svelte.spec.ts</code> (fixture words); <code>e2e/fzp.spec.ts</code>, <code>e2e/sim-activity.spec.ts</code>, <code>e2e/game-a11y.spec.ts</code>.</li>
+      <li>Creates and deletes nothing.</li>
+    </ul>
+  </section>
+
+  <section id="sec-tests">
+    <h2>Tests</h2>
+    <ul>
+      <li>e2e: the no-scenario message has no link and is still a card (<code>fzp.spec.ts</code>, <code>sim-activity.spec.ts</code>).</li>
+      <li>e2e: with the skip link focused, axe passes on the tree and in the opening at 375 and 1280 px (<code>game-a11y.spec.ts</code>).</li>
+      <li>Unit: the three spec files pass with their new fixture words.</li>
+      <li>Done when <code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code> and <code>npm run test:e2e</code> pass, no test only on retry, and closing's sweep finds nothing outside its allowed places.</li>
+    </ul>
+  </section>
+
+  <section id="sec-decisions">
+    <h2>Decisions</h2>
+    <ul>
+      <li>The skip link goes in flow rather than to another absolute place. Any absolute place on the map pages covers a header or notice target; in flow it covers none.</li>
+      <li>The no-scenario message loses its link rather than gaining another. No page offers the brush after the opening, and About is in the header.</li>
+      <li>The <code>'remix'</code> notice value keeps its name. It is an internal value of the shared pages' server side, which the package does not change, and no reader sees it.</li>
+    </ul>
+  </section>
+
+  <section id="sec-out-of-scope">
+    <h2>Out of scope</h2>
+    <ul>
+      <li>A favicon: none exists and the package adds none.</li>
+      <li><code>src/lib/config.ts</code>: hashed into the dataset version.</li>
+      <li>Every other document and test: <code>closing</code>, merged.</li>
+    </ul>
+  </section>
+</article>

@@ -1232,7 +1232,7 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
 
     <section id="sec-design-bench">
       <h3>The run bench</h3>
-      <p>A new case, <code>e2e/bench/game-run.bench.ts</code>, test "bench:map: run with drops, citywide, moving pointer". It decides run-play's frame budget: run-play halves <code>maxDrawn</code> while this case's p95 is above 16.7 ms.</p>
+      <p>A new case, <code>e2e/bench/game-run.bench.ts</code>, test "bench:map: run with drops, citywide, moving pointer". It decides run-play's frame budget: run-play halves <code>maxDrawn</code> while this case's p95 is above 16.7 ms and the layer's own p95 (<code>run.perf.svelte.spec.ts</code>) is above its 2 ms budget.</p>
       <ol>
         <li><code>seedGame(page, { phase: 'runs', runs: 1 })</code>; no goal amount and no run time are seeded.</li>
         <li><code>page.goto('/')</code>; the map is ready; <code>waitFilled(page)</code>; <code>waitPhase</code> <code>tree</code>.</li>
@@ -1245,7 +1245,8 @@ Full tree by &lt;Mon YYYY&gt;: missed, &lt;homes&gt; homes, &lt;short&gt; short<
         <li>"Collect for me" stays off and sound stays on, as a new player has them, so the ring's test, the drawing and the sounds run each frame.</li>
         <li>The view is the run view of M1: the whole city, flat and north up, with the flat basemap and the drops (call 19).</li>
         <li>It prints one line: <code>bench:map case=run dataset=&lt;v&gt; frames=&lt;n&gt; dropped=&lt;homes&gt; collected=&lt;homes&gt; p50=&lt;ms&gt; p95=&lt;ms&gt; bar=16.7ms PASS|FAIL dpr=&lt;dpr&gt; renderer="&lt;renderer&gt;"</code>, and pushes it as a <code>bench:map</code> annotation.</li>
-        <li>It passes when p95 is at most <code>BAR_MS</code> (16.7 ms).</li>
+        <li>It passes when p95 is at most <code>BAR_MS</code> (16.7 ms), the bar of every map case.</li>
+        <li>When it fails with the run layer under its budget, the run's main-thread work outside the layer is profiled on the same machine (a Chrome trace of the case). The excess is <code>game-lane</code>'s (the simulation page's run: planning drops again on each city update, the feed, the clock, the page's effects) unless the trace puts it in <code>src/lib/map</code>, where it is <code>map-lane</code>'s. The owner's fix round meets 16.7 ms; the bar is not restated.</li>
         <li>It has no timeout of its own: the bench config's 180 s holds a run of 20 s.</li>
         <li>The measurement of record is on the live dataset: <code>npm run data:local -- &lt;v&gt;</code>, then <code>SFH_BENCH_DATASET=&lt;v&gt; npm run bench:map -- -g "run with drops"</code>. On fixture-0 it runs and reports, with few drops.</li>
         <li>The agent runs it, never the owner, and only on a quiet machine: the one-minute load average from <code>uptime</code> is below 2 and no other session's Playwright, Vite or wrangler process is running. Otherwise the run is deferred and the hand-back says so.</li>
@@ -1415,9 +1416,9 @@ git grep -n -E 'level2-check|readLevel2|level2Lines|level2Exit|runEmptyDocument'
 git grep -n "'/sim" -- e2e
 git grep -n -F '\/sim$' -- e2e</code></pre>
       <ul>
-        <li>Allowed: the redirect's files and the tests that assert the redirect; an assertion that a banner has no "Remix", and <code>game.md</code>'s sentence that there is no Remix; a test that writes a five-level record to prove it is deleted; the history files the rule above keeps.</li>
+        <li>Allowed: the redirect's files and the tests that assert the redirect; an assertion that a banner has no "Remix", and <code>game.md</code>'s sentence that there is no Remix; a test that writes a five-level record to prove it is deleted; the history files the rule above keeps; <code>APP_NAME</code> in <code>src/lib/config.ts</code>, which the dataset version hashes; the shared pages' <code>DatasetNotice</code> value <code>'remix'</code> (the older-data notice N5) where the code and tests name it, and the tests that assert Remix is gone.</li>
         <li>A hit in a file of this unit's write set is fixed.</li>
-        <li>A hit in another unit's file is reported with its <code>file:line</code> and owner, and left alone.</li>
+        <li>A hit in another unit's file is reported with its <code>file:line</code> and owner, and left alone. <code>loose-ends</code>, which runs after this unit, clears the hits the package names.</li>
       </ul>
     </section>
 
@@ -1433,6 +1434,7 @@ npx tsx scripts/reach-check.ts --version &lt;v&gt;</code></pre>
         <li>All run on the merged tree, in this order, in the foreground.</li>
         <li><code>test:e2e</code> and the bench start a server on port 4173 and fail when it is busy. Before each, <code>lsof -nP -iTCP:4173 -sTCP:LISTEN</code>: a listener belongs to another session; the implementer waits and checks again, and never stops it.</li>
         <li>A test that passes only on retry counts as a failure.</li>
+        <li>The older wall-clock budgets of <code>npm run test:perf</code> and <code>npm run bench:map</code> are held to <code>main</code>: a budget this branch fails while <code>main</code> passes it, or fails by more than 10% beyond <code>main</code>'s figure, measured in the same session on the same quiet machine, is a defect of the unit whose files sit on its path (<code>money-wait</code> for the funded month, <code>map-lane</code> for the city feed's flush and the timeline's swap install). A budget whose path holds no file this package writes is recorded in the hand-back with both trees' figures and is not this build's, whether or not <code>main</code> passes it: the budgets of <code>src/lib/sim/scenario/scenario.bench.spec.ts</code>, whose path is the older scenario engine (<code>src/lib/sim/scenario</code>, <code>src/lib/sim/levers</code>, <code>src/lib/sim/chunks</code>) and the map's packers (<code>src/lib/map/pack.ts</code>, <code>pack-timed.ts</code>, <code>height/</code>), are such budgets. A budget <code>main</code> also fails by about as much, or one that fails once and passes on a second run while <code>main</code> passes, is recorded in the hand-back and is not this build's.</li>
         <li>The bench runs on a quiet machine, by the agent (<a href="#sec-design-bench">The run bench</a>), on the live dataset.</li>
         <li><code>scripts/docs-index.spec.ts</code> passes within <code>test:unit</code>.</li>
         <li>Signoff is the conductor's, after the hand-back. The hand-back holds the reach check's lines, the two bench lines, the sweep's hits in other units' files, every selector or rule of another unit that the merged code did not meet, and the owner action for Google's app name.</li>

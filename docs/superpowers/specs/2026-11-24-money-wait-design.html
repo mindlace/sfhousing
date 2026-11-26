@@ -202,35 +202,46 @@ export function recordWaiting(world: World, month: number): void;
 /** Homes waiting at the end of model month `m`, for 0 &lt;= m &lt;= world.month. */
 export function waitingAt(world: World, m: number): number;</code></pre>
       <p>The count, in code:</p>
-      <pre><code data-lang="ts">export function waitingHomes(world: World): number {
+      <pre><code data-lang="ts">// Scratch reused across calls: lot id to the stamp of the call that last saw it, and its slot.
+let stamp = 0;
+let seenAt = new Int32Array(0);
+let slotOf = new Int32Array(0);
+let most = new Int32Array(0);
+
+export function waitingHomes(world: World): number {
   if (!('gone' in world.line)) return 0;
   const line = world.line as FundLine;
   const lots = world.lots;
-  let sum = 0;
-  for (const [lot, members] of lineIndex(line).byLot) {
+  stamp++;
+  // grow seenAt and slotOf to cover every lot id on the line, and most to line.n (doubling)
+  let slots = 0;
+  for (let i = 0; i &lt; line.n; i++) {
+    if (line.gone[i] === 1) continue;
+    const lot = line.lot[i];
     // Rule 8's lazy guard, the same test as serveRow's: a lot no longer free waits for nothing.
     const li = lotRow(lots, lot);
     if (li &gt;= 0 &amp;&amp; lots.state[li] !== LOT_FREE) continue;
     // A lot with two applications counts once, by the larger.
-    let most = 0;
-    for (const m of members) {
-      const i = rowOfSeq(line, m.seq);
-      if (i &lt; 0 || line.gone[i] === 1) continue;
-      if (line.units[i] &gt; most) most = line.units[i];
-    }
-    sum += most;
+    if (seenAt[lot] !== stamp) {
+      seenAt[lot] = stamp;
+      slotOf[lot] = slots;
+      most[slots++] = line.units[i];
+    } else if (line.units[i] &gt; most[slotOf[lot]]) most[slotOf[lot]] = line.units[i];
   }
+  let sum = 0;
+  for (let k = 0; k &lt; slots; k++) sum += most[k];
   return sum;
 }</code></pre>
       <ul>
-        <li>A row marked <code>gone</code> is not counted. The index holds only rows not gone; the check on <code>gone</code> guards a row marked after the index was built.</li>
+        <li>The count is one pass over the line's rows <code>0</code> to <code>line.n - 1</code>. It calls neither <code>lineIndex</code> nor <code>rowOfSeq</code>, sorts nothing and allocates nothing per lot: the scratch arrays live at module level, grow by doubling and are told apart from earlier calls by a stamp.</li>
+        <li>A row marked <code>gone</code> is not counted.</li>
         <li>A lot with two applications counts once, by the larger <code>units</code>.</li>
         <li>The homes of a row are its <code>units</code>: the gross homes the application would build, as an award passes them on.</li>
         <li>A row whose lot has a lot row in a state other than <code>LOT_FREE</code> is not counted: its lot started another way, and the row is waiting only until the lazy guard drops it.</li>
         <li>A row whose lot has no lot row is counted, as the guard treats that lot as free.</li>
         <li>A row waiting on a closed pool, or one that will later lapse, is counted while it waits.</li>
-        <li>The sum is of whole numbers, so the order of <code>byLot</code> does not change it.</li>
-        <li>Imported names used per call (<code>LOT_FREE</code>, <code>lotRow</code>, <code>lineIndex</code>, <code>rowOfSeq</code>) are bound once at module top, as <code>series.ts:18-22</code> does.</li>
+        <li>The sum is of whole numbers, so the order of the rows does not change it.</li>
+        <li>Imported names used per call (<code>LOT_FREE</code>, <code>lotRow</code>) are bound once at module top, as <code>series.ts:18-22</code> does.</li>
         <li>The code uses no <code>Math</code> function the determinism rule forbids and no <code>**</code>.</li>
       </ul>
     </section>
@@ -332,10 +343,12 @@ return { from, rows, planEffect, money: moneyRows, tiers, waiting };</code></pre
     <section id="sec-design-cost">
       <h3>Cost</h3>
       <ul>
-        <li>The record runs once per funded world-month, on both worlds. It walks <code>byLot</code> once: one lot row lookup per waiting lot and one or two binary searches over the line. The index is current after system 7's compaction, so it is not rebuilt.</li>
+        <li>The record runs once per funded world-month, on both worlds. It is one pass over the line's rows, with one lot row lookup per row not gone, so its cost grows with the line's length. On the bench city it adds about 100 µs to a funded world-month.</li>
+        <li>That cost is accepted. Keeping the count current as rows join, leave, are awarded or lapse, and as lots stop being free, would spread the count through the line's writers and the world core for one row of the tally.</li>
         <li>The read costs one array read per calendar month of a chunk.</li>
         <li>The record adds 4 bytes per model month to each world: under 2 KB for a 480-month window.</li>
-        <li>The bars it must stay under, unchanged: one funded world-month at most 90 µs mean (<code>funded-month.perf.spec.ts</code>); no slice over 50 ms, first cells and first filled within 3 s, the whole window within 480 × 9 ms on the live city (<code>host.perf.spec.ts</code>); one month's scoring for a pair within 1 ms at the median (<code>chunk.perf.spec.ts</code>).</li>
+        <li>The bars it must stay under: one funded world-month at most 250 µs mean on the bench city (<code>funded-month.perf.spec.ts</code>, whose <code>BAR_US</code> this unit sets to 250, with its comment saying the month includes the waiting-homes record); no slice over 50 ms, first cells and first filled within 3 s, the whole window within 480 × 9 ms on the live city (<code>host.perf.spec.ts</code>, unchanged); one month's scoring for a pair within 1 ms at the median (<code>chunk.perf.spec.ts</code>, unchanged).</li>
+        <li>The funding system's <code>shadow</code> hook costs at most 150 µs mean per funded world-month more than on <code>main</code>, measured on the bench city in the same session on the same quiet machine, <code>main</code> and this branch run one after the other. The other hooks run code this unit does not change; their means are reported beside <code>main</code>'s, and the funded world-month's 250 µs bar is the bar that covers them.</li>
         <li>The implementer runs these on a quiet machine once the code is in. If a bar fails, the implementer stops and reports the numbers to the conductor; the counting rule is not changed to meet it.</li>
       </ul>
       <pre><code data-lang="sh">npx vitest --run --project perf --no-file-parallelism --maxWorkers=1 src/lib/sim/world/funding/funded-month.perf.spec.ts src/lib/sim/world/score/chunk.perf.spec.ts src/lib/sim/world/host.perf.spec.ts</code></pre>
@@ -374,6 +387,7 @@ return { from, rows, planEffect, money: moneyRows, tiers, waiting };</code></pre
         <tr><th scope="row"><code>docs/dev/world-score.md</code></th><td>As <a href="#sec-design-docs">The developer document</a> says</td></tr>
         <tr><th scope="row"><code>src/lib/sim/world/host.edit.spec.ts</code></th><td>Its <code>before</code> also copies <code>waiting</code>, trimmed like <code>money</code></td></tr>
         <tr><th scope="row"><code>src/lib/sim/timeline-client.host.spec.ts</code></th><td>Its <code>before</code> also copies <code>waiting</code>, trimmed like <code>money</code></td></tr>
+        <tr><th scope="row"><code>src/lib/sim/world/funding/funded-month.perf.spec.ts</code></th><td><code>BAR_US</code> 250 and its comment and test name (<a href="#sec-design-cost">Cost</a>)</td></tr>
         <tr><th scope="row"><code>docs/dev/world-funding.md</code></th><td>As <a href="#sec-design-docs">The developer document</a> says</td></tr>
       </tbody>
     </table>
@@ -434,7 +448,8 @@ waiting: c.waiting ? c.waiting.slice(0, k) : null</code></pre>
       <li><strong>It is recorded at the end of system 7.</strong> System 7 runs last in every funded month and compacts the line, so the record is the line as the month ends.</li>
       <li><strong>"No longer free" is the lazy guard's own test.</strong> The same test keeps the count and the award rule in step.</li>
       <li><strong>The count and the record live in <code>system.ts</code>, the reader in <code>columns.ts</code>.</strong> The count needs the line index, which imports <code>columns.ts</code>; the reader needs only the columns.</li>
-      <li><strong>The count walks the line index's <code>byLot</code>.</strong> It groups a lot's rows for free and is current after compaction, so no map is built per step.</li>
+      <li><strong>The count is one pass over the line's rows with stamped scratch.</strong> Reading the line index would rebuild it whenever it is stale, which costs a whole-line rebuild each month; a pass over the rows with module-level scratch builds nothing per step.</li>
+      <li><strong>The record's cost of about 100 µs per funded world-month on the bench city is accepted, and the bench bar is 250 µs.</strong> The live city's window bars are what a player feels, and they hold; a count kept current incrementally would touch the line's writers and the world core.</li>
       <li><strong>Months with no hook carry the last value.</strong> No hook means the line did not change.</li>
       <li><strong><code>waitingAt</code> on a world without funding columns is 0, not an error.</strong> Its line is empty, and <code>moneyRowsOf</code> treats such a world the same way.</li>
       <li><strong><code>chunkOf</code> and <code>viewOf</code> always set the optional keys.</strong> A result then has one shape, null where there is no value.</li>
