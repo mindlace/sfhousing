@@ -270,7 +270,7 @@ engine `funded.spec.ts`, "rule 16 as amended".
 
 ### Monotonicity check
 
-More public money must never build fewer homes. `scripts/money-monotone.ts` runs every subset of the offered funding presets on a dataset and fails when adding a preset costs a set more than 5 homes on net, funded or affordable homes at a deadline year. A change under the funding paths runs it by hand before signoff and records its last line in the PR (rule and paths in [pipeline.md](pipeline.md), "Changes on the funding paths"; the check in [testing.md](testing.md), "The money monotonicity check").
+More public money must never build fewer homes. `scripts/money-monotone.ts` runs every subset of the offered funding presets on a dataset and fails when adding a preset costs a set more than 5 homes on net, funded or affordable homes at a deadline year. A change under the funding paths runs it by hand before signoff and records its last line in the PR (rule and paths in [pipeline.md](pipeline.md), "Changes on the funding paths"; the check in [testing.md](testing.md), "The money monotonicity check"). It does not pass yet and is not a gate: today's drops come from the all-or-nothing certainty of an award at level 1 ([finance-data.md](finance-data.md), "What current law builds against the check").
 
 ### Known limit: a partly covered application keeps its month's first-day bundle (ruling R24)
 

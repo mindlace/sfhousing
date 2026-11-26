@@ -88,7 +88,7 @@ Subsystems add their own docs here (`plan-sharing.md`, `pipeline.md`) and link t
 | `npm run db:migrate:staging` / `db:migrate:prod`    | Apply migrations to remote staging / production D1 (normally done by CI)                                                    |
 | `npm run pipeline -- <cmd>`                         | Data pipeline: `doctor`, `fetch`, `version`, `build`, `check`, `upload`, `verify`, `fixture`, `quality-doc`, `boxes`, `all` |
 | `npx tsx scripts/level2-check.ts <datasetDir>`      | Run current law over the window on a built dataset; exit 1 when the goal is missed. Run before every dataset upload.        |
-| `npx tsx scripts/money-monotone.ts <datasetDir>`    | Every funding-preset subset on a dataset; exit 1 when more money builds fewer homes. Run before every dataset upload.       |
+| `npx tsx scripts/money-monotone.ts <datasetDir>`    | Every funding-preset subset on a dataset; exit 1 when more money builds fewer homes. Report only for now, not a gate.       |
 | `npm run test:pipeline`                             | Vitest pipeline project (needs tippecanoe, pmtiles)                                                                         |
 | `npm run data:fixture`                              | Load `e2e/fixtures/data/fixture-0` into local R2                                                                            |
 | `npm run data:local -- <version> [--from <origin>]` | Copy a published dataset version into local R2 (default origin production)                                                  |

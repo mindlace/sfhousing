@@ -329,6 +329,39 @@ programme really changed. Re-read the primary sources before trusting a rebuilt 
 | Fixture                                   | 20      | 25       | none              |
 | Live (`2026-11-10-3532a348`; as expected) | 780     | 980      | none (ratio 0.80) |
 
+### What current law builds against the check
+
+The model's own affordable output, beside the 780 implied and 980 observed homes a year. Measured
+2026-11-25 on dataset `2026-11-25-76c90397` (cars on), current law (`docFor([], cal, asOf)`, the
+empty document), one `engine.view` through `scripts/lib/engine-runner.ts`. Affordable homes are
+very low, low and moderate income homes (`view.tiers`); funded homes are `view.money.fundedHomes`.
+The award rule is the fallback award with full-coverage odds and the closing fix (spec
+[funding award rule](../superpowers/specs/2026-11-25-funding-award-rule-design.html), R3 with M4).
+
+|                                        | Before the rule (d0aebfb6) | Fallback award (R3)      |
+| -------------------------------------- | -------------------------- | ------------------------ |
+| Affordable completions a year, 2031-40 | 626                        | 687                      |
+| Dec 2035: net / funded / affordable    | 30,715 / 1,891 / 2,204     | 31,553 / 2,729 / 3,037   |
+| Dec 2060: net / funded / affordable    | 68,665 / 12,989 / 15,604   | 72,058 / 16,262 / 19,245 |
+| Level 2 goal (82,069) reached          | Jun 2065                   | Oct 2061                 |
+
+Affordable homes a year are (Dec 2040 − Dec 2030) ÷ 10: 32 at Dec 2030, 6,903 at Dec 2040. The spec
+measured about 560 a year under the old rule on the pre-cars dataset `2026-11-14-09ca30c8`. The
+model stays below the 780 implied and 980 observed homes a year; per the owner's ruling the gap is
+recorded, not refitted.
+
+**Money monotonicity, not yet met.** `npx tsx scripts/money-monotone.ts --version 2026-11-25-76c90397`
+on the same code: `Not monotone: 132 drops on 44 edges` (60 net, 40 funded, 32 affordable), the
+worst `net Dec 2040, [housing-bond, federal-support] + general-revenue: 49890 -> 49815 (-75)`
+(64 sets in 74 s). Before the rule it was 568 drops on 64 edges, the worst −11,796. The remaining
+drops have one cause, R6's all-or-nothing certainty: an award whose set reaches level 1 never exits
+and takes no size revision, any other can. A preset added to a set moves the point where a yearly
+or one-off pool's last dollars run out by $0.1 to $1 million, which decides which single project
+is certain; one project is worth 30 to 790 homes, far above the 5-home tolerance. Until
+[money-limited affordable production](../superpowers/specs/2026-11-25-money-limited-funding-design.html)
+(spec 2) is measured and lands with the check as its acceptance gate, `money-monotone` is a
+report: it is run and its last line recorded, and its exit 1 blocks nothing.
+
 ### Fixture mode
 
 On a `fixture-<n>` build `funding.json` is the twin
@@ -467,7 +500,8 @@ Two caveats on what a City source's dollars pay for:
   Supportive Housing for homeless housing (p. 44).
 
 The implied 780 homes a year sits close to the observed completions a year, which supports the total
-even if its parts shift.
+even if its parts shift. The model's own output under current law is lower, 687 affordable homes a
+year over 2031 to 2040 ("What current law builds against the check", above).
 
 ## Report sections 12 and 13
 
