@@ -11,8 +11,10 @@ export const SIDE_TUNING: Record<string, { target: number; reward: Units }> = {
   'collect-run': { target: 24_000, reward: { home: 500 } },
   'policy-homes-2': { target: 10_000, reward: { home: 1000 } },
   'new-money': { target: 100, reward: { home: 800 } },
+  'funded-homes': { target: 21_000, reward: { home: 800 } },
   'collect-share-2': { target: 60, reward: { home: 600 } },
-  'building-homes': { target: 3_000, reward: { home: 800 } },
+  'building-homes': { target: 6_000, reward: { home: 800 } },
+  'affordable-homes': { target: 20_000, reward: { home: 1200 } },
   'policy-homes-3': { target: 7_000, reward: { home: 1500 } }
 };
 
@@ -20,14 +22,14 @@ export const SIDE_TUNING: Record<string, { target: number; reward: Units }> = {
 export const PRICES: Readonly<Record<NodeId, readonly number[]>> = {
   'sb423-clock': [8_000],
   'benchmark-permits': [18_000],
-  'no-discretionary': [30_000],
+  'no-discretionary': [28_000],
   'stop-rail': [6_000],
   'stop-metro': [10_000],
-  'taller-1': [8_000, 12_000],
-  'reach-1': [16_000],
+  'taller-1': [8_000, 16_000],
+  'reach-1': [12_000],
   bands: [6_000, 9_000],
-  'stop-rapid': [28_000],
-  'taller-2': [26_000, 36_000],
+  'stop-rapid': [26_000],
+  'taller-2': [24_000, 29_000],
   'stop-frequent': [45_000],
   'reach-2': [42_000],
   'taller-3': [16_000, 30_000],
