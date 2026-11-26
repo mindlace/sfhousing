@@ -1,4 +1,0 @@
-Code Mode is on, but this session isn't using it, so it continues with the ordinary tools. New sessions use Code Mode.
-Build graph @ 1edbae4b
-Longest chain: contracts -> finite-funding -> pool-closing -> reach-check -> closing
-Longest chain: remove-lesscars -> finite-funding -> pool-closing -> reach-check -> closing
