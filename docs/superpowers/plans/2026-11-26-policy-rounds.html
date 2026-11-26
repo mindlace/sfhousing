@@ -185,7 +185,7 @@
     </ul>
     <h3>Interfaces</h3>
     <ul>
-      <li>Consumes: <code>PRESETS</code>, <code>PresetId</code> (<code>$lib/sim-page/timing</code>); the provenance constants and <code>presetSource</code> pattern of <code>src/lib/game/catalogue/nodes.ts:1-46,140-257</code> (copy, do not import nodes.ts); <code>addPolicy</code>, <code>AddLimitError</code> (<code>$lib/timeline/add.ts:295</code>); <code>monthFirstDay</code> (<code>$lib/sim/world/months</code>); <code>WINDOW_MONTHS</code>; <code>StopType</code>; <code>TransitBand</code> (<code>$lib/sim-page/policy.ts:40</code>).</li>
+      <li>Consumes: <code>PRESETS</code>, <code>PresetId</code> (<code>$lib/sim-page/timing</code>); the provenance constants and <code>presetSource</code> pattern of <code>src/lib/game/catalogue/nodes.ts:1-46,140-257</code> (copy, do not import nodes.ts); <code>addPolicy</code> (<code>$lib/timeline/add.ts:278</code>), <code>AddLimitError</code> (<code>add.ts:56</code>); <code>monthFirstDay</code> (<code>$lib/sim/world/months</code>); <code>WINDOW_MONTHS</code>; <code>StopType</code>; <code>TransitBand</code> (<code>$lib/sim-page/policy.ts:40</code>).</li>
       <li>Produces (<code>rounds.ts</code>):
         <pre><code data-lang="ts">export type PolicyKey =
   | 'transit-rail' | 'transit-metro' | 'transit-bus'
@@ -273,9 +273,15 @@ it('presets: the version 2 node ids map to their presets', () =&gt; {
       ['no-discretionary', 'noDiscretionary'], ['public-bank', 'public-bank'],
       ['state-double', 'state-double']]);
 });
-it('keyOf', () =&gt; { /* transit id 'transit-rail' -&gt; key; same id on a painted policy -&gt; null;
-  routes preset 'sb423Clock' -&gt; 'sb423-clock'; routes preset null -&gt; null; fund preset
-  'housing-bond' -&gt; key; fund preset 'state-off' -&gt; null */ });
+it('keyOf', () =&gt; {
+  // pol(id, where, preset) builds a Policy with one span; the spec defines it.
+  expect(keyOf(pol('transit-rail', { tag: 'transit', stopTypes: ['regionalRail'] }, null))).toBe('transit-rail');
+  expect(keyOf(pol('transit-rail', { tag: 'painted' }, null))).toBeNull();
+  expect(keyOf(pol('timing', { tag: 'routes' }, 'sb423Clock'))).toBe('sb423-clock');
+  expect(keyOf(pol('timing', { tag: 'routes' }, null))).toBeNull();
+  expect(keyOf(pol('fund', { tag: 'fund', pool: 'p' }, 'housing-bond'))).toBe('housing-bond');
+  expect(keyOf(pol('fund', { tag: 'fund', pool: 'p' }, 'state-off'))).toBeNull();
+});
 it('bandsText and rulesText', () =&gt; {
   const rail = entryOf('transit-rail')!;
   expect(bandsText([{ maxM: 402, stories: 7 }, { maxM: 805, stories: 6 }], rail))
@@ -380,10 +386,14 @@ expect(setBandDistance(bus, 0, 5000, ruleCap(OPEN_CAP, bus.stopTypes)).bands[0].
 const stored = { ...rail, bands: [{ maxM: 3219, stories: 8 }] };
 expect(setBandStories(stored, 0, 10, ruleCap(OPEN_CAP, stored.stopTypes)).bands).toEqual([{ maxM: 3219, stories: 10 }]);
 // add.spec.ts: a new rule starts at SB 79's two bands, never at the maximum
-expect(fittedLayer({ ...gameLimits, reachM: 1200, stories: 80 }).bands).toEqual([{ maxM: 402, stories: 6 }, { maxM: 805, stories: 4 }]);
-expect(fittedLayer({ ...gameLimits, reachM: 402, stories: 4 }).bands).toEqual([{ maxM: 402, stories: 4 }]);
-// limits.spec.ts: a game rule past every bound still runs
-expect(within('zoning', transitPolicy(['regionalRail'], [{ maxM: 3219, stories: 40 }]), railLimits)).toBe(true);</code></pre>
+// limitsWith: src/lib/timeline/test/limits.ts
+const rails = new Set&lt;StopType&gt;(['regionalRail']);
+expect(fittedLayer(limitsWith({ stops: rails, bands: 3, reachM: 1200, stories: 80 })).bands).toEqual([{ maxM: 402, stories: 6 }, { maxM: 805, stories: 4 }]);
+expect(fittedLayer(limitsWith({ stops: rails, bands: 1, reachM: 402, stories: 4 })).bands).toEqual([{ maxM: 402, stories: 4 }]);
+// limits.spec.ts: a game rule past every bound still runs; the spec builds the transit
+// policy inline (id 'r', where { tag: 'transit', stopTypes: ['regionalRail'] }, one bands span)
+const rule = { /* ... */ spans: [{ from: 0, to: null, what: { tag: 'bands', bands: [{ maxM: 3219, stories: 40 }] } }] };
+expect(within('zoning', rule, limitsWith({ stops: rails, bands: 1, reachM: 402, stories: 4 }))).toBe(true);</code></pre>
         In <code>TransitLayerRow.svelte.spec.ts</code>: a bus rule's "Within metres, band 1" input
         has <code>max="800"</code>; a rail rule's has <code>max="1200"</code>; a rail rule stored at
         3,219 m renders the value 3219 and the input is valid.</li>
@@ -521,7 +531,6 @@ export function resetDay(asOf: Day, from: Day): Day;</code></pre></li>
           <li><code>goalMonth: null, whole: false, seen: d(2060, 7)</code> → pending; <code>whole: true</code> → late with null.</li>
           <li>Round 0, <code>target: null</code>: <code>goalMonth: d(2061, 10), seen: d(2061, 10)</code> → win; <code>goalMonth: null, whole: true, seen: lastDay</code> → win with null.</li>
           <li>Round 1, <code>target: null</code>, <code>goalMonth: null, whole: true, seen: lastDay</code> → late with null.</li>
-          <li>A target before today (a new dataset): <code>target: d(2020, 1), goalMonth: d(2030, 1), seenFrom: d(2019, 12), seen: d(2026, 11)</code> → late.</li>
           <li>A reset jumped over the goal month (Review Focus 2): <code>seenFrom: d(2059, 1), seen: d(2066, 10)</code>
             → pending, not late, although the target is passed; <code>seenFrom: d(2058, 3)</code>
             (dragged back onto it) → win; <code>seenFrom: d(2058, 4)</code> → pending; a goal month
@@ -611,7 +620,7 @@ git commit -m "feat: the round result rule, its words and the change start"</cod
     </ul>
     <h3>Interfaces</h3>
     <ul>
-      <li>Consumes: <code>openEngine</code>, <code>parseSourceArgs</code>, <code>Engine</code>, <code>DataSource</code> from <code>scripts/lib/engine-runner.ts:34-426</code>; <code>catalogueDoc</code>, <code>CATALOGUE</code>, <code>roundEntries</code>, <code>PolicyKey</code> (Task 1); <code>defaultGoal</code>, <code>readGoal</code>, <code>TODAY</code>.</li>
+      <li>Consumes: <code>openEngine</code>, <code>parseSourceArgs</code>, <code>Engine</code>, <code>DataSource</code> from <code>scripts/lib/engine-runner.ts:34-426</code>; <code>catalogueDoc</code>, <code>CATALOGUE</code>, <code>roundEntries</code>, <code>PolicyKey</code> (Task 1); <code>monthsBetween</code> (Task 3, <code>src/lib/game/rounds.ts</code>); <code>defaultGoal</code>, <code>readGoal</code>, <code>TODAY</code>.</li>
       <li>Produces:
         <pre><code data-lang="ts">export interface Reading { reachedOn: Day | null; homesAtEnd: number }
 export interface Report {
@@ -644,18 +653,19 @@ Goal: 82,069 homes
 Every policy: reached &lt;Mon YYYY&gt;
 Current law: reached &lt;Mon YYYY&gt;
 Alone, against current law:
-  Taller near BART and Caltrain: &lt;Mon YYYY&gt;, 5 months earlier, +120 homes by &lt;Mon YYYY&gt;
+  Taller near BART and Caltrain: &lt;Mon YYYY&gt;, 5 months earlier, +111 homes by &lt;Mon YYYY&gt;
   …one line per policy, catalogue order
 In its round, against the rounds before:
   …one line per policy
 Rounds, all on:
-  1: &lt;Mon YYYY&gt;, 4 months earlier, 88,462 homes by &lt;Mon YYYY&gt;
+  1: &lt;Mon YYYY&gt;, 3 months earlier, 1,000 homes by &lt;Mon YYYY&gt;
   …rounds 2 to 4, each against the row above
 To judge:
   Round 3 gains nothing
-  Housing bond in its round: 4,598 fewer homes
-Filled in 2.4 s (cars on)</code></pre>
-        (the stub's numbers fixed by the test); a policy line reads <code>no change</code> for 0
+  Housing bond in its round: 222 fewer homes
+Filled in 1.2 s (cars on)</code></pre>
+        (the stub's numbers are round, obviously synthetic values the test sets: 111, 222, 1,000
+        homes, a fill of 1,234 ms; none comes from a real dataset); a policy line reads <code>no change</code> for 0
         months, <code>N months later</code> when later, <code>not by &lt;Mon YYYY&gt;</code> for a
         miss with <code>n/a</code> for the months; "To judge:" lists a round not earlier than the
         row above (or missed) as <code>Round k gains nothing</code>, and a policy whose
@@ -673,7 +683,9 @@ Filled in 2.4 s (cars on)</code></pre>
         <code>readReading</code> reads <code>readGoal(defaultGoal(asOf) with amount, view, view.lastIndex)</code>
         and the measure at the window's last month. Start from the measurement script's approach
         (<code>openEngine</code> plus documents built per key); build documents with
-        <code>catalogueDoc</code>, not by hand.</li>
+        <code>catalogueDoc</code>, not by hand. Month differences use <code>monthsBetween</code>
+        from <code>src/lib/game/rounds.ts</code> (Task 3); the private copy at
+        <code>reach-check.ts:47</code> goes.</li>
       <li id="t4-s4"><input type="checkbox"> Delete the five files; fix anything that imported them
         (<code>grep -rn "reach-measure\|tree-balance\|game-run.bench" --exclude-dir=node_modules --exclude-dir=.claude .</code>
         outside <code>docs/superpowers/</code>). Update the docs listed in Files: the reach check
@@ -703,14 +715,26 @@ git commit -m "feat: the reach check's one rule and its round report" -m "Remove
       tool works throughout.</p>
     <h3>Files</h3>
     <ul>
-      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (remove lines 32-37 <code>TreeArgs</code>, 182-206 game run imports, 262-269 and 388-393 props <code>phase</code>, <code>onphase</code>, <code>tree</code>, and the <code>sound</code>, <code>collectForMe</code>, <code>runMs</code> props, 476-482 <code>gp</code>/<code>runView</code>/<code>mapOnly</code>, 784-797, 862-1150 the run, settling, phase effects and focus-on-phase, 1298-1299, 1527, 1561-1564, 2103 <code>data-phase</code>, 2143-2156 Tally, 2299-2325 RunLayer and RunClock, 2337-2346 the tree pane; every <code>!mapOnly</code> guard becomes unconditional)</li>
-      <li>Modify: <code>src/lib/sim-page/SimPage.svelte</code> (remove 35-46, 79, 106, 110-111, 239-264 run prefs and sound, 425-438 phase, 609-702 the tree's buy, Edit, switch, Back and Publish, 860-878 <code>inRunView</code> (Undo and Redo always act), 1299-1303 "Back to the tree", 1390-1406 the tree snippet, 1433-1440 the removed props)</li>
-      <li>Modify: <code>src/lib/map/SimMap.svelte</code> (setRunView 254, 484-488, 542, 559, 1089; the <code>data-run-view</code> attribute), <code>src/lib/map/camera.ts</code> (<code>runFrame</code>), <code>src/lib/map/types.ts:150</code>, <code>src/lib/map/timeline-controller.ts</code> (<code>setMerged</code> and the merged pair, 68-73, 298-306, 398-410, 569, 830-870), <code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/brush/test/sim-map-stub.ts</code></li>
+      <li>Line numbers below are approximate guides to today's code, not literal ranges. Remove
+        only the run, tally, tree and phase code and the imports it alone uses. Keep everything
+        the goal headline and the limits still use until Task 7: in TimelineMode <code>NODES</code>,
+        <code>ladder</code>/<code>RUNGS</code>/<code>goalAt</code>/<code>finished</code>,
+        <code>sideShown</code>, <code>goalUnlocks</code>, <code>GoalHeadline</code>,
+        <code>OPEN_LIMITS</code>, <code>GameStore</code>, <code>moneyFigureAt</code>,
+        <code>CameraFrame</code>; in SimPage <code>OPEN_LIMITS</code>, <code>runnable</code>,
+        <code>within</code>, <code>Limits</code>, <code>GameStore</code>. An import goes only when
+        its last user in the file goes (lint fails on an unused import): in SimPage
+        <code>applyGrant</code>, the <code>game-levers</code> functions and <code>NODES</code>
+        are used only by the tree's buy, Edit and switch, so they leave SimPage with them; the
+        modules themselves stay until Task 7.</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (about 32-37 <code>TreeArgs</code>; the run imports among 182-206 (<code>Sound</code>, <code>clock</code>, <code>drops</code>, <code>RunLayer</code>, <code>run-result</code>'s run functions, <code>Tally</code>, <code>RunClock</code>, <code>RUN_BUSY</code>, <code>game-phase</code>); the props <code>phase</code>, <code>onphase</code>, <code>tree</code>, <code>sound</code>, <code>collectForMe</code>, <code>runMs</code> (about 262-269, 388-393); <code>gp</code>/<code>runView</code>/<code>mapOnly</code> (about 476-482); the run state (about 784-797); the run, settling, abort, phase effects and focus-on-phase (about 862-1150, but not <code>goalProps</code> at about 810-848, which in every state now reads the homes at the playhead's month as about 833-836 does for the run); about 1298-1299, 1527, 1561-1564; <code>data-phase</code> (about 2103); the Tally block (about 2143-2156); RunLayer and RunClock (about 2299-2325); the tree pane (about 2337-2346); every <code>!mapOnly</code> guard becomes unconditional)</li>
+      <li>Modify: <code>src/lib/sim-page/SimPage.svelte</code> (the run imports among about 35-46 and 106 (<code>RUN_MS</code>, <code>prefs</code>, <code>sound</code>, <code>e2e-run</code>, <code>Tree</code>, <code>treeView</code>, <code>ladder</code> if only <code>nextRung</code> uses it), <code>game-phase</code> (about 111), run prefs and sound (about 239-264), phase (about 425-438), the tree's buy, Edit, switch, Back and Publish (about 609-702), <code>inRunView</code> (about 860-878: Undo and Redo always act), "Back to the tree" (about 1299-1303), the tree snippet (about 1390-1406), the removed TimelineMode props (about 1433-1440))</li>
+      <li>Modify: <code>src/lib/map/SimMap.svelte</code> (setRunView, about 254, 484-488, 542, 559, 1089; the <code>data-run-view</code> attribute), <code>src/lib/map/camera.ts</code> (<code>runFrame</code>), <code>src/lib/map/types.ts:150</code>, <code>src/lib/map/timeline-controller.ts</code> (<code>setMerged</code> and the merged pair, about 68-73, 298-306, 398-410, 569, 830-870), <code>src/lib/fzp/test/sim-map-stub.ts</code>, <code>src/lib/brush/test/sim-map-stub.ts</code></li>
       <li>Modify: <code>src/lib/fzp/playback.ts</code> (remove <code>RUN_MS</code>, <code>runRate</code>) and <code>playback.spec.ts</code></li>
-      <li>Modify: <code>src/lib/game/ui/GamePanel.svelte</code> (remove <code>game-sound</code>, <code>game-collect</code>), <code>src/lib/game/ui/words.ts</code> (remove run, tally, tree words), <code>src/lib/timeline/game-copy.ts</code> (remove <code>BACK_TO_TREE</code>, <code>boughtLabel</code>, <code>restoredLabel</code>), <code>src/lib/about/copy.ts</code> (remove <code>RUN_SHORTCUTS</code> and its use)</li>
-      <li>Delete: <code>src/lib/game/run/</code>, <code>src/lib/game/ui/Tally.svelte</code>, <code>src/lib/game/ui/Tree.svelte</code>, <code>src/lib/game/ui/layout.ts</code>, <code>src/lib/sim-page/game-phase.ts</code>, <code>src/lib/sim-page/e2e-run.ts</code>, <code>src/lib/timeline/RunClock.svelte</code>, <code>src/lib/map/SimMap.run-view.svelte.spec.ts</code>, <code>src/lib/timeline/test/{RunClockHost,RunLayerStub,TallyStub}.svelte</code>, <code>src/lib/timeline/test/run-layer-stub.ts</code>, and the specs of each</li>
-      <li>Modify specs: <code>TimelineMode.game.svelte.spec.ts</code>, <code>TimelineMode.svelte.spec.ts</code>, <code>SimRoute.game.svelte.spec.ts</code>, <code>SimPage.svelte.spec.ts</code>, <code>SimMap.svelte.spec.ts</code>, <code>timeline-controller.spec.ts</code>, <code>camera.spec.ts</code>, <code>GamePanel.svelte.spec.ts</code>, <code>AboutParts.svelte.spec.ts</code></li>
-      <li>e2e: delete <code>e2e/game-journey.spec.ts</code>; remove from <code>e2e/helpers/play.ts</code> <code>RING_KEYS</code>, <code>untilPhase</code>, <code>waitPhase</code>, <code>runTotals</code>, <code>runLayer</code>, <code>sweepRing</code>, <code>buyNode</code>, <code>firstReady</code>, <code>playToEnding</code>, <code>RUNGS</code>, <code>seedRuns</code>'s run-ms; remove <code>seedRunMs</code> from <code>e2e/helpers/game.ts</code> and <code>game-helpers.spec.ts</code>; delete the tests in <code>game-sim.spec.ts</code>, <code>game-a11y.spec.ts</code>, <code>game-shell.spec.ts</code> whose subject is a run, the tally, the tree or the workshop's entry (delete a file left with none)</li>
+      <li>Modify: <code>src/lib/game/ui/GamePanel.svelte</code> (remove <code>game-sound</code>, <code>game-collect</code> and the <code>hands.auto</code> read), <code>src/lib/game/ui/words.ts</code> and <code>words.spec.ts</code> (remove the run, tally and tree words, and <code>BRANCH_NAMES</code> with its <code>'../tree'</code> import), <code>src/lib/timeline/game-copy.ts</code> and <code>game-copy.spec.ts</code> (remove <code>BACK_TO_TREE</code>, <code>boughtLabel</code>, <code>restoredLabel</code>; the spec's export list follows), <code>src/lib/about/copy.ts</code>, <code>src/lib/about/AboutUsing.svelte</code> (remove <code>RUN_SHORTCUTS</code> and its table)</li>
+      <li>Delete: <code>src/lib/game/run/</code>, <code>src/lib/game/ui/Tally.svelte</code>, <code>src/lib/game/ui/Tree.svelte</code>, <code>src/lib/game/ui/layout.ts</code>, <code>src/lib/game/ui/test/TallyHost.svelte</code>, <code>src/lib/game/ui/test/TreeHost.svelte</code>, <code>src/lib/sim-page/game-phase.ts</code>, <code>src/lib/sim-page/e2e-run.ts</code>, <code>src/lib/timeline/RunClock.svelte</code>, <code>src/lib/map/SimMap.run-view.svelte.spec.ts</code>, <code>src/lib/timeline/test/{RunClockHost,RunLayerStub,TallyStub}.svelte</code>, <code>src/lib/timeline/test/run-layer-stub.ts</code>, and the specs of each</li>
+      <li>Modify test hosts and specs: <code>src/lib/timeline/test/TimelineModeHost.svelte</code> (drop <code>phased</code>, <code>onphaseevent</code>, the stub tree and the <code>game-phase</code> import), <code>src/lib/sim-page/test/GameSimHost.svelte</code> (comment), <code>TimelineMode.game.svelte.spec.ts</code>, <code>TimelineMode.svelte.spec.ts</code>, <code>SimRoute.game.svelte.spec.ts</code>, <code>SimPage.svelte.spec.ts</code>, <code>SimMap.svelte.spec.ts</code>, <code>SimMap.ssr.spec.ts</code>, <code>timeline-controller.spec.ts</code>, <code>camera.spec.ts</code>, <code>GamePanel.svelte.spec.ts</code>, <code>src/lib/shell/SiteHeader.svelte.spec.ts</code> (its <code>game-sound</code>/<code>game-collect</code> cases), <code>src/lib/shell/accent.spec.ts</code> (drop the paths of RunClock.svelte, Tally.svelte and Tree.svelte), <code>AboutParts.svelte.spec.ts</code></li>
+      <li>e2e: delete <code>e2e/game-journey.spec.ts</code>. In <code>e2e/helpers/play.ts</code> remove <code>RING_KEYS</code>, <code>untilPhase</code>, <code>waitPhase</code>, <code>runTotals</code>, <code>runLayer</code>, <code>sweepRing</code>, <code>buyNode</code>, <code>firstReady</code>, <code>playToEnding</code>, <code>RUNGS</code> and <code>seedRuns</code>'s run-ms, and add <code>waitSim(page)</code> (waits for <code>tl-dock</code> visible). Remove <code>seedRunMs</code> and <code>E2E_RUN_MS_KEY</code> from <code>e2e/helpers/game.ts</code> and <code>game-helpers.spec.ts</code>. In <code>e2e/layout.spec.ts</code> the game header test waits with <code>waitSim</code> in place of <code>waitPhase(page, 'tree')</code>. In <code>e2e/targets.spec.ts</code> delete the test "the game: the tally, and the tree with a node open" and its imports. In <code>game-sim.spec.ts</code>, <code>game-a11y.spec.ts</code> and <code>game-shell.spec.ts</code> delete the tests whose subject is a run, the tally, the tree or the workshop's entry, and replace any remaining phase wait with <code>waitSim</code> (delete a file left with no test).</li>
       <li>Docs: <code>game.md</code> (The page and its phases, A run, Drops the ring and sound, the Tally and Tree screens, Publishing's tree Publish, e2e seams' run-ms), <code>sim-page.md</code>, <code>timeline-ui.md</code>, <code>map-interfaces.md</code> (the run view), <code>map-perf.md</code> (merged layers), <code>testing.md:106-107</code></li>
     </ul>
     <h3>Interfaces</h3>
@@ -739,8 +763,10 @@ git commit -m "feat: the reach check's one rule and its round report" -m "Remove
       <li id="t5-s3"><input type="checkbox"> Remove the code listed in Files, in this order so each
         file compiles as you go: TimelineMode and SimPage (drop the props and their users), then
         SimMap, camera, types and the timeline controller, then <code>playback.ts</code>, then
-        delete the files. <code>grep -rn "game/run\|game-phase\|e2e-run\|RunClock\|Tally\|ui/Tree\|setRunView\|runFrame\|setMerged\|RUN_MS\|runRate" src e2e scripts</code>
-        must print nothing.</li>
+        delete the files. The gate is <code>npm run check</code> passing; as an advisory sweep,
+        <code>grep -rnw "game/run\|game-phase\|e2e-run\|RunClock\|ui/Tally\|TallyStub\|TallyHost\|ui/Tree\|TreeHost\|setRunView\|runFrame\|setMerged\|RUN_MS\|runRate" src e2e scripts</code>
+        should print nothing but docs comments (<code>keyTally</code> and <code>KeyTally</code> in
+        the map key are unrelated and stay).</li>
       <li id="t5-s4"><input type="checkbox"> Fix the remaining specs and e2e files listed; update the
         docs listed (describe the game page as the workshop at all times; the open game unchanged).</li>
       <li id="t5-s5"><input type="checkbox"> Run <code>npm run test:unit</code>,
@@ -763,7 +789,8 @@ git commit -m "refactor: one screen after the opening" -m "Removes the run, its 
     <ul>
       <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code> (+ <code>SiteHeader.svelte.spec.ts</code>, <code>SiteHeader.ssr.spec.ts</code>), <code>src/lib/shell/header-actions.svelte.ts</code> (comments)</li>
       <li>Modify: <code>src/lib/game/ui/GamePanel.svelte</code> (+ spec): no unit count in its stage line; it renders in place inside the Menu panel</li>
-      <li>Delete: <code>src/lib/game/ui/GameCell.svelte</code> and its spec; <code>src/lib/shell/test/GameHeaderHost.svelte</code> if only GameCell used it</li>
+      <li>Delete: <code>src/lib/game/ui/GameCell.svelte</code>, <code>GameCell.svelte.spec.ts</code>, <code>src/lib/game/ui/test/CellHost.svelte</code></li>
+      <li>Modify: <code>src/lib/shell/test/GameHeaderHost.svelte</code> (rewritten without GameCell; <code>SiteHeader.svelte.spec.ts</code> and <code>SiteHeader.ssr.spec.ts</code> still use it), <code>src/lib/shell/accent.spec.ts</code> (drop the GameCell.svelte path); comments naming GameCell in <code>src/lib/game/ui/test/fake-game.svelte.ts</code> and <code>src/lib/shell/test/SimRowGameHeader.svelte</code></li>
       <li>Modify: <code>src/routes/page.header.svelte.spec.ts</code>; e2e files naming <code>header-units</code> or <code>header-game-panel</code> (<code>e2e/helpers/play.ts</code> <code>openGamePanel</code>, <code>e2e/helpers/header-text.ts</code>, <code>game-shell</code>, <code>layout</code>, <code>sim</code>, <code>map-key</code>, <code>sign-out</code>, <code>account-a11y</code>): open the Menu, then use <code>game-panel</code></li>
       <li>Docs: <code>CLAUDE.md</code> (the Shell paragraph), <code>game.md</code> (screens and header parts), <code>ui-parts.md</code> if it describes the Menu</li>
     </ul>
@@ -823,11 +850,14 @@ git commit -m "feat: the header Menu at every width holds saved games, account a
       <li>Modify: <code>src/lib/game/rounds.ts</code> (add <code>fitState</code>, <code>takeWin</code>) (+ spec)</li>
       <li>Modify: <code>src/lib/game/store.svelte.ts</code> (+ <code>store.svelte.spec.ts</code>), <code>src/lib/game/limits.ts</code> (+ spec), <code>src/lib/game/ui/words.ts</code> (<code>entryStage</code>), <code>GamePanel.svelte</code></li>
       <li>Modify: <code>src/lib/timeline/add.ts</code> (<code>kindOpen</code>, <code>addChoices</code>, remove <code>fittedLayer</code>), <code>src/lib/sim-page/transit-edit.ts</code> (<code>capOf</code>), <code>src/lib/timeline/WhatEditor.svelte:80,172-173</code>, <code>src/lib/timeline/Inspector.svelte:491</code>, <code>src/lib/timeline/Timeline.svelte:107-108</code>, <code>src/lib/timeline/KindRow.svelte</code> (no locked lane; "+" only when <code>kindOpen</code>), <code>src/lib/timeline/activity-view.ts</code> (types only)</li>
-      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (goal from the target; <code>goalProps</code> from <code>pinnedWords</code>), <code>src/lib/game/ui/GoalHeadline.svelte</code> (interim props below; side goals and the rolling count go), <code>src/lib/sim-page/SimPage.svelte</code> (<code>load</code> offers)</li>
-      <li>Modify: <code>src/lib/server/game/store.ts:58-59,82-83,126-127,149-150</code>, <code>src/lib/game/save-api.ts</code> (type), route specs <code>src/routes/api/game/server.spec.ts</code>, <code>[id]/server.spec.ts</code>, <code>src/lib/server/game/store.spec.ts</code></li>
-      <li>Delete: <code>src/lib/game/{units,tree,ladder,side-goals,run-result,grant}.ts</code>, <code>src/lib/game/catalogue/{nodes,play,tuning,ladder-years}.ts</code>, <code>src/lib/sim-page/game-levers.ts</code>, <code>src/lib/timeline/game-copy.ts</code>, their specs; test helpers <code>src/lib/timeline/test/{game,limits}.ts</code>, <code>src/lib/shell/test/seeded-game.ts</code> and the hosts are rewritten to v3</li>
-      <li>e2e: <code>e2e/helpers/game.ts</code> <code>seedGame</code> to v3; every e2e file reading <code>bought</code>, <code>rung</code>, <code>units</code>, <code>met</code> compiles against v3 (<code>game-core</code>, <code>game-save</code>, <code>helpers/play.ts</code>)</li>
-      <li>Docs: <code>game.md</code> (The game's state, Limits, The store, Saved games, The open game), <code>game-save.md</code> (the <code>rung</code> column holds the round; the upgrade), <code>testing.md</code> (<code>seedGame</code>)</li>
+      <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (goal from the target; <code>goalProps</code> from <code>pinnedWords</code>; the <code>NODES</code>, ladder, <code>sideShown</code> and <code>goalUnlocks</code> imports go), <code>src/lib/sim-page/SimPage.svelte</code> (<code>load</code> offers)</li>
+      <li>Modify (the pinned goal's interim props move here, with their spec and hosts): <code>src/lib/game/ui/GoalHeadline.svelte</code> (side goals, the rolling count and the <code>'../side-goals'</code>/<code>'../units'</code> imports go), <code>GoalHeadline.svelte.spec.ts</code>, <code>src/lib/game/ui/test/HeadlineHost.svelte</code>, <code>src/lib/shell/test/GoalPinnedHeader.svelte</code>, <code>e2e/helpers/header-text.ts</code> (<code>widestGameHeader</code> writes the widest pinned words)</li>
+      <li>Modify: <code>src/lib/server/game/store.ts:58-59,82-83,126-127,149-150</code>, <code>src/lib/game/save-api.ts</code> (type), route specs <code>src/routes/api/game/server.spec.ts</code>, <code>[id]/server.spec.ts</code>, <code>src/lib/server/game/store.spec.ts</code>, <code>src/lib/server/auth/better-auth.spec.ts</code> and <code>src/lib/server/user-store/deletion.spec.ts</code> (their seeded states use <code>rung: 1</code>)</li>
+      <li>Delete: <code>src/lib/game/{units,tree,ladder,side-goals,run-result,grant}.ts</code>, <code>src/lib/game/catalogue/{nodes,play,tuning,ladder-years}.ts</code>, <code>src/lib/sim-page/game-levers.ts</code>, <code>src/lib/timeline/game-copy.ts</code>, and their specs (<code>units</code>, <code>tree</code>, <code>ladder</code>, <code>side-goals</code>, <code>run-result</code>, <code>grant</code>, <code>nodes</code>, <code>play</code>, <code>tuning</code>, <code>ladder-years</code>, <code>game-levers</code>, <code>game-copy</code>). Deleting <code>nodes.ts</code> removes the old copy of the provenance constants and <code>presetSource</code>, leaving the one Task 1 made in <code>catalogue/rounds.ts</code>.</li>
+      <li>Rewrite to v3: <code>src/lib/game/ui/test/fixtures.ts</code> (types from <code>'../../tree'</code>, <code>'../../run-result'</code>, <code>'../../side-goals'</code> and <code>NodeId</code> go), <code>src/lib/game/ui/test/fake-game.svelte.ts</code> (<code>limitsOf</code>/<code>Limits</code>), <code>src/lib/timeline/test/game.ts</code>, <code>src/lib/timeline/test/limits.ts</code> (<code>limitsWith</code> to the new <code>Limits</code>), <code>src/lib/shell/test/seeded-game.ts</code> and <code>seeded-game.svelte.spec.ts</code>, <code>src/lib/sim-page/test/GameSimHost.svelte</code>, <code>src/lib/timeline/test/TimelineModeHost.svelte</code></li>
+      <li>Modify specs: <code>src/lib/game/state.spec.ts</code>, <code>save-sync.svelte.spec.ts</code> (index entries carry <code>round</code>), <code>src/lib/game/ui/words.spec.ts</code> (<code>'../ladder'</code> goes from <code>words.ts</code> too), <code>GamePanel.svelte.spec.ts</code>, <code>src/lib/shell/SiteHeader.svelte.spec.ts</code> (side goals, units, ladder), <code>src/lib/timeline/Timeline.svelte.spec.ts</code> (<code>LOCKED_LANE</code>, <code>NOT_BOUGHT</code>), <code>src/lib/timeline/add.spec.ts</code> (Task 2's <code>fittedLayer</code> cases go with the function), <code>src/lib/timeline/Inspector.svelte.spec.ts</code>, <code>src/lib/timeline/TimelineMode.game.svelte.spec.ts</code>, <code>src/lib/sim-page/SimRoute.game.svelte.spec.ts</code>, <code>src/lib/sim-page/transit-edit.spec.ts</code> (<code>capOf</code>)</li>
+      <li>e2e, to compile against v3: <code>e2e/helpers/game.ts</code> (<code>seedGame</code>, <code>seedV2Game</code>), <code>e2e/helpers/play.ts</code> (<code>LADDER_YEARS</code>, <code>PRICES</code>, <code>MetRung</code> go; <code>seedRuns</code> seeds round 1), <code>e2e/game-core.spec.ts</code>, <code>game-save.spec.ts</code>, <code>game-sim.spec.ts</code> (<code>PRICES</code>), <code>game-a11y.spec.ts</code>, <code>game-helpers.spec.ts</code>, <code>layout.spec.ts</code> and <code>targets.spec.ts</code> (<code>seedRuns</code> with v2 fields)</li>
+      <li>Docs: <code>game.md</code> (The game's state, Limits, The store, Saved games, The open game), <code>game-save.md</code> (the <code>rung</code> column holds the round; the upgrade; a null target stands for the legal deadline, <code>defaultGoal(asOf).deadline</code>, the window's end, which is how the spec's "or the legal deadline" is stored), <code>testing.md</code> (<code>seedGame</code>)</li>
     </ul>
     <h3>Interfaces</h3>
     <ul>
@@ -905,7 +935,9 @@ takeWin(w: { goalMonth: Day | null; on: ReadonlySet&lt;string&gt;; datasetVersio
         <code>entryOf</code> writes <code>round</code>; <code>parseIndex</code> accepts an entry's
         <code>round</code> or, from an older index, <code>rung</code> (the entry then differs from
         its save and the index is rewritten); <code>fitted</code> uses <code>fitState</code>;
-        <code>openState()</code> is <code>{ ...NEW_GAME, phase: 'runs', round: ROUNDS, finished: true, editable: [...POLICY_KEYS], own: true }</code>.</li>
+        <code>openState()</code> is <code>{ ...NEW_GAME, phase: 'runs', firstWinAt: OPEN_AT, round: ROUNDS, finished: true, editable: [...POLICY_KEYS], own: true }</code>
+        (<code>OPEN_AT</code> as <code>store.svelte.ts:218</code> defines it, so the state passes its
+        own parser).</li>
       <li>Produces (<code>limits.ts</code>):
         <pre><code data-lang="ts">export interface Limits {
   /** No game: today's page, painted zoning and the brush included. */
@@ -957,9 +989,7 @@ export function canRemove(p: Policy, l: Limits): boolean;</code></pre>
         <code>rung</code> column; <code>listGames</code> answers <code>round: r.rung</code>.</li>
       <li>e2e (<code>e2e/helpers/game.ts</code>): <code>seedGame(page, state?: Partial&lt;GameState&gt;)</code>
         stores <code>{ ...NEW_GAME, ...state }</code> (a <code>'runs'</code> state gets a
-        <code>firstWinAt</code>), with an optional third argument
-        <code>records?: { plan?: string; policy?: string }</code> written as the save's and the
-        record keys' plan and policy text (Task 11's branch B seeds a policy with it); <code>seedV2Game(page, v2: Record&lt;string, unknown&gt;, policy?: string)</code>
+        <code>firstWinAt</code>); <code>seedV2Game(page, v2: Record&lt;string, unknown&gt;, policy?: string)</code>
         stores a raw version 2 save for the upgrade journey.</li>
     </ul>
     <h3>Steps</h3>
@@ -1000,6 +1030,12 @@ export function canRemove(p: Policy, l: Limits): boolean;</code></pre>
             aside.</li>
           <li>Server <code>store.spec.ts</code>: a stored v2 body reads back as v3; a PUT stores
             the round in the <code>rung</code> column and lists it as <code>round</code>.</li>
+          <li><code>GoalHeadline.svelte.spec.ts</code> (interim props): it renders
+            <code>words.line1</code>, <code>words.line2</code> and a bar filled to
+            <code>fill</code>; nothing with <code>side-goals</code> or <code>side-goal</code> test
+            ids renders.</li>
+          <li><code>store.svelte.spec.ts</code>: <code>openGame().state</code> passes
+            <code>parseGameState</code>.</li>
         </ul>
       </li>
       <li id="t7-s2"><input type="checkbox"> Run them and see them fail.
@@ -1017,9 +1053,10 @@ export function canRemove(p: Policy, l: Limits): boolean;</code></pre>
         <code>src/lib/timeline/copy.ts</code>), TimelineMode's goal and interim pinned goal,
         <code>GoalHeadline</code>, <code>SimPage.load</code>, <code>GamePanel</code>
         (<code>entryStage(phase, round)</code>: 'Painting' for the opening, else
-        <code>roundName(round, false)</code>), the server store. Then
-        <code>grep -rn "game/units\|game/tree\|game/ladder\|side-goals\|run-result\|game/grant\|catalogue/nodes\|catalogue/play\|catalogue/tuning\|ladder-years\|game-levers\|game-copy" src e2e scripts</code>
-        prints nothing.</li>
+        <code>roundName(round, false)</code>), the server store. The gate is
+        <code>npm run check</code> passing. As an advisory sweep that also catches relative
+        imports (<code>'../tree'</code>, <code>'../../run-result'</code>):
+        <code>grep -rnE "(game|\.\.?)/(units|tree|ladder|side-goals|run-result|grant)'|catalogue/(nodes|play|tuning|ladder-years)|game-levers|game-copy" src e2e scripts</code>.</li>
       <li id="t7-s5"><input type="checkbox"> Rewrite the test helpers and hosts to v3; fix the e2e
         helpers and specs to compile; update the docs listed.</li>
       <li id="t7-s6"><input type="checkbox"> Run <code>npm run test:unit</code>,
@@ -1043,7 +1080,8 @@ git commit -m "feat: game state version 3 with rounds, targets and editable poli
       <li>Modify: <code>src/lib/timeline/TimelineMode.svelte</code> (the edit effect at 1717-1732, the lots effect at 1767-1781, the scoreBar snippet at 1990-2005, the Playhead snippet at 2062-2077) (+ <code>TimelineMode.game.svelte.spec.ts</code>)</li>
       <li>Modify: <code>src/lib/game/ui/GoalHeadline.svelte</code> (+ <code>GoalHeadline.svelte.spec.ts</code>), <code>src/lib/game/ui/motion.ts</code> (the jiggle period)</li>
       <li>Modify: <code>src/lib/timeline/Playhead.svelte:42-61,294-299</code> (+ spec)</li>
-      <li>Docs: <code>timeline-ui.md</code> (the reset in a game), <code>game.md</code> (the result state, the pinned goal)</li>
+      <li>Modify: <code>src/lib/shell/SiteHeader.svelte</code> (+ <code>SiteHeader.svelte.spec.ts</code>): below sm the pinned slot starts at the bar's left and grows to the Menu button; the status cell sits between it and the Menu (builder's call, matching the spec's amendment)</li>
+      <li>Docs: <code>timeline-ui.md</code> (the reset in a game, and that <code>changeStart</code> ignores an edit to a policy that is off before and after it: the forecast does not change, so nothing resets and a held result stands), <code>game.md</code> (the result state, the pinned goal)</li>
     </ul>
     <h3>Interfaces</h3>
     <ul>
@@ -1230,12 +1268,16 @@ export const SAVED_GAMES = [
             round 1 and the target, and the document holds the three round-1 policies, off,
             before the first Accept is pressed.</li>
           <li>The dialog shows "Taller near BART and Caltrain", "1 of 3", Accept; three Accepts
-            close it; focus is on <code>goal-headline-button</code>; three rows read New.</li>
+            close it; focus is on <code>goal-headline-button</code>; each of the three policies
+            is <code>isFixed</code> under <code>game.limits</code>.</li>
           <li>After the gift, Undo is not possible (<code>canUndo</code> false) and the three
-            policies stay; switching the rail rule on, Undo, Redo: the policies are there each
-            time, and the game state is unchanged (Review Focus 3).</li>
-          <li>In round 1 with the rail rule on, a win and the gift: the saved editable list holds
-            <code>transit-rail</code>; its row reads Edit.</li>
+            policies stay; switching the rail rule on (the editor's On switch, which exists
+            today), Undo, Redo: the policies are there each time, and the game state is unchanged
+            (Review Focus 3).</li>
+          <li>In round 1 with the rail rule on, a win and the gift: the saved
+            <code>editable</code> list holds <code>transit-rail</code>, and the rail policy is no
+            longer <code>isFixed</code>; the two round-1 policies that were off stay fixed. (The
+            New and Edit row controls are Task 10's and are asserted there.)</li>
           <li>A refused store write: nothing changes and the win stands.</li>
         </ul>
       </li>
@@ -1267,7 +1309,8 @@ git commit -m "feat: taking a win offers the next round with an explainer per po
       <li>Modify: <code>src/lib/timeline/PolicyRow.svelte</code>, <code>KindRow.svelte</code>, <code>Timeline.svelte</code> (<code>--lab</code> 288 px from md, <code>Timeline.svelte:404-406</code>), <code>SpanBar.svelte</code> (a fixed policy's bars select but do not move) (+ <code>Timeline.svelte.spec.ts</code>)</li>
       <li>Create: <code>src/lib/timeline/PolicyDetails.svelte</code> (+ spec)</li>
       <li>Modify: <code>src/lib/timeline/Inspector.svelte</code> (+ spec): a fixed policy shows PolicyDetails; Remove only when <code>canRemove</code></li>
-      <li>Modify: <code>src/lib/sim-page/TransitLayerRow.svelte</code>, <code>WhatEditor.svelte</code>: <code>stopsFixed</code> for a catalogue transit rule before the end</li>
+      <li>Modify: <code>src/lib/sim-page/TransitLayerRow.svelte</code> and <code>src/lib/timeline/WhatEditor.svelte</code>: <code>stopsFixed</code> for a catalogue transit rule before the end</li>
+      <li>Modify: <code>src/lib/sim-page/SimRoute.game.svelte.spec.ts</code> (the New and Edit row assertions moved from Task 9)</li>
       <li>Docs: <code>timeline-ui.md</code> (rows, panes), <code>sim-page.md</code> (the transit editor in a game), <code>accessibility.md</code> if its checklist names the rows</li>
     </ul>
     <h3>Interfaces</h3>
@@ -1310,7 +1353,11 @@ git commit -m "feat: taking a win offers the next round with an explainer per po
         policy"; a finished game shows Remove. In <code>PolicyDetails.svelte.spec.ts</code>: the
         Muni Metro pane reads "6 stories (65 ft)", "Editable after a win with it on.", and links
         "SB 79 (2025), Tier 2". In <code>TransitLayerRow.svelte.spec.ts</code>: with
-        <code>stopsFixed</code> there is no stop-type chip.</li>
+        <code>stopsFixed</code> there is no stop-type chip. In
+        <code>SimRoute.game.svelte.spec.ts</code> (moved here from Task 9): after the round-0
+        gift and three Accepts the three round-1 rows read New (<code>tl-policy-new</code>); in
+        round 1 with the rail rule on, after a win and the gift, the rail row reads Edit
+        (<code>tl-policy-edit</code>) and the other two still read New.</li>
       <li id="t10-s2"><input type="checkbox"> Run them and see them fail.
         <pre><code data-lang="sh">npx vitest run src/lib/timeline/Timeline.svelte.spec.ts src/lib/timeline/Inspector.svelte.spec.ts src/lib/timeline/PolicyDetails.svelte.spec.ts src/lib/sim-page/TransitLayerRow.svelte.spec.ts</code></pre>
       </li>
@@ -1373,12 +1420,17 @@ export const FIXTURE_TARGET: Day | null;</code></pre></li>
             its fixed values. <code>FIXTURE_ROUTE = 'edit'</code>, <code>FIXTURE_AMOUNT</code> that
             amount, <code>FIXTURE_TARGET</code> the fixed-value goal month. The win with a policy
             is then won by editing: a seeded round-2 game (<code>seedGame</code> with round 2,
-            <code>target: FIXTURE_TARGET</code>, <code>editable: ['transit-rail']</code>, and a
-            policy record with the rail rule on at its fixed values, built with
-            <code>offerThrough</code> and <code>setOn</code>).</li>
+            <code>target: FIXTURE_TARGET</code>, <code>editable: ['transit-rail']</code>) and no
+            policy record. The page itself adds the round 1 and 2 policies, off, when it loads
+            (<code>SimPage.load</code>'s <code>offerThrough</code> with the page's own
+            calibration, Task 7), so e2e builds no document and needs no
+            <code>Calibration</code>. The journey switches the rail rule on (it reaches the goal
+            in <code>FIXTURE_TARGET</code>'s month, not earlier, so no win), then edits it.</li>
         </ul>
-        Record the three constants with a comment naming the probe and what it measured. The
-        probe script is not committed.</li>
+        The only <code>Calibration</code> the task needs is the probe's: <code>engine.cal</code>
+        from <code>openEngine</code> over <code>e2e/fixtures/data/fixture-0</code> (whose file is
+        <code>scenarios/fzp/calibration.json</code>). Record the three constants with a comment
+        naming the probe and what it measured. The probe script is not committed.</li>
       <li id="t11-s2"><input type="checkbox"> Write <code>e2e/game-journey.spec.ts</code>:
         <ol>
           <li><strong>By pointer:</strong> a new visitor at <code>FIXTURE_AMOUNT</code> paints to
@@ -1391,7 +1443,8 @@ export const FIXTURE_TARGET: Day | null;</code></pre></li>
                 win; the gift; the rail row reads Edit; open it, set band 2 to 1,200 m, the value
                 holds; the server has one saved game with round 2.</li>
               <li>Branch B: after the round-1 gift, a second page with the seeded round-2 game:
-                the rail row reads Edit; open it, set both bands to 12 stories and band 2 to
+                the rail row reads Edit; switch it on and play to its goal month (the state reads
+                late, "Not earlier"); open it, set both bands to 12 stories and band 2 to
                 1,200 m (each edit resets the playhead, the state is pending), and the values
                 hold; play to the win; the gift; the server has the game with round 3.</li>
             </ul>

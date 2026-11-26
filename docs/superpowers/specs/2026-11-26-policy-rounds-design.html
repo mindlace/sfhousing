@@ -262,7 +262,10 @@
         <li><strong>A change resets the timeline.</strong> When a policy is switched on or off, or
           edited, playback pauses and the playhead goes to the first month the change takes
           effect, or to today if that is later (P16). Everything after that point is unseen
-          again, and the result state below is cleared.</li>
+          again, and the result state below is cleared. The playhead goes there even when that
+          is later than where it was; months jumped over are not seen. An edit to a policy that
+          is off before and after changes no forecast and resets nothing. In a game the reset
+          takes the place of "Play from".</li>
         <li><strong>The result state.</strong> The pinned goal in the header shows one of three
           states (P19). There is no result card and nothing interrupts the player.
           <ul>
@@ -460,7 +463,8 @@
           panel; pressing the gift takes the win.</li>
         <li><strong>The pinned goal on a phone.</strong> Below sm the goal starts at the left of
           the bar and takes the width up to the Menu button, with its two lines joined into one
-          (the owner's change to the second mockups, 2026-11-26):
+          (the owner's change to the second mockups, 2026-11-26). The page's status cell, when it
+          shows, sits between the goal and the Menu:
           <pre><code data-lang="text">Pending  [82,069 homes before Jun 2060          ]  ☰
 Win      [82,069 by Mar 2058 · 2 yr 3 mo early 🎁]  ☰
 Late     [82,069 by Jun 2062 · 2 years late     ]  ☰</code></pre>
