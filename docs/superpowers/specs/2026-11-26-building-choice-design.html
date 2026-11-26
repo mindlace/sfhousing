@@ -1,7 +1,7 @@
 <article>
   <header>
     <h1>Building choice: the developer picks the building a cap allows</h1>
-    <p>For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
+    <p><strong>Status: approved (2026-11-26).</strong> For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
   </header>
 
   <section id="sec-intent">
@@ -34,7 +34,7 @@
       <ul>
         <li>A land market. Land prices and expectations that respond to the cap are out of scope. The land cost of a lot is the same for every option on it, so it drops out of the choice.</li>
         <li>The old scenario engine. Only the world engine (<code>src/lib/sim/world/</code>) and the modules it reads are changed. The scenario engine is being removed in another session. <aside data-kind="decision"><strong>Call:</strong> World engine only. Old scenario-engine readers are not ported. Tests that fail only because they run the old engine (including <code>simulate.golden</code>) are dropped, as the owner authorised. The branch rebases onto main when the removal merges.</aside></li>
-        <li>Density-bonus projects that build over the cap. They keep today's handling: <code>sizeOverEnvelope</code> maps them to the top level. See <a href="#q-bonus">the open question</a>.</li>
+        <li>Density-bonus projects that build over the cap. They keep today's fitted over-limit amount (<code>sizeOverEnvelope</code>). See <a href="#q-bonus">the decision</a>.</li>
         <li>Random bands. The world shows one future, and every draw uses the existing seeded per-lot streams.</li>
         <li>Adjustable costs. The owner wants a later ability to change costs and similar inputs (cost and value per home by type, λ, the carrying cost) to move break-even. That is a follow-up, not this spec, but it must not be designed out: costs, values, durations and λ are data inputs (the calibration and per-lot dataset files), not constants baked into code.</li>
         <li>New UI. The card and map show the chosen building. Naming its construction type is optional and must follow the terse-copy rule.</li>
@@ -182,7 +182,7 @@ P(o)      ∝ exp(RLV(o, λeff) / (σ × h̄ × c̄))      # h̄, c̄: the lot's
     <ul>
       <li><code>potentialRatio</code> and <code>storiesGap</code> (<code>scenario-codec.ts</code>, <code>input.ts</code>) are taken from the option set at the cap. <code>potentialRatio</code> becomes the expected homes of the choice row ÷ existing homes, and <code>storiesGap</code> becomes the chosen expected stories − existing stories. Both are computed with the same code in the panel and at run time.</li>
       <li>The panel yields that the <code>initiation</code> fit reads (<code>pipeline/steps/scenario.ts</code>, panel; <code>pipeline/lib/fzp-cal/initiation.ts</code>) are recomputed from option rows at each record's base limit. Then <code>initiation</code> is refitted. <code>calibration.market</code> (<code>today.implied</code>, <code>today.private</code>, the slope) is recomputed from the refitted model, as <code>docs/dev/market.md</code> requires.</li>
-      <li>Whether to add the best option's margin (RLV at λ) as a start feature is a <a href="#q-margin">question for the owner</a>. It would let costs and values move starts directly, but it overlaps the market slope.</li>
+      <li>The best option's margin (RLV at λ<sub>eff</sub>) becomes a start feature (<a href="#q-margin">decided</a>). It lets costs and values move starts directly. Its overlap with the market slope is measured and reported in the refit.</li>
       <li>The size model (<code>pipeline/lib/fzp-cal/size.ts</code>, <code>calibration.size</code>) is replaced by σ, fitted on the same histories (built stories ÷ <code>baseStoriesAtFiling</code>). <code>sizeOverEnvelope</code> stays as a reported count.</li>
     </ul>
   </section>
@@ -244,9 +244,17 @@ P(o)      ∝ exp(RLV(o, λeff) / (σ × h̄ × c̄))      # h̄, c̄: the lot's
   </section>
 
   <section id="sec-questions">
-    <h2>Open questions for the owner</h2>
-    <aside data-kind="question" id="q-margin"><strong>Question 4: start odds.</strong> Should the best option's margin become a start feature, beyond the refit on new yields?</aside>
-    <aside data-kind="question" id="q-bonus"><strong>Question 5: density bonus.</strong> Keep projects over the limit as today, or add a state density-bonus option (the records count them in <code>sizeOverEnvelope</code>) in a later spec?</aside>
+    <h2>Owner questions and follow-ups</h2>
+    <p>All owner questions are answered. Questions 1 to 3 are decided in the body (<a href="#q-lambda">λ</a>, <a href="#q-spread">σ</a>, <a href="#q-affordable">affordable projects</a>).</p>
+    <aside data-kind="decision" id="q-margin"><strong>Decision (owner):</strong> Question 4, start odds: yes. The best option's margin becomes a start-odds feature, fitted to the permit records in the start-odds refit (<a href="#sec-odds">Start odds refit</a>).</aside>
+    <aside data-kind="decision" id="q-bonus"><strong>Decision (owner):</strong> Question 5, density bonus: keep today's fitted over-limit amount (<code>sizeOverEnvelope</code>). The state density bonus as a developer option is its own next spec.</aside>
+    <section id="sec-followups">
+      <h3>Follow-ups</h3>
+      <ul>
+        <li>The state density bonus as a developer option. This is the next spec.</li>
+        <li>Adjustable costs and similar inputs to move break-even (see Non-goals). Costs, values, durations and λ stay data inputs.</li>
+      </ul>
+    </section>
   </section>
 
   <section id="sec-calls">
