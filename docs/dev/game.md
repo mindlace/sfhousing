@@ -154,7 +154,7 @@ plays (runs, purchases, clock): `catalogue` 18, 16, 10:28; `permitting-first` 18
 `zoning-first` 19, 16, 10:56; `hands-first` 10, 24, 7:16; `cheapest` 11, 26, 7:52. No side goal
 is flagged, and no goal is left out. Changes in `tuning.ts`: `funded-homes` (target 21,000) and
 `affordable-homes` (20,000) are back; `funded-homes` and `building-homes` (6,000) are raised to
-1.25 times current law at Dec 2060 (16,262 and 4,430); prices `no-discretionary` 28,000,
+1.25 times current law at Dec 2060 (current law 16,262 and 4,430, raised to 21,000 and 6,000); prices `no-discretionary` 28,000,
 `taller-1` 8,000 and 16,000, `reach-1` 12,000, `stop-rapid` 26,000, `taller-2` 24,000 and 29,000,
 so the catalogue, zoning-first and hands-first plays regain their early pace and three purchases
 between deadlines, and `policy-homes-3` comes into view in time to be met.

@@ -175,36 +175,36 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 
 Apple M5 Pro; main `083fb7ae` against branch `dd688b51`, alternated main-1, branch-1, main-2, branch-2; one-minute load 1.54, 1.77, 1.89, 1.58 at the starts. Command: `npx vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1`. Figures are run 1, run 2. A budget is held to main: the branch at most 10% above main's figure on the mean of the two runs. Where main misses its own bar, that comparison is the whole bar: the written bar is not restated, its test stays failing on both trees, and the miss is main's, not this build's.
 
-| Budget                                               | Bar                                 | Main              | Branch            | Verdict                                                         |
-| ---------------------------------------------------- | ----------------------------------- | ----------------- | ----------------- | --------------------------------------------------------------- |
-| funded world-month mean                              | 90 µs on main, 250 µs on the branch | 337.6, 327.7 µs   | 338.8, 318.3 µs   | main misses its bar; branch within 10% (328.6 against 332.7 µs) |
-| serve hook mean                                      | within 10% of main                  | 107.5, 104.5 µs   | 108.7, 106.4 µs   | met                                                             |
-| onProjectEvent hook mean                             | within 10% of main                  | 56.8, 55.8 µs     | 55.3, 55.2 µs     | met                                                             |
-| planLot hook mean                                    | within 10% of main                  | 50.7, 49.2 µs     | 50.4, 48.5 µs     | met                                                             |
-| apply hook mean                                      | within 10% of main                  | 21.4, 21.0 µs     | 21.7, 20.6 µs     | met                                                             |
-| shadow hook mean                                     | main + 150 µs                       | 17.5, 17.1 µs     | 17.4, 17.0 µs     | met                                                             |
-| core (rest) hook mean                                | within 10% of main                  | 99.2, 92.8 µs     | 98.3, 92.2 µs     | met                                                             |
-| step (wrapped) mean                                  | within 10% of main                  | 353.2, 340.6 µs   | 352.0, 340.0 µs   | met                                                             |
-| host.perf no slice over 50 ms                        | 50 ms                               | 50.5 (fail), pass | pass, 50.2 (fail) | fails once on each tree: main's cost                            |
-| host first cells                                     | host.perf passes                    | 952, 936 ms       | 895, 933 ms       | met                                                             |
-| host first filled                                    | host.perf passes                    | 1022, 1006 ms     | 963, 1002 ms      | met                                                             |
-| chunk.perf, scoring one pair months 101-150 (median) | chunk.perf passes                   | 0.032, 0.021 ms   | 0.021, 0.022 ms   | met                                                             |
-| chunk.perf, funded (median)                          | chunk.perf passes                   | 0.319, 0.314 ms   | 0.307, 0.315 ms   | met                                                             |
-| chunk.perf, funded months 400-450                    | chunk.perf passes                   | 0.460, 0.454 ms   | 0.446, 0.447 ms   | met                                                             |
-| chunk.perf, viewOf 4 funded worlds                   | chunk.perf passes                   | 0.311, 0.291 ms   | 0.319, 0.319 ms   | met                                                             |
-| map-stream worst flush                               | 30 ms                               | 29.13, 28.11 ms   | 24.50, 38.35 ms   | met on three runs of four; the spike is below                   |
-| generated-controller C5 frame gap                    | 50 ms                               | pass, pass        | 50.1 (fail), pass | met on three runs of four; one run 0.1 ms over                  |
-| timeline swap install cadence                        | 50 ms                               | 427.8, 431.6 ms   | 422.0, 443.4 ms   | main misses its bar; branch within 10% (432.7 against 429.7 ms) |
-| compile step(20)                                     | 50 ms                               | 64.6, 58.3 ms     | 53.5, 50.2 ms     | main misses its bar; branch no worse (51.9 against 61.5 ms)     |
-| world.bench 48 worlds median                         | 3 ms                                | 3.066, 3.129 ms   | 3.389, 3.125 ms   | main misses its bar; branch within 10% (3.257 against 3.098 ms) |
-| scenario.bench case 2                                | 30 ms                               | 153.8, 155.5 ms   | 154.8, 157.3 ms   | fails on both trees in all four runs; branch within 10%         |
-| scenario.bench case 3                                | 83 ms                               | 215.8, 217.9 ms   | 217.4, 220.4 ms   | fails on both trees; branch within 10%                          |
-| scenario.bench finance-score                         | 15 ms                               | 20.6, 21.7 ms     | 20.7, 20.3 ms     | fails on both trees; branch within 10%                          |
-| scenario.bench case 4 band pairs                     | 9000 ms                             | 16123, 16302 ms   | 16150, 16570 ms   | fails on both trees; branch within 10%                          |
-| scenario.bench case 5 longest macrotask              | 121 ms                              | 276.7, 293.0 ms   | 303.6, 303.2 ms   | fails on both trees; branch within 10% (303.4 against 284.9 ms) |
-| scenario.bench rev0 funded baseline                  | 4820 ms                             | 17132, 17182 ms   | 17251, 17600 ms   | fails on both trees; branch within 10%                          |
-| scenario.bench rev0 bench funding                    | 10130 ms                            | 24143, 24277 ms   | 24370, 24735 ms   | fails on both trees; branch within 10%                          |
-| declutter far setup                                  | 30 ms                               | 30.3 ms once      | none              | main fails once; branch met                                     |
+| Budget                                               | Bar                                 | Main              | Branch            | Verdict                                                           |
+| ---------------------------------------------------- | ----------------------------------- | ----------------- | ----------------- | ----------------------------------------------------------------- |
+| funded world-month mean                              | 90 µs on main, 250 µs on the branch | 337.6, 327.7 µs   | 338.8, 318.3 µs   | main misses its bar; branch within 10% (328.6 against 332.7 µs)   |
+| serve hook mean                                      | within 10% of main                  | 107.5, 104.5 µs   | 108.7, 106.4 µs   | met                                                               |
+| onProjectEvent hook mean                             | within 10% of main                  | 56.8, 55.8 µs     | 55.3, 55.2 µs     | met                                                               |
+| planLot hook mean                                    | within 10% of main                  | 50.7, 49.2 µs     | 50.4, 48.5 µs     | met                                                               |
+| apply hook mean                                      | within 10% of main                  | 21.4, 21.0 µs     | 21.7, 20.6 µs     | met                                                               |
+| shadow hook mean                                     | main + 150 µs                       | 17.5, 17.1 µs     | 17.4, 17.0 µs     | met                                                               |
+| core (rest) hook mean                                | within 10% of main                  | 99.2, 92.8 µs     | 98.3, 92.2 µs     | met                                                               |
+| step (wrapped) mean                                  | within 10% of main                  | 353.2, 340.6 µs   | 352.0, 340.0 µs   | met                                                               |
+| host.perf no slice over 50 ms                        | 50 ms                               | 50.5 (fail), pass | pass, 50.2 (fail) | fails once on each tree: main's cost                              |
+| host first cells                                     | host.perf passes                    | 952, 936 ms       | 895, 933 ms       | met                                                               |
+| host first filled                                    | host.perf passes                    | 1022, 1006 ms     | 963, 1002 ms      | met                                                               |
+| chunk.perf, scoring one pair months 101-150 (median) | chunk.perf passes                   | 0.032, 0.021 ms   | 0.021, 0.022 ms   | met                                                               |
+| chunk.perf, funded (median)                          | chunk.perf passes                   | 0.319, 0.314 ms   | 0.307, 0.315 ms   | met                                                               |
+| chunk.perf, funded months 400-450                    | chunk.perf passes                   | 0.460, 0.454 ms   | 0.446, 0.447 ms   | met                                                               |
+| chunk.perf, viewOf 4 funded worlds                   | chunk.perf passes                   | 0.311, 0.291 ms   | 0.319, 0.319 ms   | met                                                               |
+| map-stream worst flush                               | 30 ms                               | 29.13, 28.11 ms   | 24.50, 38.35 ms   | fails once on the branch, main passes: recorded, not this build's |
+| generated-controller C5 frame gap                    | 50 ms                               | pass, pass        | 50.1 (fail), pass | fails once on the branch, main passes: recorded, not this build's |
+| timeline swap install cadence                        | 50 ms                               | 427.8, 431.6 ms   | 422.0, 443.4 ms   | main misses its bar; branch within 10% (432.7 against 429.7 ms)   |
+| compile step(20)                                     | 50 ms                               | 64.6, 58.3 ms     | 53.5, 50.2 ms     | main misses its bar; branch no worse (51.9 against 61.5 ms)       |
+| world.bench 48 worlds median                         | 3 ms                                | 3.066, 3.129 ms   | 3.389, 3.125 ms   | main misses its bar; branch within 10% (3.257 against 3.098 ms)   |
+| scenario.bench case 2                                | 30 ms                               | 153.8, 155.5 ms   | 154.8, 157.3 ms   | fails on both trees in all four runs; branch within 10%           |
+| scenario.bench case 3                                | 83 ms                               | 215.8, 217.9 ms   | 217.4, 220.4 ms   | fails on both trees; branch within 10%                            |
+| scenario.bench finance-score                         | 15 ms                               | 20.6, 21.7 ms     | 20.7, 20.3 ms     | fails on both trees; branch within 10%                            |
+| scenario.bench case 4 band pairs                     | 9000 ms                             | 16123, 16302 ms   | 16150, 16570 ms   | fails on both trees; branch within 10%                            |
+| scenario.bench case 5 longest macrotask              | 121 ms                              | 276.7, 293.0 ms   | 303.6, 303.2 ms   | fails on both trees; branch within 10% (303.4 against 284.9 ms)   |
+| scenario.bench rev0 funded baseline                  | 4820 ms                             | 17132, 17182 ms   | 17251, 17600 ms   | fails on both trees; branch within 10%                            |
+| scenario.bench rev0 bench funding                    | 10130 ms                            | 24143, 24277 ms   | 24370, 24735 ms   | fails on both trees; branch within 10%                            |
+| declutter far setup                                  | 30 ms                               | 30.3 ms once      | none              | main fails once; branch met                                       |
 
 Main's own engine misses these bars: the funded world-month, the scenario bench cases, host.perf's no-slice check (once on each tree), the swap install cadence, compile step(20), world.bench 48 worlds and declutter far setup (once). Finding for the owner: #154 (`083fb7ae`) made main miss them. Before it, main at `be6467dc` read 97.4 and 93.4 µs for the funded month; it now reads 337.6 and 327.7 µs, about 3.5 times slower, and the scenario bench is up to about 5 times slower than before #154. These are main's costs, recorded with main's figures and the bar; they are not this build's, and their tests are left failing on both trees (`funded-month.perf.spec.ts` keeps its 250 µs bar, its comment and its test name).
 
@@ -212,7 +212,7 @@ The map-stream worst flush is an intermittent spike: one branch run of two went 
 
 ### `bench:map` budgets (taken on main be6467dc)
 
-Taken on main `be6467dc` against branch `b8921ad4`; they stand by the 2026-11-26 table above, and their figures are unchanged.
+Taken on main `be6467dc` against branch `b8921ad4`; they stand because `083fb7ae` touches no file the bench:map row names (main-merge, Commits main takes later), and their figures are unchanged.
 
 `bench:map`, one whole run in each tree, dataset `2026-11-25-76c90397`, load 1.83 (main) and 1.53 (branch), both exit 0 (main 11 passed, branch 13 passed); p50 8.3 ms in every bar case. p95, ms; every shared case is within 10% of main.
 
@@ -227,7 +227,7 @@ Taken on main `be6467dc` against branch `b8921ad4`; they stand by the 2026-11-26
 | citywide playback         | 10.2 | 9.7    |
 | sim-timeline-docked       | 10.2 | 9.9    |
 
-The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) are within 3% of the run-bench rows of record in the game's runs Results table above (run p95 10.1 and 10.3 ms; buy-to-ready medians 618 and 616 ms).
+The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) are within 3% of the run-bench rows of record in the game's runs Results table above (run p95 10.1 and 10.3 ms). The buy-to-ready median was compared with the rows of record at main `be6467dc` (618 and 616 ms), since replaced.
 
 ## CI
 
