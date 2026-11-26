@@ -112,9 +112,10 @@ cars only.
 
 ## Current law with and without cars
 
-`npx tsx scripts/reach-check.ts <datasetDir> --cars on|off` (default on) runs both questions with or
+`npx tsx scripts/reach-check.ts <datasetDir> --cars on|off` (default on) runs its views with or
 without the car system and ends with the opening fill's time. Measured on dataset
-`2026-11-25-76c90397` (current law, goal 82,069 homes by Oct 2066):
+`2026-11-25-76c90397` with the earlier check's current-law question (goal 82,069 homes by
+Oct 2066); the check now prints current law's month as its "Current law" line:
 
 | Run                       | Goal reached | Fill (s) |
 | ------------------------- | ------------ | -------- |
@@ -130,7 +131,7 @@ same dataset ([finance-data.md](finance-data.md), "What current law builds again
 ## Measured cost
 
 2026-11-25, live build `2026-11-25-76c90397`, the earlier level 2 check's fill line, now
-`reach-check`'s (two worlds, 480 months, baseline money), three runs each at load average
+`reach-check`'s then (two worlds, 480 months, baseline money), three runs each at load average
 3.7-4.0 on 15 cores:
 
 - Cars off 2.3 s; cars on with the link off 3.5 s; cars on 3.9-4.0 s. The parking link adds about

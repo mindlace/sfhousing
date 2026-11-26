@@ -124,40 +124,10 @@ A new branch is a `Branch` value, a `layout.ts` entry (`BRANCH_ORDER`), a name i
 
 ## Tuning
 
-`catalogue/tuning.ts` holds `RUNG_LUMP`, `SIDE_TUNING` and `PRICES`, the only numbers
-`scripts/tree-balance.ts` tunes. The ladder's years are the other measured value, in
-`catalogue/ladder-years.ts`. Both files hold the values measured and tuned on the production
-dataset; the comment in `ladder-years.ts` names the dataset and the reach. Only people edit them.
-Code and tests elsewhere pass their own prices, years and rung counts, and read neither file.
-
-```
-npx tsx scripts/tree-balance.ts <datasetDir> [--order <name>] [--amount <homes>] [--json]
-npx tsx scripts/tree-balance.ts --version <datasetVersion> [--from <origin>]
-```
-
-It plays the tree against the engine in several purchase orders, once by hand (a share of the
-drops collected, from the ring's size and linger) and once with "Collect for me". Each play reports
-its runs, what was bought, a clock from assumed seconds (`CLOCK`) and five pacing checks
-(`TARGETS`): first purchase, early runs per purchase, runs per purchase, the longest gap between
-map changes, and purchases between deadlines. A last block reads each side goal against current
-law at its rung's deadline and flags a goal that current law already meets
-(`at-or-below-current-law`, with the number to raise to) or that no play met (`never-met`).
-
-Exit 0 when every gated play finished and passed its checks and no side goal is flagged; 1
-otherwise; 2 when it could not run. Only the hand plays of five orders gate the exit (`GATED`:
-`catalogue`, `permitting-first`, `zoning-first`, `hands-first`, `cheapest`). `tuning.ts` is
-kept at numbers under which it exits 0 on the production dataset.
-
-Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `083fb7ae`), cars on, with
-`LADDER_YEARS = [2060, 2055, 2045, 2040]`: exit 0 with all eleven side goals offered. Gated hand
-plays (runs, purchases, clock): `catalogue` 18, 16, 10:28; `permitting-first` 18, 16, 10:28;
-`zoning-first` 19, 16, 10:56; `hands-first` 10, 24, 7:16; `cheapest` 11, 26, 7:52. No side goal
-is flagged, and no goal is left out. Changes in `tuning.ts`: `funded-homes` (target 21,000) and
-`affordable-homes` (20,000) are back; `funded-homes` and `building-homes` (6,000) are raised to
-1.25 times current law at Dec 2060 (current law 16,262 and 4,430, raised to 21,000 and 6,000); prices `no-discretionary` 28,000,
-`taller-1` 8,000 and 16,000, `reach-1` 12,000, `stop-rapid` 26,000, `taller-2` 24,000 and 29,000,
-so the catalogue, zoning-first and hands-first plays regain their early pace and three purchases
-between deadlines, and `policy-homes-3` comes into view in time to be met.
+`catalogue/tuning.ts` holds `RUNG_LUMP`, `SIDE_TUNING` and `PRICES`. No script plays the tree any
+more (`scripts/tree-balance.ts` is gone with the points game's tuning): people edit the numbers,
+and the reach check's report ([The reach check](#the-reach-check)) is the instrument that shows
+what each policy and each round does to the goal.
 
 ## Grants and the policy document
 
@@ -212,11 +182,10 @@ and Publish sends the runnable one.
 ## The ladder
 
 `LADDER_YEARS` (`catalogue/ladder-years.ts`) are the earlier deadline years, the rungs after rung 0 (the window's end), latest
-first, at most four. `npx tsx scripts/reach-measure.ts <datasetDir> --write` sets them: it runs the
-full tree, reads the month the goal is reached, and writes the years from the largest multiple of
+first, at most four. People set them (no script writes them now), from the largest multiple of
 five at least five years before the window's end year down to the first multiple of five at or
-after the reached year (the first and last kept, with two between, when more than four fit). The
-document names the rule, not the years. `RUNGS` is `LADDER_YEARS.length + 1`.
+after the year the reach check's "Every policy" line reaches the goal (the first and last kept,
+with two between, when more than four fit). The document names the rule, not the years. `RUNGS` is `LADDER_YEARS.length + 1`.
 
 - `ladder(asOf)` is each rung's `deadline` and its short month-year `label`. Rung 0 is
   `defaultGoal(asOf).deadline`; rung k is the last day of December of `LADDER_YEARS[k - 1]`, never
@@ -515,8 +484,7 @@ goal line into the header for the width checks.
    before the run; the tree then shows "Every goal met", the month reached and the month asked by,
    lists that node's label, and its Publish opens the publish dialog.
 
-`e2e/game-a11y.spec.ts` runs the accessibility checklist on each state; the bench is
-`e2e/bench/game-run.bench.ts` ([map-perf.md](map-perf.md)).
+`e2e/game-a11y.spec.ts` runs the accessibility checklist on each state.
 
 ## The reach check
 
@@ -525,49 +493,95 @@ npx tsx scripts/reach-check.ts <datasetDir> [--amount <homes>] [--cars on|off]
 npx tsx scripts/reach-check.ts --version <datasetVersion> [--from <origin>] [--amount <homes>] [--cars on|off]
 ```
 
-`--cars off` runs the worlds without the car system (default `on`, [cars.md](cars.md)).
+`--cars off` runs the worlds without the car system (default `on`, [cars.md](cars.md)). Two
+sources: a built dataset directory, or a published version fetched from an origin (`--from`,
+default production). Amount 82,069 homes unless `--amount` gives another.
 
-Two sources: a built dataset directory, or a published version fetched from an origin (`--from`,
-default production). Two questions, each reached or missed, at one amount (82,069 homes unless
-`--amount` gives another) on the engine of `scripts/reach-measure.ts`:
+**The rule.** Every policy of the catalogue on at its fixed values (`catalogueDoc` with all twelve
+keys, `src/lib/game/catalogue/rounds.ts`) must reach the goal inside the window. It is the only
+gate: exit 0 when it does (`Report.all.reachedOn` is not null), 1 when it does not.
 
-1. Does current law (the empty policy document) reach the goal by rung 0's deadline?
-2. Does the full tree (`fullTree`) reach it by the last rung's deadline?
-
-Five lines on stdout:
+**The report.** Beside the rule the check asks the engine for current law, every policy alone
+against current law, every policy over the rounds before its own (round 1 policies read as alone),
+and rounds 1 to 4 all on: 30 views at most, one at a time, a repeated list of keys read once
+(`measure`). Each reading (`readReading`) is the first month the goal's amount is met and the homes
+by the window's last month. Lines on stdout, in this order:
 
 ```
 Dataset <datasetVersion>
 Goal: <amount> homes
-Current law by <Mon YYYY>: reached <Mon YYYY>, <n> months early
-Full tree by <Mon YYYY>: missed, <homes> homes, <short> short
+Every policy: reached <Mon YYYY>            (or: not by <Mon YYYY>, the window's last month)
+Current law: reached <Mon YYYY>
+Alone, against current law:
+  <label>: <Mon YYYY>, <n> months earlier, +<homes> homes by <Mon YYYY>
+In its round, against the rounds before:
+  <label>: ...                              (one line per policy, catalogue order)
+Rounds, all on:
+  <k>: <Mon YYYY>, <n> months earlier, <homes> homes by <Mon YYYY>   (against the row above)
+To judge: nothing                           (or "To judge:" and the lines below)
 Filled in <s> s (cars on|off)
 ```
 
-Lines 3 and 4 each read "reached <month>, <n> months early" ("1 month early" for 1) or "missed,
-<homes> homes, <short> short". The first month on a line is the rung's deadline. Line 5 is the
-opening fill's wall-clock time (`Engine.fillMs`) and the car switch.
+A policy line reads `no change` for 0 months, `<n> months later` when later, and `n/a` for the
+months with `not by <Mon YYYY>` for the month when it misses (or when what it is compared with
+misses). "To judge" lists `Round k gains nothing` for a round that is not earlier than the row
+above (current law for round 1) or misses, and `<label> alone: <n> fewer homes` or
+`<label> in its round: <n> fewer homes` for a policy that builds fewer homes than what it is
+compared with. The last line is the opening fill's wall-clock time (`Engine.fillMs`) and the car
+switch. Nothing in the report gates; it is for the person reading it.
 
-Exit 0 when both are reached; 1 when either is missed; 2 when the check could not run, with one
-stderr line, `reach-check: <reason>`, and nothing on stdout (no source, both a directory and
-`--version`, an unknown flag, `--from` without `--version`, an `--amount` that is not a whole
-number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
+Exit 2 when the check could not run, with one stderr line, `reach-check: <reason>`, and nothing on
+stdout (no source, both a directory and `--version`, an unknown flag, `--from` without
+`--version`, an `--amount` that is not a whole number above 0, a `--cars` that is not `on` or
+`off`, or the engine failing).
 
 It is run before every dataset upload, on the directory that is then uploaded, and must exit 0
-([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`.
+([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`, on a stub engine with
+synthetic numbers and the fixture dataset at an amount of 1; no test holds a figure measured on the
+production dataset.
 
-Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `083fb7ae`), cars on, against
-`LADDER_YEARS = [2060, 2055, 2045, 2040]` (measured by `reach-measure.ts` on the same version):
+Result of 2026-11-26 on dataset `2026-11-25-76c90397`, cars on, at a 1-minute load of about 6
+(the fill time is ballpark):
 
 ```
 Dataset 2026-11-25-76c90397
 Goal: 82,069 homes
-Current law by Oct 2066: reached Oct 2061, 60 months early
-Full tree by Dec 2040: reached Aug 2037, 40 months early
-Filled in 2.4 s (cars on)
+Every policy: reached Feb 2048
+Current law: reached Oct 2061
+Alone, against current law:
+  Taller near BART and Caltrain: May 2059, 29 months earlier, +4,724 homes by Oct 2066
+  SB 423 clock: Oct 2061, no change, +277 homes by Oct 2066
+  Housing bond: Mar 2061, 7 months earlier, +465 homes by Oct 2066
+  Taller near Muni Metro: Sep 2057, 49 months earlier, +8,805 homes by Oct 2066
+  Benchmark permits: Mar 2061, 7 months earlier, +1,135 homes by Oct 2066
+  General revenue: Jun 2059, 28 months earlier, +2,468 homes by Oct 2066
+  Taller near bus: Mar 2059, 31 months earlier, +3,852 homes by Oct 2066
+  Revolving fund: Oct 2061, no change, +9 homes by Oct 2066
+  Federal support: May 2060, 17 months earlier, +1,697 homes by Oct 2066
+  No discretionary review: Mar 2060, 19 months earlier, +2,510 homes by Oct 2066
+  Public bank: Oct 2061, no change, +0 homes by Oct 2066
+  State money doubled: Oct 2061, no change, +0 homes by Oct 2066
+In its round, against the rounds before:
+  Taller near BART and Caltrain: May 2059, 29 months earlier, +4,724 homes by Oct 2066
+  SB 423 clock: Oct 2061, no change, +277 homes by Oct 2066
+  Housing bond: Mar 2061, 7 months earlier, +465 homes by Oct 2066
+  Taller near Muni Metro: Apr 2057, 50 months earlier, +5,164 homes by Oct 2066
+  Benchmark permits: Oct 2060, 8 months earlier, +600 homes by Oct 2066
+  General revenue: Sep 2057, 45 months earlier, +6,834 homes by Oct 2066
+  Taller near bus: Dec 2050, 20 months earlier, +4,414 homes by Oct 2066
+  Revolving fund: Aug 2052, no change, +4 homes by Oct 2066
+  Federal support: Mar 2052, 5 months earlier, +1,099 homes by Oct 2066
+  No discretionary review: Apr 2048, 22 months earlier, +3,560 homes by Oct 2066
+  Public bank: Feb 2050, no change, +0 homes by Oct 2066
+  State money doubled: Feb 2050, no change, +1 homes by Oct 2066
+Rounds, all on:
+  1: Jun 2061, 4 months earlier, 88,462 homes by Oct 2066
+  2: Aug 2052, 106 months earlier, 103,514 homes by Oct 2066
+  3: Feb 2050, 30 months earlier, 108,899 homes by Oct 2066
+  4: Feb 2048, 24 months earlier, 112,496 homes by Oct 2066
+To judge: nothing
+Filled in 3.0 s (cars on)
 ```
-
-The fill time is ballpark: it was taken at a 1-minute load of 2.4.
 
 ## Words
 

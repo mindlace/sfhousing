@@ -111,7 +111,7 @@ The game's rules are in [game.md](game.md), saved games in [game-save.md](game-s
 
 ## The reach check
 
-`npx tsx scripts/reach-check.ts <datasetDir>` (or `--version <v>`, with `--cars on|off`, default on: `off` runs the worlds without the car system) asks whether current law meets the first deadline and the full tree the last, on a built dataset. It ends with a "Filled in N s (cars on|off)" line, the opening fill's wall-clock time. Exit 0 when both do, 1 when either misses, 2 when it could not run. Every dataset upload is preceded by it ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset"). Its output, exit codes and test are in [game.md](game.md), "The reach check".
+`npx tsx scripts/reach-check.ts <datasetDir>` (or `--version <v>`, with `--cars on|off`, default on: `off` runs the worlds without the car system) asks whether every policy of the catalogue on, at its fixed values, reaches the goal inside the window, on a built dataset, and prints each policy's and each round's effect. It ends with a "Filled in N s (cars on|off)" line, the opening fill's wall-clock time. Exit 0 when it does, 1 when it does not, 2 when it could not run. Every dataset upload is preceded by it ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset"). Its output, exit codes and test are in [game.md](game.md), "The reach check".
 
 ## The money monotonicity check
 

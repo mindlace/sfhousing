@@ -144,32 +144,7 @@ Filter with `'sim-timeline\.bench'`, not a bare path: Playwright matches the fil
 | same                                        |      | live SF                                     | fill-install; open-painted; open-empty | fill: first results 1,882 ms, whole 3,257 ms, 378 installs, 3.02 frame-ms per cell, longtask_ms 0; painted open: first any 1,961 ms, first full 3,664 ms; empty open: first 1,831 ms, whole 3,207 ms | cold cache, median of 3                                                                 |
 | same                                        |      | fixture-0                                   | apply-cost, K = 22 and 121             | K = 22: 155 ms install only, 161 ms with demolish; K = 121: 889 ms, 1,002 ms                                                                                                                         | headless SwiftShader, synthetic cells (500 projects a cell): relative, not a GPU figure |
 
-## The game's runs
-
-Spec: `docs/superpowers/specs/2026-11-24-closing-design.html`, "The run bench". `e2e/bench/game-run.bench.ts` holds two tests; each prints one line starting `bench:map` and pushes it as a `bench:map` annotation.
-
-- **Run with drops** (test "bench:map: run with drops, citywide, moving pointer"). It decides run-play's frame budget: run-play halves `maxDrawn` while this case's p95 is above 16.7 ms. A game seeded in the runs with one run settled (no goal amount, no run time: the run as a player has it), `/` with the forecast filled and the tree up; it presses Run and waits for the run layer's `data-state="running"`. From then until the layer's `data-state="idle"`, a page-side `requestAnimationFrame` loop records every frame delta, while the test moves the mouse with one awaited `page.mouse.move` after another along a figure over the layer's box: `x = left + width × (0.5 + 0.4 sin(2πt / 3.1 s))`, `y = top + height × (0.5 + 0.4 sin(2πt / 2.3 s))`. "Collect for me" stays off and sound on, as a new player has them, so the ring's test, the drawing and the sounds run each frame. The view is the run view: the whole city, flat and north up, with the drops. Line: `bench:map case=run dataset=<v> frames=<n> dropped=<homes> collected=<homes> p50=<ms> p95=<ms> bar=16.7ms PASS|FAIL dpr=<dpr> renderer="<renderer>"`. It passes when p95 is at most 16.7 ms. On fixture-0 it runs and reports, with few drops.
-- **Purchase to ready** (test "bench:map: purchase to ready"). How long the next run's forecast takes after a purchase; the balance script's pacing clock (`CLOCK.buyS` in `scripts/tree-balance.ts`) counts none of it. Three samples, each from a fresh browser context: a game in the runs holding stop-rail's rung-0 price (`PRICES` in `src/lib/game/catalogue/tuning.ts`), `/` with the forecast filled and the tree up; it opens stop-rail (shown at rung 0; a zoning purchase is the slowest kind), installs a `MutationObserver` on `tree-run`'s `aria-busy`, takes `t0` in the page and presses Buy. The sample ends when `aria-busy` leaves `"true"` after having been `"true"` (the observer walks each record's old value, so a short busy is not missed); the case fails if Run never turns busy. Line: `bench:map case=buy-to-ready dataset=<v> node=stop-rail samples=<ms>,<ms>,<ms> median=<ms> buyS=<CLOCK.buyS × 1000>ms`. No pass bar: when the median is above `buyS`, the clock understates the time between runs, and the owner decides whether to raise `CLOCK.buyS`. `buyS` is read from the script's text, since importing it would load the node catalogue.
-
-Run both on the live dataset, on a quiet machine only: the one-minute load average from `uptime` below 2 and no other session's Playwright, Vite or wrangler process. Otherwise defer the run and say so. Port 4173 belongs to whichever session started its server; check it with `lsof -nP -iTCP:4173 -sTCP:LISTEN` and wait while it is taken; never stop it.
-
-```sh
-uptime
-lsof -nP -iTCP:4173 -sTCP:LISTEN
-npm run data:local -- <v>
-SFH_BENCH_DATASET=<v> npm run bench:map -- -g "run with drops"
-SFH_BENCH_DATASET=<v> npm run bench:map -- -g "purchase to ready"
-npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smoke run, not of record
-```
-
-### Results
-
-| Machine                                                                  | Date       | Dataset                    | Case              | Line                                                                                                                            | Label                                        |
-| ------------------------------------------------------------------------ | ---------- | -------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| Apple M5 Pro (macOS 27.2.1), head b0cfea6d, run 1                        | 2026-11-25 | live `2026-11-25-76c90397` | run with drops    | `bench:map case=run dataset=2026-11-25-76c90397 frames=2384 dropped=73134 collected=33884 p50=8.3ms p95=10.1ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load 1.64                |
-| same, run 2                                                              | 2026-11-25 | same                       | run with drops    | `bench:map case=run dataset=2026-11-25-76c90397 frames=2384 dropped=73134 collected=33886 p50=8.3ms p95=10.3ms bar=16.7ms PASS` | PASS, DPR 2, Metal, load 1.84                |
-| Apple M5 Pro (macOS 27.2.1), head 52acb0b5 (main 083fb7ae merged), run 1 | 2026-11-26 | live `2026-11-25-76c90397` | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=678ms,929ms,877ms median=877ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.14 |
-| same, run 2                                                              | 2026-11-26 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=798ms,837ms,885ms median=837ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.32 |
+## Budgets
 
 ### Budgets held to main (2026-11-26, main 083fb7ae)
 
@@ -226,8 +201,6 @@ Taken on main `be6467dc` against branch `b8921ad4`; they stand because `083fb7ae
 | playback + halos          | 10.3 | 9.6    |
 | citywide playback         | 10.2 | 9.7    |
 | sim-timeline-docked       | 10.2 | 9.9    |
-
-The branch-only run and buy-to-ready lines of that session (run p95 10.0 ms, buy-to-ready median 630 ms) are within 3% of the run-bench rows of record in the game's runs Results table above (run p95 10.1 and 10.3 ms). The buy-to-ready median was compared with the rows of record at main `be6467dc` (618 and 616 ms), since replaced.
 
 ## CI
 
