@@ -43,8 +43,8 @@ export function roomMet(amount: number): string {
   return `Room for ${formatCount(amount)} homes`;
 }
 export const OPENING_LINES: readonly string[] = [
-  'Next, the forecast plays today’s law to the deadline.',
-  'Sweep over homes as they finish to collect them.'
+  'Next, play the forecast under today’s law.',
+  'The month it reaches the goal is your date to beat.'
 ];
 export const START = 'Start';
 

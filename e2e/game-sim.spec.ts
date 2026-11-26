@@ -19,7 +19,7 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
 const BOND = 'A housing bond';
 
-// ---- the workshop -------------------------------------------------------------------------------
+// ---- the locked lanes ---------------------------------------------------------------------------
 
 test('the tool offers no Public money until bought', async ({ page }) => {
   await seedRuns(page, { phase: 'runs', runs: 1, bought: { 'stop-rail': 1 } });

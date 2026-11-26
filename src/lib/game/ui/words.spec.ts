@@ -28,8 +28,8 @@ it('the goal headline', () => {
 it('the opening card', () => {
   expect(w.roomMet(82069)).toBe('Room for 82,069 homes');
   expect(w.OPENING_LINES).toEqual([
-    'Next, the forecast plays today’s law to the deadline.',
-    'Sweep over homes as they finish to collect them.'
+    'Next, play the forecast under today’s law.',
+    'The month it reaches the goal is your date to beat.'
   ]);
   expect(w.START).toBe('Start');
 });

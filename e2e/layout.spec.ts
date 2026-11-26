@@ -1076,7 +1076,7 @@ test.describe('account entry', () => {
 
 // ---- the game's header -----------------------------------------------------------------------
 
-test.describe("the game's header on the tree", () => {
+test.describe("the game's header on the simulation", () => {
   for (const width of [375, 768, 1024, 1280]) {
     test(`${width} px with the widest unit count and goal: nothing overflows or overlaps`, async ({
       page,

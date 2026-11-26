@@ -778,8 +778,8 @@
 
   /**
    * Play waits at the computed edge for the forecast: true once playback has caught the edge while
-   * the forecast is short of the last day; false when it stops or the forecast is whole. It is not reset as the edge moves on, so it does not flicker with each
-   * fill.
+   * the forecast is short of the last day; false when it stops or the forecast is whole. It is not
+   * reset as the edge moves on, so it does not flicker with each fill.
    */
   let playWaits = $state(false);
   $effect(() => {

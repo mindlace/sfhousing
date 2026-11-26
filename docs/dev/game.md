@@ -223,10 +223,12 @@ All in `src/lib/game/ui/`; none renders for the open game.
 - **`GameCell`** (`header-units`, `header-game-panel`): the unit count, rolling to each total. From
   lg it sits in the bar with the panel as a pop-over; in the Menu the panel opens in place.
 - **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): the
-  current game's name and stage, the sync line and the saved games (switch, rename in place, delete after one question, "New game"). A change that
-  loads another game calls `reloadGame()` (`ui/reload.ts`), a full page load of `/`. At `MAX_SAVES`
-  "New game" is `aria-disabled`; a refused change shows `FULL_TEXT` or `STORAGE_TEXT`.
-  The words are in `ui/words.ts`.
+  current game's name and stage, the sync line and the saved games (switch, rename in place,
+  delete after one question, "New game"). A change that loads another game calls `reloadGame()`
+  (`ui/reload.ts`), a full page load of `/`. At `MAX_SAVES` "New game" is `aria-disabled`; a
+  refused change shows `FULL_TEXT` or `STORAGE_TEXT`.
+
+The words are in `ui/words.ts`.
 
 ## The store
 
@@ -343,7 +345,8 @@ the store at any time.
 
 Publish sends the plan in the opening and the runnable document after it: `SimPage`'s `publishDoc`
 is the document with `run` (`runnable(doc, limits)`) as its policy, so a game publishes what runs
-and never a locked policy. The header's Publish opens nothing while the document is empty. There is no Remix.
+and never a locked policy. The header's Publish opens nothing while the document is empty. There
+is no Remix.
 
 ## The e2e seams
 
@@ -483,5 +486,5 @@ Filled in 3.0 s (cars on)
 `src/lib/game/words.ts` holds the store's and the sync's words: `syncText`, `playedText(savedAt,
 now)` ("Today", "Yesterday", "4 Mar", "4 Mar 2025"), `defaultSaveName`, `FULL_TEXT` and
 `STORAGE_TEXT`. `ui/words.ts` holds the screens' words and `src/lib/timeline/game-copy.ts` the
-simulation page's (the locked lane and what a goal unlocks). A page that shows a full list, a refused write or the sync's
-state imports these; none writes its own wording.
+simulation page's (the locked lane and what a goal unlocks). A page that shows a full list, a
+refused write or the sync's state imports these; none writes its own wording.
