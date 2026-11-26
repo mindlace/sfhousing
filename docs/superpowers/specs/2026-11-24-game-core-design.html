@@ -1302,6 +1302,7 @@ export function sideShown(s: GameState, goals: readonly SideGoal[] = SIDE_GOALS)
         <li>A ring at or past <code>RUNGS</code> is never open; such a goal is never shown.</li>
         <li>Funded homes, homes in construction and affordable homes are above 0 under current law, and the code records no baseline for them. The balance script of <code>tree-catalogue</code>, which plays current law, sets those three targets above current law's value at the deadline of the goal's ring.</li>
         <li>Public money per added home is not a side goal: lower is better there, and a side goal is met by reaching a target from below.</li>
+        <li><code>funded-homes</code> reads the score's <code>fundedHomes</code> as it is: every home a grant, loan or guarantee from a pool helped start, on any income tier, including a market home a loan carries that would have started without it. Its label, "homes built with public money", is true of each of them.</li>
       </ul>
     </section>
 
@@ -1515,6 +1516,7 @@ export function defaultSaveName(from: DefaultFrom, taken: readonly string[]): st
       <li><strong>A goal with no tuning entry is left out.</strong> The stub tuning is empty until <code>tree-catalogue</code> fills it; leaving the goal out keeps the application building.</li>
       <li><strong>Policy goals read 0 with nothing in force,</strong> because the view's comparison is then the old zoning and its effect is not the player's. The caller says whether anything is in force (<code>SideInput.inForce</code>), as the page already decides for its own "From your policy" line, since the view does not record which twin ran.</li>
       <li><strong>Public money per added home is not a side goal.</strong> Lower is better, and <code>SideGoal.read</code> is met from below.</li>
+      <li><strong><code>funded-homes</code> counts every funded home, loans included.</strong> Its label says homes built with public money, which a loan-carried market home is, and <code>fundedHomes</code> is the figure the page already shows for it. Whether it is offered on a dataset of record is decided by tree-catalogue's raise rule, left-out rule and gated plays.</li>
       <li><strong>The starting tuning values</strong> are <code>RUNG_LUMP</code> 2,000 and side rewards from 300 to 1,500, on one scale; <code>tree-catalogue</code>'s balance script tunes them.</li>
     </ul>
   </section>
