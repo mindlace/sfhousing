@@ -523,7 +523,7 @@ describe('Inspector under limits', () => {
     await page.getByRole('button', { name: 'Transit rule' }).click();
     const added = store.policy.kinds.zoning[0];
     expect(added.where).toEqual({ tag: 'transit', stopTypes: ['metro'] });
-    expect(added.spans[0].what).toEqual({ tag: 'bands', bands: [{ maxM: 402, stories: 8 }] });
+    expect(added.spans[0].what).toEqual({ tag: 'bands', bands: [{ maxM: 402, stories: 6 }] });
   });
 
   it("a given measure's What is the summary under closed limits", async () => {

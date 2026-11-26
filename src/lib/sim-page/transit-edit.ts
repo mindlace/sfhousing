@@ -18,8 +18,20 @@ import {
 } from './policy';
 
 export const MAX_BANDS = 3;
-/** Tier 4 (UI): the largest band distance the editor offers, 2 miles. */
-export const BAND_MAX_M = 3219;
+/** The largest band distance the editor offers per stop type: a walk to the stop (P14). */
+export const REACH_MAX_M: Readonly<Record<StopType, number>> = Object.freeze({
+  regionalRail: 1200,
+  metro: 1200,
+  rapidBus: 800,
+  frequentBus: 800
+});
+/** The largest class maximum: the open editor's reach and OPEN_CAP.reachM. */
+export const OPEN_REACH_M = 1200;
+
+/** The shortest maximum among `stopTypes`; OPEN_REACH_M for none. */
+export function reachMaxM(stopTypes: readonly StopType[]): number {
+  return stopTypes.length === 0 ? OPEN_REACH_M : Math.min(...stopTypes.map((t) => REACH_MAX_M[t]));
+}
 /** Tier 4: a new band sits a quarter mile beyond the outermost. */
 export const NEW_BAND_STEP_M = 402;
 
@@ -64,7 +76,7 @@ export const OPEN_CAP: TransitCap = Object.freeze({
   stops: new Set<StopType>(STOP_TYPES),
   bands: MAX_BANDS,
   stories: STORIES_MAX,
-  reachM: BAND_MAX_M
+  reachM: OPEN_REACH_M
 });
 
 /** The cap a Limits sets: open limits give OPEN_CAP, else each count is held to the editor's top. */
@@ -74,8 +86,13 @@ export function capOf(l: Limits): TransitCap {
     stops: l.stops,
     bands: Math.min(l.bands, MAX_BANDS),
     stories: Math.min(l.stories, STORIES_MAX),
-    reachM: Math.min(l.reachM, BAND_MAX_M)
+    reachM: Math.min(l.reachM, OPEN_REACH_M)
   };
+}
+
+/** `cap` with its reach held to the shortest maximum of the rule's stop types. */
+export function ruleCap(cap: TransitCap, stopTypes: readonly StopType[]): TransitCap {
+  return { ...cap, reachM: Math.min(cap.reachM, reachMaxM(stopTypes)) };
 }
 
 /** Bounds for band i (innermost first): stories between the outer band's and the inner band's. */

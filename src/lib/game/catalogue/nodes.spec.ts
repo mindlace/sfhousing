@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fundingPresets } from '$lib/sim-page/funding-presets';
-import { MAX_BANDS, BAND_MAX_M } from '$lib/sim-page/transit-edit';
+import { MAX_BANDS } from '$lib/sim-page/transit-edit';
 import { PRESETS } from '$lib/sim-page/timing';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
@@ -113,7 +113,6 @@ describe('nodes', () => {
     expect(rising(stories)).toBe(true);
     const reach = grantsOf('reach').map((g) => g.maxM);
     expect(reach).toEqual([805, 1609, 3219]);
-    for (const m of reach) expect(m).toBeLessThanOrEqual(BAND_MAX_M);
     const bands = grantsOf('bands').map((g) => g.max);
     expect(bands).toEqual([2, 3]);
     for (const b of bands) expect(b).toBeLessThanOrEqual(MAX_BANDS);

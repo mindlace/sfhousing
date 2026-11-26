@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OPEN_REACH_M } from '$lib/sim-page/transit-edit';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
@@ -73,7 +74,7 @@ describe('fullTree', () => {
     if (what.tag !== 'bands') throw new Error('expected a bands span');
     expect(what.bands).toHaveLength(3);
     expect(what.bands.every((b) => b.stories === 80)).toBe(true);
-    expect(Math.max(...what.bands.map((b) => b.maxM))).toBe(3219);
+    expect(Math.max(...what.bands.map((b) => b.maxM))).toBe(OPEN_REACH_M);
   });
 
   it('fullTree throws naming the node it cannot buy', () => {

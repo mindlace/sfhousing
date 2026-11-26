@@ -3,7 +3,8 @@ import { STOP_TYPES, type StopType } from '$lib/sim/levers/brushes';
 import type { TimerEdit } from '$lib/sim/levers/types';
 import { DEFAULT_BANDS, type TransitBand } from '$lib/sim-page/policy';
 import { PRESETS, type PresetId, type TimingSet } from '$lib/sim-page/timing';
-import { NEW_BAND_STEP_M } from '$lib/sim-page/transit-edit';
+import { NEW_BAND_STEP_M, OPEN_REACH_M } from '$lib/sim-page/transit-edit';
+import { limitsWith } from '$lib/timeline/test/limits';
 import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Pathway } from '$lib/timelapse/types';
 import { RUNGS } from './ladder';
@@ -196,7 +197,7 @@ describe('limitsOf', () => {
     ];
     const l = limitsOf(owned({ z: 2, t: 2, r: 2, b: 2, h: 5 }), fold);
     expect(l.stories).toBe(12);
-    expect(l.reachM).toBe(1609);
+    expect(l.reachM).toBe(OPEN_REACH_M);
     expect(l.bands).toBe(3);
     expect(l.hands).toEqual({ radiusPx: 64, lingerMs: 6000, auto: true });
   });
@@ -208,7 +209,7 @@ describe('limitsOf', () => {
       node('r', { tag: 'reach', maxM: 5000 }),
       node('b', { tag: 'bands', max: 3 })
     ]);
-    expect([l.stories, l.reachM, l.bands]).toEqual([80, 3219, 3]);
+    expect([l.stories, l.reachM, l.bands]).toEqual([80, OPEN_REACH_M, 3]);
   });
 
   it('counts a level past the last as the last, and an unknown node as nothing', () => {
@@ -223,7 +224,7 @@ describe('limitsOf', () => {
       node('p', { tag: 'preset', preset: 'sb423Clock' }),
       node('m', { tag: 'measure', preset: 'housing-bond' })
     ]);
-    expect([l.stories, l.bands, l.reachM]).toEqual([80, 3, 3219]);
+    expect([l.stories, l.bands, l.reachM]).toEqual([80, 3, OPEN_REACH_M]);
     expect(l.stops).toEqual(new Set(STOP_TYPES));
     expect(l.custom).toBe(true);
     expect(l.presets).toEqual(new Set(['sb423Clock', 'observed']));
@@ -258,7 +259,11 @@ describe('constants', () => {
     expect(OPEN_LIMITS.measures).toEqual(new Set(FUNDING_PRESET_IDS));
     expect(OPEN_LIMITS.measures.size).toBe(11);
     expect(OPEN_LIMITS.stops).toEqual(new Set(STOP_TYPES));
-    expect([OPEN_LIMITS.bands, OPEN_LIMITS.stories, OPEN_LIMITS.reachM]).toEqual([3, 80, 3219]);
+    expect([OPEN_LIMITS.bands, OPEN_LIMITS.stories, OPEN_LIMITS.reachM]).toEqual([
+      3,
+      80,
+      OPEN_REACH_M
+    ]);
     expect(OPEN_LIMITS.custom).toBe(true);
     expect(OPEN_LIMITS.hands).toBe(BASE_HANDS);
   });
@@ -299,7 +304,7 @@ const ROWS: Row[] = [
     want: false
   },
   {
-    name: 'transit, three bands',
+    name: 'transit, three bands, still runs',
     kind: 'zoning',
     p: transit(
       ['metro'],
@@ -310,21 +315,21 @@ const ROWS: Row[] = [
       ]
     ),
     l: L,
-    want: false
+    want: true
   },
   {
-    name: 'transit, one story too tall',
+    name: 'transit, one story too tall, still runs',
     kind: 'zoning',
     p: transit(['metro'], [{ maxM: 402, stories: 9 }]),
     l: L,
-    want: false
+    want: true
   },
   {
-    name: 'transit, one metre too far',
+    name: 'transit, one metre too far, still runs',
     kind: 'zoning',
     p: transit(['metro'], [{ maxM: 806, stories: 4 }]),
     l: L,
-    want: false
+    want: true
   },
   { name: 'transit, nothing bought', kind: 'zoning', p: transit([], []), l: NONE, want: false },
   {
@@ -406,6 +411,13 @@ const ROWS: Row[] = [
 ];
 
 describe('within', () => {
+  it('a transit rule past every bound still runs', () => {
+    const rule = transit(['regionalRail'], [{ maxM: 3219, stories: 40 }]);
+    const l = limitsWith({ stops: new Set(['regionalRail']), bands: 1, reachM: 402, stories: 4 });
+    expect(within('zoning', rule, l)).toBe(true);
+    expect(within('zoning', rule, { ...l, stops: new Set(['metro']) })).toBe(false);
+  });
+
   it.each(ROWS)('$name', ({ kind, p, l, want }) => {
     expect(within(kind, p, l)).toBe(want);
   });

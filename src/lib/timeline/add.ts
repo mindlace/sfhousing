@@ -9,6 +9,7 @@
 import { FREE_MEASURES, OPEN_LIMITS, isGiven, type Limits } from '$lib/game/limits';
 import type { LimitKind } from '$lib/sim-page/funding-copy';
 import {
+  DEFAULT_BANDS,
   DEFAULT_POLICY,
   type SimPolicy,
   type TransitBand,
@@ -16,7 +17,7 @@ import {
 } from '$lib/sim-page/policy';
 import { addPreset, dateMeasure, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
 import { PRESETS, resolvePreset, timingLabel, type PresetId } from '$lib/sim-page/timing';
-import { newLayer } from '$lib/sim-page/transit-edit';
+import { newLayer, reachMaxM } from '$lib/sim-page/transit-edit';
 import { newOpId } from '$lib/brush/ids';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
@@ -85,15 +86,21 @@ export function kindOpen(kind: PolicyKind, limits: Limits): boolean {
   }
 }
 
-/** A transit rule fitted to the limits, for "+" in a game: one band at the reach and stories. */
+/**
+ * A transit rule for "+" in a game: SB 79's two bands (DEFAULT_BANDS), each held to the limits'
+ * reach and stories and the class maximum; a band that no longer reaches past the one inside it
+ * is dropped.
+ */
 export function fittedLayer(limits: Limits): ZoningRule {
-  const bands: TransitBand[] = [{ maxM: limits.reachM, stories: limits.stories }];
-  return {
-    id: newOpId(),
-    kind: 'transit',
-    stopTypes: STOP_TYPES.filter((t) => limits.stops.has(t)),
-    bands
-  };
+  const stopTypes = STOP_TYPES.filter((t) => limits.stops.has(t));
+  const reach = Math.min(limits.reachM, reachMaxM(stopTypes));
+  const bands: TransitBand[] = [];
+  for (const b of DEFAULT_BANDS) {
+    const maxM = Math.min(b.maxM, reach);
+    if (maxM <= (bands.at(-1)?.maxM ?? 0)) continue;
+    bands.push({ maxM, stories: Math.min(b.stories, limits.stories) });
+  }
+  return { id: newOpId(), kind: 'transit', stopTypes, bands };
 }
 
 export function addChoices(

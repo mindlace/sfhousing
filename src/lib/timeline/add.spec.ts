@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FREE_MEASURES, OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
 import { dateMeasure, fundingPresets } from '$lib/sim-page/funding-presets';
 import { PRESETS } from '$lib/sim-page/timing';
+import type { StopType } from '$lib/sim/levers/brushes';
 import { limitsWith } from './test/limits';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
@@ -303,6 +304,26 @@ describe('addChoices under limits', () => {
     expect(new Set(got).size).toBe(got.length);
     for (const no of ['Your own pool', 'City funding scale', 'Market terms'])
       expect(got).not.toContain(no);
+  });
+
+  it('a new rule starts at the two default bands, never at the maximum', () => {
+    const rails = new Set<StopType>(['regionalRail']);
+    expect(
+      fittedLayer(limitsWith({ stops: rails, bands: 3, reachM: 1200, stories: 80 })).bands
+    ).toEqual([
+      { maxM: 402, stories: 6 },
+      { maxM: 805, stories: 4 }
+    ]);
+    expect(
+      fittedLayer(limitsWith({ stops: rails, bands: 1, reachM: 402, stories: 4 })).bands
+    ).toEqual([{ maxM: 402, stories: 4 }]);
+    const buses = new Set<StopType>(['rapidBus']);
+    expect(
+      fittedLayer(limitsWith({ stops: buses, bands: 3, reachM: 1200, stories: 80 })).bands
+    ).toEqual([
+      { maxM: 402, stories: 6 },
+      { maxM: 800, stories: 4 }
+    ]);
   });
 
   it('fittedLayer fits the limits and the policy it adds runs', () => {

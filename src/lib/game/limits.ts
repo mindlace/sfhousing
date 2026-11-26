@@ -2,7 +2,7 @@
 import { STORIES_MAX } from '$lib/plan/constants';
 import { STOP_TYPES, type StopType } from '$lib/sim/levers/brushes';
 import { PRESETS } from '$lib/sim-page/timing';
-import { BAND_MAX_M, MAX_BANDS } from '$lib/sim-page/transit-edit';
+import { MAX_BANDS, OPEN_REACH_M } from '$lib/sim-page/transit-edit';
 import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
 import { NODES } from './catalogue/nodes';
 import { finished } from './ladder';
@@ -60,7 +60,7 @@ export const OPEN_LIMITS: Limits = Object.freeze({
   stops: new Set<StopType>(STOP_TYPES),
   bands: MAX_BANDS,
   stories: STORIES_MAX,
-  reachM: BAND_MAX_M,
+  reachM: OPEN_REACH_M,
   custom: true,
   hands: BASE_HANDS
 });
@@ -94,13 +94,13 @@ export function limitsOf(s: GameState, nodes: readonly TreeNode[] = NODES): Limi
     presets.add('observed');
   }
   const transit = done
-    ? { bands: MAX_BANDS, stories: STORIES_MAX, reachM: BAND_MAX_M }
+    ? { bands: MAX_BANDS, stories: STORIES_MAX, reachM: OPEN_REACH_M }
     : stops.size === 0
       ? { bands: 0, stories: 0, reachM: 0 }
       : {
           bands: Math.min(MAX_BANDS, Math.max(START_BANDS, bands)),
           stories: Math.min(STORIES_MAX, Math.max(START_STORIES, stories)),
-          reachM: Math.min(BAND_MAX_M, Math.max(START_REACH_M, reachM))
+          reachM: Math.min(OPEN_REACH_M, Math.max(START_REACH_M, reachM))
         };
   return {
     open: false,
@@ -128,16 +128,7 @@ export function within(kind: PolicyKind, p: Policy, l: Limits): boolean {
     case 'category':
       return l.stops.size > 0;
     case 'transit':
-      return (
-        l.stops.size > 0 &&
-        p.where.stopTypes.every((t) => l.stops.has(t)) &&
-        p.spans.every(
-          (s) =>
-            s.what.tag !== 'bands' ||
-            (s.what.bands.length <= l.bands &&
-              s.what.bands.every((b) => b.stories <= l.stories && b.maxM <= l.reachM))
-        )
-      );
+      return l.stops.size > 0 && p.where.stopTypes.every((t) => l.stops.has(t));
     case 'routes':
       return (
         p.preset !== null &&

@@ -14,10 +14,11 @@ import { ruleTarget } from './brush-summary';
 import { OPEN_LIMITS } from '$lib/game/limits';
 import { limitsWith } from '$lib/timeline/test/limits';
 import {
-  BAND_MAX_M,
   MAX_BANDS,
   NEW_BAND_STEP_M,
   OPEN_CAP,
+  OPEN_REACH_M,
+  REACH_MAX_M,
   type TransitCap,
   addBand,
   capOf,
@@ -25,8 +26,10 @@ import {
   layerName,
   layerTop,
   newLayer,
+  reachMaxM,
   removeBand,
   replaceRule,
+  ruleCap,
   setBandDistance,
   setBandStories,
   storiesRange,
@@ -48,12 +51,40 @@ describe('transit-edit caps', () => {
       stops: new Set(STOP_TYPES),
       bands: 3,
       stories: STORIES_MAX,
-      reachM: 3219
+      reachM: OPEN_REACH_M
     });
     expect(capOf(OPEN_LIMITS)).toBe(OPEN_CAP);
     expect(
       capOf(limitsWith({ stops: new Set(['metro']), bands: 5, stories: 8, reachM: 5000 }))
-    ).toEqual({ stops: new Set(['metro']), bands: 3, stories: 8, reachM: 3219 });
+    ).toEqual({ stops: new Set(['metro']), bands: 3, stories: 8, reachM: OPEN_REACH_M });
+  });
+
+  it('reach is a walking distance per class of stop', () => {
+    expect(REACH_MAX_M).toEqual({
+      regionalRail: 1200,
+      metro: 1200,
+      rapidBus: 800,
+      frequentBus: 800
+    });
+    expect(reachMaxM(['regionalRail'])).toBe(1200);
+    expect(reachMaxM(['metro'])).toBe(1200);
+    expect(reachMaxM(['rapidBus', 'frequentBus'])).toBe(800);
+    expect(reachMaxM(['metro', 'frequentBus'])).toBe(800);
+    expect(reachMaxM([])).toBe(1200);
+    expect(ruleCap(OPEN_CAP, ['rapidBus']).reachM).toBe(800);
+    expect(ruleCap({ ...OPEN_CAP, reachM: 500 }, ['metro']).reachM).toBe(500);
+    const rail = rule([{ maxM: 402, stories: 6 }], ['regionalRail']);
+    expect(setBandDistance(rail, 0, 5000, ruleCap(OPEN_CAP, rail.stopTypes)).bands[0].maxM).toBe(
+      1200
+    );
+    const bus = rule([{ maxM: 402, stories: 6 }], ['rapidBus']);
+    expect(setBandDistance(bus, 0, 5000, ruleCap(OPEN_CAP, bus.stopTypes)).bands[0].maxM).toBe(800);
+  });
+
+  it('a stored value past the maximum stays when another field changes', () => {
+    const stored = rule([{ maxM: 3219, stories: 8 }], ['regionalRail']);
+    const c = ruleCap(OPEN_CAP, stored.stopTypes);
+    expect(setBandStories(stored, 0, 10, c).bands).toEqual([{ maxM: 3219, stories: 10 }]);
   });
 
   it('stories stop at the cap', () => {
@@ -111,7 +142,7 @@ describe('transit-edit', () => {
     ]);
     expect(distanceRange(r.bands, 1)).toEqual({ min: 403, max: 1199 });
     expect(setBandDistance(r, 1, 402).bands[1].maxM).toBe(403);
-    expect(setBandDistance(r, 2, 99_999).bands[2].maxM).toBe(BAND_MAX_M);
+    expect(setBandDistance(r, 2, 99_999).bands[2].maxM).toBe(OPEN_REACH_M);
     expect(setBandDistance(r, 0, 0).bands[0].maxM).toBe(1);
   });
 
@@ -131,7 +162,7 @@ describe('transit-edit', () => {
     // A monotone rule: 1-3 distinct distances ascending, stories non-increasing.
     const ruleArb = fc
       .record({
-        dists: fc.uniqueArray(fc.integer({ min: 1, max: BAND_MAX_M }), {
+        dists: fc.uniqueArray(fc.integer({ min: 1, max: OPEN_REACH_M }), {
           minLength: 1,
           maxLength: MAX_BANDS
         }),
@@ -152,7 +183,7 @@ describe('transit-edit', () => {
     const num = fc.oneof(
       fc.integer({ min: -100, max: 100_000 }),
       fc.double({ min: -1e6, max: 1e6, noNaN: true }),
-      fc.constantFrom(NaN, Infinity, -Infinity, 0, 1, 80, 81, BAND_MAX_M)
+      fc.constantFrom(NaN, Infinity, -Infinity, 0, 1, 80, 81, OPEN_REACH_M)
     );
     const idx = fc.integer({ min: -1, max: 4 });
     const edit = fc.oneof(
@@ -196,14 +227,17 @@ describe('transit-edit', () => {
   it('addBand steps out at the same height; null at three bands or at the cap', () => {
     const r = rule(DEFAULT_BANDS);
     const added = addBand(r)!;
-    expect(added.bands).toEqual([...DEFAULT_BANDS, { maxM: 805 + NEW_BAND_STEP_M, stories: 4 }]);
+    expect(added.bands).toEqual([
+      ...DEFAULT_BANDS,
+      { maxM: Math.min(805 + NEW_BAND_STEP_M, OPEN_REACH_M), stories: 4 }
+    ]);
     expect(bandProblem(added.bands)).toBeNull();
     expect(addBand(added)).toBeNull();
-    const atCap = rule([{ maxM: BAND_MAX_M, stories: 3 }]);
+    const atCap = rule([{ maxM: OPEN_REACH_M, stories: 3 }]);
     expect(addBand(atCap)).toBeNull();
     // Close to the cap: the new band lands on the cap, not past it.
-    const near = addBand(rule([{ maxM: BAND_MAX_M - 10, stories: 3 }]))!;
-    expect(near.bands.at(-1)).toEqual({ maxM: BAND_MAX_M, stories: 3 });
+    const near = addBand(rule([{ maxM: OPEN_REACH_M - 10, stories: 3 }]))!;
+    expect(near.bands.at(-1)).toEqual({ maxM: OPEN_REACH_M, stories: 3 });
   });
 
   it('removeBand refuses the last band', () => {
@@ -267,7 +301,7 @@ describe('transit-edit', () => {
     ];
     expect(setBandStories(r, 0, 6).bands).toEqual(sorted);
     expect(setBandDistance(r, 1, 900).bands).toEqual([sorted[0], { maxM: 900, stories: 4 }]);
-    expect(addBand(r)!.bands.map((b) => b.maxM)).toEqual([402, 805, 1207]);
+    expect(addBand(r)!.bands.map((b) => b.maxM)).toEqual([402, 805, OPEN_REACH_M]);
     expect(removeBand(r, 0)!.bands).toEqual([sorted[1]]);
     expect(toggleStop(r, 'regionalRail')!.bands).toEqual(sorted);
   });

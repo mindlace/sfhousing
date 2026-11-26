@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TransitBand } from '$lib/sim-page/policy';
+import { OPEN_REACH_M } from '$lib/sim-page/transit-edit';
 import type { StopType } from '$lib/sim/levers/brushes';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
@@ -264,19 +265,19 @@ describe('applyGrant', () => {
   });
 
   it('a reach grant moves the outermost band out and leaves one already there', () => {
-    const limits = transitLimits({ bands: 2, stories: 6, reachM: 1609 });
-    const grant: Grant = { tag: 'reach', maxM: 1609 };
+    const limits = transitLimits({ bands: 2, stories: 6, reachM: OPEN_REACH_M });
+    const grant: Grant = { tag: 'reach', maxM: OPEN_REACH_M };
     const doc = withZoning(gameRule(['metro'], [b(402, 6), b(805, 4)], false));
     const out = applyGrant(doc, grant, ctxOf(limits));
-    expect(bandsOf(out)).toEqual([b(402, 6), b(1609, 4)]);
+    expect(bandsOf(out)).toEqual([b(402, 6), b(OPEN_REACH_M, 4)]);
     expect(out.kinds.zoning[0].on).toBe(true);
-    const there = withZoning(gameRule(['metro'], [b(402, 6), b(3219, 4)]));
+    const there = withZoning(gameRule(['metro'], [b(402, 6), b(OPEN_REACH_M, 4)]));
     expect(applyGrant(there, grant, ctxOf(limits))).toBe(there);
   });
 
   it('a bands grant adds a band 402 m beyond when the reach allows', () => {
     const doc = withZoning(gameRule(['metro'], [b(402, 6)]));
-    const limits = transitLimits({ bands: 2, stories: 6, reachM: 3219 });
+    const limits = transitLimits({ bands: 2, stories: 6, reachM: OPEN_REACH_M });
     const out = applyGrant(doc, { tag: 'bands', max: 2 }, ctxOf(limits));
     expect(bandsOf(out)).toEqual([b(402, 6), b(804, 6)]);
   });
