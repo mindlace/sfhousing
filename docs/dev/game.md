@@ -556,15 +556,15 @@ number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
 It is run before every dataset upload, on the directory that is then uploaded, and must exit 0
 ([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`.
 
-Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `be6467dc`), cars on, against
+Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `083fb7ae`), cars on, against
 `LADDER_YEARS = [2060, 2055, 2045, 2040]` (measured by `reach-measure.ts` on the same version):
 
 ```
 Dataset 2026-11-25-76c90397
 Goal: 82,069 homes
-Current law by Oct 2066: reached Jun 2065, 16 months early
-Full tree by Dec 2040: reached Jan 2040, 11 months early
-Filled in 5.4 s (cars on)
+Current law by Oct 2066: reached Oct 2061, 60 months early
+Full tree by Dec 2040: reached Aug 2037, 40 months early
+Filled in 2.4 s (cars on)
 ```
 
 The fill time is ballpark: it was taken at a 1-minute load of 2.4.
