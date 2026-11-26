@@ -531,7 +531,7 @@ Dataset <datasetVersion>
 Goal: <amount> homes
 Current law by <Mon YYYY>: reached <Mon YYYY>, <n> months early
 Full tree by <Mon YYYY>: missed, <homes> homes, <short> short
-Filled in <s> s (cars on)
+Filled in <s> s (cars on|off)
 ```
 
 Lines 3 and 4 each read "reached <month>, <n> months early" ("1 month early" for 1) or "missed,

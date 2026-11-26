@@ -87,8 +87,8 @@ all). With the link off every event equals the run without cars.
 
 - Series: `WorldSeries` `cars` rows per calendar month, `TimelineView.cars` (`CarsView`);
   [world-score.md](world-score.md).
-- Details on `/sim`: `carsRow` (`src/lib/timeline/cars-row.ts`), cars today → playhead and the change
-  per household.
+- Details on the simulation: `carsRow` (`src/lib/timeline/cars-row.ts`), cars today → playhead and
+  the change per household.
 - Map: layer `cars-per-household` on source `car-zones` (`src/lib/map/cars-layer.ts`), from
   `car-zones.json`, loaded on first turn-on.
 - About: the cars lines in `src/lib/about/copy.ts`.
@@ -113,7 +113,8 @@ cars only.
 ## Current law with and without cars
 
 `npx tsx scripts/reach-check.ts <datasetDir> --cars on|off` (default on) runs both questions with or
-without the car system and ends with the opening fill's time. Measured on dataset `2026-11-25-76c90397` (current law, goal 82,069 homes by Oct 2066):
+without the car system and ends with the opening fill's time. Measured on dataset
+`2026-11-25-76c90397` (current law, goal 82,069 homes by Oct 2066):
 
 | Run                       | Goal reached | Fill (s) |
 | ------------------------- | ------------ | -------- |
@@ -125,8 +126,9 @@ Cars move the goal one month earlier, all of it through the parking link.
 
 ## Measured cost
 
-2026-11-25, live build `2026-11-25-76c90397`, the earlier level 2 check's fill line, now `reach-check`'s (two worlds, 480 months,
-baseline money), three runs each at load average 3.7-4.0 on 15 cores:
+2026-11-25, live build `2026-11-25-76c90397`, the earlier level 2 check's fill line, now
+`reach-check`'s (two worlds, 480 months, baseline money), three runs each at load average
+3.7-4.0 on 15 cores:
 
 - Cars off 2.3 s; cars on with the link off 3.5 s; cars on 3.9-4.0 s. The parking link adds about
   0.4 s and the car step about 1.2 s. Before the incremental parking change (below) cars on took
