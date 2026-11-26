@@ -15,13 +15,14 @@ import { financeIndexOf } from '$lib/sim/scenario/funding';
 import { lastInitiationMonth, precomputeOf } from '$lib/sim/scenario/input';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
 import type { SimInput } from '$lib/sim/scenario/types';
+import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { monthFirstDay, monthOfDay } from '../months';
 import { lotEntity, ordinaryStart } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { changingAt, frameOf, limited } from '../test/timeline';
-import { kindClock, sizeIn, type Spell } from './clocks';
+import { STABLE_FROM, kindClock, logSurvival, sizeIn, type Spell } from './clocks';
 import { financeFrameOf, fundedMini, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -354,6 +355,35 @@ describe('kindClock', () => {
     // the guard is live: reading month 40 throws
     const spell = spellOf(statics, seedHash(1), precomputeOf(input).candidates[0], asOf, 0);
     expect(() => kindClock(statics, t, 40, seedHash(1), spell, 'market')).toThrow(RangeError);
+  });
+});
+
+describe('logSurvival', () => {
+  const plain = (x: number) => log(1 - 1 / (1 + exp(-x)));
+  it('is the plain form bit for bit up to STABLE_FROM', () => {
+    let n = 0;
+    for (let x = -30; x <= STABLE_FROM; x += 0.01) {
+      expect(logSurvival(x)).toBe(plain(x));
+      n++;
+    }
+    expect(n).toBeGreaterThan(4000);
+  });
+  it('is finite and negative at x = 50, where the plain form is -Infinity', () => {
+    expect(plain(50)).toBe(-Infinity);
+    const r = logSurvival(50);
+    expect(Number.isFinite(r)).toBe(true);
+    expect(r).toBeLessThan(0);
+    expect(r).toBeCloseTo(-50, 12);
+  });
+  it('falls as x rises, across the boundary and far past it', () => {
+    let prev = logSurvival(-30);
+    for (let x = -29.99; x <= 400; x += 0.01) {
+      const r = logSurvival(x);
+      expect(Number.isFinite(r)).toBe(true);
+      expect(r).toBeLessThanOrEqual(prev);
+      prev = r;
+    }
+    expect(Math.abs(logSurvival(STABLE_FROM + 1e-9) - plain(STABLE_FROM))).toBeLessThan(1e-8);
   });
 });
 

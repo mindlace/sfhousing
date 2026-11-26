@@ -27,6 +27,18 @@ const F = FILL_LEVELS.length;
 const EMPTY: number[] = [];
 const PROTOTYPE = new Map<PrototypeId, Prototype>(PROTOTYPES.map((p) => [p.id, p]));
 const logistic = (x: number) => 1 / (1 + exp(-x));
+/** Above this log-odds `logSurvival` switches to the stable form (test value of the boundary). */
+export const STABLE_FROM = 15;
+/**
+ * `log(1 - logistic(x))`, the log-survival rate at log-odds `x`, finite for every finite `x`.
+ * Up to `STABLE_FROM` it is the form `rates.ts` uses for the ordinary rate, bit for bit, so the
+ * min-rate rule and the segment merge compare like with like; above it, where `1 - logistic(x)`
+ * loses its digits (and is 0 past about 37), it is `-softplus(x)` = `-(x + log(1 + exp(-x)))`.
+ * The two agree to about 1e-9 at the boundary.
+ */
+export function logSurvival(x: number): number {
+  return x <= STABLE_FROM ? log(1 - logistic(x)) : -(x + log(1 + exp(-x)));
+}
 /** The first day of lot-month T of a spell free since r. */
 const startOf = (r: Day, T: number): Day => r + 1 + Math.floor((T - 1) * MONTH_DAYS);
 
@@ -192,12 +204,12 @@ function segOn(
       g.market -
       (slope * (uncoveredPerHome('affordable', p) - uncoveredPerHome('market', p))) /
         costPerHome('affordable', p);
-  const ref = market ? ord : log(1 - logistic(x0));
+  const ref = market ? ord : logSurvival(x0);
   const bundle = fm.bundleOf(kind, size.units);
   if (bundle.length === 0) return { ord, rate: ref, ref, bundle, level: 0, size };
   const priced = fm.index.price(kind, bundle, size.protoId);
   const level = coverageLevel(priced.coverage);
-  const x = log(1 - logistic(x0 + cappedShift(priced, kind, p, slope)));
+  const x = logSurvival(x0 + cappedShift(priced, kind, p, slope));
   return { ord, rate: market ? Math.min(ord, x) : x, ref, bundle, level, size };
 }
 
