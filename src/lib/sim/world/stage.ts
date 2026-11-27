@@ -208,6 +208,6 @@ export function reviseOnEntry(
     stories = t.stories[from + best];
   }
   if (next === units) return false;
-  pushRev(p, row, day, next, stories);
+  pushRev(p, row, day, next, stories, p.level[row]);
   return true;
 }

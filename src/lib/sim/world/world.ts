@@ -407,7 +407,7 @@ function stepCtx(
     p.env[row] = env;
     p.top[row] = topHomes(t, lot, allowed, cap, existing);
     p.entered[row * S + SI[first]] = day;
-    pushRev(p, row, day, units, stories);
+    pushRev(p, row, day, units, stories, f);
     if (funded !== null) {
       p.funded[row] = 1;
       p.kind[row] = funded.kind === 'affordable' ? 1 : 0;

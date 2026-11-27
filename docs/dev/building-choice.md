@@ -267,9 +267,15 @@ gross.bin is gone. Each decoder refuses the major before. The pipeline's hostabl
 panel's `base_yield` and `hostable_base`, the SB 79 and current-law layers and V17, V32 and V33
 read the option rows (`envelope-row.ts` `topHomesAt` and `envelopeRow`). The hostable flags stay
 cap-free (partner ruling, option c): a lot hosts where an option at or below its envelope has
-more homes than now; the run time's view applies the cap (rule A). The massing drawn for a start
-is still the typology generator's, so its homes can differ from the option's (a known gap: on
-the mini city 641 of 918 allowed options draw another home count and 27 of 945 draw none).
+more homes than now; the run time's view applies the cap (rule A).
+
+**The drawn building** (Task 11). Each simulated revision carries its option (`Schedule.revisions[k].option`, from the revision table's `revLevel`), and `massingFor` masses it with
+`generateForm` at the option's form and stories, so the map and the card draw exactly the
+option's homes, stories and plates (`massing.footprint.spec.ts` checks every option of the mini
+city). The memo key is `simKey(parcelId, form, stories, plates)`. A unit cap or a revision's
+ratio draw can leave a project fewer homes than its option holds; the building drawn is still
+the option's. Recorded projects keep `generateForUnits` at their stories. The paint preview draws
+each lot's `mostHomes` option at the painted stories.
 
 **The margin and the market slope.** Both read cost against value, so they can count one change
 twice once costs move over time (spec, Non-goals). The report (section 16) gives the Pearson

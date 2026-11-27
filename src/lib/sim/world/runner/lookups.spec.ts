@@ -3,10 +3,14 @@ import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from
 import type { ParcelId } from '$lib/data/parcel';
 import {
   generate,
+  generateForm,
   generateForUnits,
   lotBuildableStories,
   type GeneratedBuilding
 } from '$lib/generator';
+import { NULL_CAP } from '$lib/data/policy-codec';
+import { allowedCount, mostHomes } from '$lib/sim/choice/choose';
+import { BUILDING_FORMS } from '$lib/sim/choice/types';
 import { createLru } from '$lib/sim/lru';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
 import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
@@ -225,17 +229,47 @@ describe('direct lookups on the mini city', () => {
     expect(asked).toEqual([]);
   });
 
-  const previewOf = (lots: ParcelId[], stories: number, prot: (row: number) => boolean) =>
+  const previewOf = (
+    lots: ParcelId[],
+    stories: number,
+    prot: (row: number) => boolean,
+    genForm = vi.fn(generateForm)
+  ) =>
     previewResult({
       parcels: ds.loaded.fzp.parcels,
+      options: ds.loaded.fzp.options,
       protectedRow: prot,
       records: ds.chunks.records,
       memo: createLru(1000),
-      gen: generate,
+      genForm,
       lots,
       stories,
       maxLots: PREVIEW_MAX_LOTS
     });
+
+  it("previewResult draws each lot's most-homes option the painted stories allow", () => {
+    const parcels = ds.loaded.fzp.parcels;
+    const t = ds.loaded.fzp.options;
+    for (const stories of [3, 6, 40]) {
+      const genForm = vi.fn(generateForm);
+      const { result } = previewOf([LOADED_LOT], stories, () => false, genForm);
+      const i = parcels.index.get(LOADED_LOT)!;
+      const cap = parcels.fzpCap[i] === NULL_CAP ? null : parcels.fzpCap[i];
+      const k = mostHomes(t, i, allowedCount(t, i, stories), cap, parcels.existingUnits[i]);
+      if (k < 0) {
+        expect(result).toMatchObject({ ok: true, built: 0 });
+        expect(genForm).not.toHaveBeenCalled();
+        continue;
+      }
+      const j = t.offset[i] + k;
+      expect(result).toMatchObject({ ok: true, built: 1 });
+      expect(genForm).toHaveBeenCalledTimes(1);
+      const [, form, s] = genForm.mock.calls[0];
+      expect(form).toBe(BUILDING_FORMS[t.form[j]]);
+      expect(s).toBe(t.stories[j]);
+      expect(genForm.mock.results[0].value.units).toBe(t.homes[j]);
+    }
+  });
 
   it('previewResult builds the loaded lots and counts the missing', () => {
     const lots = [LOADED_LOT, OTHER_LOADED_LOT, UNLOADED_LOT, LOADED_LOT];
@@ -319,7 +353,8 @@ describe('direct lookups on the mini city', () => {
       pathway: 'discretionary',
       entered: {},
       end: { kind: 'open' },
-      revisions: [{ day: MINI_AS_OF, units: 20, stories: 5 }],
+      // the lot's first option (a simulated revision carries one)
+      revisions: [{ day: MINI_AS_OF, units: 20, stories: 5, option: 0 }],
       existingUnits: 0,
       multiPhase: false,
       phase: null

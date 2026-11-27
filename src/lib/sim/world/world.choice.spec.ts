@@ -17,6 +17,7 @@ import { miniInput } from './test/mini';
 import { horizonMonth, Recorder, runWorld, SEEDS } from './test/run';
 import { changingAt, frameOf, oneFrame } from './test/timeline';
 import { ORIGIN_SIM, type World } from './types';
+import { scheduleAt } from './read';
 
 const input = miniInput();
 const t = input.options;
@@ -77,6 +78,30 @@ describe("a start chooses among the lot's options", () => {
       seen++;
     }
     expect(seen).toBeGreaterThan(0);
+  });
+
+  it("a simulated schedule's revisions carry their options, the last the row's", () => {
+    let revised = 0;
+    let seen = 0;
+    for (const seed of SEEDS.slice(0, 4)) {
+      const { w } = runMini({ months: horizonMonth(input.asOf), seed });
+      const p = w.projects;
+      const statics = staticsOf(input);
+      for (let r = 0; r < p.n; r++) {
+        if (p.origin[r] !== ORIGIN_SIM) continue;
+        const s = scheduleAt(w, statics, r, Number.MAX_SAFE_INTEGER)!;
+        const lot = p.src[r];
+        for (const rev of s.revisions) {
+          expect(rev.option).toBeDefined();
+          expect(rev.stories).toBe(t.stories[t.offset[lot] + rev.option!]);
+        }
+        expect(s.revisions.at(-1)!.option).toBe(p.level[r]);
+        if (s.revisions.length > 1) revised++;
+        seen++;
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+    expect(revised).toBeGreaterThan(0);
   });
 
   it('rebuilds the choice row against 0 existing on a demolished lot', () => {

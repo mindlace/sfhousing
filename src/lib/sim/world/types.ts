@@ -141,6 +141,8 @@ export interface ProjectColumns {
   revDay: Int32Array;
   revUnits: Int32Array;
   revStories: Float64Array;
+  /** A simulated row's option at the revision (`level` then); 0 on any other row. */
+  revLevel: Uint16Array;
   revPrev: Int32Array;
   /** Rows used in the displacement side table (like `n`). */
   dispN: number;

@@ -46,7 +46,7 @@ interface RowSchedule {
     | { kind: 'complete'; day: Day }
     | { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day }
     | { kind: 'open' }; // still in progress at horizon
-  revisions: { day: Day; units: number; stories: number | null }[];
+  revisions: { day: Day; units: number; stories: number | null; option?: number }[];
   existingUnits: number;
   multiPhase: boolean;
   phase: {

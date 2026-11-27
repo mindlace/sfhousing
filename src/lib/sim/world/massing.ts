@@ -1,5 +1,6 @@
 // Per-revision massing for the timelapse (spec §4.8): the one rendering seam (§5). Simulated
-// buildings come from the editor generator on the T11 scenario record, pipeline and phase
+// buildings are the revision's chosen option (building choice), massed by `generateForm` at the
+// option's form and stories on the T11 scenario record; pipeline and phase
 // buildings from `generateForUnits` with district options (large-site massing §4.3, §4.5); a
 // null or throwing generator gives a footprint entry, so every revision has a renderable and
 // pickable entry. A master without phases is massed like any pipeline project (§4.7).
@@ -14,10 +15,12 @@ import { localFrame } from '$lib/generator/geo';
 import {
   fnv1a32,
   generate,
+  generateForm,
   generateForUnits,
   type DistrictOpts,
   type GeneratedBuilding
 } from '$lib/generator';
+import { BUILDING_FORMS, type BuildingForm } from '$lib/sim/choice/types';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Lru } from '../lru';
 import type { Massing, Schedule, SimInput } from './input/types';
@@ -29,8 +32,11 @@ export interface MassingCtx {
   records: (id: ParcelId) => ParcelRecord | undefined;
   /** Generator results by content key, null included. Cleared on a datasetVersion change. */
   memo: Lru<string, GeneratedBuilding | null>;
+  /** The typology generator: the card's buildable stories (`buildableStories`), not the map. */
   gen: typeof generate;
   genForUnits: typeof generateForUnits;
+  /** Masses a simulated project's chosen option. */
+  genForm: typeof generateForm;
   /** Logs a message once per project, however often it is called (the ctx's responsibility). */
   logOnce(projectId: string, msg: string): void;
 }
@@ -62,7 +68,9 @@ export function footprintOf(rec: ParcelRecord): { footprint: [number, number][] 
   return { footprint: rec.polygon[0].map(([x, y]) => frame.to(x, y)) };
 }
 
-export const simKey = (parcelId: ParcelId, stories: number) => `s|${parcelId}|${stories}`;
+/** The memo key of an option's building: the lot, the form, the stories and the tower plates. */
+export const simKey = (parcelId: ParcelId, form: BuildingForm, stories: number, plates: number) =>
+  `s|${parcelId}|${form}|${stories}|${plates}`;
 
 export const pipeKey = (
   seed: number,
@@ -144,20 +152,26 @@ function building(
   recs: ParcelRecord[],
   ctx: MassingCtx
 ): GeneratedBuilding | null {
-  const { units, stories } = schedule.revisions[k];
+  const { units, stories, option } = schedule.revisions[k];
   if (schedule.origin === 'simulated') {
     const rec = recs[0];
     const i = ctx.input.parcels.index.get(schedule.parcelIds[0]);
     if (!rec || i === undefined) throw new RangeError(`no scenario row for ${schedule.projectId}`);
-    if (stories === null) throw new RangeError(`simulated revision ${k} has no stories`);
-    return memoised(ctx, simKey(rec.id, stories), () =>
-      ctx.gen(
+    const t = ctx.input.options;
+    if (option === undefined || option >= t.offset[i + 1] - t.offset[i]) {
+      throw new RangeError(`simulated revision ${k} has no option on its lot`);
+    }
+    const j = t.offset[i] + option;
+    const form = BUILDING_FORMS[t.form[j]];
+    return memoised(ctx, simKey(rec.id, form, t.stories[j], t.plates[j]), () => {
+      const b = ctx.genForm(
         scenarioRecordOf(ctx.input.parcels, i, rec),
-        { maxStories: stories },
-        fnv1a32(rec.id),
-        'max'
-      )
-    );
+        form,
+        t.stories[j],
+        fnv1a32(rec.id)
+      );
+      return b === null ? null : b.building;
+    });
   }
   if (recs.length === 0) throw new RangeError(`no parcel records for ${schedule.projectId}`);
   const seed = fnv1a32(schedule.projectId);
@@ -176,9 +190,13 @@ function building(
 }
 
 /**
- * The massing of revision `k` (§4.8), the one rendering seam. A building is stamped with its
- * `source`; a null or throwing generator gives a footprint entry. A master without phases is
- * massed on its own parcels like any pipeline project (large-site massing §4.7).
+ * The massing of revision `k` (§4.8), the one rendering seam. A simulated revision draws its
+ * option (`generateForm` at the option's form and stories, so it holds the option's homes; a
+ * unit cap or a revision's ratio draw can leave the project fewer homes than the option);
+ * recorded projects keep `generateForUnits` at their stories. A building is stamped with its
+ * `source`; a null or throwing generator, or a simulated revision without an option, gives a
+ * footprint entry. A master without phases is massed on its own parcels like any pipeline project
+ * (large-site massing §4.7).
  * A throw is logged once per project and is not memoised. Throws when the schedule has no loaded
  * parcel record at all (nothing to take a footprint from): callers pack only ready cells.
  */

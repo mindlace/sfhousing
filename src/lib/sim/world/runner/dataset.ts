@@ -13,7 +13,12 @@ import type { OptionTable } from '$lib/data/option-table';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import type { GeneratedBuilding, generate, generateForUnits } from '$lib/generator';
+import {
+  generateForm,
+  type GeneratedBuilding,
+  type generate,
+  type generateForUnits
+} from '$lib/generator';
 import { cellsIntersecting, createChunkLoader, type FetchLike } from '$lib/sim/chunks';
 import type { LayerCtx } from '$lib/sim/levers/layers';
 import type { Lru } from '$lib/sim/lru';
@@ -80,6 +85,8 @@ export interface ChunkSet {
 export interface GenDeps {
   gen: typeof generate;
   genForUnits: typeof generateForUnits;
+  /** Masses a simulated project's chosen option; default `generateForm`. */
+  genForm?: typeof generateForm;
   /** Logs once per key (the caller keeps the keys, cleared with the memo). */
   logOnce(key: string, msg: string): void;
 }
@@ -179,6 +186,7 @@ export async function loadDataset(
     memo,
     gen: gen.gen,
     genForUnits: gen.genForUnits,
+    genForm: gen.genForm ?? generateForm,
     logOnce: (projectId, msg) => gen.logOnce(`massing:${projectId}`, msg)
   };
   const cars = carSystemOf(loaded, { off: deps.carsOff });

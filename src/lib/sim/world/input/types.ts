@@ -39,6 +39,8 @@ export interface Schedule {
     day: Day;
     units: number;
     stories: number | null; /* null = unknown until massed */
+    /** Simulated revisions only: the option, an index into the lot's row of `SimInput.options`. */
+    option?: number;
   }[]; // [0] is the initial proposal; strictly ascending days (revisions due on one day are merged, the last wins); none after entered.construction; a revision due on the construction-entry day is the as-built proposal
   existingUnits: number;
   multiPhase: boolean;
