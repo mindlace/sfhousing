@@ -141,13 +141,12 @@ Intercept -2.94444; measurement-basis coefficient (not shipped) none; IRLS itera
 
 ### potentialRatio
 
-Initial edges 0, 1, 1.5, 2, 3, 5, 10, 20; merged edges 0, 2, 3.
+Initial edges 0, 1, 1.5, 2, 3, 5, 10, 20; merged edges 0, 2.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
 | 0 | 62 | 1 | 3.1 | none |
-| 2 | 28 | 1 | 1.4 | none |
-| 3 | 75 | 1 | 3.75 | none |
+| 2 | 103 | 2 | 5.15 | none |
 
 ### existingUnits
 
@@ -177,12 +176,12 @@ Initial edges 0, 1800, 1906, 1930, 1950, 1979, 2000; merged edges 0, 1950.
 
 ### storiesGap
 
-Initial edges -100, 0, 1, 2, 3, 5, 10; merged edges -100, 2.
+Initial edges -100, 0, 1, 2, 3, 5, 10; merged edges -100, 1.
 
 | bin ≥ | exposure | events | predicted | coefficient |
 |---|---|---|---|---|
-| -100 | 114 | 2 | 5.69999 | none |
-| 2 | 51 | 1 | 2.55 | none |
+| -100 | 66 | 2 | 3.3 | none |
+| 1 | 99 | 1 | 4.95 | none |
 
 ### improvementShare
 
@@ -269,7 +268,7 @@ Hold-out: none (fixture model).
 - historical mean 0.157895 events per year; FZP ÷ historical 15.2 (band 0.5 to 20, tier 4)
 - extrapolation: 1 parcels (25% of hostable, 25% of FZP expected filings) beyond the at-risk maximum potentialRatio 17.3229, storiesGap 2.66968
 - topEffects (coefficient range): none (no fitted terms)
-- exactly aliased bin indicators (same design rows): existingUnits bin 0 (≥ 0) ≡ rentControlLikely bin 0 (≥ 0); existingUnits bin 1 (≥ 3) ≡ rentControlLikely bin 1 (≥ 1); potentialRatio bin 0 (≥ 0) ≡ improvementShare bin 2 (≥ 0.55); potentialRatio bin 1 (≥ 2) ≡ improvementShare bin 1 (≥ 0.4) ≡ landUseClass bin 2 (≥ 2); potentialRatio bin 2 (≥ 3) ≡ improvementShare bin 0 (≥ 0)
+- exactly aliased bin indicators (same design rows): existingUnits bin 0 (≥ 0) ≡ storiesGap bin 1 (≥ 1) ≡ rentControlLikely bin 0 (≥ 0); existingUnits bin 1 (≥ 3) ≡ storiesGap bin 0 (≥ -100) ≡ rentControlLikely bin 1 (≥ 1); improvementShare bin 1 (≥ 0.4) ≡ landUseClass bin 2 (≥ 2); potentialRatio bin 0 (≥ 0) ≡ improvementShare bin 2 (≥ 0.55)
 
 Exposure and event shares per `imputed` mask bit (T11/T13: 0 yearBuilt, 1 existingStories, 2 improvementShare, 3 existingUnits, 4 no roll row, 5 carried, 6 floor area):
 
@@ -705,7 +704,7 @@ Built height ÷ limit: affordable 0 (n = 0, SE 0), private 0 (n = 0, SE 0); diff
 
 ### The margin feature and the market slope
 
-Correlation of choiceMargin with the slope's cost share (uncoveredPerHome ÷ costPerHome of the best option's prototype) over 25 at-risk panel parcel-years: r = -1.
+Correlation of choiceMargin with the slope's cost share (uncoveredPerHome ÷ costPerHome of the best option's prototype) over 25 at-risk panel parcel-years: r = -0.976208.
 
 ### Prices (one step from 2026-10-10)
 

@@ -104,7 +104,15 @@ const SRC = {
     label: 'DataSF Assessor Historical Secured Property Tax Rolls',
     url: homepage('wv5m-vpq2')
   },
-  bulletin: { label: 'Planning Director Bulletin No. 11', url: BULLETIN_11_URL }
+  bulletin: { label: 'Planning Director Bulletin No. 11', url: BULLETIN_11_URL },
+  sec261: {
+    label: 'San Francisco Planning Code Sec. 261 (height limits in RH districts)',
+    url: 'http://sf-ca.elaws.us/code/plco_art2.5_sec261'
+  },
+  zab5: {
+    label: 'SF Planning Zoning Administrator Bulletin No. 5 (buildable area)',
+    url: 'https://sfplanning.org/sites/default/files/documents/publications/ZAB_05_Buildable_Area.pdf'
+  }
 };
 const CAP_RULES =
   'Base-zoning density caps from the Planning Code (tier 1, pipeline/lib/density-caps.ts); a ' +
@@ -375,12 +383,14 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
     envelope: p(
       3,
       'FZP envelope in stories',
-      [SRC.height],
+      [SRC.height, SRC.sec261, SRC.zab5],
       'Stories = min(80, floor(height ft / 10)) (orchestrator rule, tier 3) on the adopted FZP ' +
         'height string of the district with the largest overlap: the Local Program height on ' +
         'Local Program parcels, else the base side. The base height is the current string’s ' +
         'left side, used as the height in force for every roll year (no pre-FZP height map ' +
-        'exists, tier 3).'
+        'exists, tier 3), and at most 35 ft on RH-1, RH-1(D) and RH-1(S) lots (Planning Code ' +
+        'Sec. 261(b)(1), tier 1; Planning ZAB No. 5; its slope exceptions and the 30 ft front ' +
+        'envelope are not modelled).'
     ),
     localProgram: p(
       2,
@@ -844,7 +854,12 @@ export async function writeScenario(a: {
       d.kind === 'height' && d.base_ft !== null
         ? { kind: 'height', baseFt: d.base_ft, lpFt: d.lp_ft, r4: d.r4, normalised: d.district }
         : { kind: 'none' };
-    const env = localProgramEnvelope({ district, lotAreaM2, excluded: rentControl || hotel });
+    const env = localProgramEnvelope({
+      district,
+      lotAreaM2,
+      excluded: rentControl || hotel,
+      zoningCode: d.zoning_code
+    });
     if (d.r4 && rentControl) inc('excluded.rent_control');
     if (d.r4 && hotel) inc('excluded.hotel');
     if (env.largeLot65) inc('large_lot_65');

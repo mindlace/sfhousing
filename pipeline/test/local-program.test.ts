@@ -126,3 +126,36 @@ describe('localProgramEnvelope', () => {
     });
   });
 });
+
+describe('the RH-1 35 ft limit (Planning Code Sec. 261(b)(1))', () => {
+  it('caps base stories on RH-1, RH-1(D) and RH-1(S) lots at 3 under a 40-X district', () => {
+    for (const zoningCode of ['RH-1', 'RH-1(D)', 'RH-1(S)', 'RH-1|RH-1(D)']) {
+      expect(
+        localProgramEnvelope({ district: d('40-X'), lotAreaM2: 300, excluded: false, zoningCode }),
+        zoningCode
+      ).toEqual({ baseStories: 3, envelopeStories: 3, localProgram: false, largeLot65: false });
+    }
+  });
+
+  it('leaves RH-2, RH-3, split codes with another district and lower districts alone', () => {
+    const at = (h: string, zoningCode: string | null) =>
+      localProgramEnvelope({ district: d(h), lotAreaM2: 300, excluded: false, zoningCode })
+        .baseStories;
+    expect(at('40-X', 'RH-2')).toBe(4);
+    expect(at('40-X', 'RH-3')).toBe(4);
+    expect(at('40-X', 'RH-1|NC-1')).toBe(4);
+    expect(at('40-X', null)).toBe(4);
+    expect(at('30-X', 'RH-1')).toBe(3);
+  });
+
+  it('keeps the Local Program height of an RH-1 lot (base side only)', () => {
+    expect(
+      localProgramEnvelope({
+        district: d('40//65-R-4'),
+        lotAreaM2: 300,
+        excluded: false,
+        zoningCode: 'RH-1'
+      })
+    ).toEqual({ baseStories: 3, envelopeStories: 6, localProgram: true, largeLot65: false });
+  });
+});

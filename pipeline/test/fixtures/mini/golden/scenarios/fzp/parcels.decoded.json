@@ -33,9 +33,17 @@
         {
           "label": "DataSF Zoning Map – Height and Bulk Districts",
           "url": "https://data.sf.gov/d/h9wh-cg3m"
+        },
+        {
+          "label": "San Francisco Planning Code Sec. 261 (height limits in RH districts)",
+          "url": "http://sf-ca.elaws.us/code/plco_art2.5_sec261"
+        },
+        {
+          "label": "SF Planning Zoning Administrator Bulletin No. 5 (buildable area)",
+          "url": "https://sfplanning.org/sites/default/files/documents/publications/ZAB_05_Buildable_Area.pdf"
         }
       ],
-      "method": "Stories = min(80, floor(height ft / 10)) (orchestrator rule, tier 3) on the adopted FZP height string of the district with the largest overlap: the Local Program height on Local Program parcels, else the base side. The base height is the current string’s left side, used as the height in force for every roll year (no pre-FZP height map exists, tier 3)."
+      "method": "Stories = min(80, floor(height ft / 10)) (orchestrator rule, tier 3) on the adopted FZP height string of the district with the largest overlap: the Local Program height on Local Program parcels, else the base side. The base height is the current string’s left side, used as the height in force for every roll year (no pre-FZP height map exists, tier 3), and at most 35 ft on RH-1, RH-1(D) and RH-1(S) lots (Planning Code Sec. 261(b)(1), tier 1; Planning ZAB No. 5; its slope exceptions and the 30 ft front envelope are not modelled)."
     },
     "localProgram": {
       "tier": 2,
@@ -239,7 +247,7 @@
     4,
     6,
     6,
-    6,
+    3,
     6,
     6,
     6,
@@ -266,7 +274,7 @@
     4,
     4,
     4,
-    6,
+    3,
     6,
     6,
     6,
@@ -281,7 +289,7 @@
     4,
     4,
     6,
-    4,
+    3,
     4,
     4,
     4,

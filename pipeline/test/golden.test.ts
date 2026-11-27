@@ -336,6 +336,10 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     const r = L(5);
     expect(r).toMatchObject({ district: '65-X', localProgram: 0, baseCap: 4, split: 1, fzpCap: 4 });
     expect(r.baseTop).toBe(r.top);
+    // RH-1 in 65-X: dwellings stop at 35 ft (Planning Code Sec. 261(b)(1)), so 3 stories, not 6.
+    expect(r).toMatchObject({ baseStories: 3, envelopeStories: 3 });
+    // Lot 23 (RH-1, 40//65-R-4, road-like): base 3; the Local Program height is not capped.
+    expect(L(23)).toMatchObject({ baseStories: 3, envelopeStories: 6 });
   });
 
   it('lot 6: cap 3 (260 m² with the courtyard hole = 2,798 sf, / 800)', () => {
@@ -694,7 +698,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       createHash('sha256')
         .update(readFileSync(join(e2e, 'scenarios/fzp/parcels.bin')))
         .digest('hex')
-    ).toBe('4b3984786b976b113a624f1d6c4f73e67b7852ba2eb0199424a36116abedad8c');
+    ).toBe('6abe3cfb192376debc0af6c325ad509f265ba7596f533bcedde4c8d8bc1f4852');
   });
 
   it('fixture-0 has no less-cars output', () => {
