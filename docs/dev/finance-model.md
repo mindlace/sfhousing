@@ -51,8 +51,10 @@ and homes; got <stories>, <homes>')` for a non-finite argument. It is kept for p
   (`src/lib/sim/choice/pricing.ts`) on the price step in force, Type V as A (E under 25 homes),
   Type III as B, Type I as C, D or the interpolation between them ([building-choice.md](building-choice.md)).
 - `uncoveredPerHome(kind, p)`: what public money must cover per home. `market`:
-  `p.shortfallPerHome + LAND_PER_HOME` (242,000 / 217,000 / 271,000 / 357,000 / 418,000 for A to
-  E). `affordable`: `AFFORDABLE.costPerHome - AFFORDABLE.ownPerHome` = 861,525, whatever the
+  `max(0, p.shortfallPerHome + LAND_PER_HOME)`, that is max(0, cost + land − value) (242,000 /
+  217,000 / 271,000 / 357,000 / 418,000 for A to E). It is 0 when the value covers cost and land
+  (a price step can make it so): no public money is needed, and `fundBundle` offers and pays
+  nothing (every item 0, coverage 0, not certain), so such a project is never awarded. `affordable`: `AFFORDABLE.costPerHome - AFFORDABLE.ownPerHome` = 861,525, whatever the
   prototype.
 - `costPerHome(kind, p)`: `p.costPerHome` for `market`, `AFFORDABLE.costPerHome` (954,127) for
   `affordable`.

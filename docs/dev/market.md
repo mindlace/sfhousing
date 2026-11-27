@@ -42,16 +42,24 @@ fitted on all starts, and the private level must restore the all-starts average 
 closes the gap.
 
 `typicalUncoveredShare = sum over prototypes p of w_p x uncoveredPerHome('market', p) / p.costPerHome`,
-where `w_p` is the binned private starts of 2021-2025 in prototype `p` over all binned private
-starts of those years. The prototypes are `PROTOTYPES` ([finance-model.md](finance-model.md)),
-iterated A to E. `typicalCostOverValue = sum w_p x costPerHome / (costPerHome - shortfallPerHome)`.
+where `w_p` is the priced private starts of 2021-2025 at price `p` over all priced private starts
+of those years. The prices are `PROTOTYPES` ([finance-model.md](finance-model.md)), A to E, then
+one row per Type I price between or above the anchors (`I<n>`, by stories) that a typed start has. `typicalCostOverValue = sum w_p x costPerHome / (costPerHome - shortfallPerHome)`.
 
 `marketModel` also counts the recent years' `PanelStart`s and throws when the count differs from
 `O`, so the cohort split is always of the same events.
 
-### Prototype binning of a start
+### Pricing a start: its type, else the binning
 
-Each panel start carries the history's cohort, gross homes and `storiesProposed`. Homes are the
+Each panel start carries the history's cohort, gross homes, `storiesProposed` and construction
+type: `projectTypes` (`panel.ts`) gives a project the type of its permit with the most proposed
+homes among those recording I, III or V (ties to the earliest filed, then the lowest permit
+number); II and IV are not modelled and count as untyped. A typed start is priced as the engine
+prices an option (`optionPrototype` on the anchors with the shipped step's `aboveTopCostRatio`):
+Type V as A (E under 25 homes), Type III as B, Type I as C, D or between them; a Type I start with
+no recorded stories is left out ("stories not recorded"). Only an untyped start is binned as
+below (building-choice spec, "Funded and affordable projects"). The report gives the typed and
+binned counts (`typedStarts`, `binnedStarts`). Homes are the
 first positive of `unitsAt.filed`, `unitsAt.permitFiled`, `unitsAt.complete` (gross proposed homes,
 which is what a prototype's `homes` counts), else `null`.
 
@@ -229,7 +237,7 @@ crossCheck.logOdds| > 1`; the reproduction check; the hold-out failure.
 
 Count keys added to the build's counts (and so to `report.json`; they are not fields of the
 `calibration.market` object): `recentStarts`, `recentPrivate`, `recentAffordable`, `recentNoRecord`,
-`recentUnknown`, `weightStarts`, `unbinnedHomes`, `unbinnedStories`.
+`recentUnknown`, `weightStarts`, `typedStarts`, `binnedStarts`, `unbinnedHomes`, `unbinnedStories`.
 
 ## Hashed code
 

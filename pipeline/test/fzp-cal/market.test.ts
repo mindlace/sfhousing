@@ -9,6 +9,7 @@ import { marketModel, marketToday, type MarketInput } from '../../lib/fzp-cal/ma
 import { PROTOTYPES, type Prototype } from '../../../src/lib/sim/finance/prototypes';
 import type { MarketFile } from '../../enrichment/market-schema';
 import type { PanelStart } from '../../lib/fzp-cal/panel';
+import type { BuildingType } from '../../../src/lib/sim/choice/types';
 import { datasf } from '../../lib/fzp-cal/provenance';
 import { sig6 } from '../../lib/fzp-cal/tail';
 import { CalibrationError } from '../../lib/fzp-cal/types';
@@ -23,7 +24,7 @@ const RECENT = [2023, 2025] as const;
 const logit = (p: number) => Math.log(p / (1 - p));
 
 function start(year: number, cohort: StartCohort = 'private'): PanelStart {
-  return { year, basis: 0, cohort, homes: 10, stories: 4 };
+  return { year, basis: 0, cohort, homes: 10, stories: 4, type: null };
 }
 
 /** `counts[y]` starts in year y, the first `affordable[y]` of them in the affordable cohort. */
@@ -87,6 +88,7 @@ function input(o: Opts = {}, over: Partial<MarketInput> = {}): MarketInput {
       predicted: 360
     },
     starts: starts(counts, aff),
+    aboveTopCostRatio: 1.21,
     enrichment: { file: marketFile, path: 'market.json' },
     initiationSources: [datasf('planningProjects'), datasf('permits')],
     ...over
@@ -315,9 +317,10 @@ function at(
   year: number,
   stories: number | null,
   homes: number | null,
-  cohort: StartCohort = 'private'
+  cohort: StartCohort = 'private',
+  type: BuildingType | null = null
 ): PanelStart {
-  return { year, basis: 0, cohort, homes, stories };
+  return { year, basis: 0, cohort, homes, stories, type };
 }
 
 /** The weights input: every recent start hand-placed, one start before the weight years. */
@@ -387,12 +390,13 @@ describe('marketModel: the weights and the slope', () => {
       ['E', 1, 0.25]
     ]);
     expect(report.weights.map((w) => w.rule)).toEqual([
-      'homes ≥ 25, stories ≤ 6',
-      'homes ≥ 25, stories 7 to 10',
-      'homes ≥ 25, stories 11 to 18',
-      'homes ≥ 25, stories above 18',
-      'homes under 25'
+      'Type V, homes ≥ 25; untyped: homes ≥ 25, stories ≤ 6',
+      'Type III; untyped: homes ≥ 25, stories 7 to 10',
+      "Type I up to C's stories; untyped: homes ≥ 25, stories 11 to 18",
+      'untyped: homes ≥ 25, stories above 18',
+      'Type V, homes under 25; untyped: homes under 25'
     ]);
+    expect(report.priced).toEqual({ typed: 0, binned: 4 });
     expect(report.weights[1]).toMatchObject({
       uncoveredPerHome: 217_000,
       costPerHome: 736_700,
@@ -417,6 +421,54 @@ describe('marketModel: the weights and the slope', () => {
       sig6(0.0143 * 89.5 * report.typicalCostOverValue)
     );
     expect(share(A)).toBeCloseTo(242000 / 729700, 12);
+  });
+
+  it('prices a start by its permit construction type, binning only untyped ones', () => {
+    // Weight years 2021-2025. Typed: Type I at 5 stories is C (the binning says A), Type I at 18
+    // stories is between C and D, Type III at 4 stories is B (the binning says A), Type V of 10
+    // homes is E. Untyped: 8 stories, 130 homes, binned B.
+    const list = [
+      at(2023, 5, 45, 'private', 'I'),
+      at(2024, 18, 200, 'private', 'I'),
+      at(2024, 4, 30, 'private', 'III'),
+      at(2025, 3, 10, 'private', 'V'),
+      at(2025, 8, 130)
+    ];
+    const { market, report } = marketModel(input({ observed: [1, 2, 2] }, { starts: list }));
+    expect(report.priced).toEqual({ typed: 4, binned: 1 });
+    expect(report.weights.map((w) => [w.id, w.starts, w.weight])).toEqual([
+      ['A', 0, 0],
+      ['B', 2, 0.4],
+      ['C', 1, 0.2],
+      ['D', 0, 0],
+      ['E', 1, 0.2],
+      ['I18', 1, 0.2]
+    ]);
+    const i18 = report.weights[5];
+    expect(i18.costPerHome).toBeCloseTo(857_700 + (5 / 11) * 61_000, 6);
+    expect(i18.rule).toBe('Type I, 18 stories (between C and D)');
+    const [, B, C, , E] = PROTOTYPES;
+    const u = (p: Prototype) => (p.shortfallPerHome + 65_000) / p.costPerHome;
+    expect(report.typicalUncoveredShare).toBeCloseTo(
+      0.4 * u(B) + 0.2 * u(C) + 0.2 * u(E) + 0.2 * i18.uncoveredShare,
+      12
+    );
+    expect(market.slope.perCostShare).toBe(
+      sig6(-market.today.private / report.typicalUncoveredShare)
+    );
+    expect(report.counts['calibration.market.typedStarts']).toBe(4);
+    expect(report.counts['calibration.market.binnedStarts']).toBe(1);
+    expect(market.slope.provenance.method).toContain(
+      "4 priced by their permit's construction type"
+    );
+    // a Type I start with no stories is left out (its price needs them)
+    const noStories = marketModel(
+      input(
+        { observed: [1, 2, 2] },
+        { starts: [...list.slice(0, 4), at(2025, null, 40, 'private', 'I')] }
+      )
+    ).report;
+    expect(noStories.unbinned).toEqual({ homes: 0, stories: 1 });
   });
 
   it('labels the slope tier 2 with counts, sources and the window', () => {
@@ -569,6 +621,8 @@ describe('marketModel: shapes, tiers and counts', () => {
       'calibration.market.recentNoRecord': 1,
       'calibration.market.recentUnknown': 1,
       'calibration.market.weightStarts': 4,
+      'calibration.market.typedStarts': 0,
+      'calibration.market.binnedStarts': 4,
       'calibration.market.unbinnedHomes': 1,
       'calibration.market.unbinnedStories': 1
     });

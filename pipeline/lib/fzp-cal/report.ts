@@ -859,7 +859,8 @@ export function marketSection(m: MarketModel, r: MarketReport): string[] {
     ...(r.equalWeights
       ? [`- no private start of ${w0}-${w1} has a prototype: every prototype weighs the same`]
       : []),
-    `- unbinned private starts ${w0}-${w1}: ${num(r.unbinned.homes)} with homes not recorded; ${num(r.unbinned.stories)} of 25 homes or more with stories not recorded`,
+    `- private starts ${w0}-${w1} priced by their permit's construction type: ${num(r.priced.typed)}; binned (no type recorded): ${num(r.priced.binned)}`,
+    `- unpriced private starts ${w0}-${w1}: ${num(r.unbinned.homes)} with homes not recorded; ${num(r.unbinned.stories)} with stories not recorded where the price needs them`,
     `- typicalUncoveredShare = ${num(r.typicalUncoveredShare)}`,
     `- slope.perCostShare = ${num(m.slope.perCostShare)}`,
     `- typicalCostOverValue = ${num(r.typicalCostOverValue)}`,

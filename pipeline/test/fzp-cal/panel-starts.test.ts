@@ -4,6 +4,7 @@ import {
   aggregatePanel,
   initiationEvents,
   monthIndex,
+  projectTypes,
   startHomes,
   type PanelSource,
   type PanelYearRow
@@ -162,12 +163,12 @@ describe('aggregatePanel starts', () => {
   it('carries basis, cohort, homes and stories, in (year, parcel, month) order', async () => {
     const res = await run(HISTS);
     expect(res.starts).toEqual([
-      { year: 2010, basis: 1, cohort: 'affordable', homes: 12, stories: 5 }, // p1, B
-      { year: 2010, basis: 1, cohort: 'noRecord', homes: 7, stories: null }, // p2, C
-      { year: 2016, basis: 0, cohort: 'private', homes: null, stories: null }, // r1, A
-      { year: 2016, basis: 0, cohort: 'noRecord', homes: 10, stories: 3 }, // a0, D
-      { year: 2018, basis: 0, cohort: 'noRecord', homes: 10, stories: null }, // e1, E Feb
-      { year: 2018, basis: 0, cohort: 'noRecord', homes: 30, stories: 4 } // e2, E Sep
+      { year: 2010, basis: 1, cohort: 'affordable', homes: 12, stories: 5, type: null }, // p1, B
+      { year: 2010, basis: 1, cohort: 'noRecord', homes: 7, stories: null, type: null }, // p2, C
+      { year: 2016, basis: 0, cohort: 'private', homes: null, stories: null, type: null }, // r1, A
+      { year: 2016, basis: 0, cohort: 'noRecord', homes: 10, stories: 3, type: null }, // a0, D
+      { year: 2018, basis: 0, cohort: 'noRecord', homes: 10, stories: null, type: null }, // e1, E Feb
+      { year: 2018, basis: 0, cohort: 'noRecord', homes: 30, stories: 4, type: null } // e2, E Sep
     ]);
   });
 
@@ -206,5 +207,30 @@ describe('aggregatePanel starts', () => {
     await expect(
       aggregatePanel(SRC, { timeline: ev.timeline, eventsCovered: 0, placed: new Map() }, EDGES)
     ).rejects.toThrow(CalibrationError);
+  });
+});
+
+describe('projectTypes', () => {
+  const permit = (
+    project_id: string,
+    construction_type: string | null,
+    proposed_units: number | null,
+    filed_day: number | null,
+    permit_number: string
+  ) => ({ project_id, construction_type, proposed_units, filed_day, permit_number }) as never;
+
+  it("takes the modelled type of the project's permit with the most homes", () => {
+    const types = projectTypes([
+      permit('a', 'V', 10, 100, '1'),
+      permit('a', 'I', 200, 200, '2'),
+      permit('b', 'II', 50, 100, '3'),
+      permit('b', 'III', 40, 100, '4'),
+      permit('c', 'IV', 50, 100, '5'),
+      permit('d', null, 50, 100, '6'),
+      // a tie on homes goes to the earliest filed
+      permit('e', 'V', 30, 300, '7'),
+      permit('e', 'III', 30, 200, '8')
+    ]);
+    expect(Object.fromEntries(types)).toEqual({ a: 'I', b: 'III', e: 'III' });
   });
 });

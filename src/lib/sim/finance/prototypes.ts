@@ -141,11 +141,15 @@ function checkKind(kind: ProjectKind): void {
   }
 }
 
-/** What public money must cover per home: the shortfall plus land, or the affordable average. */
+/**
+ * What public money must cover per home: for market, max(0, cost + land − value), the shortfall
+ * plus land, and 0 (no public money needed) when the value covers both; for affordable, the
+ * affordable average.
+ */
 export function uncoveredPerHome(kind: ProjectKind, p: Prototype): Dollars {
   checkKind(kind);
   return kind === 'market'
-    ? p.shortfallPerHome + LAND_PER_HOME.value
+    ? Math.max(0, p.shortfallPerHome + LAND_PER_HOME.value)
     : AFFORDABLE.value.costPerHome - AFFORDABLE.value.ownPerHome;
 }
 

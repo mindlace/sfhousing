@@ -57,6 +57,7 @@ import {
   aggregatePanel,
   firstFiledDays,
   initiationEvents,
+  projectTypes,
   withChoiceFeatures,
   type PanelSource
 } from './panel';
@@ -340,7 +341,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   const filled = withChoiceFeatures(input.panel, panelCtx);
 
   // §4.6 initiation.
-  const ev = initiationEvents(p.norm, firstFiled, lotArea);
+  const ev = initiationEvents(p.norm, firstFiled, lotArea, projectTypes(permits));
   const panel = await aggregatePanel(filled, ev, INITIAL_EDGES);
   const fzpCtx = choiceCtxOf(input.options, choice, heightTime);
   const init = fitInitiation(panel, cal, fzpApplication(parcels, input.inFlight, fzpCtx), {
@@ -356,6 +357,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     recentCells: r.recentCells,
     holdOut: r.holdOut,
     starts: panel.starts,
+    aboveTopCostRatio: step.prices.aboveTopCostRatio,
     enrichment: input.market,
     initiationSources: init.model.provenance.sources
   });

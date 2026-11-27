@@ -178,10 +178,14 @@ function checkG(g: number): void {
   }
 }
 
-/** Share of the uncovered cost a grant-equivalent of `g` covers, unrounded and uncapped. */
+/**
+ * Share of the uncovered cost a grant-equivalent of `g` covers, unrounded and uncapped; 0 when
+ * no public money is needed (nothing uncovered).
+ */
 export function coverage(g: Dollars, kind: ProjectKind, p: Prototype): number {
   checkG(g);
-  return g / uncoveredPerHome(kind, p);
+  const u = uncoveredPerHome(kind, p);
+  return u === 0 ? 0 : g / u;
 }
 
 /** The log-odds shift of a grant-equivalent of `g`, unrounded and uncapped. */
@@ -271,6 +275,8 @@ export function fundBundle(
     guaranteed: 0,
     reserve: 0
   }));
+  // No public money needed (the value covers cost and land): nothing is offered, nothing paid.
+  if (U === 0) return { items: out, grantEquivalent: 0, coverage: 0, certain: false };
 
   // First pass: each tier's loan-and-guarantee total L_t and grant total S, in input order.
   const L = [0, 0, 0];

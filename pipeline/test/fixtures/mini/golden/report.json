@@ -48,7 +48,7 @@
     "buildings.underground_dropped": 1,
     "calibration.affordable.fallback": 1,
     "calibration.affordable.histories": 0,
-    "calibration.bytes": 79603,
+    "calibration.bytes": 79962,
     "calibration.choice.affordableLeftOut": 0,
     "calibration.choice.excludedOver": 0,
     "calibration.choice.mostHomes": 0,
@@ -59,11 +59,13 @@
     "calibration.funding.mohcdRows": 2,
     "calibration.funding.observedHomesPerYear": 25,
     "calibration.histories": 38,
+    "calibration.market.binnedStarts": 2,
     "calibration.market.recentAffordable": 0,
     "calibration.market.recentNoRecord": 1,
     "calibration.market.recentPrivate": 3,
     "calibration.market.recentStarts": 3,
     "calibration.market.recentUnknown": 2,
+    "calibration.market.typedStarts": 0,
     "calibration.market.unbinnedHomes": 0,
     "calibration.market.unbinnedStories": 1,
     "calibration.market.weightStarts": 2,
@@ -793,7 +795,7 @@
       "ok": true
     },
     {
-      "detail": "parses, asOf matches projects.json (T4d asOf checked by the calibration step), 79603 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
+      "detail": "parses, asOf matches projects.json (T4d asOf checked by the calibration step), 79962 B; baselineFunding 9 pools, 7 programmes; shares 947762 millionths; no programme for city-housing-stability-fund, city-redevelopment; affordableRoutes tier 4",
       "id": "V25",
       "ok": true
     },

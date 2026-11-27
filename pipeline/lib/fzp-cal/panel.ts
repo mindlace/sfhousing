@@ -10,6 +10,7 @@ import type { Duck } from '../duck';
 import { isoToDay } from '../../project-records/multiphase';
 import type { ParcelId } from '../../../src/lib/data/parcel';
 import { allowedCount, choiceFeatures, type ChoiceCtx } from '../../../src/lib/sim/choice/choose';
+import type { BuildingType } from '../../../src/lib/sim/choice/types';
 import { binIndex } from '../../../src/lib/timelapse/model';
 import type { Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
 import { startCohort, type StartCohort } from '../affordable-cohort';
@@ -82,6 +83,7 @@ interface StartMeta {
   cohort: StartCohort;
   homes: number | null;
   stories: number | null;
+  type: BuildingType | null;
 }
 
 /** One counted panel event (market-baseline spec §4.2). */
@@ -93,6 +95,43 @@ export interface PanelStart {
   homes: number | null;
   /** `ProjectHistory.storiesProposed` */
   stories: number | null;
+  /**
+   * The project's construction type from its permits (`projectTypes`), a modelled one (I, III or
+   * V); null when none of its permits records one.
+   */
+  type: BuildingType | null;
+}
+
+/** The construction types the developer's choice models; II and IV are not modelled. */
+const MODELLED: ReadonlySet<string> = new Set<BuildingType>(['V', 'III', 'I']);
+
+/**
+ * Each project's construction type: that of its permit with the most proposed homes among those
+ * recording a modelled type (I, III or V), ties to the earliest filed, then the lowest permit
+ * number. A project with none is absent.
+ */
+export function projectTypes(permits: readonly PermitRow[]): Map<string, BuildingType> {
+  const best = new Map<string, PermitRow>();
+  for (const p of permits) {
+    if (p.project_id === null || p.construction_type === null) continue;
+    if (!MODELLED.has(p.construction_type)) continue;
+    const cur = best.get(p.project_id);
+    if (cur === undefined || before(p, cur)) best.set(p.project_id, p);
+  }
+  const out = new Map<string, BuildingType>();
+  for (const [id, p] of best) out.set(id, p.construction_type as BuildingType);
+  return out;
+}
+
+/** True when permit `a` represents its project before `b` (`projectTypes`' order). */
+function before(a: PermitRow, b: PermitRow): boolean {
+  const ua = a.proposed_units ?? -1;
+  const ub = b.proposed_units ?? -1;
+  if (ua !== ub) return ua > ub;
+  const fa = a.filed_day ?? Infinity;
+  const fb = b.filed_day ?? Infinity;
+  if (fa !== fb) return fa < fb;
+  return (a.permit_number ?? '') < (b.permit_number ?? '');
 }
 
 /** First of unitsAt.filed, .permitFiled, .complete that is a positive finite number, else null. */
@@ -178,7 +217,8 @@ export function primaryParcel(ids: ParcelId[], lotArea: (id: ParcelId) => number
 export function initiationEvents(
   norm: NormHistory[],
   firstFiled: Map<string, Day>,
-  lotArea: (id: ParcelId) => number
+  lotArea: (id: ParcelId) => number,
+  types: ReadonlyMap<string, BuildingType> = new Map()
 ): InitiationEvents {
   const res: InitiationEvents = {
     timeline: new Map(),
@@ -237,7 +277,8 @@ export function initiationEvents(
       const meta: StartMeta = {
         cohort: startCohort(h.src.planningProposed),
         homes: startHomes(h.src),
-        stories: h.src.storiesProposed
+        stories: h.src.storiesProposed,
+        type: types.get(h.id) ?? null
       };
       events.push({ parcel: primaryParcel(h.parcelIds, lotArea), month, code, meta });
     }

@@ -212,11 +212,8 @@ function withCostStep() {
   const choice = input.calibration.choice!;
   const step0 = choice.prices[0];
   const anchors = structuredClone(step0.value.anchors);
-  // Value scales with cost on C and D, so a funded start there still has a shortfall to cover.
-  for (const id of ['C', 'D'] as const) {
-    anchors[id].costPerHome *= 0.5;
-    anchors[id].valuePerHome *= 0.5;
-  }
+  // On C and D the value then exceeds cost plus land: those options need no public money.
+  for (const id of ['C', 'D'] as const) anchors[id].costPerHome *= 0.5;
   for (const id of ['A', 'B', 'E'] as const) anchors[id].costPerHome *= 1.5;
   const from = monthFirstDay(asOf, COST_MONTH) + 5;
   const two: SimInput = {

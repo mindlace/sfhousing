@@ -733,7 +733,7 @@ function liveMarket(holdOut: MarketInput['holdOut']) {
   const starts: MarketInput['starts'] = [];
   for (const y of [2021, 2022]) {
     for (let i = 0; i < 7; i++)
-      starts.push({ year: y, basis: 0, cohort: 'private', homes: 30, stories: 5 });
+      starts.push({ year: y, basis: 0, cohort: 'private', homes: 30, stories: 5, type: null });
   }
   const recentCells: MarketInput['recentCells'] = [];
   observed.forEach((n, i) => {
@@ -747,7 +747,8 @@ function liveMarket(holdOut: MarketInput['holdOut']) {
         basis: 0,
         cohort: k === 0 ? 'affordable' : 'private',
         homes: 10,
-        stories: 4
+        stories: 4,
+        type: null
       });
     }
   });
@@ -758,6 +759,7 @@ function liveMarket(holdOut: MarketInput['holdOut']) {
     recentCells,
     holdOut,
     starts,
+    aboveTopCostRatio: 1.21,
     enrichment: { file: marketFile, path: 'market.json' },
     initiationSources: [datasf('planningProjects')]
   });
