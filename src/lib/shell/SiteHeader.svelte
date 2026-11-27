@@ -1,20 +1,21 @@
 <!--
   The site header. There are no steps: the name is the way home. The bar holds the name, the page's
-  status, the pinned item (centred in the bar from lg when both sides fit; a side that does not pushes
-  it off centre, never clips; below sm it leads the bar and grows to the Menu, the status after
-  it), and, from lg, the page's actions, then the Menu button (a hamburger
-  named "Menu", never a dot) at every width. The Menu's panel (under the header; from lg a pop-over
-  at the right, below lg full width) holds, in order: the site name (below sm, on a page that pins an
-  item: Paint, /sim, /p/:id), the actions (below lg only), the game panel (saved games, New game, the
-  sync line; after mount, never for the open game), the account entry (Sign in, or @handle; Sign in
-  shows only while a sign-in method is in effect, `signInAvailable`) and About (on every route: the
-  map pages have no footer). The status is the page's one status cell, never in the Menu (left-aligned,
-  except below sm with a pinned item, where it sits between the pinned item and the Menu): on Paint and /sim the save state (nothing when saved), and on /sim
-  "Updating" takes its place while the numbers are stale or Play waits, beside it when autosave is
-  off, with its explanation button. The actions render once: in the bar when `wide` (known after
-  mount), else in the panel.
-  Placement: the `<header>` is `relative`, and the pinned slot's box is a direct child of it with
-  no position class (never `relative`, `absolute`, `fixed` or `sticky`) and no wrapper of its own
+  status, the pinned item (centred in the bar from lg when both sides fit; a side that does not
+  pushes it off centre, never clips; below sm it leads the bar and grows to the Menu, the status
+  after it), and, from lg, the page's actions, then the Menu button (a hamburger named "Menu", never
+  a dot) at every width. The Menu's panel (under the header; from lg a pop-over at the right, below
+  lg full width) holds, in order: the site name (below sm, on a page that pins an item: Paint, /sim,
+  /p/:id), the actions (below lg only), the game panel (saved games, New game, the sync line; after
+  mount, never for the open game), the account entry (Sign in, or @handle; Sign in shows only while
+  a sign-in method is in effect, `signInAvailable`) and About (on every route: the map pages have no
+  footer). The status is the page's one status cell, never in the Menu: left of the pinned item,
+  except below sm with one, where it sits between the pinned item and the Menu, after it in the DOM
+  too (`phone`, known after mount; the move waits while a modal dialog is open, as `wide` does). On
+  Paint and /sim the save state (nothing when saved), and on /sim "Updating" takes its place while
+  the numbers are stale or Play waits, beside it when autosave is off, with its explanation button.
+  The actions render once: in the bar when `wide` (known after mount), else in the panel.
+  Placement: the `<header>` is `relative`, and the pinned slot's box is a direct child of it with no
+  position class (never `relative`, `absolute`, `fixed` or `sticky`) and no wrapper of its own
   around the snippet, so a pinned item's pop-over (GoalHeadline's side goals) places itself against
   the header, inside its gutters.
 -->
@@ -47,6 +48,8 @@
   } = $props();
 
   const WIDE = '(min-width: 1024px)';
+  /** Below sm (Tailwind's `max-sm`). */
+  const PHONE = '(width < 40rem)';
   const uid = $props.id();
   const panelId = `${uid}-menu`;
 
@@ -66,6 +69,9 @@
   const account = $derived(user ?? (mounted ? game.sync.account : null));
   // From lg the actions are in the bar, below lg in the Menu: one instance at any width.
   let wide = $state(false);
+  // Below sm, with a pinned item, the status renders after it: DOM order is visual order.
+  let phone = $state(false);
+  const statusAfter = $derived(!!pinned && phone);
 
   let open = $state(false);
   let header = $state<HTMLElement>();
@@ -120,18 +126,24 @@
   onMount(() => {
     mounted = true;
     const mq = matchMedia(WIDE);
+    const mqPhone = matchMedia(PHONE);
     wide = mq.matches;
+    phone = mqPhone.matches;
     // Moving the actions between the bar and the panel remounts them, and a modal dialog they own
-    // (Publish's) would go with them: while one is open the move waits for its close.
+    // (Publish's) would go with them: while one is open the move waits for its close. The status
+    // moving across sm remounts it too, so it waits the same way.
     const settle = () => {
       if (document.querySelector('dialog:modal')) return;
       wide = mq.matches;
+      phone = mqPhone.matches;
     };
     mq.addEventListener('change', settle);
+    mqPhone.addEventListener('change', settle);
     // `close` does not bubble: seen in the capture phase, for any dialog.
     document.addEventListener('close', settle, true);
     return () => {
       mq.removeEventListener('change', settle);
+      mqPhone.removeEventListener('change', settle);
       document.removeEventListener('close', settle, true);
     };
   });
@@ -149,11 +161,11 @@
     pinned && 'lg:grid lg:grid-cols-[1fr_auto_1fr]'
   ]}
 >
-  <!-- Below sm, with a pinned item, the pinned box leads the bar and takes the width up to the
-       Menu, and this group (the status alone there) sits between it and the Menu. -->
+  <!-- Below sm, with a pinned item, this group holds only the name, which waits in the Menu:
+       the group goes and the pinned box leads the bar, the status after it. -->
   <div
     class={pinned
-      ? 'flex min-w-0 flex-1 items-center gap-2 max-sm:order-2 max-sm:flex-none max-sm:has-[[data-header-status]:empty]:hidden lg:min-w-auto'
+      ? ['flex min-w-0 flex-1 items-center gap-2 lg:min-w-auto', statusAfter && 'hidden']
       : 'contents'}
   >
     <!-- Below sm a page that pins an item needs the room: the name waits in the Menu. -->
@@ -163,20 +175,27 @@
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
     <!-- In the grid (from lg, with a pinned item) it takes its content's width, so a status too
          wide for the left track widens the track (the score moves) rather than running under it. -->
-    <div
-      class={[
-        'flex min-w-0 flex-1 items-center lg:pl-2 lg:max-xl:pl-0',
-        pinned && 'lg:min-w-auto lg:flex-initial'
-      ]}
-      data-header-status
-    >
-      {@render status?.()}
-    </div>
+    {#if !statusAfter}
+      <div
+        class={[
+          'flex min-w-0 flex-1 items-center lg:pl-2 lg:max-xl:pl-0',
+          pinned && 'lg:min-w-auto lg:flex-initial'
+        ]}
+        data-header-status
+      >
+        {@render status?.()}
+      </div>
+    {/if}
   </div>
   {#if pinned}
-    <div class="flex min-w-0 items-center max-sm:order-1 max-sm:flex-1">{@render pinned()}</div>
+    <div class={['flex min-w-0 items-center', statusAfter && 'flex-1']}>{@render pinned()}</div>
   {/if}
-  <div class="flex shrink-0 items-center gap-2 max-sm:order-3 lg:justify-self-end lg:*:shrink-0">
+  {#if statusAfter}
+    <div class="flex shrink-0 items-center empty:hidden" data-header-status>
+      {@render status?.()}
+    </div>
+  {/if}
+  <div class="flex shrink-0 items-center gap-2 lg:justify-self-end lg:*:shrink-0">
     <!-- From lg nothing here shrinks, so the group's full width counts in the right track's
          minimum (a row too wide moves the score rather than squeezing a control). -->
     {#if wide}{@render actions?.()}{/if}

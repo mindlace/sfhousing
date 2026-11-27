@@ -155,8 +155,8 @@ All in `src/lib/game/ui/`; none renders for the open game.
   container: at 17rem or less "homes" hides, at 13rem or less the short count ("82k") replaces the
   full one, and the rest ("by Mar 2058 · 2 yr 3 mo early") always shows. A win reads "early" in
   words and adds an accent border; with `ongift` it carries the gift, a 24 px button named by
-  `words.gift` that jiggles once every `JIGGLE_MS` (4 s; a `JIGGLE_TURN_MS` 600 ms turn,
-  `ui/motion.ts`) and is still under reduced motion. Win and late arriving after mount put
+  `words.gift` that jiggles once every `JIGGLE_MS` (4 s, `ui/motion.ts`; a 600 ms turn,
+  the keyframes' first 15%) and is still under reduced motion. Win and late arriving after mount put
   `words.live` in the polite `goal-live` region; the state at mount says nothing. With `panel` the
   lines are a button (`aria-expanded`, `aria-controls`) that opens it under the goal; without, they
   are plain text and no control. The status cell is never inside it. `TimelineMode` gives it the

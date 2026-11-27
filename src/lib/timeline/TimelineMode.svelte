@@ -1589,16 +1589,17 @@
   {/if}
 {/snippet}
 
-<!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
-     share one cell, and "Updating" wins while both apply. The covered save state keeps its width
+<!-- The header's status slot (rule 32), at every width: the page's save state and "Updating" share
+     one cell, and "Updating" wins while both apply. The covered save state keeps its width
      (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
-     is as wide as the widest and nothing moves as either comes or goes (from sm; below sm see
-     the sizer). With autosave off (`saveOff`) "Updating" sits beside the save state in a second
-     cell instead, so "Autosave off" stays visible and pressable; that cell's sizer keeps its
-     width while "Updating" is away. The save state's own live region opts back into visibility,
-     so its announcements still reach screen readers. The timeline's live region is apart, once, in the page; "Updating"'s
-     explanation (why the numbers are stale, or that Play waits for the months ahead) opens as a
-     popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
+     is as wide as the widest and nothing moves as either comes or goes (in a game, from sm only:
+     see the sizer). With autosave off (`saveOff`) "Updating" sits beside the save state in a second
+     cell instead, so "Autosave off" stays visible and pressable; that cell's sizer keeps its width
+     while "Updating" is away. The save state's own live region opts back into visibility, so its
+     announcements still reach screen readers. The timeline's live region is apart, once, in the
+     page; "Updating"'s explanation (why the numbers are stale, or that Play waits for the months
+     ahead) opens as a popover under the slot (`explain-under`, layout.css), so the header keeps its
+     size. -->
 {#snippet statusSlot()}
   <span class={['inline-grid items-center', saveOff && 'gap-x-2']} data-testid="tl-status-group">
     <span
@@ -1617,13 +1618,14 @@
         ]}
         data-testid="tl-status"
       >
-        <!-- Below sm the cell keeps no room for "Updating" while it is away: the pinned goal
-             takes that width and narrows (its line drops "homes" first) when it comes. -->
+        <!-- In a game, below sm, the cell keeps no room for "Updating" while it is away: the
+             phone goal takes that width and narrows (its line drops "homes" first) when it
+             comes. With no game the room is kept at every width (rule 32). -->
         <span
           aria-hidden="true"
           class={[
             'invisible col-start-1 row-start-1 whitespace-nowrap',
-            shownStatus === null && 'max-sm:hidden'
+            shownStatus === null && g && 'max-sm:hidden'
           ]}>{UPDATING}</span
         >
         <span

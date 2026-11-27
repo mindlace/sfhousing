@@ -1,15 +1,15 @@
 <!--
   Test host: TimelineMode under the real SiteHeader, wired as the root layout wires it, and the
-  page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and
-  `ctl` lets a test set them as the page's store and PolicySync would, and call `showDetails` and
-  `showActivity`. `onedit` applies the change (`ctl.edit` calls it); `onundoto` (rule 34) sets the document unless the
-  test passes its own. With `withInspector` the inspector renders the Details face (or `face`'s).
-  `readonly` is the page's (default false). `regionHeight` is the mode box's height (700 px unless given). With
-  `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`),
-  and `saveOff` follows it as SimPage passes it (autosave off) unless the test gives its own.
-  A `game` is provided to the context, as the root layout does, and passed through with
-  `goalAmount`; `initialRun` (with `ctl.setRun`) is the document the worker runs, apart from
-  `policy`; without it no `run` is passed.
+  page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and `ctl`
+  lets a test set them as the page's store and PolicySync would, and call `showDetails` and
+  `showActivity`. `onedit` applies the change (`ctl.edit` calls it); `onundoto` (rule 34) sets the
+  document unless the test passes its own. With `withInspector` the inspector renders the Details
+  face (or `face`'s). `readonly` is the page's (default false). `regionHeight` is the mode box's
+  height (700 px unless given). With `saveStatus` the status is the real SaveIndicator, as SimPage
+  renders it (`ctl.setSaveStatus`), and `saveOff` follows it as SimPage passes it (autosave off)
+  unless the test gives its own. A `game` is provided to the context, as the root layout does, and
+  passed through with `goalAmount`; `initialRun` (with `ctl.setRun`) is the document the worker
+  runs, apart from `policy`; without it no `run` is passed.
 -->
 <script lang="ts">
   import { untrack, type ComponentProps, type Snippet } from 'svelte';

@@ -908,6 +908,67 @@ describe('SiteHeader', () => {
         expect(page.getByTestId('side-goals').elements()).toHaveLength(0);
       });
 
+    const WIN_HEADLINE = {
+      state: 'win' as const,
+      words: pinnedWords(
+        { tag: 'win', goalMonth: dayFromUtc(2058, 3, 1) },
+        {
+          amount: 82069,
+          target: dayFromUtc(2060, 6, 1),
+          legal: dayFromUtc(2066, 9, 30),
+          round: 1,
+          finished: false,
+          next: 3
+        }
+      ),
+      fill: 0.75,
+      ongift: () => {}
+    };
+    /** The banner's focusable parts that show, in DOM order. */
+    const focusables = () =>
+      [...page.getByRole('banner').element().querySelectorAll<HTMLElement>('a[href], button')]
+        .filter((el) => el.getBoundingClientRect().width > 0)
+        .filter((el) => !el.closest('[data-header-panel]'));
+    const inVisualOrder = (els: HTMLElement[]) => {
+      for (let i = 1; i < els.length; i++)
+        expect(
+          els[i].getBoundingClientRect().left,
+          `${els[i].textContent} after ${els[i - 1].textContent}`
+        ).toBeGreaterThanOrEqual(els[i - 1].getBoundingClientRect().left);
+    };
+
+    it('at 320 px the DOM order is the visual order: gift, status control, Menu', async () => {
+      await page.viewport(320, 700);
+      render(GoalPinnedHeader, { game: seededGame().game, headline: WIN_HEADLINE, status: true });
+      await expect.element(page.getByTestId('goal-gift')).toBeVisible();
+      await expect.element(page.getByTestId('status-control')).toBeVisible();
+      const els = focusables();
+      expect(els).toEqual([
+        page.getByTestId('goal-gift').element(),
+        page.getByTestId('status-control').element(),
+        page.getByRole('button', { name: 'Menu' }).element()
+      ]);
+      inVisualOrder(els);
+      const banner = page.getByRole('banner').element();
+      for (let el: Element | null = els[0]; el && el !== banner; el = el.parentElement)
+        expect(getComputedStyle(el).order, 'no CSS order').toBe('0');
+      for (const el of banner.children) expect(getComputedStyle(el).order).toBe('0');
+    });
+
+    it('at 1280 px the order is name, status control, gift, Menu', async () => {
+      await page.viewport(1280, 800);
+      render(GoalPinnedHeader, { game: seededGame().game, headline: WIN_HEADLINE, status: true });
+      await expect.element(page.getByTestId('goal-gift')).toBeVisible();
+      const els = focusables();
+      expect(els).toEqual([
+        page.getByRole('link', { name: 'SF Housing', exact: true }).element(),
+        page.getByTestId('status-control').element(),
+        page.getByTestId('goal-gift').element(),
+        page.getByRole('button', { name: 'Menu' }).element()
+      ]);
+      inVisualOrder(els);
+    });
+
     it("the account entry reads @handle from the layout's user first", async () => {
       await page.viewport(1280, 800);
       const sync = quietSync({ handle: 'bob', handleClaimed: true });

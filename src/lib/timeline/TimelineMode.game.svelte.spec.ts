@@ -21,7 +21,7 @@ import { pinnedWords, type PinnedCtx } from '$lib/game/ui/round-words';
 import { TODAY, defaultGoal } from '$lib/goal/goal';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
-import { monthFirstDay } from '$lib/sim/world/months';
+import { monthFirstDay, monthLastDay } from '$lib/sim/world/months';
 import type { ScoreStatics, TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
@@ -520,6 +520,33 @@ describe('TimelineMode in a game: the reset and the result (P16, P19)', () => {
     await opened({ game: gameWith({ phase: 'runs', round: 1, target }) }, LONG);
     const flag = page.getByTestId('tl-goal-flag');
     await expect.element(flag).toHaveTextContent('Target Jun 2060');
+    // At the target's place on the track (the game passes the target as the goal's deadline).
+    const track = page.getByTestId('tl-track').element().getBoundingClientRect();
+    const windowEnd = monthLastDay(asOf, WINDOW_MONTHS);
+    const x = track.left + ((target - asOf) / (windowEnd - asOf)) * track.width;
+    const f = flag.element().getBoundingClientRect();
+    expect(Math.abs((f.left + f.right) / 2 - x)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('the status cell below sm (rule 32)', () => {
+  /** The status cell's width while nothing shows in it. */
+  const cellWidth = () => page.getByTestId('tl-status').element().getBoundingClientRect().width;
+
+  it('with no game it keeps the room of "Updating" while nothing shows', async () => {
+    await page.viewport(375, 812);
+    await opened({}, LONG);
+    await expect.element(page.getByTestId('tl-status')).toBeInTheDocument();
+    expect(page.getByTestId('tl-status-shown').element().textContent?.trim()).toBe('');
+    expect(cellWidth()).toBeGreaterThan(30);
+  });
+
+  it('in a game it keeps none, so the phone goal takes the width', async () => {
+    await page.viewport(375, 812);
+    await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
+    await expect.element(page.getByTestId('tl-status')).toBeInTheDocument();
+    expect(page.getByTestId('tl-status-shown').element().textContent?.trim()).toBe('');
+    expect(cellWidth()).toBe(0);
   });
 });
 

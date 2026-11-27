@@ -163,7 +163,7 @@
       display: inline;
     }
   }
-  /* A turn of 600 ms (JIGGLE_TURN_MS: 15% of the 4 s JIGGLE_MS period), then still. */
+  /* A 600 ms turn, the first 15% of the 4 s JIGGLE_MS period (set inline), then still. */
   .goal-gift {
     animation-name: goal-jiggle;
     animation-iteration-count: infinite;
