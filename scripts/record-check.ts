@@ -2,8 +2,11 @@
 // spec, Acceptance): runs current law (the empty policy document) in the world engine for its first
 // 120 model months and holds the simulated starts and completions to the record targets the
 // calibration step wrote (`pipeline/.cache/derived/<datasetVersion>/record-targets.json`, Task 5).
-// One line per check, `pass`, `miss` or `report`, with the n of both sides. Exits 0 with no
+// One line per check, `pass`, `miss`, `accepted` or `report`, with the n of both sides. A miss the
+// owner accepted (`scripts/record-check-accepted.ts`) prints as `accepted`. Exits 0 with no other
 // miss, 1 with any, 2 when the check could not run (one stderr line, `record-check: {reason}`).
+// The stage-month targets are taken on the spells the height-time fit uses
+// (`stageMonthTargets`), not the calibration's latest-ten-years selection.
 //
 // It also holds the world runner `scripts/cap-measure.ts` uses: a dataset directory loaded with the
 // timeline host's own loader (`loadDataset`), a document compiled as the host compiles it, its
@@ -12,7 +15,18 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HEIGHT_BANDS, bandIndex } from '../pipeline/lib/fzp-cal/height-time';
+import { FIXTURE_CAL, LIVE_CAL } from '../pipeline/lib/fzp-cal/config';
+import {
+  HEIGHT_BANDS,
+  bandIndex,
+  completedByBand,
+  storiedById
+} from '../pipeline/lib/fzp-cal/height-time';
+import { purgeCensor } from '../pipeline/lib/fzp-cal/purge';
+import { buildSpells, normalise, qualifies } from '../pipeline/lib/fzp-cal/spells';
+import type { CalProfile } from '../pipeline/lib/fzp-cal/types';
+import { PLANNING_START } from '../pipeline/lib/fzp-cal/window';
+import { isoToDay } from '../pipeline/project-records/multiphase';
 import {
   LARGE_LOT_LIMIT,
   LARGE_LOT_M2,
@@ -21,8 +35,10 @@ import {
   PROJECT_MIN_HOMES,
   RECORD_TARGETS_JSON,
   TYPE_MAX_STORIES,
+  medianTarget,
   quantile,
   recordTargets,
+  type BandTarget,
   type RecordTargets,
   type Target
 } from '../pipeline/lib/building-records';
@@ -70,6 +86,7 @@ import {
 } from '../src/lib/timelapse/types';
 import { DEFAULT_POLICY4, queriesOf4, type SimPolicy4 } from '../src/lib/timeline/policy4';
 import { reconcilePolicy4 } from '../src/lib/timeline/reconcile4';
+import { ACCEPTED_MISSES } from './record-check-accepted';
 
 /** The model months the record check runs: the first ten simulated years (spec, Acceptance). */
 export const RECORD_MONTHS = 120;
@@ -471,7 +488,8 @@ export function simStats(projects: readonly SimProject[], [from, to]: [Day, Day]
 
 export interface CheckLine {
   check: string;
-  status: 'pass' | 'miss' | 'report';
+  /** `accepted`: a miss the owner accepted (`ACCEPTED_MISSES`); it does not fail the check. */
+  status: 'pass' | 'miss' | 'accepted' | 'report';
   /** The simulated statistic; null when the simulation has no project for it. */
   sim: number | null;
   simN: number;
@@ -661,7 +679,44 @@ export function checkLines(
   return lines;
 }
 
-/** 1 when any check misses, else 0. */
+const byId = (a: { id: string }, b: { id: string }): number =>
+  a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+/**
+ * Stage-month targets on the intervals the height-time fit uses (spec, Call: the fits and the
+ * checks use the same intervals): the spells `shippedStep` builds (qualifying histories,
+ * normalised, purge-censored) entered from PLANNING_START to `asOf`, completed, with both ends
+ * recorded (`completedByBand`), by height band. The calibration's `recordTargets` takes the latest
+ * ten years without the purge censor, which timed `≤ 4` construction differently from its fit.
+ */
+export function stageMonthTargets(
+  histories: readonly ProjectHistory[],
+  asOf: Day,
+  cal: CalProfile
+): RecordTargets['stageMonths'] {
+  const q = histories.filter(qualifies).sort(byId);
+  const norm = purgeCensor(normalise(q, asOf).norm, cal).norm;
+  const { spells } = buildSpells(norm, asOf);
+  const storied = storiedById(norm);
+  const window: [Day, Day] = [isoToDay(PLANNING_START), asOf];
+  const bands = (stage: 'permitIssued' | 'construction'): BandTarget[] =>
+    completedByBand(spells, storied, stage, HEIGHT_BANDS, window).flatMap((xs, i) =>
+      xs.length === 0 ? [] : [{ upTo: HEIGHT_BANDS[i], ...medianTarget(xs, MONTH_DAYS) }]
+    );
+  return { permitIssued: bands('permitIssued'), construction: bands('construction') };
+}
+
+/** `lines` with each miss whose check is in `accepted` marked `accepted`. */
+export function acceptMisses(
+  lines: readonly CheckLine[],
+  accepted: ReadonlySet<string> = new Set(ACCEPTED_MISSES.map((m) => m.check))
+): CheckLine[] {
+  return lines.map((l) =>
+    l.status === 'miss' && accepted.has(l.check) ? { ...l, status: 'accepted' } : l
+  );
+}
+
+/** 1 when any check misses (an accepted miss does not count), else 0. */
 export function recordExit(lines: readonly CheckLine[]): 0 | 1 {
   return lines.some((l) => l.status === 'miss') ? 1 : 0;
 }
@@ -675,7 +730,7 @@ export function formatLine(l: CheckLine): string {
   const target = l.target === null ? '—' : num(l.target);
   const tol = l.tol === null ? '' : ` ± ${num(l.tol)}`;
   const n = l.n === null ? '' : ` (n ${num(l.n)})`;
-  return `${l.status.padEnd(6)} ${l.check}: sim ${sim} (n ${num(l.simN)}), records ${target}${tol}${n}`;
+  return `${l.status.padEnd(8)} ${l.check}: sim ${sim} (n ${num(l.simN)}), records ${target}${tol}${n}`;
 }
 
 // --- the command ---
@@ -776,6 +831,11 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
       );
     }
     const inLimit = inLimitHeightRatio(hf.histories, hf.asOf);
+    const cal = /^fixture-\d+$/.test(version) ? FIXTURE_CAL : LIVE_CAL;
+    const checked: RecordTargets = {
+      ...targets,
+      stageMonths: stageMonthTargets(hf.histories, hf.asOf, cal)
+    };
     const warnings: string[] = [];
     const worlds = await openWorlds(args.dir, { warn: (m) => warnings.push(m) });
     const { world } = worlds.run(DEFAULT_POLICY4, { months: RECORD_MONTHS });
@@ -784,7 +844,7 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
       monthLastDay(worlds.asOf, RECORD_MONTHS)
     ];
     const sim = simStats(simProjectsOf(world, worlds.ds.loaded.fzp.parcels), window);
-    const lines = checkLines(targets, sim, inLimit);
+    const lines = acceptMisses(checkLines(checked, sim, inLimit));
     for (const w of warnings) io.err(w);
     if (args.json) {
       io.out(
@@ -807,7 +867,13 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
       io.out(`Dataset ${version}; records ${targets.window[0]} to ${targets.window[1]}`);
       io.out(`Current law, model months 1 to ${RECORD_MONTHS}`);
       for (const l of lines) io.out(formatLine(l));
-      io.out(`${count('pass')} pass, ${count('miss')} miss, ${count('report')} report`);
+      const passing = ACCEPTED_MISSES.filter((m) =>
+        lines.some((l) => l.check === m.check && l.status === 'pass')
+      );
+      for (const m of passing) io.out(`accepted miss now passes: ${m.check}`);
+      io.out(
+        `${count('pass')} pass, ${count('miss')} miss, ${count('accepted')} accepted, ${count('report')} report`
+      );
     }
     return recordExit(lines);
   } catch (e) {

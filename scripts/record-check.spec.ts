@@ -7,17 +7,24 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { RecordTargets, Target } from '../pipeline/lib/building-records';
 import type { ProjectHistory } from '../src/lib/timelapse/types';
 import { isoToDay } from '../pipeline/project-records/multiphase';
+import { recordTargets } from '../pipeline/lib/building-records';
+import { LIVE_CAL } from '../pipeline/lib/fzp-cal/config';
+import { shippedStep } from '../pipeline/lib/fzp-cal/shipped-step';
 import {
+  acceptMisses,
   checkLines,
   emptySimStats,
+  formatLine,
   inLimitHeightRatio,
   main,
   recordExit,
   simStats,
+  stageMonthTargets,
   type CheckLine,
   type SimProject,
   type SimStats
 } from './record-check';
+import { ACCEPTED_MISSES } from './record-check-accepted';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 /** Enough for one 120-month run of the fixture; a test argument, not a wait. */
@@ -240,6 +247,85 @@ describe('recordExit', () => {
     });
     expect(recordExit([l('pass'), l('report')])).toBe(0);
     expect(recordExit([l('pass'), l('miss'), l('report')])).toBe(1);
+  });
+});
+
+describe('accepted misses', () => {
+  const l = (check: string, status: CheckLine['status']): CheckLine => ({
+    check,
+    status,
+    sim: 1,
+    simN: 50,
+    target: 2,
+    tol: 0.1,
+    n: 100
+  });
+  const accepted = new Set(['A']);
+
+  it('marks a listed miss accepted and leaves an unlisted miss and a listed pass alone', () => {
+    const lines = acceptMisses([l('A', 'miss'), l('B', 'miss'), l('C', 'pass')], accepted);
+    expect(lines.map((x) => x.status)).toEqual(['accepted', 'miss', 'pass']);
+    expect(acceptMisses([l('A', 'pass')], accepted)[0].status).toBe('pass');
+  });
+
+  it('exits 0 when only accepted lines miss and 1 on any other miss', () => {
+    expect(recordExit(acceptMisses([l('A', 'miss'), l('C', 'pass')], accepted))).toBe(0);
+    expect(recordExit(acceptMisses([l('A', 'miss'), l('B', 'miss')], accepted))).toBe(1);
+  });
+
+  it('prints an accepted miss distinctly', () => {
+    const [a] = acceptMisses([l('A', 'miss')], accepted);
+    expect(formatLine(a)).toMatch(/^accepted A: sim 1 \(n 50\), records 2 ± 0\.100 \(n 100\)$/);
+    expect(formatLine(l('B', 'miss'))).toMatch(/^miss {5}B:/);
+  });
+
+  it('lists each owner-accepted line once, by a key the check gives, with its ruling', () => {
+    const keys = new Set(checkLines(targets(), meeting()).map((x) => x.check));
+    const listed = ACCEPTED_MISSES.map((m) => m.check);
+    expect(new Set(listed).size).toBe(listed.length);
+    for (const m of ACCEPTED_MISSES) {
+      expect(keys, m.check).toContain(m.check);
+      expect(m.ruling).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(m.dataset).toMatch(/^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/);
+    }
+  });
+});
+
+describe('stage-month targets on the spells the height-time fit uses', () => {
+  const asOf = isoToDay('2026-09-30');
+  /** A completed permit-only history at 3 stories: issued `issued`, construction `days` long. */
+  const built = (id: string, issued: string, days: number): ProjectHistory => {
+    const i = isoToDay(issued);
+    const fcd = i + 100;
+    return {
+      ...hist(id, 3, 4),
+      pathway: 'permitOnly',
+      entered: { permitFiled: i - 200, permitIssued: i, construction: fcd, complete: fcd + days },
+      end: { kind: 'complete', day: fcd + days }
+    } as ProjectHistory;
+  };
+  // 40 spells entered 2015-2016 (before the latest ten years) take 900 days; 40 later take 500.
+  const hs = [
+    ...Array.from({ length: 40 }, (_, i) => built(`E${i}`, '2015-06-01', 900)),
+    ...Array.from({ length: 40 }, (_, i) => built(`L${i}`, '2019-06-01', 500))
+  ];
+  const t = stageMonthTargets(hs, asOf, LIVE_CAL);
+  const fit = shippedStep({ histories: hs, permits: [], asOf, cal: LIVE_CAL }).heightTime;
+
+  it('gives the ≤ 4 construction median the fit gives the same band', () => {
+    // every spell is ≤ 4 stories, so the fit's one band holds exactly the ≤ 4 spells
+    expect(fit.upTo).toEqual([999]);
+    const c4 = t.construction.find((b) => b.upTo === 4)!;
+    expect(c4.n).toBe(80);
+    expect(c4.stat).toBeCloseTo(fit.steps[0].value.constructionMonths[0], 3);
+    // the latest-ten-years selection the calibration writes differs: only the later 40
+    const none = {
+      index: new Map(),
+      lotAreaM2: new Uint32Array(0),
+      baseStories: new Uint8Array(0)
+    };
+    const old = recordTargets(hs, [], none, asOf).stageMonths.construction[0];
+    expect(old.n).toBe(40);
   });
 });
 
