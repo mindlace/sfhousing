@@ -127,7 +127,7 @@ test('/p/<id> opens in full with no Remix and links Your game to /', async ({ pa
 
 // ---- the round's header at phone width (Review Focus 5) ----------------------------------------
 
-// Current law reaches FIXTURE_AMOUNT in Sep 2039: a target of Jan 2045 is beaten, Jan 2035 is not.
+// Current law reaches FIXTURE_AMOUNT in Aug 2038: a target of Jan 2045 is beaten, Jan 2035 is not.
 const ROUND: Record<'pending' | 'win' | 'late', Partial<GameState>> = {
   pending: { phase: 'runs', round: 1, target: monthDay(2045, 1) },
   win: { phase: 'runs', round: 1, target: monthDay(2045, 1) },

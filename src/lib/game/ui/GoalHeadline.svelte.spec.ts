@@ -258,10 +258,10 @@ describe('GoalHeadline', () => {
         expect(r.bottom, c).toBeLessThanOrEqual(line.bottom + 0.5);
       }
     };
-    // The e2e journeys' win at 443 homes, against Jan 2045: the widest rest the fixture shows.
+    // The e2e journeys' win at 438 homes, against Jan 2045: the widest rest the fixture shows.
     const WIDE_WIN = pinnedWords(
-      { tag: 'win', goalMonth: dayFromUtc(2039, 9, 1) },
-      { ...CTX, amount: 443, target: dayFromUtc(2045, 1, 1) }
+      { tag: 'win', goalMonth: dayFromUtc(2038, 8, 1) },
+      { ...CTX, amount: 438, target: dayFromUtc(2045, 1, 1) }
     );
 
     it('at 320 px beside a status the result wraps beneath: nothing cut off, the bar 48 px', async () => {
@@ -274,7 +274,7 @@ describe('GoalHeadline', () => {
         }
       });
       await expect.element(phone()).toBeVisible();
-      expect(part('result').textContent).toContain('5 yr 4 mo early');
+      expect(part('result').textContent).toContain('6 yr 5 mo early');
       expect(shows(part('result'))).toBe(true);
       expectWhole();
       expect(rect(part('result')).top).toBeGreaterThan(rect(part('rest')).top);

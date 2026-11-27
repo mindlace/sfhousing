@@ -402,11 +402,13 @@ page and goes to `/`; a spec that seeds its own game and wants `/` calls `gotoHy
 | `openGamePanel(page)`             | Opens the header Menu, which holds the game panel                                                                       |
 | `policyRow`, `policyRowNamed`     | A policy's row parts by id (a catalogue transit rule's id is its key) or by label                                       |
 
-`FIXTURE_AMOUNT` (443), `FIXTURE_ROUTE` (`'switch'`), `FIXTURE_TARGET` (null),
-`FIXTURE_LAW_MONTH` (Sep 2039) and `FIXTURE_RAIL_MONTH` (Aug 2038) are the probe's: on fixture-0
-at 443 homes current law reaches the goal in Sep 2039 and the rail rule alone in Aug 2038, 13
-months earlier, so switching the rail rule on in round 1 wins. Below 443 no round-1 rule wins; at
-higher amounts it does too, but each play from today is longer, and a test has 30 s. The probe is
+`FIXTURE_AMOUNT` (438), `FIXTURE_ROUTE` (`'switch'`), `FIXTURE_TARGET` (null),
+`FIXTURE_LAW_MONTH` (Aug 2038) and `FIXTURE_RAIL_MONTH` (Sep 2033) are the probe's: on fixture-0
+at 438 homes current law reaches the goal in Aug 2038 and the rail rule alone in Sep 2033, 59
+months earlier, so switching the rail rule on in round 1 wins. The rail rule wins from 434 to 442
+homes (re-probed on the building-choice engine, 2026-11-27); 438 sits in the middle. Below 434 it
+is no earlier than current law; at higher amounts it wins too, but each play from today is longer,
+and a test has 30 s. The probe is
 a scratch script over `openEngine` (`scripts/lib/engine-runner.ts`) and `catalogueDoc`; run it
 again and update the constants when the engine or the fixture changes the months. `monthDay(y, m)`
 is the first day of a month as a `Day`.
@@ -430,14 +432,14 @@ journey whole plays about 8 s of months on top of the page's work and nears a te
   opening's pitch with buildings drawn; Play at 3x to current law's
   win, the gift, three explainers, three New rows off. Then round 1: Play, the rail rule
   switched on (playback stops, the playhead goes to the later of today and its first month,
-  pending), played to the win "1 yr 1 mo early", the gift, round 2's explainers; the rail row
+  pending), played to the win "4 yr 11 mo early", the gift, round 2's explainers; the rail row
   reads Edit and band 2 set to 1,200 m holds; the account holds the one game, in round 2.
 - **By keyboard only** (desktop): the same loop with Tab, Shift+Tab, Enter, Space and the
   ruler's End: Enter stamps on the map and presses Start, End wins current law, the gift by keys
   (focus then on the goal); the New pane by Enter (focus stays on New) and closed; the rail rule
   switched on by Space; 3x by Enter, Space plays to the win; Edit by Enter, 1,200 m typed into
   band 2.
-- **Late**: round 1 with Jan 2035 to beat; played to it: `late`, "4 yr 8 mo late", no gift, the
+- **Late**: round 1 with Jan 2035 to beat; played to it: `late`, "3 yr 7 mo late", no gift, the
   saved state unchanged.
 - **The ending**: round 4 with Jan 2045 to beat; played to the win, the gift "Open the gift: every
   policy", one explainer "Every policy", the saved game finished; the zoning "+" offers "Transit

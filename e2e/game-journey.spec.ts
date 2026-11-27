@@ -2,7 +2,7 @@
 // opening through current law's win and the gift to a win with a round-1 policy and its edit; the
 // same loop by keyboard only; a late round; the ending; and a saved version 2 game. Runs against
 // the VITE_E2E build on fixture-0 at the probe's amount (helpers/play.ts, FIXTURE_AMOUNT: current
-// law reaches it in Sep 2039, the rail rule alone in Aug 2038). Every wait is a state: the goal's
+// law reaches it in Aug 2038, the rail rule alone in Sep 2033). Every wait is a state: the goal's
 // `data-state`, the debug hook's day, the saved game or a visible element.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
@@ -199,7 +199,7 @@ test.describe('by pointer', () => {
     await waitResult(page, 'pending');
     await expect(page.getByTestId('goal-line2')).toHaveText('Play to see current law');
     expect(await playToResult(page)).toBe('win');
-    await expect(page.getByTestId('goal-line1')).toHaveText(/by Sep 2039$/);
+    await expect(page.getByTestId('goal-line1')).toHaveText(/by Aug 2038$/);
     await expect(page.getByTestId('goal-line2')).toHaveText('Current law');
     await expect(page.getByTestId('goal-gift')).toHaveAccessibleName(
       'Open the gift: 3 new policies'
@@ -237,11 +237,11 @@ test.describe('by pointer', () => {
     await waitResult(page, 'pending');
     await closeKindSheet(page, 'Zoning');
 
-    // 6. Played to the win: Aug 2038, 1 yr 1 mo before Sep 2039; the gift offers round 2.
+    // 6. Played to the win: Sep 2033, 4 yr 11 mo before Aug 2038; the gift offers round 2.
     await waitFilled(page);
     expect(await playToResult(page)).toBe('win');
-    await expect(page.getByTestId('goal-line1')).toHaveText(/by Aug 2038$/);
-    await expect(page.getByTestId('goal-line2')).toHaveText('1 yr 1 mo early');
+    await expect(page.getByTestId('goal-line1')).toHaveText(/by Sep 2033$/);
+    await expect(page.getByTestId('goal-line2')).toHaveText('4 yr 11 mo early');
     expect(await takeGift(page, 'pointer')).toEqual(ROUND_2);
     const two = await waitSaved(page, (s) => s.state.round === 2);
     expect(two.state.editable).toEqual([RAIL]);
@@ -365,7 +365,7 @@ test.describe('by keyboard only', () => {
     // Space again pauses (playback would run on to the window's end).
     await page.keyboard.press('Space');
     await expect.poll(() => fzp(page, 'playing'), FAST).toBe(false);
-    await expect(page.getByTestId('goal-line2')).toHaveText('1 yr 1 mo early');
+    await expect(page.getByTestId('goal-line2')).toHaveText('4 yr 11 mo early');
     expect(await takeGift(page, 'keys')).toEqual(ROUND_2);
     const two = await waitSaved(page, (s) => s.state.round === 2);
     expect(two.state.editable).toEqual([RAIL]);
@@ -424,7 +424,7 @@ test.describe('by keyboard only', () => {
 test('a round played past its target is late, with no gift, and nothing is saved', async ({
   page
 }) => {
-  // Round 1 with Jan 2035 to beat: current law reaches the goal in Sep 2039.
+  // Round 1 with Jan 2035 to beat: current law reaches the goal in Aug 2038.
   await seedRuns(page, { phase: 'runs', round: 1, target: monthDay(2035, 1) }, FIXTURE_AMOUNT);
   await gotoHydrated(page, '/');
   await waitSim(page);
@@ -434,7 +434,7 @@ test('a round played past its target is late, with no gift, and nothing is saved
 
   expect(await playToResult(page)).toBe('late');
   await expect(page.getByTestId('goal-line2')).toHaveText(/late$/);
-  await expect(page.getByTestId('goal-line2')).toHaveText('4 yr 8 mo late');
+  await expect(page.getByTestId('goal-line2')).toHaveText('3 yr 7 mo late');
   await expect(page.getByTestId('goal-gift')).toHaveCount(0);
   // Compared once the page has settled: playback paused, and the autosave back at "saved" (a
   // debounced write reads "saving" until it lands), so a wrongly scheduled save has had its chance.
@@ -446,7 +446,7 @@ test('a round played past its target is late, with no gift, and nothing is saved
 test('the last round won is the ending: Every policy, and the zoning "+" offers a rule', async ({
   page
 }) => {
-  // Round 4 with Jan 2045 to beat: current law reaches the goal in Sep 2039.
+  // Round 4 with Jan 2045 to beat: current law reaches the goal in Aug 2038.
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedRuns(page, { phase: 'runs', round: 4, target: monthDay(2045, 1) }, FIXTURE_AMOUNT);
   await gotoHydrated(page, '/');

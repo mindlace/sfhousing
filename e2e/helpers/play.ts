@@ -15,26 +15,27 @@ import { FRAME, jumpAndIdle, openHeaderMenu, type Win } from './sharing';
 export const monthDay = (year: number, month: number): Day =>
   Date.UTC(year, month - 1, 1) / 86_400_000;
 
-// The probe (Task 11, a scratch script over `openEngine({ dir: 'e2e/fixtures/data/fixture-0' })`
-// and `catalogueDoc`, not committed) measured the goal month of current law and of each round-1
-// policy alone at every amount up to the fixture's 554 homes; today is 10 Oct 2026. At 443 and 444
-// homes current law reaches the goal in Sep 2039 and the rail rule alone in Aug 2038, 13 months
-// earlier (the SB 423 clock: no change). Below 443 no rail win exists; at 447 to 448, 452 to 456
-// and 461 to 468 the rail rule also wins, but each play from today is 4 to 10 s longer at 3x, which
-// a 30 s test cannot spare. Branch A: the rail rule switched on wins.
+// The probe (a scratch script over `openEngine({ dir: 'e2e/fixtures/data/fixture-0' })` and
+// `catalogueDoc`, not committed) measured the goal month of current law and of each round-1 policy
+// alone at every amount up to current law's 462 homes at the window's end; today is 10 Oct 2026.
+// Re-run after the building-choice engine (2026-11-27): from 434 to 442 homes current law reaches
+// the goal in Aug 2038 and the rail rule alone in Sep 2033, 59 months earlier (the SB 423 clock: no
+// change). 438 sits in the middle of that window. Below 434 the rail rule is no earlier than current
+// law; at 445 to 448 and 449 to 462 it also wins, but each play from today is longer at 3x, which a
+// 30 s test cannot spare. Branch A: the rail rule switched on wins.
 
-/** The goal's amount the round journeys play at (the probe: the rail rule wins at 443 or 444). */
-export const FIXTURE_AMOUNT = 443;
+/** The goal's amount the round journeys play at (the probe: the rail rule wins from 434 to 442). */
+export const FIXTURE_AMOUNT = 438;
 /** 'switch': a round-1 policy switched on wins (branch A). 'edit': the rail rule edited to 12
  *  stories and 1,200 m wins in a seeded round-2 game (branch B). */
 export const FIXTURE_ROUTE: 'switch' | 'edit' = 'switch';
 /** Branch B only: the seeded target, the goal month with the rail rule on at its fixed values
  *  (first day of the month); null for branch A. */
 export const FIXTURE_TARGET: Day | null = null;
-/** Current law's goal month at FIXTURE_AMOUNT (the probe): Sep 2039. */
-export const FIXTURE_LAW_MONTH: Day = monthDay(2039, 9);
-/** The rail rule's goal month at FIXTURE_AMOUNT, at its fixed values (the probe): Aug 2038. */
-export const FIXTURE_RAIL_MONTH: Day = monthDay(2038, 8);
+/** Current law's goal month at FIXTURE_AMOUNT (the probe): Aug 2038. */
+export const FIXTURE_LAW_MONTH: Day = monthDay(2038, 8);
+/** The rail rule's goal month at FIXTURE_AMOUNT, at its fixed values (the probe): Sep 2033. */
+export const FIXTURE_RAIL_MONTH: Day = monthDay(2033, 9);
 
 /**
  * Before the first load: the goal amount (default 1) and a game seeded with `state` (default: in

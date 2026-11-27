@@ -134,7 +134,7 @@ async function toEnd(page: Page): Promise<void> {
 const goalButton = (page: Page): Locator => page.getByTestId('goal-headline-button');
 const gift = (page: Page): Locator => page.getByTestId('goal-gift');
 
-// Current law reaches FIXTURE_AMOUNT in Sep 2039: a target of Jan 2045 is beaten, Jan 2035 is not.
+// Current law reaches FIXTURE_AMOUNT in Aug 2038: a target of Jan 2045 is beaten, Jan 2035 is not.
 const BEATEN = monthDay(2045, 1);
 const MISSED = monthDay(2035, 1);
 
