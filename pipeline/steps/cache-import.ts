@@ -43,11 +43,10 @@ function rmdirIfEmpty(dir: string): void {
 }
 
 /** Every regular file under `dir`, as paths relative to it. */
-function filesUnder(dir: string, base = dir): string[] {
-  const found: string[] = [];
+function filesUnder(dir: string, base = dir, found: string[] = []): string[] {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
-    if (e.isDirectory()) found.push(...filesUnder(p, base));
+    if (e.isDirectory()) filesUnder(p, base, found);
     else if (e.isFile()) found.push(relative(base, p));
   }
   return found;
