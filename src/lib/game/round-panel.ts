@@ -2,7 +2,7 @@
 import { formatShortMonthYear } from '$lib/fzp/format';
 import type { Day } from '$lib/timelapse/time';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
-import { bandsText, keyOf, roundEntries, rulesText } from './catalogue/rounds';
+import { ROUNDS, bandsText, keyOf, roundEntries, rulesText } from './catalogue/rounds';
 import { monthsBetween, spanText } from './rounds';
 import type { GameState } from './state';
 import { roundName } from './ui/round-words';
@@ -30,7 +30,8 @@ const allPolicies = (doc: SimPolicy4): Policy[] => [
  * with ' (off)' when its policy is off (or not in the document), or ['No policies yet'] in round 0,
  * none when finished; earlier: newest first, 'Round 1: goal reached Jun 2060, 1 yr 4 mo earlier'
  * (no ', … earlier' when beat is null), and for a round-0 win 'Baseline: Oct 2061' or
- * 'Baseline: after Oct 2066' (`legal`, when the goal was not reached).
+ * 'Baseline: after Oct 2066' (`legal`, when the goal was not reached). A win after the one that
+ * finished the game (the first of round ROUNDS) is named 'Every policy:', not 'Round 4:'.
  */
 export function roundPanel(s: GameState, doc: SimPolicy4, legal: Day): RoundPanelData {
   let items: string[] = [];
@@ -46,15 +47,18 @@ export function roundPanel(s: GameState, doc: SimPolicy4, legal: Day): RoundPane
       });
     }
   }
+  // The first win of the last round finished the game; a later one came after the end.
+  const ending = s.wins.findIndex((w) => w.round === ROUNDS);
   const earlier = s.wins
-    .map((w) => {
+    .map((w, i) => {
+      const name = ending !== -1 && i > ending ? roundName(ROUNDS, true) : `Round ${w.round}`;
       if (w.round === 0) {
         return `Baseline: ${w.goalMonth === null ? 'after ' + formatShortMonthYear(legal) : formatShortMonthYear(w.goalMonth)}`;
       }
-      if (w.goalMonth === null) return `Round ${w.round}: after ${formatShortMonthYear(legal)}`;
+      if (w.goalMonth === null) return `${name}: after ${formatShortMonthYear(legal)}`;
       const months = w.beat === null ? 0 : monthsBetween(w.goalMonth, w.beat);
       const by = months > 0 ? `, ${spanText(months)} earlier` : '';
-      return `Round ${w.round}: goal reached ${formatShortMonthYear(w.goalMonth)}${by}`;
+      return `${name}: goal reached ${formatShortMonthYear(w.goalMonth)}${by}`;
     })
     .reverse();
   return { title: roundName(s.round, s.finished), items, earlier };

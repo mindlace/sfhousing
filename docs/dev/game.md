@@ -206,7 +206,9 @@ All in `src/lib/game/ui/`; none renders for the open game.
   as set, with " (off)" when the policy is off; "No policies yet" in round 0; none when finished)
   and `earlier` (newest first: "Round 1: goal reached Jun 2060, 1 yr 4 mo earlier", with no
   "earlier" part when the win beat no month; "Baseline: Oct 2061", or "Baseline: after Oct 2066"
-  when current law did not reach the goal).
+  when current law did not reach the goal; a win after the one that finished the game, the first
+  of round 4, reads "Every policy: goal reached …", read from the order of `wins`, so a saved
+  state needs nothing new).
 - **`GiftDialog`** (`gift-dialog`, `gift-step`, `gift-accept`): the explainers, a native modal
   `<dialog>` (the page is inert behind it) over `GiftItem[]` from `giftItems(before, after)`: one
   per policy of the new round (title, step "1 of 3", the line, and for a zoning policy its fixed

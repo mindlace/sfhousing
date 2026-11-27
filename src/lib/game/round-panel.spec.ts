@@ -10,6 +10,7 @@ import { DEFAULT_POLICY4, type SimPolicy4 } from '$lib/timeline/policy4';
 import { offerThrough } from './offer';
 import { giftItems, roundPanel } from './round-panel';
 import { takeWin } from './rounds';
+import { parseGameState } from './save-shape';
 import { NEW_GAME, type GameState } from './state';
 
 const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
@@ -20,6 +21,7 @@ const cal: Calibration = {
 };
 const d = (y: number, m: number) => dayFromUtc(y, m, 1);
 const LEGAL = dayFromUtc(2066, 9, 30);
+const AT = '2026-11-26T00:00:00.000Z';
 const win = (round: number, goalMonth: number | null, beat: number | null, y = 2060) => ({
   round,
   goalMonth: goalMonth === null ? null : d(y, goalMonth),
@@ -123,6 +125,29 @@ describe('roundPanel', () => {
       items: [],
       earlier: ['Round 4: goal reached Jun 2060, 1 yr 4 mo earlier']
     });
+  });
+
+  it('a win taken after the game was finished reads "Every policy", the finishing one its round', () => {
+    const finished = state({
+      round: 4,
+      finished: true,
+      target: d(2060, 6),
+      wins: [win(4, 6, 10, 2060)]
+    });
+    const after = takeWin(finished, {
+      goalMonth: d(2059, 3),
+      on: new Set(),
+      datasetVersion: 'fixture-0',
+      at: '2026-11-27T00:00:00.000Z'
+    });
+    expect(roundPanel(after, withRound(4), LEGAL).earlier).toEqual([
+      'Every policy: goal reached Mar 2059, 1 yr 3 mo earlier',
+      'Round 4: goal reached Jun 2060, 1 yr 4 mo earlier'
+    ]);
+    // A version 3 state saved before this reads the same: it holds nothing new.
+    const saved = parseGameState(JSON.parse(JSON.stringify({ ...after, firstWinAt: AT })));
+    expect(saved).not.toBeNull();
+    expect(roundPanel(saved!, withRound(4), LEGAL).earlier[0]).toMatch(/^Every policy: /);
   });
 });
 
