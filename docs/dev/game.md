@@ -3,7 +3,7 @@
 ## The game
 
 The game is one map. Paint rooms for homes until the goal is met; after Start the page is the
-simulation tool for the rest of the game: the map with its tilted camera and buildings, the
+simulation tool for the rest of the game: the map with the opening's camera and buildings, the
 timeline, Play and Pause, held to the policies the rounds offer so far. Twelve real policies come
 three a round over four rounds (`catalogue/rounds.ts`); round 0 is current law. The saved state is
 version 3: the round, the month to beat, the policies the player can edit and the wins. The rules
@@ -102,7 +102,10 @@ autosave flushed, and the explainers (`GiftDialog`) opened on `giftItems(before,
 last Accept focus goes to `goal-headline-button`. The pinned goal stays pending until the next
 change. When the store refuses the write nothing changes: the document, the history and the held
 win stay, and the gift can be pressed again. When `giftItems` is empty (the game was finished
-before) no dialog opens (a `GiftDialog` with no items renders nothing) and focus goes to `goal-headline-button`, as after the last Accept: the pressed gift is gone with the win. The undo handler for a rejected run restores its document through `offerThrough` with the game's current state, so the offered policies are never lost.
+before) no dialog opens (a `GiftDialog` with no items renders nothing) and focus goes to
+`goal-headline-button`, as after the last Accept: the pressed gift is gone with the win. The undo
+handler for a rejected run restores its document through `offerThrough` with the game's current
+state, so the offered policies are never lost.
 
 ## Version 2 games
 
@@ -404,9 +407,10 @@ helpers for the status: `refusePolicyRecord` (autosave off) and `staleEdit` ("Up
 second seeds round 1 with current law's month to beat, the state the first ends in), since a
 journey whole plays about 8 s of months on top of the page's work and nears a test's 30 s:
 
-- **By pointer** (both projects): a new visitor paints to a room goal of 1, tilts the map, sets
-  the amount and presses Start; the map is pitched with buildings drawn; Play at 3x to current
-  law's win, the gift, three explainers, three New rows off. Then round 1: Play, the rail rule
+- **By pointer** (both projects): a new visitor paints to a room goal of 1, reads the opening's
+  camera, sets the amount and presses Start, and puts that camera back; the simulation keeps the
+  opening's pitch with buildings drawn; Play at 3x to current law's
+  win, the gift, three explainers, three New rows off. Then round 1: Play, the rail rule
   switched on (playback stops, the playhead goes to the later of today and its first month,
   pending), played to the win "1 yr 1 mo early", the gift, round 2's explainers; the rail row
   reads Edit and band 2 set to 1,200 m holds; the account holds the one game, in round 2.
