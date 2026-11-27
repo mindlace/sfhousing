@@ -40,17 +40,17 @@ Dated policies (schema 4) compile to these levers month by month: see [policy-ti
 
 1. **Rules.** For each lot the rules name, `n` is the highest rule; if `n` is above the lot's FZP stories, the lot gets `n` stories and no cap (`NULL_CAP`). A rule at or below FZP leaves the FZP row, cap included. Rules are order-free: only the maximum matters, so nothing depends on their order (transit bands included).
 2. **Paint.** Each paint edit, in document order, sets its lots to `N` stories, uncapped, raising or lowering. A later stroke wins.
-3. **Protections.** A protected lot is not redevelopable: it is reset to its FZP row with `hostable` 0 and makes no `Need` (see "Protections and the capacity metric").
+3. **Protections.** A protected lot is not redevelopable: it is reset to its FZP row with `hostable` 0 (see "Protections and the capacity metric").
 
-The table keeps the allowed `N`; the generator builds at most the lot's physical max stories (`physicalMaxStories`, `src/lib/generator/physical.ts`), so a recomputed row's built height is min(allowed `N`, physical max), then the typology cascade. Recorded projects are not capped.
+An `EnvelopeTable` is per lot `{ stories, cap, hostable }`: the story limit, the unit cap (`NULL_CAP` none) and whether the lot may host at all. A lot's homes at any envelope are its options' (`options.bin`, `LayerCtx.options`; [building-choice.md](building-choice.md)): the envelope allows the prefix of its option row up to `stories` (`allowedCount`), each option's homes clipped by `cap`. The options run from 1 story to the lot's physical maximum, so a limit above it allows nothing more, and no envelope needs a recompute. Recorded projects are not capped.
 
-A touched row whose final `(stories, cap)` is its FZP row is left as it is; one at 0 stories hosts nothing. One that matches the lot's FZP or pre-FZP (`base`) row reuses that row's yields and `hostable`. Any other becomes a `Need` (`row:stories:cap`); `fillNeeds` writes the recomputed rows in. The SB 79 and current-law rows in `policy.bin` are not candidates: they follow other yield rules than `envelopeRow` (`sb79Yield` zeroes fill levels below `MIN_UNITS`, `hostableSb79` is `sb79Status = 'applies'`), so reusing them would give an uncapped edit yields a `Need` would not. `policy.bin`'s `currentStories` and `sb79*` columns stay in the data.
+A touched row (a rule above FZP, or paint) is uncapped and may host when the lot is eligible and keeps at least one story; one that lands back on its FZP row (same stories, no cap either way) keeps the FZP row's flag. The view (`parcelsView`) hosts a lot where the table allows it and some allowed option gains a home over the existing ones after the cap, so a lot whose cap is at or below its homes hosts nothing. `policy.bin`'s `currentStories` and `sb79*` columns stay in the data.
 
-`Resolution` is `{ plan, unprotected, protectedRows, unknownLots }`, each table a `ResolvedTable { table, needs }`; `unprotected === plan` when no row is protected. `unknownLots` counts distinct ids named in `rules` and `paint` that are not in the dataset, with one shared set, so an id named in both counts once.
+`Resolution` is `{ plan, unprotected, protectedRows, unknownLots }`, each table a `ResolvedTable { table }`; `unprotected === plan` when no row is protected. `unknownLots` counts distinct ids named in `rules` and `paint` that are not in the dataset, with one shared set, so an id named in both counts once.
 
 ## Protections and the capacity metric
 
-Protection works by category only (`rentControl`, `historic`, `newerThanYears`); `protectedRows` reads the categories from the dataset. A protected lot is **not redevelopable** (partner ruling 2026-10-29): it is reset to its FZP row (stories, cap and yields, discarding any rule or paint) with `hostable` 0, so no new project initiates there and it makes no `Need`. In-flight projects on a protected lot carry on, on the FZP envelope; protection gates only new initiation, through `hostable` (partner Call 21). Since `netCapacity` counts only hostable rows, `withoutProtections - plan` is the protected rows' unprotected capacity and is never negative. `leverCapacity` reports `{ plan, withoutProtections, protectedLots }`: static net capacity (sum over hostable lots of `max(0, full-fill yield - existing homes)`, the same measure as `policy.current.net_capacity`) for the plan with and without protections. Reason: "how much capacity the protections removed" is a capacity, and a third simulated twin would double the band cost.
+Protection works by category only (`rentControl`, `historic`, `newerThanYears`); `protectedRows` reads the categories from the dataset. A protected lot is **not redevelopable** (partner ruling 2026-10-29): it is reset to its FZP row (stories and cap, discarding any rule or paint) with `hostable` 0, so no new project initiates there. In-flight projects on a protected lot carry on, on the FZP envelope; protection gates only new initiation, through `hostable` (partner Call 21). Since `netCapacity` counts only hostable rows, `withoutProtections - plan` is the protected rows' unprotected capacity and is never negative. `leverCapacity` reports `{ plan, withoutProtections, protectedLots }`: static net capacity by rule A (`netCapacity`: sum over hostable lots of `lotCapacity`, the most homes an allowed option holds after the cap less the homes there now, never below 0) for the plan with and without protections. It counts what a lot can hold, not what a developer builds, and never falls when every cap rises. `capacityOf(view)` counts a zoning view the same way, so the room box, `leverCapacity` and the runner's `capacity()` agree. Reason: "how much capacity the protections removed" is a capacity, and a third simulated twin would double the band cost.
 
 ## Timer reach
 
@@ -83,11 +83,11 @@ One measure is not monotone per month: `completedNet` subtracts a project's exis
 `twinInput(base, ctx, compare)` builds the comparison run and never carries the plan's timers.
 
 - `'preFzp'` (default): `baseZoning` on the base calibration.
-- `'fzp'`: the plan of `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base calibration. It has no `Need`s (`twinInput` throws if it had), and its envelopes and runs are the base FZP input's.
+- `'fzp'`: the plan of `DEFAULT_LEVERS` (FZP as written: no rules, paint, protections or timers) on the base calibration. Its envelopes and runs are the base FZP input's.
 
 `bare()` and both twins keep `market` (and `finance`): the market is the world, not the policy, so the plan and its twin run on the same market ([market.md](market.md)). `bare()` strips only `newProjects` and `inFlightScale`. `finance` and `market` pass through every `PolicyOp` and `bare()` unchanged; what the engine does with `finance` is in [finance-engine.md](finance-engine.md).
 
-Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, filled)` takes no horizon: nothing in the engine depends on one.
+Every lever field (`newProjects`, `inFlightScale`) is set explicitly, because `applyPolicies` copies the whole input. Twins are memoised on (base, ctx, compare), so lever documents that differ elsewhere share one twin (and its precompute). `applyLevers(base, ctx, levers, r)` takes no horizon: nothing in the engine depends on one.
 
 **References.** The existing `REFERENCES` (`world/score/targets.ts`) are FZP-versus-pre-FZP estimates on `planEffect.*`, so they are all shown under `compare: 'preFzp'`. Under `compare: 'fzp'` only the `completedNet` ones are kept. RHNA targets come from `targetsOf`, unchanged.
 
@@ -97,7 +97,7 @@ The worker's messages are in [ensemble-runner.md](ensemble-runner.md) (`openTime
 
 Height limits (height-lids plan, Task 8; `src/lib/map/height/`):
 
-- `heights { rev, city }` (`HeightCity`): the revision's city-wide height regions and contour chains. The revision's resolve step starts a staged city build (`createCityBuild`) on its resolved stories (a protected lot at FZP), `limitSources` and `countableMask`; its slices (job kind `'heights'`) run before the yield recompute, so `heights` goes out before the revision's `current`, and a revision waiting on chunks, or held by a failed one, still shows its heights. A revision superseded before its city is done posts none. The chain and label buffers are transferred. The finished city becomes the session's `limits`. The page's `onheights` takes a `heights` at or above the latest levers rev sent.
+- `heights { rev, city }` (`HeightCity`): the revision's city-wide height regions and contour chains. The revision's resolve step starts a staged city build (`createCityBuild`) on its resolved stories (a protected lot at FZP), `limitSources` and `countableMask`; its slices (job kind `'heights'`) run before the revision's precompute, so `heights` goes out before the revision's `current`. A revision superseded before its city is done posts none. The chain and label buffers are transferred. The finished city becomes the session's `limits`. The page's `onheights` takes a `heights` at or above the latest levers rev sent.
 - `heightLids { reqId, bbox }` answers `heightLids { reqId, result }` (`HeightLidsResult`): `{ ok: true, lids, missing }` with `lids.limitsRev` and `lids.sourceIds` from the limits it was built on, or `{ ok: false, reason: 'no-session' | 'superseded' | 'too-large' }`. It waits for limits, then runs a staged lid build (`createLidBuild`) on the loaded records of the cells around the bbox padded by `LID_PAD_M` whose label point is inside; `missing` counts the bbox's cells not loaded. A newer request answers the older `superseded`; a new city restarts a running lid build on its limits, so an answer never mixes revisions. Only a timeline session answers (the router answers `no-session` outside timeline mode); a session end answers a waiting request `no-session`. `levers` responses no longer carry a fog grid.
 - `StoryEdit.source` (`src/lib/sim/levers/types.ts`) is the optional rule id a rule edit came from (absent on paint). `limitSources` (`src/lib/sim/levers/source.ts`) turns it into a per-lot code: `SRC_FZP` 0, `SRC_PAINT` 1, `SRC_RULE0 + k` for `ruleIds[k]`, `SRC_NONE` for no source. The city and lids carry the codes and the `sourceIds` they index, so the page can restyle a rule selection without a new request.
 - `lotAt { reqId, point }` (sim-ux plan 4, Task 3) answers `lotAt { reqId, result }` (`LotAtResult`) at once from the limits the worker holds (it never waits on a pending revision): `{ ok: true, parcelId, owner }`, with `parcelId` null off every loaded lot and `owner` (`LimitOwner`, `ownerOf` in `source.ts`: `fzp`, `paint` or `{ kind: 'rule', ruleId }`) null when the session has no limits yet; a code `ownerOf` cannot name (out of range, `SRC_NONE`, an edit with no `source`) reads `fzp`. `{ ok: false, reason: 'no-session' }` without a session. The same owner rides on `parcelSummary`'s `limits.owner` (a protected lot reads `fzp`). The simulation uses it to select a layer from a map click ([sim-page.md](sim-page.md), "Map selection").
@@ -143,30 +143,19 @@ calibration changes the disapproved columns.
 
 ## Performance
 
-With `scenarios.fzp.gross` a lever revision fetches no chunk and generates no building: each
-Need's yield is a lookup in the pipeline-built gross table (`src/lib/data/gross-table.ts`), so the
-revision costs its resolve, its city build and the lookups. The table stores gross units per
-story count clamped to `0xFFFF` (`clampGross`), and the fallback recompute applies the same clamp,
-so both paths give the same yields.
+A lever revision fetches no chunk and generates no building: each lot's homes at its envelope are
+its options' (`options.bin`), so a revision costs its resolve, its city build, `applyLevers` (the
+view's hosting flags: a `mostHomes` scan per hosting lot) and `precomputeOf` (the choice
+expectations of every hosting lot at each cost step). `npx tsx scripts/bench-levers.ts
+pipeline/out/<v>` times those steps for three citywide brushes (resolve, `resolveEnvelopes`,
+`applyLevers`, `precomputeOf`, and the plan's capacity). It has not been run on a dataset with
+options.bin yet; the earlier gross-table and chunk-recompute measurements are in the git history.
 
-Measured on dataset `2026-11-08-d15bdf2d` (2026-11-08, Apple M5 Pro, 15 cores, 24 GB, Node
-v24.2.0) with `npx tsx scripts/bench-levers.ts pipeline/out/<v>`. "Table ms" answers the same needs
-from `gross.bin` with the table recompute (`createTableRecompute`, one unsliced step): the cost a
-revision pays on the table path. The other columns are the fallback's, as described below.
-
-| Brush                                                | Lots    | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms | Table ms |
-| ---------------------------------------------------- | ------- | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- | -------- |
-| (a) every `RH-1` family lot, rule to 4               | 72,935  | 20         | 14                  | 10             | 4     | 1.1 MB      | 13           | 14                      | 0               | 40             | 0       | 2                          | 0        |
-| (b) `metro` and `rapidBus` within 1,609 m, rule to 8 | 148,798 | 123        | 55                  | 140,204        | 126   | 21.1 MB     | 22,332       | 22,204                  | 128             | 701,020        | 0       | 20                         | 86       |
-| (c) `regionalRail` within 805 m, rule to 8           | 23,258  | 18         | 9                   | 20,187         | 41    | 7.1 MB      | 3,273        | 3,266                   | 7               | 100,935        | 0       | 4                          | 9        |
-
-Brush (b), the largest, costs 86 ms of lookups on the table against 22,332 ms of recompute. As a
-`max(FZP, 4)` rule, brush (a) has 10 needs on this dataset.
-
-Cold loads on the same dataset, a production build (`npm run preview`, the dataset in local R2,
-no `.dev.vars` override), measured by a script (since removed) that drove the worker's old session protocol on an idle machine.
-"Ready" is the first `timeline` the worker posts at or after the last levers revision the page
-sent, in ms from navigation; median of 3 cold loads (each run in brackets):
+Cold loads on dataset `2026-11-08-d15bdf2d`, a production build (`npm run preview`, the dataset in
+local R2, no `.dev.vars` override), measured by a script (since removed) that drove the worker's
+old session protocol on an idle machine. "Ready" is the first `timeline` the worker posts at or
+after the last levers revision the page sent, in ms from navigation; median of 3 cold loads (each
+run in brackets):
 
 | Case              | Median ms | Runs ms             | Bar ms |
 | ----------------- | --------- | ------------------- | ------ |
@@ -176,43 +165,6 @@ sent, in ms from navigation; median of 3 cold loads (each run in brackets):
 
 The A and B bars are 10% over the medians recorded on `2026-11-08-91736640` (1,023 and 779 ms).
 C publishes `scripts/profile-sim-load.policy.json` and opens it.
-
-The rest of this section is about the fallback.
-
-The touched-lot recompute (`src/lib/sim/levers/recompute.ts`) buckets its needs by cell. `step`
-skips a whole bucket while its cell is not loaded (`cellLoaded`), so each need's record is read
-once, not once per need per slice. A need whose cell is loaded but whose record is absent gets a
-zero row (yield 0 at every fill level, not hostable) and is listed in `missing`; the host warns
-once per lot (Call 19) and the revision still reaches `current`.
-
-Measured with `npx tsx scripts/bench-levers.ts <datasetDir>` on dataset `2026-10-29-0fd62c4d`
-(2026-10-30, Apple M5 Pro, 15 cores, 24 GB, Node v24.2.0). The script first runs every brush once
-as a JIT warm-up, then measures each brush with a fresh lot index and an empty gross cache. Since
-the sim runs plan 1 (Task 1) each brush is compiled to one zoning **rule** (`max(FZP, N)`,
-uncapped where it raises); the table below was measured before that, on the schema-1 user edits
-(brush (b) was a capped `set`), and has not been re-measured.
-
-What it measures: for each brush, every needed chunk is loaded first, then the recompute runs as
-one unsliced `step(Infinity)`. So "Recompute ms" is the compute cost of the touched-lot yields
-only. It does not show the speed-up from bucketing (that is in the slice-to-slice rescans, which
-one step never makes), nor the wall time to `current` on the page, which adds scheduler slices and
-the chunk fetches.
-
-"scenarioYield ms (est.)" replays every gross the recompute cached; "Other ms (est.)" is
-"Recompute ms" minus that. Both are estimates: the replay runs without the recompute's
-interleaving, so the split can be off in either direction. "Resolve ms" is `createLotIndex` +
-`resolveBrushRows`.
-
-| Brush                                                           | Lots    | Resolve ms | resolveEnvelopes ms | Needs (unique) | Cells | Chunk bytes | Recompute ms | scenarioYield ms (est.) | Other ms (est.) | Gross computed | Missing | fillNeeds + applyLevers ms |
-| --------------------------------------------------------------- | ------- | ---------- | ------------------- | -------------- | ----- | ----------- | ------------ | ----------------------- | --------------- | -------------- | ------- | -------------------------- |
-| (a) every `RH-1` family lot, raise to 4, limits off             | 72,992  | 17         | 35                  | 49,196         | 80    | 15.7 MB     | 3,362        | 3,317                   | 45              | 161,791        | 0       | 20                         |
-| (b) `metro` and `rapidBus` within 1,609 m, set to 8 (limits on) | 149,736 | 120        | 51                  | 141,082        | 126   | 21.1 MB     | 22,660       | 22,496                  | 164             | 705,410        | 0       | 19                         |
-| (c) `regionalRail` within 805 m, raise to 8 (limits off)        | 23,639  | 18         | 20                  | 21,190         | 44    | 7.3 MB      | 3,369        | 3,352                   | 17              | 105,890        | 0       | 10                         |
-
-Row (b) was re-measured on 2026-11-01 for the transit-only brush (`npx tsx scripts/bench-levers.ts <datasetDir>`, dataset `2026-10-29-14e0eccb`, Node 24.2.0, Apple M5 Pro, rule to 8, limits as the script sets them); rows (a) and (c) are the earlier plan 3 run. Row (b) recomputes 141,082 needs in 22,660 ms, over the 20,000 ms gate set for brush (a) (the gate applies to (a)).
-
-The gate (Call 20) was 20,000 ms for brush (a): it passes at 3,362 ms, so no per-lot yield-table
-fallback is needed. By the estimate, `scenarioYield` is nearly all of the recompute's cost.
 
 ## The builder's calls
 
@@ -228,4 +180,4 @@ Rulings 1 to 3 of the plan, each with its reason.
 
 - **Plan 3, in-flight card chances under `'all'` timers.** Done in plan 3, Task 2. `ProjectCard` carries `lookups` (`'inFlight'` or `'fresh'`, the cohort's table) and `chanceShift`; for an in-flight project in a rescaled stage, `cardStatus` reads the chance at `inFlightMonths(m, s)` months, not `m`. The paired-draw fix keeps this shift: the engine draws the kind from the unscaled table at about m months, and the card reads the rescaled display table, whose month round(m·s) is the unscaled curve at about m, so the shifted card shows the twin's eventual chance within the month grid (see "Timers scale time, never outcomes"). The map's bars read their cohort's lookups since plan 4 Call 15 (`Schedule.inFlight`, `slotCohort`, the 36-row chance texture; [fzp-mode.md](fzp-mode.md)), but are not shifted by `chanceShift`: an in-flight bar in a rescaled stage reads the in-flight table at `m` months.
 - **Plan 4, timeline UI.** Done in plan 4 (Tasks 3 to 5; see [sim-timers.md](sim-timers.md)). Stacked timer edits are clamped to [0.05, 10] (`scaleTable`). The UI must show a clamped stacked edit as clamped, not silently limit it.
-- **Performance.** Done in plan 3, Task 11: measured on real records, with the recompute bucketed by cell. See "Performance".
+- **Performance.** Done in plan 3, Task 11; since building-choice Task 9 no revision recomputes yields (see "Performance").

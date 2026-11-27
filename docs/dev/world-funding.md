@@ -319,7 +319,7 @@ change to world-core's hook, results identical:
 - **The rowless memo** (`apply.ts`, `rowlessBits`). For a free lot with **no lot row** (free since
   the dataset date, attempt 0), `fundableAny(ctx, asOf, kind, lot)` reads only the timeline, the
   month and the lot's static data: the frame of `first = min(monthOfDay(asOf, asOf + 1), month)`
-  and of each change in `(first, month]` (their view's chance and yields, their money's offers and
+  and of each change in `(first, month]` (their view's chance and largest allowed option, their money's offers and
   least `minHomes`). No draw, no seed, nothing of the world: the same answer in every world of the
   timeline. **Keyed on** the `PolicyTimeline` object (a `WeakMap`), then on `(asOf, lot count,
 first, last)`, `last` being the latest change in `(first, month]`: those fix the frames read. A

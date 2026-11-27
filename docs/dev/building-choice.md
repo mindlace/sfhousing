@@ -178,7 +178,8 @@ The calibration step (`pipeline/lib/fzp-cal/calibrate.ts`) writes `calibration.c
 `shipped-step.ts`, the same one the options step's cost-pruned report prices on). It reads
 `scenarios/fzp/options.bin`, `<derivedDir>/panel-options.bin` and the location value's
 provenance; `scenario_panel.option_row` points each panel parcel-year into panel-options.bin.
-`calibration.size` and `size.ts` stay until the run time stops reading them (Task 9).
+`calibration.size` and `size.ts` stay until the pipeline stops writing them (Task 9b); the run time
+no longer reads them.
 
 **Choice spread** (`fitChoiceSpread`, `pipeline/lib/fzp-cal/choice-fit.ts`, tier 2). Maximum
 likelihood of each record's built stories under the market choice among its lot's options
@@ -203,8 +204,8 @@ cohort's mean built height ÷ limit exceeds the private mean by more than 2 SE o
 (`record-targets.json` `cohort`), else 'market'. Without a measurable difference (no cohort
 records) it is 'market' at tier 4.
 
-**Start features** (`choiceFeatures` in `choose.ts`, one function for the panel, the fits and,
-from Task 9, the run time): `potentialRatio` = expected homes ÷ max(existing, 1), `storiesGap` =
+**Start features** (`choiceFeatures` in `choose.ts`, one function for the panel, the fits and the
+run time): `potentialRatio` = expected homes ÷ max(existing, 1), `storiesGap` =
 expected stories − existing stories, and the new `choiceMargin` = the best allowed option's
 residual land value at choiceValue ÷ (meanOptionHomes × meanOptionCost). The panel takes them at
 each row's base stories and base cap (`withChoiceFeatures`, `panel.ts`); the FZP application at
@@ -212,6 +213,51 @@ the envelope, with no cap on Local Program parcels and the base cap elsewhere. W
 option all three come from empty expectations: ratio 0, gap −existing stories, margin 0.
 `choiceMargin` bins start `[-100, 0, 0.001, 0.02, 0.05, 0.1, 0.2, 0.5]` (tier 4): a lot at
 break-even whose best-per-dollar option is allowed has margin exactly 0.
+
+## The run time
+
+The world engine reads `options.bin` (`SimInput.options`, loaded and checked against parcels.bin
+by `loadSimInput`) and `calibration.choice` and `heightTime` (`buildSimInput` refuses a
+calibration without them). A view's cap per lot is `ScenarioParcels.fzpCap` (`NULL_CAP` none):
+until parcels.bin carries it (Task 9b), decode gives none and the loader binds policy.bin's
+`fzpYieldCap`; `baseZoning` sets it to `baseCap`, a lever view to its table's cap.
+
+- **Precompute** (`precomputeOf`, `world/input/build.ts`). The choice context is
+  `choiceCtxOf(options, choice, heightTime)`; its steps are the union of the price and
+  height-time `from` days. Per step (`byStep`, the memo keyed by (lot, step)), every hosting lot
+  keeps `expectations` at its envelope and cap against its existing homes (`expHomes`,
+  `expStories`, `margin`, `gains`, `best`) and its initiation logit on `featuresOf` those
+  expectations. A lot no allowed option gains on has no logit. `logit` is the step in force at
+  the dataset date; later cost-step days join `segments.days`, each segment reading its own
+  step's rates (`stepRates`). Frames carry `choiceStep` (the compiler's step on the month's first
+  day), and start odds read that step's logits (`rates.ts` `logitsAt`); a change of step replans
+  every free lot, as a market change does.
+- **A start** (`world.ts`) builds the market choice row for the step in force on its day against
+  the homes there now (0 once demolished), draws `u = drawOn(stream, P.SIZE, 0)` and starts
+  `pickOption`'s option: units its clipped homes, stories and type its own. The row keeps the
+  option index (`level`, Uint16), `btype` and `optCap`; `top` is the most homes an allowed
+  option holds. No gaining option makes the lot `LOT_DONE`.
+- **Revisions** (`stage.ts`) keep the ratio draw: units = clamp(round(ratio × units), existing +
+  1, most homes of the row's type among the allowed options); the row moves to the same-type
+  option with the fewest homes that holds them.
+- **Durations** (`heightMultiplier`): the band multiplier of the row's latest stories, on the
+  `heightTime` step in force on the stage entry, scales the time still to run of `permitIssued`
+  and `construction` (rows with unknown stories: 1).
+- **Capacity** is rule A (`lotCapacity`, `netCapacity`, `capacityOf` in
+  `levers/resolve.ts`): the most homes an allowed option holds after the cap less the homes there
+  now. The room box, `leverCapacity` and the runner's `capacity()` all count it. A lever view
+  hosts a lot only where an allowed option gains a home after the cap (`parcelsView`).
+- **Levers** need no recompute: the gross table, the chunk recompute (`levers/recompute.ts`) and
+  the compiler's `YieldSource` are gone; a lever envelope reads the same option rows.
+- **Funded sizes and parking** (interim, until Task 10 prices by option): a funded latent's size
+  is the market choice row's pick at the frame's step (`funding/clocks.ts` `sizeIn`), the
+  largest a funded lot can take is `topHomes` (`funding/apply.ts`), and parking reads the
+  prototype of the lot's most likely option (`byStep[choiceStep].best`); all three still price
+  through `prototypeFor`'s binning.
+
+Not yet switched (Task 9b): parcels.bin and policy.bin keep their yield columns and
+`potentialRatio`/`storiesGap` (the world no longer reads them), and gross.bin is still built
+and named in the manifest.
 
 **The margin and the market slope.** Both read cost against value, so they can count one change
 twice once costs move over time (spec, Non-goals). The report (section 16) gives the Pearson
