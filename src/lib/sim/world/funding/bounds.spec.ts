@@ -2,7 +2,6 @@
 // dataset's federal pool (read as ten trillion a year) never running short.
 import { readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prototypeFor } from '$lib/sim/finance';
 import { dayOf } from '$lib/sim/world/dates';
 import { asksOf, inflowArrivals } from '$lib/sim/world/rules/funding';
 import type { LedgerEvent } from '$lib/sim/world/types';
@@ -17,6 +16,7 @@ import { fixtureInput } from '../test/cities.node';
 import type { World } from '../types';
 import { KIND_AFFORDABLE, fundOf, poolRowOf } from './columns';
 import { frameMoney } from './frame-money';
+import { linePrototype } from './line-price';
 import { availableOf } from './pools';
 import { moneyTimeline, runFunded, withBaselineMoney } from './test/fixtures';
 
@@ -61,7 +61,7 @@ function shortOn(
     if (bundle === null) continue;
     const kind = line.kind[i] === KIND_AFFORDABLE ? 'affordable' : 'market';
     const units = line.units[i];
-    const ask = asksOf(fm.index, kind, bundle, prototypeFor(line.stories[i], units).id, units);
+    const ask = asksOf(fm.index, kind, bundle, linePrototype(timeline, line, i), units);
     const dollars = ask.get(q) ?? 0;
     if (dollars > 0) asking++;
     if (dollars > avail) short++;

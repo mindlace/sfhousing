@@ -26,6 +26,8 @@ import {
 } from './parking';
 import { createCarSystem } from './system';
 import { carCity } from './test/city';
+import { optionTableOf } from '$lib/data/option-table';
+import { prototypeFor } from '$lib/sim/finance';
 
 // The mini city with a market model, so frames without money have a slope.
 const input = {
@@ -395,5 +397,38 @@ describe('the car system’s parking', () => {
     expect([...c.table]).toEqual([...e.table]);
     expect([...c.spaces]).toEqual([...e.spaces]);
     expect(c.shiftN).toBe(e.shiftN);
+  });
+});
+
+describe('parking follows the construction type of the most likely option (building-choice Task 10)', () => {
+  it('a lot whose most likely option is Type III at 4 stories parks below grade', () => {
+    // Every lot's one option: Type III, 4 stories, 30 homes more than now. The binning would call
+    // it A (up to 6 stories), with podium parking.
+    const p = input.parcels;
+    const rows = p.id.map((_, i) => ({
+      options: [
+        {
+          type: 'III' as const,
+          form: 'podium' as const,
+          stories: 4,
+          homes: p.existingUnits[i] + 30,
+          plates: 0
+        }
+      ],
+      locationValue: 1
+    }));
+    const three = { ...input, options: optionTableOf(input.options.datasetVersion, rows) };
+    const view = frameOf(three, { id: frameIdOf('parking.spec|III') }).view;
+    let checked = 0;
+    for (let lot = 0; lot < N; lot++) {
+      if (p.envelopeStories[lot] < 4) continue;
+      const proto = topPrototype(view, lot);
+      if (proto === null) continue;
+      expect(proto.id).toBe('B');
+      expect(parkingTypeOf(proto)).toBe('belowGrade');
+      expect(parkingTypeOf(prototypeFor(4, p.existingUnits[lot] + 30))).toBe('podium');
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });

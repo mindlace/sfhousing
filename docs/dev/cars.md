@@ -69,7 +69,11 @@ reaches `cars.onEvent`. Details: [world-core.md](world-core.md), The car hook.
 Each refresh (every `refreshMonths`, 12) compares a zone's predicted spaces per new market home with
 month 0's. A change becomes a frame from the next month: the lot's start odds shift by
 `signedOddsShift(-delta × cost per space)` on the frame's slope. Spaces per new home are predicted
-cars per household of the new-home mix × 1.4; market today 1.154 citywide.
+cars per household of the new-home mix × 1.4; market today 1.154 citywide. The cost per space and
+the cost per home are those of the lot's most likely option (`topPrototype`, the argmax of its
+choice row at the dataset date's cost step, priced by `optionPrototype`), so the parking type
+follows its construction type: Type V surface under 25 homes, else podium; Types III and I below
+grade.
 
 Cost per space (hard cost, 2026 dollars): below grade $120,083, podium $48,756, surface none (zero
 shift). The conversion is `cost_y × I(min(2026, 2023)) / I(y) × CPI(2026) / CPI(y)`. The Controller

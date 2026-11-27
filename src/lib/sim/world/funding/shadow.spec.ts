@@ -212,7 +212,11 @@ function withCostStep() {
   const choice = input.calibration.choice!;
   const step0 = choice.prices[0];
   const anchors = structuredClone(step0.value.anchors);
-  for (const id of ['C', 'D'] as const) anchors[id].costPerHome *= 0.5;
+  // Value scales with cost on C and D, so a funded start there still has a shortfall to cover.
+  for (const id of ['C', 'D'] as const) {
+    anchors[id].costPerHome *= 0.5;
+    anchors[id].valuePerHome *= 0.5;
+  }
   for (const id of ['A', 'B', 'E'] as const) anchors[id].costPerHome *= 1.5;
   const from = monthFirstDay(asOf, COST_MONTH) + 5;
   const two: SimInput = {
@@ -474,6 +478,9 @@ function application(lot: number, applied: Day) {
     key: lineKey(applied, statics.rank[lot], 'affordable'),
     bundle: AFF,
     f,
+    btype: T.type[j],
+    cstep: 0,
+    price: '',
     units: optionHomes(T, j, capOf(lot), input.parcels.existingUnits[lot]),
     stories: T.stories[j],
     level: 1,

@@ -32,6 +32,29 @@ import { checkV21, checkV22, checkV23, checkV24 } from '../project-records/invar
 import { PROJECT_SOURCE_IDS, type ProjectSourceId, type RawRow } from '../project-records/types';
 import type { InvariantResult } from './check';
 
+/** Construction types the developer's choice models; II and IV are not modelled. */
+const MODELLED_TYPES: ReadonlySet<string> = new Set(['I', 'III', 'V']);
+
+/**
+ * How many of `projects` have no modelled construction type on any of their permits (none
+ * recorded, or only II or IV): the recorded projects that keep the finance binning
+ * (`prototypeFor`, PROTOTYPE_BINNING) instead of a price by type (building-choice Task 10).
+ */
+export function untypedProjects(
+  projects: readonly { id: string }[],
+  permits: readonly Pick<PermitOut, 'project_id' | 'construction_type'>[]
+): number {
+  const typed = new Set<string>();
+  for (const p of permits) {
+    if (p.construction_type !== null && MODELLED_TYPES.has(p.construction_type)) {
+      typed.add(p.project_id);
+    }
+  }
+  let n = 0;
+  for (const p of projects) if (!typed.has(p.id)) n++;
+  return n;
+}
+
 /** The T3 file, relative to the dataset's out dir. */
 export const PROJECTS_JSON = 'scenarios/fzp/projects.json';
 /** The T4d file and the permits table, relative to the derived dir. */
@@ -304,6 +327,7 @@ export async function writeProjectRecords(o: {
   o.counts['projects.asOf'] = asOf;
   o.counts['projects.bytes'] = Buffer.byteLength(projects);
   o.counts['permits.rows'] = r.permits.length;
+  o.counts['projects.no_type'] = untypedProjects(r.file.projects, r.permits);
   return {
     warnings: r.warnings,
     histories: r.histories,

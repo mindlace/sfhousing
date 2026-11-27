@@ -91,7 +91,12 @@ export const PROTOTYPE_BINNING: Sourced<null> = deepFreeze({
   }
 });
 
-/** The prototype a project of `stories` and `homes` is priced as. Fractions compare as given. */
+/**
+ * The prototype a project of `stories` and `homes` is priced as by the binning
+ * (PROTOTYPE_BINNING, tier 4). Kept for projects with no construction type: recorded rows, whose
+ * records may give none. A simulated start has an option and is priced by its type and stories
+ * (`optionPrototype`, src/lib/sim/choice/pricing.ts). Fractions compare as given.
+ */
 export function prototypeFor(stories: number, homes: number): Prototype {
   if (!Number.isFinite(stories) || !Number.isFinite(homes)) {
     throw new RangeError(`prototypeFor needs finite stories and homes; got ${stories}, ${homes}`);

@@ -6,15 +6,13 @@ import type { Day } from '$lib/timelapse/time';
 import type { Inflow, PoolKind, ProjectKind, Provenance } from '$lib/timelapse/types';
 import {
   CERTAIN_TOLERANCE,
-  PROTOTYPES,
   fundBundle,
   isCertain,
   oddsShift,
   projectDollars,
   uncoveredPerHome,
   type BundleFunding,
-  type Prototype,
-  type PrototypeId
+  type Prototype
 } from '../../finance';
 import { dayOf } from '../dates';
 import type { SimInput } from '../input/types';
@@ -101,13 +99,24 @@ export interface FinanceIndex {
   /** by pool: the `finance.off` spans, sorted by `from`; a null `to` is Infinity */
   offSpans: [Day, Day][][];
   /**
-   * `fundBundle` of the programmes `set` (ascending indices) for a project of `kind`, memoised by
-   * kind, prototype (market only) and set. The result is shared: never mutate it.
+   * `fundBundle` of the programmes `set` (ascending indices) for a project of `kind` priced as
+   * `proto`, memoised by kind, prototype (market only) and set. A prototype is one priced object
+   * per (PriceKey, price step) (`optionPrototype`), so the memo keys on both. The result is
+   * shared: never mutate it.
    */
-  price(kind: ProjectKind, set: readonly number[], protoId: PrototypeId): BundleFunding;
+  price(kind: ProjectKind, set: readonly number[], proto: Prototype): BundleFunding;
 }
 
 const indexes = new WeakMap<Finance, FinanceIndex>();
+
+/** Each priced prototype's memo key: its id and a number unique to the object. */
+const protoKeys = new WeakMap<Prototype, string>();
+let protoCount = 0;
+function protoKeyOf(p: Prototype): string {
+  let key = protoKeys.get(p);
+  if (key === undefined) protoKeys.set(p, (key = `${p.id}#${protoCount++}`));
+  return key;
+}
 
 export function financeIndexOf(finance: Finance): FinanceIndex {
   const hit = indexes.get(finance);
@@ -129,17 +138,16 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
 
   const memo = new Map<string, BundleFunding>();
   const byArray = new WeakMap<readonly number[], Map<string, BundleFunding>>();
-  const protos = new Map<string, (typeof PROTOTYPES)[number]>(PROTOTYPES.map((p) => [p.id, p]));
   const index: FinanceIndex = {
     finance,
     poolOf,
     progPool,
     progPoolKind,
     offSpans,
-    price(kind, set, protoId) {
+    price(kind, set, proto) {
       // first by the array itself (the engine passes the same bundle arrays again and again),
       // then by its contents
-      const sub = kind === 'market' ? protoId : '~affordable';
+      const sub = kind === 'market' ? protoKeyOf(proto) : '~affordable';
       let byArr = byArray.get(set);
       if (byArr === undefined) {
         byArr = new Map();
@@ -147,7 +155,7 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
       }
       const hit = byArr.get(sub);
       if (hit !== undefined) return hit;
-      const key = `${kind}|${kind === 'market' ? protoId : ''}|${set.join(',')}`;
+      const key = `${kind}|${kind === 'market' ? sub : ''}|${set.join(',')}`;
       let r = memo.get(key);
       if (!r) {
         r = fundBundle(
@@ -156,7 +164,7 @@ export function financeIndexOf(finance: Finance): FinanceIndex {
             poolKind: progPoolKind[g]
           })),
           kind,
-          protos.get(protoId)!,
+          proto,
           finance.terms
         );
         memo.set(key, r);
@@ -196,10 +204,10 @@ export function asksOf(
   f: FinanceIndex,
   kind: ProjectKind,
   set: readonly number[],
-  protoId: PrototypeId,
+  proto: Prototype,
   units: number
 ): Map<number, number> {
-  const priced = f.price(kind, set, protoId);
+  const priced = f.price(kind, set, proto);
   const asks = new Map<number, number>();
   set.forEach((g, i) => {
     const q = f.progPool[g];
@@ -221,7 +229,7 @@ export function asksOf(
 export function leaveOut(
   bundle: readonly number[],
   kind: ProjectKind,
-  protoId: PrototypeId,
+  proto: Prototype,
   units: number,
   avail: (pool: number) => number,
   f: FinanceIndex
@@ -230,7 +238,7 @@ export function leaveOut(
   let set = bundle as number[];
   let rounds = 0;
   while (set.length > 0) {
-    const asks = asksOf(f, kind, set, protoId, units);
+    const asks = asksOf(f, kind, set, proto, units);
     let short: Set<number> | null = null;
     for (const [q, ask] of asks) {
       if (avail(q) < ask) (short ??= new Set()).add(q);
@@ -251,16 +259,16 @@ export function leaveOut(
 export function awardSet(
   bundle: readonly number[],
   kind: ProjectKind,
-  protoId: PrototypeId,
+  proto: Prototype,
   units: number,
   avail: (pool: number) => number,
   f: FinanceIndex
 ): Award | null {
-  const { set } = leaveOut(bundle, kind, protoId, units, avail, f);
+  const { set } = leaveOut(bundle, kind, proto, units, avail, f);
   if (set.length === 0) return null;
-  const priced = f.price(kind, set, protoId);
+  const priced = f.price(kind, set, proto);
   if (!(coverageLevel(priced.coverage) > 0)) return null;
-  return { set, priced, asks: asksOf(f, kind, set, protoId, units) };
+  return { set, priced, asks: asksOf(f, kind, set, proto, units) };
 }
 
 /** `awardPasses` scratch, by pool: the summed ask, and a short pool's mark (0 between calls). */
@@ -294,14 +302,14 @@ function subsetOf(bundle: readonly number[], mask: number): number[] {
 export function awardPasses(
   bundle: readonly number[],
   kind: ProjectKind,
-  protoId: PrototypeId,
+  proto: Prototype,
   units: number,
   avail: (pool: number) => number,
   f: FinanceIndex
 ): boolean {
   const n = bundle.length;
   // the kept positions are a 31-bit mask
-  if (n > 30) return awardSet(bundle, kind, protoId, units, avail, f) !== null;
+  if (n > 30) return awardSet(bundle, kind, proto, units, avail, f) !== null;
   if (n === 0) return false;
   const P = f.finance.pools.length;
   if (passAsk.length < P) {
@@ -311,7 +319,7 @@ export function awardPasses(
   let mask = (1 << n) - 1;
   let set = bundle;
   for (;;) {
-    const priced = f.price(kind, set, protoId);
+    const priced = f.price(kind, set, proto);
     // sum each pool's positive asks, in set order
     for (let j = 0; j < set.length; j++) {
       const q = f.progPool[set[j]];
@@ -344,7 +352,7 @@ export function awardPasses(
     set = subsetOf(bundle, mask);
   }
   // the kept set, whole or partial, is awarded when its level is above 0
-  return coverageLevel(f.price(kind, set, protoId).coverage) > 0;
+  return coverageLevel(f.price(kind, set, proto).coverage) > 0;
 }
 
 /**

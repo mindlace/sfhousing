@@ -10,7 +10,7 @@ import { logitsAt, lotEntity } from '../rates';
 import { monthOfDay } from '../months';
 import type { PolicyTimeline, ZoningView } from '../policy/frame';
 import { NO_DAY, type StepCtx, type World } from '../types';
-import { kindClock, sizeIn, type KindClock, type Spell } from './clocks';
+import { kindClock, ruleOf, sizeIn, type KindClock, type Spell } from './clocks';
 import { frameMoney, sameMoney, type FrameMoney } from './frame-money';
 import {
   KIND_AFFORDABLE,
@@ -36,6 +36,10 @@ export interface Application {
   /** Programme ids joined with ','. */
   bundle: string;
   f: number;
+  /** The option's type code, its cost step and the price tag (`FundLine`'s columns). */
+  btype: number;
+  cstep: number;
+  price: string;
   units: number;
   stories: number;
   level: number;
@@ -370,6 +374,9 @@ export function joinLine(line: FundLine, month: number, apps: Application[]): vo
     line.key[i] = a.key;
     line.bundle[i] = a.bundle;
     line.f[i] = a.f;
+    line.btype[i] = a.btype;
+    line.cstep[i] = a.cstep;
+    line.price[i] = a.price;
     line.units[i] = a.units;
     line.stories[i] = a.stories;
     line.level[i] = a.level;
@@ -389,6 +396,9 @@ function appOf(ctx: StepCtx, lot: number, c: KindClock): Application {
     key: lineKey(c.keyDay, ctx.statics.rank[lot], c.kind),
     bundle: c.bundle.map((g) => ids[g].id).join(','),
     f: c.f,
+    btype: c.btype,
+    cstep: c.cstep,
+    price: c.price,
     units: c.units,
     stories: c.stories,
     level: c.level,
@@ -452,6 +462,9 @@ interface Remade {
   /** Programme ids joined with ','. */
   bundle: string;
   f: number;
+  btype: number;
+  cstep: number;
+  price: string;
   units: number;
   stories: number;
   level: number;
@@ -473,16 +486,19 @@ function remade(
 ): Remade | null {
   const view = ctx.frame.view;
   const uS = drawOn(spell.stream, P.SIZE, 0);
-  const size = sizeIn(view, ctx.frame.choiceStep, lot, spell.existing, uS);
+  const size = sizeIn(view, ctx.frame.choiceStep, lot, spell.existing, uS, ruleOf(view, kind));
   if (size === null || logitsAt(view, ctx.frame.choiceStep)[lot] === -Infinity) return null;
   const bundle = fm.bundleOf(kind, size.units);
   if (bundle.length === 0) return null;
-  const now = coverageLevel(fm.index.price(kind, bundle, size.protoId).coverage);
+  const now = coverageLevel(fm.index.price(kind, bundle, size.proto).coverage);
   if (below(now, level)) return null;
   const programmes = fm.fin.programmes;
   return {
     bundle: bundle.map((g) => programmes[g].id).join(','),
     f: size.f,
+    btype: size.btype,
+    cstep: size.cstep,
+    price: kind === 'market' ? size.price : '',
     units: size.units,
     stories: size.stories,
     level: now
@@ -508,6 +524,9 @@ export function remakeRow(ctx: StepCtx, fm: FrameMoney, line: FundLine, i: numbe
   }
   line.bundle[i] = re.bundle;
   line.f[i] = re.f;
+  line.btype[i] = re.btype;
+  line.cstep[i] = re.cstep;
+  line.price[i] = re.price;
   line.units[i] = re.units;
   line.stories[i] = re.stories;
   line.level[i] = re.level;

@@ -34,7 +34,8 @@ export const NO_STOP = 255;
 /** `btype` of a row with no option (recorded rows, masters and phases). */
 export const NO_BTYPE = 255;
 
-export type Column = Int32Array | Uint32Array | Uint8Array | Float64Array | number[] | string[];
+export type Column =
+  Int32Array | Uint32Array | Uint16Array | Uint8Array | Float64Array | number[] | string[];
 
 /** Columns the funding side fills (`world-funding` narrows these); empty until then. */
 export interface LineColumns {

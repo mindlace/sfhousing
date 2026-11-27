@@ -252,11 +252,14 @@ table's cap.
   hosts a lot only where an allowed option gains a home after the cap (`parcelsView`).
 - **Levers** need no recompute: the gross table, the chunk recompute (`levers/recompute.ts`) and
   the compiler's `YieldSource` are gone; a lever envelope reads the same option rows.
-- **Funded sizes and parking** (interim, until Task 10 prices by option): a funded latent's size
-  is the market choice row's pick at the frame's step (`funding/clocks.ts` `sizeIn`), the
-  largest a funded lot can take is `topHomes` (`funding/apply.ts`), and parking reads the
-  prototype of the lot's most likely option (`byStep[choiceStep].best`); all three still price
-  through `prototypeFor`'s binning.
+- **Funded sizes, prices and parking**: a funded market latent's size is the market choice row's
+  pick at the frame's step (`funding/clocks.ts` `sizeIn`); an affordable one's follows
+  `affordableRule` ('most-homes': `mostHomes`). The largest a funded lot can take is `topHomes`
+  (`funding/apply.ts`). A line row is priced by its option on the price step of the cost step
+  its size was drawn at (`funding/line-price.ts`, [world-funding.md](world-funding.md)), and
+  parking reads the priced prototype of the lot's most likely option (`byStep[choiceStep].best`,
+  [cars.md](cars.md)). Only recorded projects with no type keep `prototypeFor`'s binning; the
+  build counts them as `projects.no_type`.
 
 **The formats** (Task 9b). parcels.bin (`sfh-scenario/2`) carries `fzpCap` and no fill-level
 yields, `potentialRatio` or `storiesGap`; policy.bin (`sfh-policy/2`) no yields and no FZP cap;

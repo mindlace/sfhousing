@@ -36,8 +36,8 @@ here. The cases, in this order:
 1. **A funded affordable project** (`sc.kind === 'affordable'`): the homes go by the `tiers` of the
    programmes that pay it (`sc.funding.programmes`), each weighted by the grant-equivalent it pays.
    One paying programme has weight 1 and `fundBundle` is not called. Several are priced by
-   `fundBundle` at the schedule's start size (`revisions[0]`), the size the money was awarded at,
-   and the weight of programme `k` is its `grantEquivalent` over the bundle's. When every weight
+   `fundBundle` as an affordable project, whose price reads `AFFORDABLE` and no prototype (the
+   funding line priced the market side by the option; `finance-engine.md`), and the weight of programme `k` is its `grantEquivalent` over the bundle's. When every weight
    is 0 (every paying item a loan or guarantee that saves the project nothing), the programmes
    count equally: this is a tier 4 convention, named so in `TIER_SOURCES`. The shares are
    memoised in `ctx.weights` by the sorted ids. No `funding`, or no paying programmes, makes every

@@ -160,7 +160,7 @@ describe('isOff and isOffered', () => {
 
 describe('the award rule', () => {
   const U = uncoveredPerHome('affordable', PROTOTYPES[0]);
-  const proto = PROTOTYPES[0].id;
+  const proto = PROTOTYPES[0];
   const u = 10;
   const ample = (): Finance => tinyStack({ asOf: A });
   const bundleOf = (f: FinanceIndex) => f.finance.programmes.map((_, i) => i);
@@ -362,7 +362,7 @@ describe('the award rule', () => {
   it('cappedShift: coverage above 1 shifts as coverage 1', () => {
     const f = financeIndexOf(loanStack());
     const P = PROTOTYPES[0];
-    const priced = f.price('affordable', bundleOf(f), P.id);
+    const priced = f.price('affordable', bundleOf(f), P);
     expect(priced.coverage).toBeGreaterThan(1);
     for (const slope of [1, 3]) {
       const full = oddsShift(uncoveredPerHome('affordable', P), 'affordable', P, slope);
@@ -389,7 +389,7 @@ describe('the award rule', () => {
         ['market', [3]]
       ] as const;
       for (const [kind, set] of cases) {
-        const priced = f.price(kind, set, P.id);
+        const priced = f.price(kind, set, P);
         expect(priced.coverage).toBeGreaterThan(0);
         expect(priced.coverage).toBeLessThan(1);
         expect(cappedShift(priced, kind, P, 3)).toBe(oddsShift(priced.grantEquivalent, kind, P, 3));
@@ -400,8 +400,8 @@ describe('the award rule', () => {
   });
   it('the price memo returns one result per set, and the affordable kind ignores the prototype', () => {
     const f = financeIndexOf(ample());
-    expect(f.price('affordable', [0, 1], PROTOTYPES[0].id)).toBe(
-      f.price('affordable', [0, 1], PROTOTYPES[4].id)
+    expect(f.price('affordable', [0, 1], PROTOTYPES[0])).toBe(
+      f.price('affordable', [0, 1], PROTOTYPES[4])
     );
     expect(financeIndexOf(f.finance)).toBe(f);
   });
@@ -446,7 +446,7 @@ const propFinance = (costShare: number, rate: number, reserve: number): Finance 
 });
 
 describe('the award rule is monotone (property)', () => {
-  const proto = PROTOTYPES[0].id;
+  const proto = PROTOTYPES[0];
   it('lower money or a larger size never turns a failure into an award', () => {
     const rng = mulberry32(0x7a11);
     let nulls = 0;
@@ -495,7 +495,7 @@ describe('the award rule is monotone (property)', () => {
 });
 
 describe('adding a programme never turns an award into a wait (property)', () => {
-  const proto = PROTOTYPES[0].id;
+  const proto = PROTOTYPES[0];
   const KINDS: PoolKind[] = [
     'goBond',
     'cop',
@@ -583,7 +583,7 @@ describe('awardPasses', () => {
     let leftOut = 0;
     for (let n = 0; n < 2000; n++) {
       const kind = rng() < 0.5 ? 'market' : 'affordable';
-      const protoId = PROTOTYPES[Math.floor(rng() * PROTOTYPES.length)].id;
+      const protoId = PROTOTYPES[Math.floor(rng() * PROTOTYPES.length)];
       let bundle: number[];
       if (kept[kind].length > 0 && rng() < 0.4) {
         bundle = kept[kind][Math.floor(rng() * kept[kind].length)];

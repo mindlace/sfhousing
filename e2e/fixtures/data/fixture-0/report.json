@@ -340,6 +340,7 @@
     "projects.lapseFlaggedUnits": 10,
     "projects.lapseNoRule": 0,
     "projects.netDropped": 0,
+    "projects.no_type": 14,
     "projects.parcels.mapped": 15,
     "projects.parcels.unmapped": 0,
     "projects.pathwayDefaulted": 2,

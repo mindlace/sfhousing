@@ -28,8 +28,8 @@ import {
   DISPLACEMENT_RANGE,
   INCLUSIONARY,
   fundBundle,
+  PROTOTYPES,
   inclusionaryUnits,
-  prototypeFor,
   type Borrowing,
   type BundleItem
 } from '../../finance';
@@ -181,11 +181,12 @@ function affordableShares(sc: Schedule, ids: readonly string[], ctx: TierCtx): T
     w = [1];
   } else {
     if (!ctx.terms) throw new Error('tiersOf: a funded schedule on a context without terms');
-    const r0 = sc.revisions[0];
+    // Affordable pricing reads AFFORDABLE's figures, never the prototype, so any one serves: a
+    // funded row is priced by its option on the funding line, not here.
     const b = fundBundle(
       progs.map((p) => p.item),
       'affordable',
-      prototypeFor(r0.stories ?? 0, r0.units),
+      PROTOTYPES[0],
       ctx.terms
     );
     // all weights zero: the paying programmes count equally (tier 4 convention, spec 4.1 step 4)

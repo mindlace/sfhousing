@@ -2,15 +2,15 @@
 // policy frames instead of finance segment days; level 1 and coverage above 1 differ (see the
 // award-rule spec). Nothing is stored: a clock is recomputed from the spell.
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import { allowedCount, capFrom, choiceRow, optionHomes, pickOption } from '$lib/sim/choice/choose';
 import {
-  PROTOTYPES,
-  costPerHome,
-  prototypeFor,
-  uncoveredPerHome,
-  type Prototype,
-  type PrototypeId
-} from '$lib/sim/finance';
+  allowedCount,
+  capFrom,
+  choiceRow,
+  optionHomes,
+  pickOption,
+  type ChoiceRule
+} from '$lib/sim/choice/choose';
+import { costPerHome, uncoveredPerHome } from '$lib/sim/finance';
 import { NEVER_KEY_DAY, cappedShift, coverageLevel } from '$lib/sim/world/rules/funding';
 import { lastInitiationMonth, piecewiseMonth } from '$lib/sim/world/input/build';
 import { P, drawOn } from '$lib/sim/world/rules/rng';
@@ -21,10 +21,11 @@ import { monthFirstDay, monthOfDay } from '../months';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
 import { logitsAt, rateOf } from '../rates';
 import type { Statics } from '../statics';
+import { NO_BTYPE } from '../types';
 import { frameMoney } from './frame-money';
+import { priceTag, sizedPrototype, type PricedPrototype } from './line-price';
 
 const EMPTY: number[] = [];
-const PROTOTYPE = new Map<PrototypeId, Prototype>(PROTOTYPES.map((p) => [p.id, p]));
 const logistic = (x: number) => 1 / (1 + exp(-x));
 /** Above this log-odds `logSurvival` switches to the stable form (the boundary of the stable form). */
 export const STABLE_FROM = 15;
@@ -55,13 +56,17 @@ export interface KindClock {
   /** Model month of the frame in force at lot-month T's first day (its view gave the size); 0 when T = 0. */
   viewMonth: number;
   /**
-   * Size of lot-month T: `f` the option's index in the lot's row (f = -1, units 0, stories 0,
-   * protoId 'E' when T = 0 or there is none).
+   * Size of lot-month T: `f` the option's index in the lot's row, its type code, the cost step it
+   * was drawn at, its prototype and the line's price tag (f = -1, units 0, stories 0, btype
+   * `NO_BTYPE`, cstep 0, proto null and price '' when T = 0 or there is none).
    */
   f: number;
   units: number;
   stories: number;
-  protoId: PrototypeId;
+  btype: number;
+  cstep: number;
+  proto: PricedPrototype | null;
+  price: string;
   /** Lot-month T's bundle: ascending programme indices of that frame, a shared array (never mutate); [] when T = 0. */
   bundle: number[];
   /** Coverage level of `bundle` (0 when empty). */
@@ -80,15 +85,22 @@ export interface Spell {
   existing: number;
 }
 
-/** A lot's size as one of its options. */
+/** A lot's size as one of its options, priced at the cost step it was drawn at. */
 interface Size {
   f: number;
   units: number;
   stories: number;
-  protoId: PrototypeId;
+  btype: number;
+  cstep: number;
+  proto: PricedPrototype;
+  /** The line's price tag (`priceTag`). */
+  price: string;
 }
 
-/** Sizes per (parcels view, global option) against the view's own existing homes, shared. */
+/**
+ * Sizes per (parcels view, cost step, global option) against the view's own existing homes,
+ * shared.
+ */
 const sizeMemo = new WeakMap<ScenarioParcels, Map<number, Size>>();
 
 /** The choice row of one size draw (one at a time). */
@@ -97,36 +109,42 @@ let cum = new Float32Array(64);
 /**
  * The size the attempt's SIZE draw gives in `view` against `existing` at cost step `step` (the
  * frame's `choiceStep`; absent, the step in force at the dataset date), as `startRow` draws it:
- * the option the market choice row picks among those the view's envelope and cap allow. Null when
- * no option gains a home. Priced by the binning (`prototypeFor`) of its stories and homes.
+ * the option the choice row of `rule` picks among those the view's envelope and cap allow
+ * ('market' the draw, 'most-homes' the first option with the most homes, `uS` unread). Null when
+ * no option gains a home. Priced by its option's type, stories and homes on that cost step's price
+ * step (`optionPrototype`).
  */
 export function sizeIn(
   view: ZoningView,
   step: number | undefined,
   lot: number,
   existing: number,
-  uS: number
+  uS: number,
+  rule: ChoiceRule = 'market'
 ): Size | null {
   const parcels = view.parcels;
   const choice = view.pre.choice;
   const t = choice.t;
   const allowed = allowedCount(t, lot, parcels.envelopeStories[lot]);
   const cap = capFrom(parcels.fzpCap[lot]);
+  const cstep = step ?? view.pre.choiceStep;
   if (cum.length < allowed) cum = new Float32Array(allowed);
-  if (!choiceRow(choice, step ?? view.pre.choiceStep, lot, allowed, cap, existing, 'market', cum))
-    return null;
+  if (!choiceRow(choice, cstep, lot, allowed, cap, existing, rule, cum)) return null;
   const f = pickOption(cum, allowed, uS);
   if (f < 0) return null;
   const j = t.offset[lot] + f;
+  const key = cstep * t.offset[t.count] + j;
   const own = existing === parcels.existingUnits[lot];
   let memo = own ? sizeMemo.get(parcels) : undefined;
   if (own && memo === undefined) sizeMemo.set(parcels, (memo = new Map()));
-  let sz = memo?.get(j);
+  let sz = memo?.get(key);
   if (sz === undefined) {
     const units = optionHomes(t, j, cap, existing);
     const stories = t.stories[j];
-    sz = { f, units, stories, protoId: prototypeFor(stories, units).id };
-    memo?.set(j, sz);
+    const btype = t.type[j];
+    const proto = sizedPrototype(choice, btype, stories, units, cstep);
+    sz = { f, units, stories, btype, cstep, proto, price: priceTag(choice, proto, cstep) };
+    memo?.set(key, sz);
   }
   return sz;
 }
@@ -168,6 +186,16 @@ interface Seg {
   size: Size | null;
 }
 
+/**
+ * The choice rule a kind's latent sizes by: market the developer's draw; affordable the choice
+ * model's `affordableRule` (100% affordable projects maximise homes when it is 'most-homes').
+ */
+export function ruleOf(view: ZoningView, kind: ProjectKind): ChoiceRule {
+  return kind === 'affordable' && view.pre.choice.m.affordableRule === 'most-homes'
+    ? 'most-homes'
+    : 'market';
+}
+
 function segOn(
   timeline: PolicyTimeline,
   g: PolicyFrame,
@@ -180,13 +208,13 @@ function segOn(
   const lot = spell.lot;
   const ord = market ? rateOf(g.view, g.market, g.parking, lot, g.choiceStep) : 0;
   const z = logitsAt(g.view, g.choiceStep)[lot];
-  const size = sizeIn(g.view, g.choiceStep, lot, spell.existing, uS);
+  const size = sizeIn(g.view, g.choiceStep, lot, spell.existing, uS, ruleOf(g.view, kind));
   // A frame with no money is a frame where nothing is offered and nothing shifts.
   if (size === null || z === -Infinity || g.finance === null)
     return { ord, rate: ord, ref: ord, bundle: EMPTY, level: 0, size };
   const fm = frameMoney(timeline, g);
   const slope = g.finance.slope;
-  const p = PROTOTYPE.get(size.protoId)!;
+  const p = size.proto;
   // The parking shift moves market odds only (ruling R2), as in `startRates`.
   const x0 = market
     ? g.parking
@@ -199,7 +227,7 @@ function segOn(
   const ref = market ? ord : logSurvival(x0);
   const bundle = fm.bundleOf(kind, size.units);
   if (bundle.length === 0) return { ord, rate: ref, ref, bundle, level: 0, size };
-  const priced = fm.index.price(kind, bundle, size.protoId);
+  const priced = fm.index.price(kind, bundle, p);
   const level = coverageLevel(priced.coverage);
   const x = logSurvival(x0 + cappedShift(priced, kind, p, slope));
   return { ord, rate: market ? Math.min(ord, x) : x, ref, bundle, level, size };
@@ -299,7 +327,10 @@ export function kindClock(
       f: -1,
       units: 0,
       stories: 0,
-      protoId: 'E',
+      btype: NO_BTYPE,
+      cstep: 0,
+      proto: null,
+      price: '',
       bundle: EMPTY,
       level: 0
     };
@@ -317,7 +348,10 @@ export function kindClock(
     f: s.size ? s.size.f : -1,
     units: s.size ? s.size.units : 0,
     stories: s.size ? s.size.stories : 0,
-    protoId: s.size ? s.size.protoId : 'E',
+    btype: s.size ? s.size.btype : NO_BTYPE,
+    cstep: s.size ? s.size.cstep : 0,
+    proto: s.size ? s.size.proto : null,
+    price: s.size && market ? s.size.price : '',
     bundle: s.bundle,
     level: s.level
   };

@@ -48,13 +48,15 @@ const CHANGE = 120;
  * values were re-recorded on 2026-11-26 for the developer's choice (building-choice Task 9): a
  * start's size is an option of the bench city's synthetic rows and its start odds read the choice
  * features, so fewer lots start (counts about a third lower). The live values need a dataset with
- * options.bin and are re-recorded with it.
+ * options.bin and are re-recorded with it. The synthCity values were re-recorded on 2026-11-27 for
+ * pricing by option (building-choice Task 10): a funded application is priced by its option's type
+ * and stories instead of the binning, so some awards and their days move (counts within 0.3%).
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': '0e20dc9e/42056',
-  'synthCity baseline 2': 'e807d062/42412',
-  'synthCity bench 1': '9430d796/43783',
-  'synthCity bench 2': 'f349d9b4/44298',
+  'synthCity baseline 1': 'a718f663/42134',
+  'synthCity baseline 2': 'fed62ec3/42512',
+  'synthCity bench 1': 'd9de43c9/43896',
+  'synthCity bench 2': '827c2441/44428',
   'live 1': '6fc8002e/6097',
   'live 2': '641fdd82/6626',
   'live 3': 'b6d521ff/5982'

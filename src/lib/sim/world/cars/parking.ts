@@ -7,6 +7,8 @@
 // and the funded market clock add to the market odds. Affordable odds are left alone.
 import type { CarData } from '$lib/data/cars-codec';
 import * as chooseModule from '$lib/sim/choice/choose';
+import * as typesModule from '$lib/sim/choice/types';
+import * as pricingModule from '$lib/sim/choice/pricing';
 import type { CarModel } from '$lib/sim/cars';
 import * as financeModule from '$lib/sim/finance';
 import type { Prototype } from '$lib/sim/finance';
@@ -17,10 +19,10 @@ import type { CarColumns } from './columns';
 
 // Bound once (docs/dev/world-core.md, Cost).
 const { capFrom, optionHomes } = chooseModule;
-const { PROTOTYPES, prototypeFor, signedOddsShift } = financeModule;
+const { signedOddsShift } = financeModule;
+const { BUILDING_TYPES, stepAt } = typesModule;
+const { optionPrototype } = pricingModule;
 const { frameIdOf, serialOf } = internModule;
-
-const NP = PROTOTYPES.length;
 
 /** Spaces per home: a zone's shift changes only by whole steps. */
 export const SPACES_STEP = 0.01;
@@ -29,8 +31,9 @@ export type ParkingType = 'surface' | 'podium' | 'belowGrade';
 export type ParkingCosts = NonNullable<CarModel['parking']['costPerSpace']>;
 
 /**
- * The parking a prototype builds: E (under 25 homes) surface, A (up to 6 stories) podium, B to D
- * below grade. The Task 1 source prices types, not prototypes, so the map is this one.
+ * The parking a prototype builds: E surface, A podium, B, C, D and Type I between them below grade.
+ * Priced by option, that is Type V under 25 homes surface, Type V podium, Types III and I below
+ * grade. The Task 1 source prices types, not prototypes, so the map is this one.
  */
 export function parkingTypeOf(p: Prototype): ParkingType {
   if (p.id === 'E') return 'surface';
@@ -39,35 +42,54 @@ export function parkingTypeOf(p: Prototype): ParkingType {
 }
 
 /**
- * Per view, each lot's prototype index of its most likely option (the argmax of the choice row at
- * the cost step in force at the dataset date, `byStep[choiceStep].best`), by the binning of its
- * stories and homes; -1 where no option gains.
+ * Per view, each lot's most likely option (the argmax of the choice row at the cost step in force
+ * at the dataset date, `byStep[choiceStep].best`) priced by its type, stories and homes on that
+ * step's prices (`optionPrototype`); null where no option gains.
  */
-const protoMemo = new WeakMap<ZoningView, Int8Array>();
+interface ViewProtos {
+  /** The distinct prototypes of the view's lots, in first-seen order. */
+  list: Prototype[];
+  /** Each lot's index into `list`; -1 where no option gains. */
+  index: Int16Array;
+}
+const protoMemo = new WeakMap<ZoningView, ViewProtos>();
 
-function protoIndexOf(view: ZoningView): Int8Array {
+function protosOf(view: ZoningView): ViewProtos {
   let out = protoMemo.get(view);
   if (out) return out;
   const parcels = view.parcels;
-  const t = view.pre.choice.t;
+  const choice = view.pre.choice;
+  const t = choice.t;
+  const step = stepAt(choice.m.prices, choice.from[view.pre.choiceStep]).value;
   const best = view.pre.byStep[view.pre.choiceStep].best;
   const n = parcels.count;
-  out = new Int8Array(n).fill(-1);
+  const list: Prototype[] = [];
+  const at = new Map<Prototype, number>();
+  const index = new Int16Array(n).fill(-1);
+  const o = { type: BUILDING_TYPES[0] as (typeof BUILDING_TYPES)[number], stories: 0, homes: 0 };
   for (let lot = 0; lot < n; lot++) {
     if (best[lot] < 0) continue;
     const j = t.offset[lot] + best[lot];
-    const homes = optionHomes(t, j, capFrom(parcels.fzpCap[lot]), parcels.existingUnits[lot]);
-    const id = prototypeFor(t.stories[j], homes).id;
-    out[lot] = PROTOTYPES.findIndex((p) => p.id === id);
+    o.type = BUILDING_TYPES[t.type[j]];
+    o.stories = t.stories[j];
+    o.homes = optionHomes(t, j, capFrom(parcels.fzpCap[lot]), parcels.existingUnits[lot]);
+    const p = optionPrototype(o, step);
+    let i = at.get(p);
+    if (i === undefined) {
+      at.set(p, (i = list.length));
+      list.push(p);
+    }
+    index[lot] = i;
   }
+  out = { list, index };
   protoMemo.set(view, out);
   return out;
 }
 
 /** The prototype of `lot`'s most likely option in `view`; null when no option gains. */
 export function topPrototype(view: ZoningView, lot: number): Prototype | null {
-  const i = protoIndexOf(view)[lot];
-  return i < 0 ? null : PROTOTYPES[i];
+  const { list, index } = protosOf(view);
+  return index[lot] < 0 ? null : list[index[lot]];
 }
 
 /**
@@ -191,7 +213,8 @@ interface State {
   /** Derived frames by base frame. */
   frames: Map<PolicyFrame, PolicyFrame>;
   /** zones x prototypes: the shift of each zone's delta on each prototype, by slope. */
-  tables: Map<number, Float64Array>;
+  /** Shift tables by slope, then by the view's prototype list (`tableOf`). */
+  tables: Map<number, Map<readonly Prototype[], Float64Array>>;
 }
 
 /** What one view holds, for tests: its states and the numbers their typed arrays hold. */
@@ -305,16 +328,19 @@ function buildView(
     return lo - 1;
   };
 
-  /** One shift per (zone, prototype): `lotShift`'s arithmetic. */
-  const tableOf = (s: State, slope: number): Float64Array => {
-    let out = s.tables.get(slope);
+  /** One shift per (zone, prototype of the view's `list`): `lotShift`'s arithmetic. */
+  const tableOf = (s: State, slope: number, list: readonly Prototype[]): Float64Array => {
+    let bySlope = s.tables.get(slope);
+    if (!bySlope) s.tables.set(slope, (bySlope = new Map()));
+    let out = bySlope.get(list);
     if (out) return out;
+    const NP = list.length;
     out = new Float64Array(Z * NP);
     for (let z = 0; z < Z; z++) {
       const delta = s.steps[z] * SPACES_STEP;
-      for (let i = 0; i < NP; i++) out[z * NP + i] = shiftOf(PROTOTYPES[i], delta, cost, slope);
+      for (let i = 0; i < NP; i++) out[z * NP + i] = shiftOf(list[i], delta, cost, slope);
     }
-    s.tables.set(slope, out);
+    bySlope.set(list, out);
     return out;
   };
 
@@ -328,8 +354,9 @@ function buildView(
     if (out) return out;
     if (s.key === null) s.key = s.steps.join(',');
     const slope = slopeOf(frame);
-    const table = tableOf(s, slope);
-    const proto = protoIndexOf(frame.view);
+    const { list, index: proto } = protosOf(frame.view);
+    const table = tableOf(s, slope, list);
+    const NP = list.length;
     const steps = s.steps;
     const keys: (string | null | undefined)[] = new Array(Z);
     const parking: ParkingShift = {
@@ -450,7 +477,8 @@ function buildView(
     let numbers = 0;
     for (const s of states) {
       numbers += s.steps.length + s.changed.length;
-      for (const t of s.tables.values()) numbers += t.length;
+      for (const bySlope of s.tables.values())
+        for (const t of bySlope.values()) numbers += t.length;
     }
     return { states: states.length, numbers };
   });
