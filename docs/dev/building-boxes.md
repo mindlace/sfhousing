@@ -187,7 +187,7 @@ The first city run, 2026-11-14, on one machine (15 cores). The build is dataset 
 
 ### Round 2 (2026-11-27): the parts check, terraces and z12–13 parts
 
-Dataset `2026-11-27-d3347aa7` (base `2026-11-25-76c90397`). Every invariant passes:
+Dataset `2026-11-27-d3347aa7` (base `2026-11-25-76c90397`), rebuilt as `2026-11-27-675aa208` after merging the shared download cache (#162): the same artifact, the same counts, and the same numbers below. Every invariant passes:
 
 - V11: z12 buildings 801,237 B.
 - V37: `src box/base/front/step/part 1365/161302/38852/16062/967; fallback 0.8%; reg fit 89.3%`.
