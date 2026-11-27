@@ -392,6 +392,9 @@ export function miniCity(): MiniCity {
     rentControlLikely: col(Uint8Array, (r) => r.rc ?? 0),
     landUseClass: col(Uint8Array, (r) => r.luc),
     hostableBase: col(Uint8Array, (r) => derived(r)[3]),
+    // The FZP yields' cap: none on a Local Program parcel, the base cap elsewhere (as mini-policy's
+    // `fzpYieldCap`, which the loader binds here).
+    fzpCap: col(Uint16Array, (r) => (r.lp ? NO_CAP : (r.cap ?? NO_CAP))),
     baseYield,
     yield: yieldCol,
     potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },

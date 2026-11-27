@@ -4,7 +4,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import { applyLevers, lookupsOf, twinInput } from '$lib/sim/levers/apply';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { buildFinance } from '$lib/sim/levers/finance';
-import { fillNeeds, resolveEnvelopes } from '$lib/sim/levers/resolve';
+import { resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { resolvePreset } from '$lib/sim-page/timing';
@@ -212,8 +212,8 @@ describe('lookupsAt', () => {
       c
     ).frameAt(1);
     const levers: SimLevers = { ...DEFAULT_LEVERS, timers: r.presetTimers.map((x) => ({ ...x })) };
-    const filled = fillNeeds(resolveEnvelopes(c.layers, levers, c.input.asOf), new Map());
-    const want = applyLevers(c.input, c.layers, levers, filled).lookups;
+    const res = resolveEnvelopes(c.layers, levers, c.input.asOf);
+    const want = applyLevers(c.input, c.layers, levers, res).lookups;
     const got = lookupsAt(frame);
     expect(got.inFlight).toEqual(want.inFlight);
     expect(got.fresh).toEqual(want.fresh);

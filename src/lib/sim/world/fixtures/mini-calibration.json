@@ -838,5 +838,160 @@
       ],
       "method": "made up (tier 4)"
     }
+  },
+  "choice": {
+    "prices": [
+      {
+        "from": 20742,
+        "value": {
+          "anchors": {
+            "A": {
+              "stories": 5,
+              "homes": 45,
+              "costPerHome": 729700,
+              "valuePerHome": 552700
+            },
+            "B": {
+              "stories": 8,
+              "homes": 130,
+              "costPerHome": 736700,
+              "valuePerHome": 584700
+            },
+            "C": {
+              "stories": 13,
+              "homes": 227,
+              "costPerHome": 857700,
+              "valuePerHome": 651700
+            },
+            "D": {
+              "stories": 24,
+              "homes": 341,
+              "costPerHome": 918700,
+              "valuePerHome": 626700
+            },
+            "E": {
+              "stories": 4,
+              "homes": 13,
+              "costPerHome": 929700,
+              "valuePerHome": 576700
+            }
+          },
+          "aboveTopCostRatio": 1,
+          "carrying": {
+            "rate": 0.085,
+            "drawn": 0.55
+          }
+        }
+      }
+    ],
+    "choiceSpread": 1,
+    "affordableRule": "market",
+    "provenance": {
+      "anchors": {
+        "tier": 1,
+        "label": "Controller feasibility prototypes A to E: stories, homes, cost and value per home",
+        "sources": [
+          {
+            "label": "Controller, \"Inclusionary Housing: Triennial Review of Economic Feasibility, 2026\", 2026-04-30, corrected 2026-05-19",
+            "url": "https://media.api.sf.gov/documents/Triennial_Economic_Feasibilty_Report_2026.final.pdf"
+          },
+          {
+            "label": "Controller, TAC meeting 2 presentation, 2026-02-11, slide 14 (cost footnote (a))",
+            "url": "https://media.api.sf.gov/documents/TAC_Meeting_2_Presentation_-_2-11-2026.pdf"
+          }
+        ],
+        "method": "Each anchor is a Controller prototype (src/lib/sim/finance/prototypes.ts): A 5 stories, 45 homes, cost 729700, value 552700; B 8 stories, 130 homes, cost 736700, value 584700; C 13 stories, 227 homes, cost 857700, value 651700; D 24 stories, 341 homes, cost 918700, value 626700; E 4 stories, 13 homes, cost 929700, value 576700. Value per home = cost − shortfall. Read from the Controller's report, accessed 2026-11-09: stories and homes p. 11 rows 1 and 5 (also p. 8); costPerHome p. 11 row 11 \"Total Costs (Total / Unit)\", which excludes land (footnote (a) as printed in the February 2026 draft, TAC meeting 2 deck slide 14; the final report prints no notes); shortfallPerHome the negation of p. 4 \"Residual Land Value per Unit\", apartments, row 1 \"Base - Current Projects\", with \"current\" the requirements that will apply, absent legislative action, on November 1, 2026 (p. 3, footnote 2). Assigning a project to this prototype by its stories and homes is a tier 4 binning (PROTOTYPE_BINNING)."
+      },
+      "aboveTopCostRatio": {
+        "tier": 4,
+        "label": "Cost above 24 stories: ratio 1 (invented: too few permits)",
+        "sources": [
+          {
+            "label": "SF building permits (DataSF i98e-djp9)",
+            "url": "https://data.sf.gov/d/i98e-djp9"
+          }
+        ],
+        "method": "median permit valuation per home (revised cost, else estimate) of permits for 10 or more homes issued 2015-01-01 on, one per permit number, superseded permits left out: above 24 stories (n = 0) over 13 to 24 stories (n = 0); fewer than 10 on a side, so the ratio is 1 (invented)"
+      },
+      "carrying": {
+        "tier": 4,
+        "label": "Carrying cost: construction rate 0.085 (tier 3) on an average drawn share 0.55 (tier 4, invented: the partner's assumption)",
+        "sources": [
+          {
+            "label": "Terner Center, \"Making It Pencil: The Math Behind Housing Development\", December 2023",
+            "url": "https://ternercenter.berkeley.edu/wp-content/uploads/2023/12/Making-It-Pencil-December-2023.pdf"
+          }
+        ],
+        "method": "Interest on the months an option spends under construction beyond its anchor's band: rate × drawn share × cost per home × extra months ÷ 12 (pricing.ts carryPerHome). Rate: Terner Center, Making It Pencil, December 2023, p. 12, verified, accessed 2026-11-09: \"we have assumed a total interest rate of 8.5 percent for the construction loan and 6 percent for the permanent loan across each prototype\". California prototypes (East Bay, South Bay, Sacramento, Los Angeles), not San Francisco, and rates of late 2023. No San Francisco or official figure was found: the Controller's feasibility review and its TAC deck give no financing terms (both read in full). Drawn share: The partner's assumption, R11: arithmetic on DRAW_UP_FRONT. A loan's and a guarantee's interest saving is counted on this share of the principal over the construction period. A pool still commits the whole principal at the start."
+      },
+      "choiceSpread": {
+        "tier": 4,
+        "label": "Choice spread: invented, too few records to fit",
+        "sources": [
+          {
+            "label": "SF Planning projects (DataSF qvu5-m3a2)",
+            "url": "https://data.sf.gov/d/qvu5-m3a2"
+          },
+          {
+            "label": "SF building permits (DataSF i98e-djp9)",
+            "url": "https://data.sf.gov/d/i98e-djp9"
+          }
+        ],
+        "method": "invented value 1: only 1 records (fewer than SIZE_MIN_N = 2); 1 histories first recorded 2015-01-01 to 2026-10-10 with proposed and base stories at filing of at least 1 on a panel row; 0 over their limit left out (sizeOverEnvelope), 0 with no option gaining a home left out, 0 in the affordable cohort left out (they choose by rule A)",
+        "n": 1,
+        "window": ["2015-01-01", "2026-10-10"]
+      },
+      "affordableRule": {
+        "tier": 4,
+        "label": "Affordable projects' choice rule: market, invented default without cohort records",
+        "sources": [
+          {
+            "label": "SF Planning projects (DataSF qvu5-m3a2)",
+            "url": "https://data.sf.gov/d/qvu5-m3a2"
+          },
+          {
+            "label": "SF building permits (DataSF i98e-djp9)",
+            "url": "https://data.sf.gov/d/i98e-djp9"
+          }
+        ],
+        "method": "no cohort difference measurable (diff 0, SE 0): the market rule"
+      },
+      "locationValue": {
+        "tier": 2,
+        "label": "Location value: assessed value per m² of buildings of 5 or more homes completed 2015 on, ÷ the roll year's median (3-year window under 10 buildings; data tier 0, index tier 2); neighbourhood median shrunk to 1 by n ÷ (n + 10), the 10 invented (tier 4)",
+        "sources": [
+          {
+            "label": "SF assessor secured roll (DataSF wv5m-vpq2)",
+            "url": "https://data.sf.gov/d/wv5m-vpq2"
+          },
+          {
+            "label": "DataSF Analysis Neighborhoods (j2bu-swwd)",
+            "url": "https://data.sf.gov/d/j2bu-swwd"
+          }
+        ],
+        "method": "Per building, its first roll after the completion year: (land + improvement) ÷ floor area (property_area), over the median of the buildings first assessed that roll year (pooled with the years either side when it has few). Per Analysis Neighborhood, the median index, shrunk to 1. Every lot takes its neighbourhood value.",
+        "n": 1,
+        "window": ["2024-01-01", "2024-01-01"]
+      }
+    }
+  },
+  "heightTime": {
+    "upTo": [4, 7, 12, 20, 999],
+    "steps": [
+      {
+        "from": 20742,
+        "value": {
+          "permitIssued": [1.08, 0.79, 0.97, 1, 1.1],
+          "construction": [0.95, 1, 1, 1.05, 1.25],
+          "constructionMonths": [23.6, 25.8, 25.8, 27.4, 34.7]
+        }
+      }
+    ],
+    "provenance": {
+      "tier": 4,
+      "label": "Stage time by height: fixture bands (invented)",
+      "sources": [],
+      "method": "Hand-written simulator fixture (tier 4, made up); not data."
+    }
   }
 }

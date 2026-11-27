@@ -1,7 +1,8 @@
 // The market and affordable funded clocks of a free lot (spec rules 2, 3, 4, 5, 7): evaluated over
 // policy frames instead of finance segment days; level 1 and coverage above 1 differ (see the
 // award-rule spec). Nothing is stored: a clock is recomputed from the spell.
-import { FILL_LEVELS, fillStories, type ScenarioParcels } from '$lib/data/scenario-codec';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
+import { allowedCount, capFrom, choiceRow, optionHomes, pickOption } from '$lib/sim/choice/choose';
 import {
   PROTOTYPES,
   costPerHome,
@@ -11,18 +12,17 @@ import {
   type PrototypeId
 } from '$lib/sim/finance';
 import { NEVER_KEY_DAY, cappedShift, coverageLevel } from '$lib/sim/world/rules/funding';
-import { lastInitiationMonth, piecewiseMonth, sizeCumAgainst } from '$lib/sim/world/input/build';
+import { lastInitiationMonth, piecewiseMonth } from '$lib/sim/world/input/build';
 import { P, drawOn } from '$lib/sim/world/rules/rng';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
-import type { Calibration, ProjectKind } from '$lib/timelapse/types';
+import type { ProjectKind } from '$lib/timelapse/types';
 import { monthFirstDay, monthOfDay } from '../months';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
-import { rateOf } from '../rates';
+import { logitsAt, rateOf } from '../rates';
 import type { Statics } from '../statics';
 import { frameMoney } from './frame-money';
 
-const F = FILL_LEVELS.length;
 const EMPTY: number[] = [];
 const PROTOTYPE = new Map<PrototypeId, Prototype>(PROTOTYPES.map((p) => [p.id, p]));
 const logistic = (x: number) => 1 / (1 + exp(-x));
@@ -54,7 +54,10 @@ export interface KindClock {
   keyDay: Day;
   /** Model month of the frame in force at lot-month T's first day (its view gave the size); 0 when T = 0. */
   viewMonth: number;
-  /** Size of lot-month T (f = -1, units 0, stories 0, protoId 'E' when T = 0 or there is none). */
+  /**
+   * Size of lot-month T: `f` the option's index in the lot's row (f = -1, units 0, stories 0,
+   * protoId 'E' when T = 0 or there is none).
+   */
   f: number;
   units: number;
   stories: number;
@@ -77,7 +80,7 @@ export interface Spell {
   existing: number;
 }
 
-/** A lot's size at one fill level. */
+/** A lot's size as one of its options. */
 interface Size {
   f: number;
   units: number;
@@ -85,57 +88,47 @@ interface Size {
   protoId: PrototypeId;
 }
 
-/** Sizes per (parcels table, row, level), built once and shared (never mutated). */
-const sizeMemo = new WeakMap<ScenarioParcels, (Size | undefined)[]>();
+/** Sizes per (parcels view, global option) against the view's own existing homes, shared. */
+const sizeMemo = new WeakMap<ScenarioParcels, Map<number, Size>>();
 
-function sizeAt(p: ScenarioParcels, lot: number, f: number): Size {
-  let memo = sizeMemo.get(p);
-  if (memo === undefined) {
-    memo = new Array(p.count * F);
-    sizeMemo.set(p, memo);
-  }
-  let sz = memo[lot * F + f];
-  if (sz === undefined) {
-    const units = p.yield[lot * F + f];
-    const stories = fillStories(FILL_LEVELS[f], p.envelopeStories[lot]);
-    sz = { f, units, stories, protoId: prototypeFor(stories, units).id };
-    memo[lot * F + f] = sz;
-  }
-  return sz;
-}
+/** The choice row of one size draw (one at a time). */
+let cum = new Float32Array(64);
 
 /**
- * The size the attempt's SIZE draw gives in `view` against `existing`, as `startRow` draws it
- * (`world.ts:288-315`); null when no level gains a home.
+ * The size the attempt's SIZE draw gives in `view` against `existing` at cost step `step` (the
+ * frame's `choiceStep`; absent, the step in force at the dataset date), as `startRow` draws it:
+ * the option the market choice row picks among those the view's envelope and cap allow. Null when
+ * no option gains a home. Priced by the binning (`prototypeFor`) of its stories and homes.
  */
 export function sizeIn(
-  statics: Statics,
   view: ZoningView,
-  calibration: Calibration,
+  step: number | undefined,
   lot: number,
   existing: number,
   uS: number
-): { f: number; units: number; stories: number; protoId: PrototypeId } | null {
+): Size | null {
   const parcels = view.parcels;
+  const choice = view.pre.choice;
+  const t = choice.t;
+  const allowed = allowedCount(t, lot, parcels.envelopeStories[lot]);
+  const cap = capFrom(parcels.fzpCap[lot]);
+  if (cum.length < allowed) cum = new Float32Array(allowed);
+  if (!choiceRow(choice, step ?? view.pre.choiceStep, lot, allowed, cap, existing, 'market', cum))
+    return null;
+  const f = pickOption(cum, allowed, uS);
+  if (f < 0) return null;
+  const j = t.offset[lot] + f;
   const own = existing === parcels.existingUnits[lot];
-  const cum = own
-    ? view.pre.sizeCum
-    : sizeCumAgainst(
-        {
-          parcels,
-          projects: statics.projects,
-          calibration,
-          asOf: statics.asOf,
-          districtMaxStories: statics.districtMaxStories
-        },
-        lot,
-        existing
-      );
-  const at = own ? lot * F : 0;
-  let f = 0;
-  while (f < F && !(uS < cum[at + f])) f++;
-  if (f === F) return null;
-  return sizeAt(parcels, lot, f);
+  let memo = own ? sizeMemo.get(parcels) : undefined;
+  if (own && memo === undefined) sizeMemo.set(parcels, (memo = new Map()));
+  let sz = memo?.get(j);
+  if (sz === undefined) {
+    const units = optionHomes(t, j, cap, existing);
+    const stories = t.stories[j];
+    sz = { f, units, stories, protoId: prototypeFor(stories, units).id };
+    memo?.set(j, sz);
+  }
+  return sz;
 }
 
 /**
@@ -185,9 +178,9 @@ function segOn(
 ): Seg {
   const market = kind === 'market';
   const lot = spell.lot;
-  const ord = market ? rateOf(g.view, g.market, g.parking, lot) : 0;
-  const z = g.view.pre.logit[lot];
-  const size = sizeIn(statics, g.view, g.calibration, lot, spell.existing, uS);
+  const ord = market ? rateOf(g.view, g.market, g.parking, lot, g.choiceStep) : 0;
+  const z = logitsAt(g.view, g.choiceStep)[lot];
+  const size = sizeIn(g.view, g.choiceStep, lot, spell.existing, uS);
   // A frame with no money is a frame where nothing is offered and nothing shifts.
   if (size === null || z === -Infinity || g.finance === null)
     return { ord, rate: ord, ref: ord, bundle: EMPTY, level: 0, size };

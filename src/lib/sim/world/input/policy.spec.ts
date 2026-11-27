@@ -5,6 +5,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import miniCalibrationJson from '../fixtures/mini-calibration.json';
+import { miniOptions } from '../fixtures/mini-options';
 import { miniCity } from '../fixtures/mini-parcels';
 import { miniMarket } from '../fixtures/mini-market';
 import { miniProjectsJson } from '../fixtures/mini-projects';
@@ -14,18 +15,23 @@ import type { SimInput } from './types';
 
 const miniCalibration = (): Calibration =>
   parseCalibration(structuredClone(miniCalibrationJson) as unknown);
-const miniFiles = () => ({
-  parcels: miniCity().parcels,
-  projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-  calibration: miniCalibration()
-});
+const miniFiles = () => {
+  const city = miniCity();
+  return {
+    parcels: city.parcels,
+    projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
+    calibration: miniCalibration(),
+    options: miniOptions(city)
+  };
+};
 const miniInput = (): SimInput => buildSimInput(miniFiles());
 
 describe('baseZoning view (§4.4.8)', () => {
-  it('swaps envelope, yield, hostable and the feature variants onto the base columns', () => {
+  it('swaps envelope, cap, yield, hostable and the feature variants onto the base columns', () => {
     const p = miniInput().parcels;
     const { parcels: v } = baseZoning(miniCalibration(), p);
     expect(v.envelopeStories).toBe(p.baseStories);
+    expect(v.fzpCap).toBe(p.baseCap);
     expect(v.yield).toBe(p.baseYield);
     expect(v.hostable).toBe(p.hostableBase);
     expect(v.potentialRatio.fzp).toBe(p.potentialRatio.base);
@@ -50,6 +56,7 @@ describe('baseZoning view (§4.4.8)', () => {
     const { parcels: v } = baseZoning(miniCalibration(), p);
     const swapped = new Set([
       'envelopeStories',
+      'fzpCap',
       'yield',
       'hostable',
       'localProgram',

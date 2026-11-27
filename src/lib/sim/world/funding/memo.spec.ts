@@ -44,13 +44,17 @@ const CHANGE = 120;
  * moved (the counts are unchanged). The synthCity values were re-recorded on 2026-11-25 for the
  * fallback award (rule 16 as amended): an application short on one pool is awarded on the others,
  * so many more lots start (counts about eight times larger). The live values were re-recorded the
- * same day, on dataset 2026-11-25-76c90397 (`SFH_WORLD_LIVE` set to its directory).
+ * same day, on dataset 2026-11-25-76c90397 (`SFH_WORLD_LIVE` set to its directory). The synthCity
+ * values were re-recorded on 2026-11-26 for the developer's choice (building-choice Task 9): a
+ * start's size is an option of the bench city's synthetic rows and its start odds read the choice
+ * features, so fewer lots start (counts about a third lower). The live values need a dataset with
+ * options.bin and are re-recorded with it.
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': 'ed887a96/59690',
-  'synthCity baseline 2': 'a51a14cb/61033',
-  'synthCity bench 1': '4eb1f5dc/61114',
-  'synthCity bench 2': '719ab2ae/62687',
+  'synthCity baseline 1': '0e20dc9e/42056',
+  'synthCity baseline 2': 'e807d062/42412',
+  'synthCity bench 1': '9430d796/43783',
+  'synthCity bench 2': 'f349d9b4/44298',
   'live 1': '6fc8002e/6097',
   'live 2': '641fdd82/6626',
   'live 3': 'b6d521ff/5982'

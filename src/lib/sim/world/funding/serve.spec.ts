@@ -12,7 +12,7 @@ import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, type Pathway, type ProjectKind } from '$lib/timelapse/types';
 import { addProject, ensureLot } from '../columns';
-import { monthFirstDay, monthLastDay } from '../months';
+import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
 import type { PolicyTimeline } from '../policy/frame';
 import { lotEntity } from '../rates';
 import { staticsOf } from '../statics';
@@ -660,24 +660,38 @@ describe('rule 10 on the bench city', () => {
   const st = staticsOf(bench);
   const t = moneyTimeline(bench, doc);
 
-  it('synthCity bench funding set, seed 2: the award made on money returned in month 74 waits for month 75', () => {
-    const { world, events } = runFunded(st, t, 2, 75, { ledger: false });
+  it('synthCity bench funding set, seed 1: awards waiting on money returned in month 73 come in month 74', () => {
+    const { world, events, ledger } = runFunded(st, t, 1, 74);
+    const p = world.projects;
     const awards = (m: number): number[] =>
       events
-        .flatMap((e) => (e.kind === 'award' && e.month === m ? [world.projects.src[e.row]] : []))
+        .flatMap((e) => (e.kind === 'award' && e.month === m ? [p.src[e.row]] : []))
         .sort((x, y) => x - y);
-    // In month 74 an award's chain exits in its award month and releases money to u-bench-fund
-    // inside the scan (same-scan investigation). Lot 4116 needs that money (u-bench-fund held
-    // 739,928 after the scan, 646,144 of it returned during it; 4116 asks 646,144): it waits a
-    // month and is awarded on month 75's first day.
-    expect(awards(74)).toEqual([
-      4048, 4689, 10447, 25393, 34568, 43504, 44211, 46818, 49094, 53980, 62418, 62734, 64654,
-      65454, 69174, 81369, 82431, 90765, 106017, 106491, 117035, 124018, 135114, 141113, 146135,
-      149655
+    // In month 73 money returns to u-bench-fund (a release); lots 123855 and 134655, which applied
+    // before month 73, are awarded on month 74's first day: the money returned inside month 73's
+    // scan serves them only from the next month (rule 10). Recorded on the option rows.
+    expect(
+      ledger.some(
+        (e) =>
+          e.kind === 'release' && e.pool === 'u-bench-fund' && monthOfDay(bench.asOf, e.day) === 73
+      )
+    ).toBe(true);
+    const first = monthFirstDay(bench.asOf, 74);
+    for (const lot of [123855, 134655]) {
+      const award = events.find(
+        (e) => e.kind === 'award' && e.month === 74 && p.src[e.row] === lot
+      )!;
+      expect(award.day).toBe(first);
+      expect(p.applied[award.row]).toBeLessThan(monthFirstDay(bench.asOf, 73));
+    }
+    expect(awards(73)).toEqual([
+      1448, 8414, 22018, 32938, 50180, 51216, 52874, 64020, 69514, 75518, 81614, 81682, 82219,
+      85364, 87381, 94009, 97778, 99876, 99976, 114476, 129475, 129849, 136910, 139811, 140293,
+      142773, 146772
     ]);
-    expect(awards(75)).toEqual([
-      1368, 4116, 7993, 14131, 23342, 27035, 33489, 38025, 51713, 55785, 66347, 80210, 89705,
-      106194, 114367, 133320, 133710, 140858, 142174, 146564, 148689
+    expect(awards(74)).toEqual([
+      9916, 18286, 25221, 31217, 37221, 53958, 62877, 64693, 89319, 98107, 102204, 111711, 123855,
+      134655
     ]);
   });
 });

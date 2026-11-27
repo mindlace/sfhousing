@@ -656,6 +656,8 @@ export async function writeScenario(a: {
     split: new Uint8Array(n),
     imputed: new Uint8Array(n),
     baseCap: new Uint16Array(n),
+    // in memory only until parcels.bin carries it (the run time binds policy.bin's fzpYieldCap)
+    fzpCap: new Uint16Array(n).fill(NULL_CAP),
     existingUnits: new Uint16Array(n),
     existingFloorAreaM2: new Uint32Array(n),
     existingStories: new Uint8Array(n),
@@ -896,6 +898,7 @@ export async function writeScenario(a: {
       return g;
     };
     const fzpYieldCap = fzpYieldCapOf(d.zoning_code, lotAreaM2, d.r4, env.localProgram, a.capDay);
+    p.fzpCap[i] = fzpYieldCap === null ? NULL_CAP : fzpYieldCap;
     for (let k = 0; k < F; k++) {
       const fill = FILL_LEVELS[k];
       p.yield[i * F + k] =

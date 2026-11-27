@@ -1,9 +1,10 @@
-// Plan 2 Task 10, sim runs plan 1 Task 1: compiling a filled lever resolution into the plan's
+// Plan 2 Task 10, sim runs plan 1 Task 1: compiling a lever resolution into the plan's
 // and the twin's SimInputs.
 import { describe, expect, it } from 'vitest';
 import { chanceTable, parseCalibration, typicalMonths } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import miniCalibrationJson from '../world/fixtures/mini-calibration.json';
+import { miniOptions } from '../world/fixtures/mini-options';
 import { miniCity } from '../world/fixtures/mini-parcels';
 import { miniMarket } from '../world/fixtures/mini-market';
 import { miniPolicy } from '../world/fixtures/mini-policy';
@@ -16,7 +17,7 @@ import { applyLevers, lookupsOf, twinInput } from './apply';
 import { buildFinance } from './finance';
 import { baselineFixture, fundingOnly } from './fixtures/finance';
 import type { LayerCtx } from './layers';
-import { fillNeeds, resolveEnvelopes } from './resolve';
+import { resolveEnvelopes } from './resolve';
 import { scaleTable, timersOp } from './timers';
 import { DEFAULT_LEVERS, type Compare, type SimLevers } from './types';
 
@@ -25,14 +26,17 @@ function setup(): { base: SimInput; ctx: LayerCtx } {
   const base = buildSimInput({
     parcels: city.parcels,
     projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown)
+    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown),
+    options: miniOptions(city)
   });
-  return { base, ctx: { parcels: city.parcels, policy: miniPolicy(city) } };
+  return {
+    base,
+    ctx: { parcels: city.parcels, policy: miniPolicy(city), options: miniOptions(city) }
+  };
 }
 
 function compile(base: SimInput, ctx: LayerCtx, levers: SimLevers) {
-  const filled = fillNeeds(resolveEnvelopes(ctx, levers, base.asOf), new Map());
-  return applyLevers(base, ctx, levers, filled);
+  return applyLevers(base, ctx, levers, resolveEnvelopes(ctx, levers, base.asOf));
 }
 
 const clone = (patch: Partial<SimLevers> = {}): SimLevers => ({

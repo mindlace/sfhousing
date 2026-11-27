@@ -538,10 +538,11 @@ describe('rule 5 in a stepped world: a programme opening at month m', () => {
     )
   );
 
-  it('seeds 1 to 6: lots whose affordable total passed earlier (spell spent) never apply, from m on', () => {
+  it('seeds 1 to 12: lots whose affordable total passed earlier (spell spent) never apply, from m on', () => {
     let spentAll = 0;
     let fromM = 0;
-    for (let seed = 1; seed <= 6; seed++) {
+    // seeds 7, 9 and 10 spend a spell before m on the option rows
+    for (let seed = 1; seed <= 12; seed++) {
       const { sys, joined } = spied();
       const w = worldOf(sys, s, t, seed);
       w.stepTo(m - 1);

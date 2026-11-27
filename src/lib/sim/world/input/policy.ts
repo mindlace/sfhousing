@@ -15,16 +15,17 @@ export type PolicyOp = (
 /**
  * The old-zoning counterfactual (§4.4.8). The calibration is returned as the same object. The
  * parcels are a view over the same decoded columns (no column is copied or mutated): base
- * envelope, base yields, base hostability, and the base variants in the `fzp` feature slots
- * (the engine reads features only through `fzp`, so it needs no 'base' branch). The Local
- * Program is off, so new projects take the measured `pathwayForNew`; its all-zero column is the
- * view's only new buffer.
+ * envelope and cap, base yields, base hostability, and the base variants in the `fzp` feature
+ * slots (the engine reads the envelope and cap only through `fzp`, so it needs no 'base' branch;
+ * its start features come from the choice row there). The Local Program is off, so new projects
+ * take the measured `pathwayForNew`; its all-zero column is the view's only new buffer.
  */
 export const baseZoning: PolicyOp = (cal, parcels) => ({
   cal,
   parcels: {
     ...parcels,
     envelopeStories: parcels.baseStories,
+    fzpCap: parcels.baseCap,
     yield: parcels.baseYield,
     hostable: parcels.hostableBase,
     localProgram: new Uint8Array(parcels.count),

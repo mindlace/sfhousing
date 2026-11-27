@@ -1,27 +1,21 @@
 // The timeline host's loaded dataset (ensemble-runner Task 3): the chunk set, the load, the
-// generator memo's massing context and the CompileCtx with its yield source. Wiring only: every
-// model result comes from a function the hashed folders export.
+// generator memo's massing context and the CompileCtx. Wiring only: every model result comes
+// from a function the hashed folders export.
 //
 // - createChunkSet: the loader and its deps, onChunk, failed cells, prefetch.
-// - loadDataset: loadSimInput with `{ policy: true }`, the MassingCtx, LayerCtx, GrossCache and
-//   table; the memo itself is the caller's (cleared on another datasetVersion).
+// - loadDataset: loadSimInput, the MassingCtx and the LayerCtx (parcels, policy.bin, options.bin);
+//   the memo itself is the caller's (cleared on another datasetVersion).
 // - the world core (car-ownership Task 11): `withFunding(createFundingSystem(), cars)`, built once
 //   per load because the car system is the dataset's (`carSystemOf`, world/cars/dataset.ts).
-// - yieldSourceOf: table or chunk recompute, want its cells, failed cells.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
-import type { GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding, generate, generateForUnits } from '$lib/generator';
 import { cellsIntersecting, createChunkLoader, type FetchLike } from '$lib/sim/chunks';
 import type { LayerCtx } from '$lib/sim/levers/layers';
-import {
-  createTableRecompute,
-  createYieldRecompute,
-  type GrossCache
-} from '$lib/sim/levers/recompute';
 import type { Lru } from '$lib/sim/lru';
 import type { ChunksResponse } from '$lib/sim/protocol';
 import {
@@ -34,7 +28,7 @@ import {
 import type { MassingCtx } from '$lib/sim/world/massing';
 import { carSystemOf } from '../cars/dataset';
 import { createFundingSystem } from '../funding';
-import type { CompileCtx, YieldSource } from '../policy/compile';
+import type { CompileCtx } from '../policy/compile';
 import { staticsOf, type Statics } from '../statics';
 import type { CarSystem } from '../types';
 import { withFunding } from '../world';
@@ -58,8 +52,8 @@ export interface DatasetDeps {
   onChunksReport(r: ChunksResponse): void;
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
-  decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (the bench city); default `loadSimInput(…, { policy, cars })`. */
+  decodeOptions?(bytes: Uint8Array): Promise<OptionTable>;
+  /** Seam: the load itself (the bench city); default `loadSimInput(…, { cars })`. */
   load?(urls: SimInputUrls): Promise<Loaded | LoadFailure>;
   /** True: no car system, even with cars.bin (`reach-check --cars off`). */
   carsOff?: boolean;
@@ -94,7 +88,7 @@ export interface Dataset {
   manifest: Manifest;
   urls: SimInputUrls;
   loaded: Loaded;
-  /** `{ parcels: loaded.fzp.parcels, policy: loaded.policy }`. */
+  /** `{ parcels: loaded.fzp.parcels, policy: loaded.policy, options: loaded.options }`. */
   layers: LayerCtx;
   statics: Statics;
   /** The dataset's car system (`carSystemOf`); null without car data or with `carsOff`. */
@@ -105,7 +99,7 @@ export interface Dataset {
   memo: Lru<string, GeneratedBuilding | null>;
   /** On `loaded.fzp`, the chunk records and the memo: `MapStreamDeps.massing`. */
   massing: MassingCtx;
-  /** The compile context of a `windowMonths` window; every call shares one yield source. */
+  /** The compile context of a `windowMonths` window. */
   ctx(windowMonths: number): CompileCtx;
 }
 
@@ -146,38 +140,6 @@ export function createChunkSet(manifest: Manifest, deps: DatasetDeps): ChunkSet 
   return set;
 }
 
-/**
- * S13 YieldSource: the gross table when loaded, else chunk records; wants each recompute's
- * cellsNeeded(). `gross` is the session's cache, kept across compiles.
- */
-export function yieldSourceOf(
-  loaded: Loaded,
-  chunks: ChunkSet,
-  gross: GrossCache,
-  now: () => number
-): YieldSource {
-  const table = loaded.gross;
-  return {
-    recompute(parcels, needs) {
-      if (table) return createTableRecompute(parcels, needs, table, { now });
-      const r = createYieldRecompute(
-        parcels,
-        needs,
-        {
-          record: (id) => chunks.records.get(id),
-          cellLoaded: (cellId) => chunks.byCell.has(cellId),
-          now
-        },
-        gross
-      );
-      const cells = r.cellsNeeded();
-      if (cells.length > 0) chunks.want(cells);
-      return r;
-    },
-    failedCells: () => chunks.failed
-  };
-}
-
 export async function loadDataset(
   manifest: Manifest,
   urls: SimInputUrls,
@@ -198,23 +160,19 @@ export async function loadDataset(
           warn: deps.warn,
           decodeParcels: deps.decodeParcels,
           decodePolicy: deps.decodePolicy,
-          decodeGross: deps.decodeGross
+          decodeOptions: deps.decodeOptions
         },
         u,
         deps.stopped,
-        { policy: true, cars: deps.carsOff !== true }
+        { cars: deps.carsOff !== true }
       ));
   const loaded = await load(urls);
   if ('code' in loaded) return loaded;
-  if (loaded.policy === null) {
-    // loadSimInput with `{ policy: true }` never answers so; only the `load` seam could
-    return {
-      code: 'scenario-missing',
-      message: 'dataset has no policy.bin (scenarios.fzp.policy)'
-    };
-  }
-  const layers: LayerCtx = { parcels: loaded.fzp.parcels, policy: loaded.policy };
-  const yields = yieldSourceOf(loaded, chunks, new Map(), deps.now);
+  const layers: LayerCtx = {
+    parcels: loaded.fzp.parcels,
+    policy: loaded.policy,
+    options: loaded.options
+  };
   const massing: MassingCtx = {
     input: loaded.fzp,
     records: (id) => chunks.records.get(id),
@@ -239,7 +197,6 @@ export async function loadDataset(
       input: loaded.fzp,
       layers,
       windowMonths,
-      yields,
       now: deps.now
     })
   };

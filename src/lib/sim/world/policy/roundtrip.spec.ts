@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { applyLevers, type LeverInputs } from '$lib/sim/levers/apply';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
-import { allNeeds, fillNeeds, resolveEnvelopes } from '$lib/sim/levers/resolve';
+import { resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { sameScale, type StageScale } from '$lib/sim/levers/timers';
 import { MAX_SCALE, MIN_SCALE, type TimedStage } from '$lib/sim/levers/types';
 import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
@@ -36,7 +36,7 @@ import { compileTimeline, type CompileCtx } from './compile';
 import { firstDifference } from './compare';
 import type { PolicyFrame, PolicyTimeline, ZoningView } from './frame';
 import { lookupsAt } from './lookups';
-import { fakeRows, miniCompileCtx } from './test/compile-fixtures';
+import { miniCompileCtx } from './test/compile-fixtures';
 
 const W = 120;
 const ROUTES: Pathway[] = ['discretionary', 'streamlined', 'permitOnly'];
@@ -273,12 +273,12 @@ const CASES: Case[] = [
 
 // ---- the two paths ----
 
-/** Today: `applyLevers(compileLevers(p))` with the needs filled by the fake yields. */
+/** Today: `applyLevers(compileLevers(p))`. */
 function today(p: SimPolicy): LeverInputs {
   const levers = compileLevers(p, lots)!;
   expect(levers).not.toBeNull();
   const r = resolveEnvelopes(CTX.layers, levers, ASOF);
-  return applyLevers(CTX.input, CTX.layers, levers, fillNeeds(r, fakeRows(allNeeds(r))));
+  return applyLevers(CTX.input, CTX.layers, levers, r);
 }
 
 function compileAll(p: SimPolicy): PolicyTimeline {
@@ -290,7 +290,6 @@ function compileAll(p: SimPolicy): PolicyTimeline {
   });
   const c = compileTimeline(doc, LOTS, CTX, 'plan');
   expect(c.step(Infinity)).toBe(true);
-  expect(c.missingLots()).toBe(0);
   return c.result();
 }
 
@@ -298,8 +297,14 @@ const months = Array.from({ length: W }, (_, k) => k + 1);
 
 /** A precompute's data, its closures applied to fixed arguments. */
 function preData(pre: Precompute) {
-  const { parcelIndexOf, skipAbove, ...data } = pre;
-  return { ...data, index: parcelIndexOf('2999A001'), skip: skipAbove(monthLastDay(ASOF, W)) };
+  const { parcelIndexOf, skipAbove, stepRates, choice, ...data } = pre;
+  return {
+    ...data,
+    index: parcelIndexOf('2999A001'),
+    skip: skipAbove(monthLastDay(ASOF, W)),
+    rates: stepRates(0, 0),
+    choice: choice.t
+  };
 }
 
 /** `speed` times every `speedNew` scale, per route and stage, clamped. */

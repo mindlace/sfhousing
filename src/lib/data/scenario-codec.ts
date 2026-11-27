@@ -1,5 +1,6 @@
 // Wire format "sfh-scenario/1" (scenario-data spec §4.8): `scenarios/fzp/parcels.bin`. Pure TS,
-// worker-safe: its one value import is the generator's constants-only module. The pipeline writes
+// worker-safe: its value imports are the generator's constants-only module and policy-codec's
+// NULL_CAP. The pipeline writes
 // it and the timelapse worker reads it. The declarations below the imports are step 0 and fixed,
 // except what spec §2 authorises (RA1, IA-8): `existingFloorAreaM2`, `scenarioRecordFrom`,
 // `scenarioRecordOf` and the mask comment; and, by the T11 option 1 ruling (scenario eligibility,
@@ -8,6 +9,7 @@
 import type { FeatureId, Provenance } from '../timelapse/types';
 import type { ParcelId, ParcelRecord } from './parcel';
 import type { Envelope } from '../plan/types';
+import { NULL_CAP } from './policy-codec';
 // 3.1 m, the generator's floor-to-floor height (tier 3); constants only, so no generator code.
 import { FTF_M } from '../generator/constants';
 
@@ -72,6 +74,10 @@ export interface ScenarioParcels {
   rentControlLikely: Uint8Array;
   landUseClass: Uint8Array; // index into LAND_USE_CLASSES
   hostableBase: Uint8Array; // 0/1: T11 hostable_base (eligible, baseStories ≥ 1, uncapped base yield at full fill > 0)
+  // The unit cap the FZP envelope's options are clipped by (NULL_CAP = none); a view's cap in the
+  // fzp slot. Not on the wire yet: decode gives NULL_CAP and the loader binds policy.bin's
+  // `fzpYieldCap` (the same cap), until parcels.bin carries the column.
+  fzpCap: Uint16Array;
   baseYield: Uint16Array; // count × F: gross units at each fill level of the base envelope, density-capped
   yield: Uint16Array; // count × F, row-major: yield[i * F + k]
   potentialRatio: { fzp: Float32Array; base: Float32Array }; // derived at decode
@@ -522,6 +528,7 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     rentControlLikely: flag(1),
     landUseClass,
     hostableBase: flag(4),
+    fzpCap: new Uint16Array(n).fill(NULL_CAP),
     baseYield,
     yield: yieldCol,
     potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },
@@ -569,17 +576,30 @@ export async function readScenarioParcels(
   return decodeScenarioPayload(bytes);
 } // inflate + decode
 
+/** The start features a lot takes from its choice of building (`choiceFeatures`, choose.ts). */
+export interface ChoiceFeatures {
+  potentialRatio: number;
+  storiesGap: number;
+  choiceMargin: number;
+}
+
+/**
+ * Feature `f` of row i. The three choice features come from `choice` (the choice row at the
+ * view's cap, the run time's per cost step); without it `potentialRatio` and `storiesGap` read
+ * the decoded columns and `choiceMargin` throws.
+ */
 export function featureValue(
   p: ScenarioParcels,
   i: number,
   f: FeatureId,
-  env: 'fzp' | 'base'
+  env: 'fzp' | 'base',
+  choice?: ChoiceFeatures
 ): number {
   switch (f) {
     case 'potentialRatio':
-      return p.potentialRatio[env][i];
+      return choice ? choice.potentialRatio : p.potentialRatio[env][i];
     case 'storiesGap':
-      return p.storiesGap[env][i];
+      return choice ? choice.storiesGap : p.storiesGap[env][i];
     case 'existingUnits':
     case 'lotAreaM2':
     case 'yearBuilt':
@@ -588,7 +608,7 @@ export function featureValue(
     case 'landUseClass':
       return p[f][i];
     case 'choiceMargin':
-      return fail('choiceMargin comes from the choice row (Task 9)');
+      return choice ? choice.choiceMargin : fail('choiceMargin needs the choice row');
     default:
       return fail(`unknown feature ${String(f satisfies never)}`);
   }

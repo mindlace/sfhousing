@@ -237,7 +237,9 @@ export function eachFreeLot(
   const frames = [timeline.frameAt(1)];
   for (const c of timeline.changes()) if (c > 1 && c <= month) frames.push(timeline.frameAt(c));
   // A frame with a parking shift is read lot by lot (`rateOf`), never as a per-lot array.
-  const rateRows = frames.map((f) => (f.parking ? null : startRates(f.view, f.market)));
+  const rateRows = frames.map((f) =>
+    f.parking ? null : startRates(f.view, f.market, null, f.choiceStep)
+  );
   const l = world.lots;
   const rowOf = l.rowOf;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
@@ -254,7 +256,8 @@ function anyBelowZero(frames: PolicyFrame[], rows: (Float64Array | null)[], lot:
   for (let j = 0; j < rows.length; j++) {
     const row = rows[j];
     const f = frames[j];
-    if ((row !== null ? row[lot] : rateOf(f.view, f.market, f.parking, lot)) < 0) return true;
+    if ((row !== null ? row[lot] : rateOf(f.view, f.market, f.parking, lot, f.choiceStep)) < 0)
+      return true;
   }
   return false;
 }

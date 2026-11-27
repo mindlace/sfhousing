@@ -438,13 +438,12 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   /**
-   * One compile step. The side is stalled (it waits for `chunkArrived`) only when the step said
-   * "waiting on cells": it returned false before its budget was spent, with neither the frames
-   * nor the recompute count moved. A step returns false for exactly two reasons: its budget is
-   * spent (compile.ts:380, :383; zoning-view.ts:155-156), or a view job's recompute could not
-   * finish (zoning-view.ts:124-128, the only unit that returns false); a recompute step computes
-   * every ready need it can, so one that returns at once with nothing done waits on chunks. The other view-job units (twin, resolve, apply, precompute) move
-   * neither count and can each spend the whole budget on the live city: that is progress.
+   * One compile step. The side is stalled (it waits for `chunkArrived`) only when the step returned
+   * false before its budget was spent, with neither the frames nor the views count moved. Since a
+   * view reads the option rows and never waits on chunks, a step returns false only when its budget
+   * is spent (compile.ts and zoning-view.ts check it between units), so a side no longer stalls;
+   * the check stays as a guard. Each view-job unit (twin, resolve, apply, precompute) can spend
+   * the whole budget on the live city: that is progress.
    */
   function stepCompile(c: Compiling): boolean {
     const before = c.timeline === null ? 0 : c.timeline.readyThrough();
@@ -788,9 +787,6 @@ export function createRunner(deps: RunnerDeps): Runner {
       final = finalTable(st);
       const fin = s.timeline!.frameAt(1).finance;
       money = fin !== null && fin.pools.length > 0;
-      const missing = s.compile.missingLots();
-      if (missing > 0)
-        deps.warn(`compile: ${missing} lots changed zoning with no yield record; their yield is 0`);
       post({
         type: 'compiled',
         rev,

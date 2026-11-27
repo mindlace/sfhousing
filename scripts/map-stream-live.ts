@@ -9,7 +9,7 @@ import { simInputUrls } from '../src/lib/sim/world/input/load';
 
 /**
  * Paths relative to /data/<version>/: manifest.json, simInputUrls' parcels, projects and
- * calibration (and policy, gross when present), and every manifest.chunks[].url. Throws on a URL
+ * calibration (and policy, options when present), and every manifest.chunks[].url. Throws on a URL
  * outside the version.
  */
 export function liveFiles(manifest: Manifest): string[] {
@@ -21,7 +21,7 @@ export function liveFiles(manifest: Manifest): string[] {
   const out = new Set<string>(['manifest.json']);
   const urls = simInputUrls(manifest);
   if (urls) {
-    for (const u of [urls.parcels, urls.projects, urls.calibration, urls.policy, urls.gross]) {
+    for (const u of [urls.parcels, urls.projects, urls.calibration, urls.policy, urls.options]) {
       if (u) out.add(rel(u));
     }
   }

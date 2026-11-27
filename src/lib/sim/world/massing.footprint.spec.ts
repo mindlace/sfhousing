@@ -11,6 +11,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import { createLru } from '../lru';
+import { miniOptions } from './fixtures/mini-options';
 import { miniCity, MINI_SAME_CELL_PAIR } from './fixtures/mini-parcels';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { MINI_AS_OF, miniProjectsJson } from './fixtures/mini-projects';
@@ -31,7 +32,8 @@ const city = miniCity();
 const input: SimInput = buildSimInput({
   parcels: city.parcels,
   projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration
+  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration,
+  options: miniOptions(city)
 });
 const NO_CAP = 0xffff;
 

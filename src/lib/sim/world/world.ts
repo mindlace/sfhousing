@@ -3,9 +3,9 @@
 // 7 and 12), 3 (stages due), 4 (lots whose ordinary start falls this month are set aside) and 6
 // (they start). `withFunding(f)` adds the calls into `f` in the months whose frame has `finance`;
 // `withFunding(f, cars)` also runs the car system every month (it only observes housing).
-import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as policyCodecModule from '$lib/data/policy-codec';
+import * as chooseModule from '$lib/sim/choice/choose';
 import * as stagesModule from '$lib/sim/world/rules/stages';
-import * as inputModule from '$lib/sim/world/input/build';
 import * as rngModule from '$lib/sim/world/rules/rng';
 import type { Day } from '$lib/timelapse/time';
 import * as timelapseTypesModule from '$lib/timelapse/types';
@@ -36,9 +36,10 @@ import type {
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
-const { FILL_LEVELS, fillStories } = scenarioCodecModule;
+const { NULL_CAP } = policyCodecModule;
+const { allowedCount, capFrom, choiceRow, choiceStepAt, optionHomes, pickOption, topHomes } =
+  chooseModule;
 const { pathwayFrom } = stagesModule;
-const { sizeCumAgainst } = inputModule;
 const { P, drawOn, seedHash, streamOf } = rngModule;
 const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
 const { addProject, emptyWorld, ensureLot, lotRow, pushDisplacement, pushRev } = columnsModule;
@@ -51,9 +52,10 @@ const { initDraw, lotEntity, ordinaryStart, skipBound } = ratesModule;
 const { END_ALIVE, LOT_DONE, LOT_FREE, LOT_LIVE, NO_DAY, ORIGIN_SIM, RULE_NONE, RULE_SIM } =
   typesModule;
 
-const F = FILL_LEVELS.length;
 const S = STAGE_ORDER.length;
 const SI = Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i])) as Record<Stage, number>;
+/** The choice row of one start, grown as needed (one start at a time). */
+let cum = new Float32Array(64);
 
 /** The world at month 0 under `timeline.frameAt(1)`, with the events already true at the dataset date. */
 export function createWorld(
@@ -351,34 +353,26 @@ function stepCtx(
     const from = ordinary === null ? frame : timeline.frameAt(Math.min(ordinary.frameMonth, month));
     const view = funded === null ? from.view : funded.view;
     const parcels = view.parcels;
-    const own = parcels.existingUnits[lot];
-    const existing = l.demolished[li] === 1 ? 0 : own;
+    const existing = l.demolished[li] === 1 ? 0 : parcels.existingUnits[lot];
+    // The developer's choice: the options the view's envelope allows, their homes clipped by its
+    // cap, against the homes there now (0 once demolished), at the cost step in force on the day.
+    const choice = view.pre.choice;
+    const t = choice.t;
+    const env = parcels.envelopeStories[lot];
+    const allowed = allowedCount(t, lot, env);
+    const cap = capFrom(parcels.fzpCap[lot]);
     let f: number;
     if (funded !== null) f = funded.f;
     else {
-      const cum =
-        existing === own
-          ? view.pre.sizeCum
-          : sizeCumAgainst(
-              {
-                parcels,
-                projects: statics.projects,
-                calibration: from.calibration,
-                asOf,
-                districtMaxStories: statics.districtMaxStories
-              },
-              lot,
-              existing
-            );
-      const at = existing === own ? lot * F : 0;
-      const u = drawOn(stream, P.SIZE, 0);
-      f = 0;
-      while (f < F && !(u < cum[at + f])) f++;
-      if (f === F) {
+      if (cum.length < allowed) cum = new Float32Array(allowed);
+      choiceRow(choice, choiceStepAt(choice, day), lot, allowed, cap, existing, 'market', cum);
+      f = pickOption(cum, allowed, drawOn(stream, P.SIZE, 0));
+      if (f < 0) {
         l.state[li] = LOT_DONE;
         return -1;
       }
     }
+    const j = t.offset[lot] + f;
     const cal = from.newCalibration;
     const path: Pathway =
       funded?.pathway ??
@@ -401,21 +395,16 @@ function stepCtx(
     p.filed[row] = first === 'preApplication' ? NO_DAY : day;
     p.certain[row] = certain ? 1 : 0;
     p.rule[row] = certain ? RULE_NONE : RULE_SIM;
-    const env = parcels.envelopeStories[lot];
-    let top = 0;
-    for (let g = 0; g < F; g++) {
-      const y = parcels.yield[lot * F + g];
-      p.yields[row * F + g] = y;
-      top = Math.max(top, y);
-    }
-    const units = funded !== null ? funded.units : parcels.yield[lot * F + f];
-    const stories = funded !== null ? funded.stories : fillStories(FILL_LEVELS[f], env);
+    const units = funded !== null ? funded.units : optionHomes(t, j, cap, existing);
+    const stories = funded !== null ? funded.stories : t.stories[j];
     p.level[row] = f;
+    p.btype[row] = t.type[j];
+    p.optCap[row] = cap ?? NULL_CAP;
     p.units[row] = units;
     p.stories[row] = stories;
     p.existing[row] = existing;
     p.env[row] = env;
-    p.top[row] = top;
+    p.top[row] = topHomes(t, lot, allowed, cap, existing);
     p.entered[row * S + SI[first]] = day;
     pushRev(p, row, day, units, stories);
     if (funded !== null) {
@@ -511,10 +500,10 @@ function stepCtx(
  *
  * Rule 7: the free lots among `touched(month)` are planned again at their ordinary start read
  * through this month's frame (none when null); every free lot is when `touched` is null, when the
- * market moved, or when a funding system is plugged in and this month's frame or the month
- * before's has `finance` (in a funded month, at the earlier of that start and the month `planLot`
- * gives), unless the timeline says the change is in `parking` alone (`parkingOnly`, and the world
- * last stepped the month before's frame): then only `touched`. `take(month)` has not run yet, so
+ * market or the cost step moved, or when a funding system is plugged in and this month's frame or
+ * the month before's has `finance` (in a funded month, at the earlier of that start and the month
+ * `planLot` gives), unless the timeline says the change is in `parking` alone (`parkingOnly`, and
+ * the world last stepped the month before's frame): then only `touched`. `take(month)` has not run yet, so
  * every entity still on the due list is due in this month or later: the lots due in a month
  * before this one were taken and started in that month's step (or are no longer free). Rule 6 keeps every lot-month that began before this month on the
  * frame it ran on, so a lot's new ordinary start can never fall before this month; one that did
@@ -554,7 +543,8 @@ function policyChanged(ctx: Step): void {
     touched !== null && before.id === world.frame && timeline.parkingOnly?.(month) === true;
   const money =
     hook !== null && !parkingOnly && (frame.finance !== null || before.finance !== null);
-  if (touched === null || money || frame.market !== before.market) {
+  const odds = frame.market !== before.market || frame.choiceStep !== before.choiceStep;
+  if (touched === null || money || odds) {
     if (due instanceof DueList) bound = skipBound(statics, timeline, month, due.through);
     // With money in force now or last month every free lot is visited, zero-rate lots included:
     // a lot only `planLot` put on the list must be dropped when the money stops.

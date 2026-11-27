@@ -4,7 +4,6 @@
  */
 import { FTF_M, GROUND_FTF_M } from '$lib/generator/constants';
 import type { EnvelopeTable } from '$lib/sim/levers/layers';
-import type { Need } from '$lib/sim/levers/resolve';
 
 /** 0 → 0; s ≥ 1 → GROUND_FTF_M + (s − 1)·FTF_M. */
 export function storiesToM(stories: number): number {
@@ -13,19 +12,16 @@ export function storiesToM(stories: number): number {
 
 /**
  * Lots whose unused allowance counts toward room to grow: eligible, with at least one story, not
- * protected, and either hostable or a Need row (hostable is 0 until the Need is filled).
+ * protected, and allowed to host by the table.
  */
 export function countableMask(
   t: EnvelopeTable,
   eligible: Uint8Array,
-  needs: readonly Need[],
   protectedRows: Int32Array
 ): Uint8Array {
   const out = new Uint8Array(t.count);
-  const isNeed = new Uint8Array(t.count);
-  for (const n of needs) isNeed[n.row] = 1;
   for (let i = 0; i < t.count; i++) {
-    out[i] = eligible[i] && t.stories[i] >= 1 && (t.hostable[i] || isNeed[i]) ? 1 : 0;
+    out[i] = eligible[i] && t.stories[i] >= 1 && t.hostable[i] ? 1 : 0;
   }
   for (const r of protectedRows) out[r] = 0;
   return out;

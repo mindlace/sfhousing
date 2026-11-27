@@ -1,9 +1,17 @@
 // world-funding Task 10: shadow starts and displaced homes (spec rule 20).
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
+import {
+  allowedCount,
+  capFrom,
+  choiceRow,
+  choiceStepAt,
+  mostHomes,
+  optionHomes,
+  pickOption,
+  topHomes
+} from '$lib/sim/choice/choose';
 import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 import { lineKey } from '$lib/sim/world/rules/funding';
-import { sizeCumAgainst } from '$lib/sim/world/input/build';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
@@ -37,7 +45,10 @@ const statics = staticsOf(input);
 const asOf = statics.asOf;
 const fin = miniFinance(asOf);
 const timeline = oneMoneyTimeline(input, fin);
-const F = FILL_LEVELS.length;
+const T = input.options;
+/** The options `lot`'s envelope allows in `input` and its cap. */
+const allowedOf = (lot: number) => allowedCount(T, lot, input.parcels.envelopeStories[lot]);
+const capOf = (lot: number) => capFrom(input.parcels.fzpCap[lot]);
 const AFF = 'm-city-grant,federal-grant';
 /** 40 years of model months. */
 const MONTHS = 480;
@@ -51,15 +62,16 @@ interface Case {
 
 /**
  * The mini city with `miniFinance`, seeds 1 to 12, 20 years; the same with the federal pool at
- * 20,000,000 a year, 20 years, on seeds (57 to 176, picked from 1 to 300) where an award comes
- * before an ordinary start later in its month (T3: rule 16 as amended awards at once while any
- * pool can pay, so few such cases remain); and with the random finances of seeds 31 to 40 (`randomFinance`), 40 years, where
- * funded projects exit and their lots start again before the ordinary start their award pre-empted.
+ * 20,000,000 a year, 20 years, on seeds (14 to 367, picked from 1 to 400 on the option rows) where
+ * an award comes before an ordinary start later in its month (T3: rule 16 as amended awards at
+ * once while any pool can pay, so few such cases remain); and with the random finances of seeds 31
+ * to 40 (`randomFinance`), 40 years, where funded projects exit and their lots start again before
+ * the ordinary start their award pre-empted.
  */
 const capped = oneMoneyTimeline(input, withFederalYearly(fin, asOf, 20_000_000));
 const CASES: Case[] = [
   ...Array.from({ length: 12 }, (_, i) => ({ seed: i + 1, t: timeline, through: 240 })),
-  ...[57, 79, 126, 153, 168, 176].map((seed) => ({ seed, t: capped, through: 240 })),
+  ...[14, 37, 291, 297, 347, 367].map((seed) => ({ seed, t: capped, through: 240 })),
   ...Array.from({ length: 10 }, (_, i) => {
     const finance = randomFinance(31 + i);
     return { seed: 31 + i, t: oneMoneyTimeline({ ...input, finance }, finance), through: MONTHS };
@@ -158,25 +170,15 @@ function expected(
     expect(s.month).toBe(m);
     const g = t.frameAt(Math.min(s.frameMonth, m));
     const parcels = g.view.parcels;
-    const own = parcels.existingUnits[lot];
-    const cum =
-      existing === own
-        ? g.view.pre.sizeCum.subarray(lot * F, lot * F + F)
-        : sizeCumAgainst(
-            {
-              parcels,
-              projects: statics.projects,
-              calibration: g.calibration,
-              asOf,
-              districtMaxStories: statics.districtMaxStories
-            },
-            lot,
-            existing
-          );
+    const choice = g.view.pre.choice;
+    const allowed = allowedCount(choice.t, lot, parcels.envelopeStories[lot]);
+    const cap = capFrom(parcels.fzpCap[lot]);
+    const cum = new Float32Array(Math.max(1, allowed));
+    choiceRow(choice, choiceStepAt(choice, s.day), lot, allowed, cap, existing, 'market', cum);
     const u = drawOn(streamOf(sh, lotEntity(statics, lot), k), P.SIZE, 0);
-    let f = 0;
-    while (f < F && !(u < cum[f])) f++;
-    return { month: m, day: s.day, units: f === F ? null : parcels.yield[lot * F + f] - existing };
+    const f = pickOption(cum, allowed, u);
+    const units = f < 0 ? null : optionHomes(choice.t, choice.t.offset[lot] + f, cap, existing);
+    return { month: m, day: s.day, units: units === null ? null : units - existing };
   }
   return null;
 }
@@ -338,13 +340,16 @@ function freshWorld(): World {
   return w;
 }
 
-/** Free lots (no row in a new world) whose top level has at least 2 homes, in rank order. */
+/** The most homes an allowed option gives `lot` (as against its own existing homes). */
+const topOf = (lot: number) =>
+  topHomes(T, lot, allowedOf(lot), capOf(lot), input.parcels.existingUnits[lot]);
+
+/** Free lots (no row in a new world) whose largest allowed option has 2 homes or more, by rank. */
 const LOTS = (() => {
   const w = freshWorld();
   const out: number[] = [];
-  const y = input.parcels.yield;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
-    if (lotRow(w.lots, lot) >= 0 || y[lot * F + F - 1] < 2) continue;
+    if (lotRow(w.lots, lot) >= 0 || topOf(lot) < 2) continue;
     out.push(lot);
   }
   return out.sort((a, b) => statics.rank[a] - statics.rank[b]);
@@ -361,9 +366,10 @@ function fundedRow(world: World, lot: number, k: number): number {
   return row;
 }
 
-/** An affordable application of `lot` at its top level, applied on `applied`. */
+/** An affordable application of `lot` at its most-homes option, applied on `applied`. */
 function application(lot: number, applied: Day) {
-  const f = F - 1;
+  const f = mostHomes(T, lot, allowedOf(lot), capOf(lot), input.parcels.existingUnits[lot]);
+  const j = T.offset[lot] + f;
   return {
     lot,
     kind: KIND_AFFORDABLE,
@@ -372,8 +378,8 @@ function application(lot: number, applied: Day) {
     key: lineKey(applied, statics.rank[lot], 'affordable'),
     bundle: AFF,
     f,
-    units: input.parcels.yield[lot * F + f],
-    stories: fillStories(FILL_LEVELS[f], input.parcels.envelopeStories[lot]),
+    units: optionHomes(T, j, capOf(lot), input.parcels.existingUnits[lot]),
+    stories: T.stories[j],
     level: 1,
     viewMonth: 1
   };
@@ -459,18 +465,17 @@ describe('shadows by hand', () => {
     expect(() => stepShadows(ctxAt(world, e.month + 1, []))).toThrow(/before/);
   });
 
-  it('when no size level gains a home, the shadow ends in its month without a displacement', () => {
+  it('when no option gains a home, the shadow ends in its month without a displacement', () => {
     let checked = 0;
     for (const lot of LOTS) {
-      // Existing homes at the lot's largest level: no level gains a home.
-      let top = 0;
-      for (let f = 0; f < F; f++) top = Math.max(top, input.parcels.yield[lot * F + f]);
+      // Existing homes at the lot's largest option: no option gains a home.
+      const top = topOf(lot);
       const e = expected(SEED, lot, asOf, 0, top, 1, MONTHS);
       if (e === null || e.month < 2) continue;
       expect(e.units).toBeNull();
       const g = timeline.frameAt(e.month);
       const uS = drawOn(streamOf(seedHash(SEED), lotEntity(statics, lot), 0), P.SIZE, 0);
-      expect(sizeIn(statics, g.view, g.calibration, lot, top, uS)).toBeNull();
+      expect(sizeIn(g.view, g.choiceStep, lot, top, uS)).toBeNull();
       const world = freshWorld();
       const { line } = fundOf(world);
       addShadow(line, lot, fundedRow(world, lot, 0), 0, asOf, top);

@@ -5,6 +5,7 @@
  * are tier 1 dollars per home over the tier 2 total. Test values, not data. Browser-safe.
  */
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import { NULL_CAP } from '$lib/data/policy-codec';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
@@ -14,6 +15,7 @@ import { miniCalibrationWithRoutes } from './mini-finance';
 import { miniCity } from './mini-parcels';
 import { MINI_AS_OF } from './mini-projects';
 import { selectRows } from './select-rows';
+import { synthOptions } from './synth-options';
 
 const F = FILL_LEVELS.length;
 
@@ -35,8 +37,9 @@ export interface TinyQueueOpts {
  * Five hostable lots copied from the mini city (rows `TINY_IDS`, no Local Program, envelope 4
  * stories), no pipeline projects, and the mini calibration (with `affordableRoutes`) whose
  * initiation model is one term on `landUseClass`: lot i has class i and log-odds `logOdds[i]`.
- * Each lot's fill levels yield its existing homes, except the top one, which yields `units[i]`:
- * one gaining level, so its size draw always gives `units[i]` homes.
+ * Each lot has one option, at its 4 stories with `units[i]` homes, uncapped: one gaining option, so
+ * its size draw always gives `units[i]` homes. (Its fill-level yields say the same: the top one
+ * gives `units[i]`, the others its existing homes.)
  */
 export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
   const logOdds = o.logOdds ?? [-3, -3, -3, -3, -3];
@@ -56,6 +59,8 @@ export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
     parcels.existingUnits[i] = existing[i];
     parcels.envelopeStories[i] = 4;
     parcels.baseStories[i] = 4;
+    parcels.fzpCap[i] = NULL_CAP;
+    parcels.baseCap[i] = NULL_CAP;
     for (let f = 0; f < F; f++) {
       parcels.yield[i * F + f] = f === F - 1 ? units[i] : existing[i];
       parcels.baseYield[i * F + f] = f === F - 1 ? units[i] : existing[i];
@@ -72,6 +77,11 @@ export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
   };
   return {
     parcels,
+    options: synthOptions(
+      parcels,
+      () => 4,
+      (i, stories) => (stories === 4 ? units[i] : 0)
+    ),
     projects: [],
     calibration,
     asOf: MINI_AS_OF,

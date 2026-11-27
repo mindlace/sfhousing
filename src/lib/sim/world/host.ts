@@ -7,8 +7,8 @@
 // A new `openTimeline` (or `dispose`) ends the session: its timers are cancelled, nothing of it is
 // posted afterwards, and the requests still waiting on it are answered `no-session`.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
-import type { GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ParcelId } from '$lib/data/parcel';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
@@ -73,8 +73,8 @@ export interface TimelineHostDeps {
   generateForUnits?: typeof generateForUnits;
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
-  decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (default `loadSimInput(…, { policy: true, cars: true })`). */
+  decodeOptions?(bytes: Uint8Array): Promise<OptionTable>;
+  /** Seam: the load itself (default `loadSimInput(…, { cars: true })`). */
   load?(urls: SimInputUrls): Promise<Loaded | LoadFailure>;
   /**
    * Default 'on': both worlds run the dataset's car system when it ships cars.bin and
@@ -232,7 +232,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
       },
       decodeParcels: deps.decodeParcels,
       decodePolicy: deps.decodePolicy,
-      decodeGross: deps.decodeGross,
+      decodeOptions: deps.decodeOptions,
       load: deps.load,
       carsOff: deps.cars === 'off'
     };
@@ -257,7 +257,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     st.brush = createBrushService({
       manifest: st.manifest,
       parcels: ds.loaded.fzp.parcels,
-      policy: ds.loaded.policy!,
+      policy: ds.loaded.policy,
       fetch: deps.fetch,
       later: (fn, ms) => st.token.later(fn, ms),
       retryDelaysMs,

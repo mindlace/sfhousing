@@ -6,7 +6,7 @@
 // log-odds shift of the parking it no longer has to build (`frame.parking`), which `startRates`
 // and the funded market clock add to the market odds. Affordable odds are left alone.
 import type { CarData } from '$lib/data/cars-codec';
-import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as chooseModule from '$lib/sim/choice/choose';
 import type { CarModel } from '$lib/sim/cars';
 import * as financeModule from '$lib/sim/finance';
 import type { Prototype } from '$lib/sim/finance';
@@ -16,11 +16,10 @@ import type { Statics } from '../statics';
 import type { CarColumns } from './columns';
 
 // Bound once (docs/dev/world-core.md, Cost).
-const { FILL_LEVELS, fillStories } = scenarioCodecModule;
+const { capFrom, optionHomes } = chooseModule;
 const { PROTOTYPES, prototypeFor, signedOddsShift } = financeModule;
 const { frameIdOf, serialOf } = internModule;
 
-const F = FILL_LEVELS.length;
 const NP = PROTOTYPES.length;
 
 /** Spaces per home: a zone's shift changes only by whole steps. */
@@ -39,30 +38,33 @@ export function parkingTypeOf(p: Prototype): ParkingType {
   return 'belowGrade';
 }
 
-/** Per view, each lot's prototype index at its top qualifying fill level; -1 where none. */
+/**
+ * Per view, each lot's prototype index of its most likely option (the argmax of the choice row at
+ * the cost step in force at the dataset date, `byStep[choiceStep].best`), by the binning of its
+ * stories and homes; -1 where no option gains.
+ */
 const protoMemo = new WeakMap<ZoningView, Int8Array>();
 
 function protoIndexOf(view: ZoningView): Int8Array {
   let out = protoMemo.get(view);
   if (out) return out;
   const parcels = view.parcels;
-  const cum = view.pre.sizeCum;
+  const t = view.pre.choice.t;
+  const best = view.pre.byStep[view.pre.choiceStep].best;
   const n = parcels.count;
   out = new Int8Array(n).fill(-1);
   for (let lot = 0; lot < n; lot++) {
-    // The last qualifying level and every level after it are exactly 1; a row with none is all 0.
-    let f = 0;
-    while (f < F && cum[lot * F + f] !== 1) f++;
-    if (f === F) continue;
-    const stories = fillStories(FILL_LEVELS[f], parcels.envelopeStories[lot]);
-    const id = prototypeFor(stories, parcels.yield[lot * F + f]).id;
+    if (best[lot] < 0) continue;
+    const j = t.offset[lot] + best[lot];
+    const homes = optionHomes(t, j, capFrom(parcels.fzpCap[lot]), parcels.existingUnits[lot]);
+    const id = prototypeFor(t.stories[j], homes).id;
     out[lot] = PROTOTYPES.findIndex((p) => p.id === id);
   }
   protoMemo.set(view, out);
   return out;
 }
 
-/** The prototype of `lot`'s top qualifying fill level in `view`; null when no level qualifies. */
+/** The prototype of `lot`'s most likely option in `view`; null when no option gains. */
 export function topPrototype(view: ZoningView, lot: number): Prototype | null {
   const i = protoIndexOf(view)[lot];
   return i < 0 ? null : PROTOTYPES[i];
@@ -80,9 +82,9 @@ function shiftOf(p: Prototype, deltaSpaces: number, cost: ParkingCosts, slope: n
 /**
  * The log-odds shift of a start on `lot` in `view` when new homes in its zone need `deltaSpaces`
  * more parking spaces each than at month 0: `signedOddsShift(-delta × cost of the prototype's
- * parking type)`, the prototype being that of the lot's top qualifying fill level (start odds are
- * drawn before size, and the top level sets the building type). 0 where no level qualifies or the
- * type has no cost.
+ * parking type)`, the prototype being that of the lot's most likely option (start odds are drawn
+ * before the building, and the likeliest one sets its type). 0 where no option gains or the type
+ * has no cost.
  */
 export function lotShift(
   view: ZoningView,

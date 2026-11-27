@@ -3,7 +3,6 @@
 // unless a test says otherwise.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { makeFakeTimelineDeps, type FakeTimelineDeps } from '$lib/map/test/fake-timeline-deps';
 import { validateTimedCell } from '$lib/map/timelapse/encode';
 import { TimelineController } from '$lib/map/timeline-controller';
@@ -584,10 +583,10 @@ describe('map-stream: rewind (rule 9)', () => {
     // zoning from month 41: the lot gains no home at any size, so it never starts again
     const lotRow = run.world.projects.src[row];
     const p = input.parcels;
-    const F = FILL_LEVELS.length;
-    const yieldCol = p.yield.slice();
-    for (let k = 0; k < F; k++) yieldCol[lotRow * F + k] = 0;
-    const parcels = { ...p, yield: yieldCol };
+    // no story allowed: no option, so no home at any size
+    const envelopeStories = p.envelopeStories.slice();
+    envelopeStories[lotRow] = 0;
+    const parcels = { ...p, envelopeStories };
     const view = { parcels, pre: precomputeOf({ ...input, parcels }) };
     const guarded = frameOf(input, { id: 1, view });
     expect(startRates(base.view, base.market)[lotRow]).toBeLessThan(0);

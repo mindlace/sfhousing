@@ -203,7 +203,7 @@ export function cityInputAt(frame: PolicyFrame): FrameCityInput {
   const t = res.plan.table;
   r.city = Object.freeze({
     stories: t.stories,
-    countable: countableMask(t, layers.parcels.eligible, res.plan.needs, rows),
+    countable: countableMask(t, layers.parcels.eligible, rows),
     sources: r.sources
   });
   return r.city;

@@ -6,6 +6,7 @@ import { HORIZON } from '$lib/fzp/time';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { precomputeOf } from '$lib/sim/world/input/build';
 import type { SimInput } from '$lib/sim/world/input/types';
+import { selectOptionRows } from './fixtures/select-rows';
 import { monthFirstDay, monthLastDay } from './months';
 import type { PolicyTimeline } from './policy/frame';
 import { staticsOf, type Statics } from './statics';
@@ -149,7 +150,11 @@ describe.each(cities)('event order and rule 2 on the %s city', (name, load) => {
       const perm = shuffle(n, 0x9e3779b9 ^ seed);
       // Lot `perm[i]` of the original table is lot i of the permuted one.
       expect(perm.some((v, i) => v !== i)).toBe(true);
-      const input2: SimInput = { ...input, parcels: permuted(input.parcels, perm) };
+      const input2: SimInput = {
+        ...input,
+        parcels: permuted(input.parcels, perm),
+        options: selectOptionRows(input.options, Array.from(perm))
+      };
       const statics2 = staticsOf(input2);
       // Same ids, same rank per id.
       expect(statics2.parcelId).toEqual(Array.from(perm, (j) => statics.parcelId[j]));

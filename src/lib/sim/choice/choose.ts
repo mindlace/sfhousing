@@ -8,6 +8,7 @@
 // its options whatever the cap (options.ts lotConstants), so a higher cap never changes the odds
 // between options already allowed.
 import type { OptionTable } from '../../data/option-table';
+import { NULL_CAP } from '../../data/policy-codec';
 import { capScenarioYield } from '../../data/scenario-yield';
 import type { Day } from '../../timelapse/types';
 import { carryPerHome, costPerHome, valuePerHome } from './pricing';
@@ -130,6 +131,9 @@ export function choiceStepAt(ctx: ChoiceCtx, day: Day): number {
   return index;
 }
 
+/** A stored unit cap as `choiceRow` takes it: null for `NULL_CAP` (no cap). */
+export const capFrom = (cap: number): number | null => (cap === NULL_CAP ? null : cap);
+
 /** How many of the lot's options have at most `stories` stories: they are its row's prefix. */
 export function allowedCount(t: OptionTable, lot: number, stories: number): number {
   const from = t.offset[lot];
@@ -146,6 +150,24 @@ export function allowedCount(t: OptionTable, lot: number, stories: number): numb
 /** Option j's homes after the unit cap, by capScenarioYield's rule (0 when cap <= existing). */
 export function optionHomes(t: OptionTable, j: number, cap: number | null, existing: number) {
   return capScenarioYield(t.homes[j], cap, existing);
+}
+
+/**
+ * The most homes after the cap among the lot's first n options, whether or not they gain a home
+ * over `existing` (0 when n is 0): the largest building the cap allows, as the fill levels' top
+ * yield was.
+ */
+export function topHomes(
+  t: OptionTable,
+  lot: number,
+  n: number,
+  cap: number | null,
+  existing: number
+): number {
+  const from = t.offset[lot];
+  let top = 0;
+  for (let k = 0; k < n; k++) top = Math.max(top, optionHomes(t, from + k, cap, existing));
+  return top;
 }
 
 /**
@@ -323,7 +345,15 @@ export function choiceFeatures(
   existing: number,
   existingStories: number
 ): { potentialRatio: number; storiesGap: number; choiceMargin: number } {
-  const e = expectations(ctx, step, lot, n, cap, existing);
+  return featuresOf(expectations(ctx, step, lot, n, cap, existing), existing, existingStories);
+}
+
+/** `choiceFeatures` from expectations already computed (the run time keeps them per step). */
+export function featuresOf(
+  e: { homes: number; stories: number; margin: number },
+  existing: number,
+  existingStories: number
+): { potentialRatio: number; storiesGap: number; choiceMargin: number } {
   return {
     potentialRatio: e.homes / Math.max(existing, 1),
     storiesGap: e.stories - existingStories,

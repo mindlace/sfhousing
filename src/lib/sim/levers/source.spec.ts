@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
+import { miniOptions } from '../world/fixtures/mini-options';
 import { miniCity } from '../world/fixtures/mini-parcels';
 import { miniPolicy } from '../world/fixtures/mini-policy';
 import { dayOf } from '../world/dates';
@@ -9,7 +10,11 @@ import { limitSources, ownerOf, SRC_FZP, SRC_NONE, SRC_PAINT, SRC_RULE0 } from '
 import { DEFAULT_LEVERS, type SimLevers, type StoryEdit } from './types';
 
 const city = miniCity();
-const ctx: LayerCtx = { parcels: city.parcels, policy: miniPolicy(city) };
+const ctx: LayerCtx = {
+  parcels: city.parcels,
+  policy: miniPolicy(city),
+  options: miniOptions(city)
+};
 const fzp = stockTable(ctx, 'fzp').stories;
 const rowOf = (id: string) => ctx.parcels.index.get(id)!;
 const ids = Array.from(ctx.parcels.id);

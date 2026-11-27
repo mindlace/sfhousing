@@ -29,7 +29,8 @@ export function benchInput(): SimInput {
       buildSimInput({
         parcels: city.parcels,
         projects: parseProjectsFile(structuredClone(city.projects)),
-        calibration: parseCalibration(structuredClone(city.calibration))
+        calibration: parseCalibration(structuredClone(city.calibration)),
+        options: city.options
       })
     );
   }

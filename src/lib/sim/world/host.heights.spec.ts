@@ -334,37 +334,6 @@ describe('timeline host: heights', () => {
     }
   });
 
-  it("heightLids is answered while an edit's compile is stalled", async () => {
-    const f = datasetFetch(FIXTURE);
-    const cell = f.manifest.chunks[0];
-    // no gross table, and the first chunk never arrives: an edit painting it waits on it
-    const manifest = structuredClone(f.manifest);
-    delete (manifest.scenarios!.fzp as { gross?: string }).gross;
-    const fetch: FetchLike = (url) =>
-      url === cell.url ? new Promise<never>(() => {}) : f.fetch(url);
-    const { doc, lots } = await paintedDoc(1);
-    const h = makeHost({ fetch, manifest });
-    h.open(DEFAULT_POLICY4);
-    h.prefetchAll();
-    await h.run(() => heightsOf(h).length > 0 && h.filled());
-    h.handle({ type: 'setPolicy', rev: 2, policy: doc, lots });
-    await h.run(() => h.of('compiling').some((c) => c.rev === 2));
-    expect(await h.idle()).toBe(true);
-    const progress = h
-      .of('compiling')
-      .filter((c) => c.rev === 2)
-      .at(-1)!;
-    expect(progress.done).toBeLessThan(progress.total);
-    const id = h.askLids(f.manifest.chunks[1].bbox as BBox4);
-    await h.run(() => h.lidsOf(id) !== undefined);
-    const got = h.lidsOf(id)!.result;
-    expect(got.ok).toBe(true);
-    if (got.ok) expect([...got.lids.pieces.source].some((s) => s === SRC_PAINT)).toBe(false);
-    // the edit is still waiting on its chunk
-    expect(h.of('compiled').some((c) => c.rev === 2)).toBe(false);
-    expect(h.of('error')).toEqual([]);
-  });
-
   it('an edit that renames a transit rule posts heights with the new rule id', async () => {
     const asOf = await asOfOf();
     const ruleDoc = (id: string): SimPolicy4 => {

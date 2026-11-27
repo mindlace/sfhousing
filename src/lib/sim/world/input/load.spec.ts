@@ -1,17 +1,21 @@
 // The scenario load's car data (car-ownership Task 11) on fixture-0: `simInputUrls` names cars.bin
 // and car-zones.json, `loadSimInput` fetches and decodes cars.bin only for /sim (`opts.cars`) and
-// only when the manifest names it, and a bad file is `scenario-invalid`.
+// only when the manifest names it, and a bad file is `scenario-invalid`. Then the load's paths on
+// the mini city, policy.bin and options.bin among them.
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { grossRowOf, grossTableOf } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
-import type { ParcelId } from '$lib/data/parcel';
-import { scenarioRecordOf } from '$lib/data/scenario-codec';
+import { optionTableOf } from '$lib/data/option-table';
 import { parseCalibration } from '$lib/timelapse/model';
 import { datasetFetch } from '../runner/test/harness';
-import { MINI_FRONTAGE_URL, MINI_POLICY_URL, grossBinOf, miniDataset } from '../test/mini-dataset';
+import {
+  MINI_FRONTAGE_URL,
+  MINI_POLICY_URL,
+  miniDataset,
+  optionsBinOf
+} from '../test/mini-dataset';
 import miniCalibrationJson from '../fixtures/mini-calibration.json';
-import { MINI_GROSS_URL } from '../fixtures/mini-gross';
+import { MINI_OPTIONS_URL, miniOptions } from '../fixtures/mini-options';
 import { MINI_SCENARIO_URLS, MINI_VERSION, miniCity } from '../fixtures/mini-parcels';
 import { miniPolicy } from '../fixtures/mini-policy';
 import { MINI_INVALID_INDEX, miniProjectsJson } from '../fixtures/mini-projects';
@@ -82,9 +86,7 @@ describe('loadSimInput: cars', () => {
   it('with cars: decodes cars.bin against the parcels', async () => {
     const m = manifest();
     const deps = depsOf();
-    const r = loaded(
-      await loadSimInput(deps, simInputUrls(m)!, () => false, { policy: true, cars: true })
-    );
+    const r = loaded(await loadSimInput(deps, simInputUrls(m)!, () => false, { cars: true }));
     expect(r.cars).not.toBeNull();
     expect(r.cars!.zones.length).toBeGreaterThan(0);
     expect(r.cars!.lotZone.length).toBe(r.fzp.parcels.count);
@@ -96,7 +98,7 @@ describe('loadSimInput: cars', () => {
   it('without the manifest naming it: cars null, never fetched', async () => {
     const deps = depsOf();
     const urls = simInputUrls(withoutCars(manifest()))!;
-    const r = loaded(await loadSimInput(deps, urls, () => false, { policy: true, cars: true }));
+    const r = loaded(await loadSimInput(deps, urls, () => false, { cars: true }));
     expect(r.cars).toBeNull();
     expect(deps.fetched.some((u) => u.endsWith('/cars.bin'))).toBe(false);
   });
@@ -104,7 +106,7 @@ describe('loadSimInput: cars', () => {
   it('without opts.cars (not /sim): cars null, never fetched', async () => {
     const deps = depsOf();
     const urls = simInputUrls(manifest())!;
-    const r = loaded(await loadSimInput(deps, urls, () => false, { policy: true }));
+    const r = loaded(await loadSimInput(deps, urls, () => false));
     expect(r.cars).toBeNull();
     expect(deps.fetched.some((u) => u.endsWith('/cars.bin'))).toBe(false);
   });
@@ -112,7 +114,7 @@ describe('loadSimInput: cars', () => {
   it('a cars.bin that does not decode is scenario-invalid', async () => {
     const urls = simInputUrls(manifest())!;
     const deps = depsOf({ [urls.cars!]: new Uint8Array([1, 2, 3]) });
-    const r = await loadSimInput(deps, urls, () => false, { policy: true, cars: true });
+    const r = await loadSimInput(deps, urls, () => false, { cars: true });
     expect('code' in r && r.code).toBe('scenario-invalid');
     expect((r as LoadFailure).message.startsWith('scenario cars.bin: ')).toBe(true);
   });
@@ -177,16 +179,23 @@ function miniDeps(bodies: Map<string, unknown>, o: { retryDelaysMs?: readonly nu
   return { deps, requested, delays, warned, fail };
 }
 
-const miniUrls = (o?: { policy?: boolean; gross?: boolean }) =>
-  simInputUrls(miniDataset(o).manifest())!;
+const miniUrls = () => simInputUrls(miniDataset().manifest())!;
 
 describe('simInputUrls on the mini manifest', () => {
-  const base = { ...URLS, policy: null, gross: null, cars: null, carZones: null };
+  const base = {
+    ...URLS,
+    policy: MINI_POLICY_URL,
+    options: MINI_OPTIONS_URL,
+    cars: null,
+    carZones: null
+  };
 
-  it('returns the three URLs, and ignores scenarios.fzp.frontage', () => {
+  it('returns the URLs, and ignores scenarios.fzp.frontage and gross', () => {
     const m = miniDataset().manifest();
     expect(m.scenarios!.fzp.frontage).toBe(MINI_FRONTAGE_URL); // an older dataset names it
     expect(simInputUrls(m)).toEqual(base);
+    const gross = { ...m.scenarios!.fzp, gross: `/data/${MINI_VERSION}/scenarios/fzp/gross.bin` };
+    expect(simInputUrls({ ...m, scenarios: { fzp: gross } })).toEqual(base);
   });
 
   it('is null without scenarios.fzp, or with a missing or outside URL', () => {
@@ -203,27 +212,14 @@ describe('simInputUrls on the mini manifest', () => {
     }
   });
 
-  it('names the policy URL when the manifest has one, else null', () => {
-    expect(simInputUrls(miniDataset({ policy: true }).manifest())).toEqual({
-      ...base,
-      policy: MINI_POLICY_URL
-    });
-    // A load without levers never needs policy.bin, so a bad one leaves the other three usable.
+  it('gives null for a policy or options URL that is absent or outside /data/<v>/', () => {
     const m = miniDataset().manifest();
-    for (const policy of ['/data/fixture-1/scenarios/fzp/policy.bin', 7]) {
-      const bad = { ...m.scenarios!.fzp, policy: policy as string };
-      expect(simInputUrls({ ...m, scenarios: { fzp: bad } })).toEqual(base);
+    for (const key of ['policy', 'options'] as const) {
+      for (const url of [`/data/fixture-1/scenarios/fzp/${key}.bin`, 7, undefined]) {
+        const bad = { ...m.scenarios!.fzp, [key]: url as string };
+        expect(simInputUrls({ ...m, scenarios: { fzp: bad } })).toEqual({ ...base, [key]: null });
+      }
     }
-  });
-
-  it('names the gross URL when the manifest has one, else null', () => {
-    expect(simInputUrls(miniDataset({ gross: true }).manifest())).toEqual({
-      ...base,
-      gross: MINI_GROSS_URL
-    });
-    const m = miniDataset().manifest();
-    const bad = { ...m.scenarios!.fzp, gross: '/data/fixture-1/scenarios/fzp/gross.bin' };
-    expect(simInputUrls({ ...m, scenarios: { fzp: bad } })).toEqual(base);
   });
 });
 
@@ -287,31 +283,27 @@ describe('loadSimInput on the mini city: fetch failures (internal)', () => {
     });
   });
 
-  it('a gross.bin that 404s on every attempt fails the load', async () => {
-    const d = miniDeps(miniDataset({ gross: true }).bodies, { retryDelaysMs: [1, 1, 1] });
-    d.fail(MINI_GROSS_URL, 4, { status: 404 });
-    const r = await loadSimInput(d.deps, miniUrls({ policy: true, gross: true }), () => false, {
-      policy: true
-    });
+  it('an options.bin that 404s on every attempt fails the load', async () => {
+    const d = miniDeps(miniDataset().bodies, { retryDelaysMs: [1, 1, 1] });
+    d.fail(MINI_OPTIONS_URL, 4, { status: 404 });
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect(r).toMatchObject({ code: 'internal' });
-    expect((r as LoadFailure).message).toContain(MINI_GROSS_URL);
-    expect(d.requested.filter((u) => u === MINI_GROSS_URL)).toHaveLength(4);
+    expect((r as LoadFailure).message).toContain(MINI_OPTIONS_URL);
+    expect(d.requested.filter((u) => u === MINI_OPTIONS_URL)).toHaveLength(4);
   });
 });
 
 describe('loadSimInput on the mini city: decode and validation (scenario-invalid, not retried)', () => {
   async function invalid(bodies: Map<string, unknown>) {
     const d = miniDeps(bodies, { retryDelaysMs: [1, 1, 1] });
-    const r = await loadSimInput(d.deps, miniUrls({ policy: true, gross: true }), () => false, {
-      policy: true
-    });
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     expect(r).toMatchObject({ code: 'scenario-invalid' });
     // Never retried: one request per file.
     for (const url of d.requested) expect(d.requested.filter((u) => u === url)).toHaveLength(1);
     return { message: (r as LoadFailure).message, warned: d.warned };
   }
   const withBody = (url: string, body: unknown) => {
-    const ds = miniDataset({ policy: true, gross: true });
+    const ds = miniDataset();
     ds.bodies.set(url, body);
     return ds.bodies;
   };
@@ -332,30 +324,26 @@ describe('loadSimInput on the mini city: decode and validation (scenario-invalid
     expect(message).toMatch(/^scenario policy\.bin: /);
   });
 
-  it('a gross.bin that does not decode', async () => {
-    const { message } = await invalid(withBody(MINI_GROSS_URL, new Uint8Array([1, 2, 3])));
-    expect(message).toMatch(/^scenario gross\.bin: /);
+  it('an options.bin that does not decode', async () => {
+    const { message } = await invalid(withBody(MINI_OPTIONS_URL, new Uint8Array([1, 2, 3])));
+    expect(message).toMatch(/^scenario options\.bin: /);
   });
 
-  const grossRows = () => {
-    const city = miniCity();
-    return Array.from({ length: city.parcels.count }, (_, i) =>
-      grossRowOf(
-        scenarioRecordOf(city.parcels, i, city.records.get(city.parcels.id[i] as ParcelId)!)
-      )
-    );
+  const optionRows = () => {
+    const t = miniOptions(miniCity());
+    return Array.from({ length: t.count }, () => ({ options: [], locationValue: 1 }));
   };
 
-  it('a gross.bin with another row count', async () => {
-    const short = grossBinOf(grossTableOf(MINI_VERSION, grossRows().slice(1)));
-    const { message } = await invalid(withBody(MINI_GROSS_URL, short));
-    expect(message).toContain('scenario gross.bin: ');
+  it('an options.bin with another row count', async () => {
+    const short = optionsBinOf(optionTableOf(MINI_VERSION, optionRows().slice(1)));
+    const { message } = await invalid(withBody(MINI_OPTIONS_URL, short));
+    expect(message).toMatch(/^scenario options\.bin: .*rows/);
   });
 
-  it('a gross.bin from another datasetVersion', async () => {
-    const other = grossBinOf(grossTableOf('fixture-61', grossRows()));
-    const { message } = await invalid(withBody(MINI_GROSS_URL, other));
-    expect(message).toMatch(/^scenario gross\.bin: .*fixture-61/);
+  it('an options.bin from another datasetVersion', async () => {
+    const other = optionsBinOf(optionTableOf('fixture-61', optionRows()));
+    const { message } = await invalid(withBody(MINI_OPTIONS_URL, other));
+    expect(message).toMatch(/^scenario options\.bin: .*fixture-61/);
   });
 
   it('a file-level projects.json violation', async () => {
@@ -378,46 +366,43 @@ describe('loadSimInput on the mini city: decode and validation (scenario-invalid
     expect(message).toBe(`scenario calibration.json: ${expected}`);
   });
 
-  it('a calibration whose size.fillLevels differs from FILL_LEVELS', async () => {
+  it('a calibration with no choice model', async () => {
     const cal = structuredClone(miniCalibrationJson) as Json;
-    (cal.size as { fillLevels: number[] }).fillLevels = [0.2, 0.5, 0.75, 0.9, 1];
+    delete cal.choice;
     expect(() => parseCalibration(cal)).not.toThrow(); // only the load's check catches it
     const { message } = await invalid(withBody(URLS.calibration, cal));
-    expect(message).toBe(
-      'scenario calibration.json: size.fillLevels [0.2, 0.5, 0.75, 0.9, 1] differs from ' +
-        'FILL_LEVELS [0.25, 0.5, 0.75, 0.9, 1] at index 0'
-    );
+    expect(message).toBe('scenario calibration.json: no choice model (choice)');
   });
 });
 
 describe('loadSimInput on the mini city: policy.bin and the projects', () => {
-  it('with opts.policy, fetches policy.bin once and returns it bound to the parcels', async () => {
-    const d = miniDeps(miniDataset({ policy: true }).bodies);
-    const r = await loadSimInput(d.deps, miniUrls({ policy: true }), () => false, { policy: true });
+  it('fetches policy.bin and options.bin once, binding the FZP cap to the parcels', async () => {
+    const d = miniDeps(miniDataset().bodies);
+    const r = await loadSimInput(d.deps, miniUrls(), () => false);
     if ('code' in r) throw new Error(r.message);
     expect(d.requested.filter((u) => u === MINI_POLICY_URL)).toHaveLength(1);
-    expect(r.policy).not.toBeNull();
-    expect(r.policy!.count).toBe(r.fzp.parcels.count);
-    expect(r.policy!.sb79Status).toEqual(miniPolicy(miniCity()).sb79Status);
+    expect(d.requested.filter((u) => u === MINI_OPTIONS_URL)).toHaveLength(1);
+    expect(d.requested).toHaveLength(5);
+    const policy = miniPolicy(miniCity());
+    expect(r.policy.count).toBe(r.fzp.parcels.count);
+    expect(r.policy.sb79Status).toEqual(policy.sb79Status);
+    expect(r.fzp.parcels.fzpCap).toEqual(policy.fzpYieldCap);
+    expect(r.fzp.options).toBe(r.options);
+    expect(r.options.count).toBe(r.fzp.parcels.count);
+    expect(r.twin.options).toBe(r.options);
+    expect(r.twin.parcels.fzpCap).toBe(r.fzp.parcels.baseCap);
   });
 
-  it('without opts.policy, never requests the policy URL and returns no policy', async () => {
-    const d = miniDeps(miniDataset({ policy: true }).bodies);
-    const r = await loadSimInput(d.deps, miniUrls({ policy: true }), () => false);
-    if ('code' in r) throw new Error(r.message);
-    expect(d.requested).not.toContain(MINI_POLICY_URL);
-    expect(d.requested).toHaveLength(3);
-    expect(r.policy).toBeNull();
-  });
-
-  it('gives scenario-missing for opts.policy without scenarios.fzp.policy', async () => {
-    const d = miniDeps(miniDataset().bodies);
-    const r = await loadSimInput(d.deps, miniUrls(), () => false, { policy: true });
-    expect(r).toEqual({
-      code: 'scenario-missing',
-      message: 'dataset has no policy.bin (scenarios.fzp.policy)'
-    });
-    expect(d.requested).toEqual([]);
+  it('gives scenario-missing without scenarios.fzp.policy or options, before any fetch', async () => {
+    for (const key of ['policy', 'options'] as const) {
+      const d = miniDeps(miniDataset().bodies);
+      const r = await loadSimInput(d.deps, { ...miniUrls(), [key]: null }, () => false);
+      expect(r).toEqual({
+        code: 'scenario-missing',
+        message: `dataset has no ${key}.bin (scenarios.fzp.${key})`
+      });
+      expect(d.requested).toEqual([]);
+    }
   });
 
   it('skips invalid projects with exactly one aggregated warning', async () => {

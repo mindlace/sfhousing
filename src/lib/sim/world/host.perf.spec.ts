@@ -353,7 +353,13 @@ function benchCity(): City {
   const city = synthCity();
   const projects = parseProjectsFile(structuredClone(city.projects));
   const calibration = parseCalibration(structuredClone(city.calibration));
-  const { finance: _f, ...input } = buildSimInput({ parcels: city.parcels, projects, calibration });
+  const options = city.options;
+  const { finance: _f, ...input } = buildSimInput({
+    parcels: city.parcels,
+    projects,
+    calibration,
+    options
+  });
   void _f;
   const policy = synthPolicy(city);
   const f = mapFetch(city.files.json);
@@ -362,7 +368,7 @@ function benchCity(): City {
     manifest: city.manifest,
     fetch: f.fetch,
     fetchBytes: f.fetchBytes,
-    load: async () => ({ fzp: input, twin: input, projects, policy, gross: null, cars: null }),
+    load: async () => ({ fzp: input, twin: input, projects, policy, options, cars: null }),
     calibration,
     asOf: input.asOf,
     centre: [-122.435, 37.76]

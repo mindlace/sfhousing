@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { SimInput } from '../world/input/types';
-import { miniCity } from '../world/fixtures/mini-parcels';
+import { allowedCount, capFrom, mostHomes } from '$lib/sim/choice/choose';
+import { MINI_NO_GAIN_ID, miniCity } from '../world/fixtures/mini-parcels';
+import { miniOptions } from '../world/fixtures/mini-options';
 import miniCalibrationJson from '../world/fixtures/mini-calibration.json';
 import { MINI_AS_OF } from '../world/fixtures/mini-projects';
 import { miniPolicy } from '../world/fixtures/mini-policy';
@@ -12,39 +14,42 @@ import { envelopeOp, localProgramColumn, parcelsView } from './view';
 
 function setup() {
   const city = miniCity();
-  const ctx: LayerCtx = { parcels: city.parcels, policy: miniPolicy(city) };
+  const ctx: LayerCtx = {
+    parcels: city.parcels,
+    policy: miniPolicy(city),
+    options: miniOptions(city)
+  };
   return { ctx, parcels: city.parcels };
 }
 const levers = (over: Partial<SimLevers>): SimLevers => ({
   ...structuredClone(DEFAULT_LEVERS),
   ...over
 });
-const F = 5;
-
 describe('parcelsView', () => {
-  it('derives potentialRatio.fzp and storiesGap.fzp exactly as the decoder does', () => {
+  it('hosts where the table allows it and an allowed option gains a home after the cap', () => {
     const { ctx, parcels } = setup();
     const t = stockTable(ctx, 'fzp');
-    const v = parcelsView(parcels, t, parcels.localProgram);
-    expect(v.potentialRatio.fzp.length).toBe(parcels.count);
+    const v = parcelsView(parcels, t, parcels.localProgram, ctx.options);
+    let hosting = 0;
     for (let i = 0; i < parcels.count; i++) {
-      expect(Object.is(v.potentialRatio.fzp[i], parcels.potentialRatio.fzp[i])).toBe(true);
-      expect(Object.is(v.storiesGap.fzp[i], parcels.storiesGap.fzp[i])).toBe(true);
+      const allowed = allowedCount(ctx.options, i, t.stories[i]);
+      const gains =
+        mostHomes(ctx.options, i, allowed, capFrom(t.cap[i]), parcels.existingUnits[i]) >= 0;
+      expect(v.hostable[i]).toBe(t.hostable[i] === 1 && gains ? 1 : 0);
+      hosting += v.hostable[i];
     }
-    expect(v.potentialRatio.base).toBe(parcels.potentialRatio.base);
-    expect(v.storiesGap.base).toBe(parcels.storiesGap.base);
+    expect(hosting).toBeGreaterThan(30);
+    expect(v.hostable[parcels.index.get(MINI_NO_GAIN_ID)!]).toBe(0);
   });
 
   it('presents the table without mutating any source column', () => {
     const { ctx, parcels } = setup();
-    const before = Array.from(parcels.yield);
+    const before = Array.from(parcels.hostable);
     const t = stockTable(ctx, 'base');
-    const v = parcelsView(parcels, t, new Uint8Array(parcels.count));
+    const v = parcelsView(parcels, t, new Uint8Array(parcels.count), ctx.options);
     expect(v.envelopeStories).toBe(t.stories);
-    expect(v.yield).toBe(t.yield);
-    expect(v.hostable).toBe(t.hostable);
-    expect(Array.from(parcels.yield)).toEqual(before);
-    expect(v.yield.length).toBe(parcels.count * F);
+    expect(v.fzpCap).toBe(t.cap);
+    expect(Array.from(parcels.hostable)).toEqual(before);
   });
 
   it('precomputeOf gives the same hazard as the base input under an fzp table', () => {
@@ -52,13 +57,14 @@ describe('parcelsView', () => {
     const calibration = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
     const input: SimInput = {
       parcels,
+      options: ctx.options,
       projects: [],
       calibration,
       asOf: MINI_AS_OF,
       districtMaxStories: null
     };
     const t = stockTable(ctx, 'fzp');
-    const view = parcelsView(parcels, t, parcels.localProgram);
+    const view = parcelsView(parcels, t, parcels.localProgram, ctx.options);
     const a = precomputeOf(input).hazard;
     const b = precomputeOf({ ...input, parcels: view }).hazard;
     expect(Array.from(b)).toEqual(Array.from(a));
@@ -71,7 +77,7 @@ describe('envelopeOp', () => {
     const t = stockTable(ctx, 'fzp');
     const lp = parcels.localProgram;
     const cal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
-    const out = envelopeOp(t, lp)(cal, parcels);
+    const out = envelopeOp(t, lp, ctx.options)(cal, parcels);
     expect(out.cal).toBe(cal);
     expect(out.parcels.envelopeStories).toBe(t.stories);
     expect(out.parcels.localProgram).toBe(lp);

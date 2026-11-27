@@ -3,8 +3,8 @@
 // SimInputs with their precompute. Worker-bundle module: zod-free, DOM-free, $app-free.
 import { decodeCarData, type CarData } from '$lib/data/cars-codec';
 import { inflateRawBody } from '$lib/data/column-file';
-import { grossTableProblem, readGrossTable, type GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
+import { optionTableProblem, readOptionTable, type OptionTable } from '$lib/data/option-table';
 import { readPolicyParcels, type PolicyParcels } from '$lib/data/policy-codec';
 import { readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -26,19 +26,19 @@ export type LoadErrorCode =
   'manifest-invalid' | 'scenario-missing' | 'scenario-invalid' | 'bad-request' | 'internal';
 
 /**
- * `policy` is null when the manifest has no usable `scenarios.fzp.policy` (only /sim needs it);
- * `gross` likewise for `scenarios.fzp.gross` (optional even for /sim: without it lever revisions
- * fall back to the chunk recompute). Older datasets also name `scenarios.fzp.frontage`; nothing
- * reads it. `cars` (cars.bin, the car model's zones and start households) and `carZones` (their
- * outlines, fetched by the page, never the worker) are null when absent: datasets built before the
- * car model run without it.
+ * `policy` and `options` are null when the manifest has no usable `scenarios.fzp.policy` or
+ * `scenarios.fzp.options` (the load then answers `scenario-missing`: the FZP cap is policy.bin's
+ * and every start chooses among options.bin's buildings). Older datasets also name
+ * `scenarios.fzp.frontage` and `scenarios.fzp.gross`; nothing reads them. `cars` (cars.bin, the car
+ * model's zones and start households) and `carZones` (their outlines, fetched by the page, never
+ * the worker) are null when absent: datasets built before the car model run without it.
  */
 export type SimInputUrls = {
   parcels: string;
   projects: string;
   calibration: string;
   policy: string | null;
-  gross: string | null;
+  options: string | null;
   cars: string | null;
   carZones: string | null;
 };
@@ -47,9 +47,9 @@ export interface Loaded {
   fzp: SimInput;
   twin: SimInput; // applyPolicies([baseZoning], fzp)
   projects: ProjectsFile; // as validated: invalid projects already left out
-  policy: PolicyParcels | null; // bound to the decoded parcels; null without `opts.policy`
-  /** Bound to the decoded parcels; null without `opts.policy` or without `urls.gross`. */
-  gross: GrossTable | null;
+  policy: PolicyParcels; // bound to the decoded parcels
+  /** options.bin, checked against the decoded parcels (`fzp.options` and `twin.options`). */
+  options: OptionTable;
   /** cars.bin, bound to the decoded parcels; null without `opts.cars` or without `urls.cars`. */
   cars: CarData | null;
 }
@@ -68,8 +68,8 @@ export interface LoadDeps {
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   /** The policy.bin decoder; default `readPolicyParcels`. The same kind of seam. */
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
-  /** The gross.bin decoder; default `readGrossTable`. The same kind of seam. */
-  decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
+  /** The options.bin decoder; default `readOptionTable`. The same kind of seam. */
+  decodeOptions?(bytes: Uint8Array): Promise<OptionTable>;
 }
 
 /** `u` when it is a URL under `/data/<datasetVersion>/` of `m`, else null. */
@@ -78,12 +78,12 @@ export function datasetUrl(m: Manifest, u: unknown): string | null {
 }
 
 /**
- * §4.2 step 2: the FZP file URLs (three required, `policy` and `gross` optional), or null when
- * `scenarios.fzp` is absent or any URL is missing or not under `/data/<datasetVersion>/` (the
- * host answers `scenario-missing`). The manifest has passed `checkManifestShape`, which does not
- * look at `scenarios`. The optional `policy` URL is null when absent or outside the prefix: a
- * session without levers never needs it, so it never makes the result null; the optional `gross`
- * URL likewise. `scenarios.fzp.frontage` (older datasets) is ignored.
+ * §4.2 step 2: the FZP file URLs (three always named, `policy`, `options` and `cars` null when
+ * absent), or null when `scenarios.fzp` is absent or any of the three is missing or not under
+ * `/data/<datasetVersion>/` (the host answers `scenario-missing`). The manifest has passed
+ * `checkManifestShape`, which does not look at `scenarios`. A `policy` or `options` URL absent or
+ * outside the prefix is null here and `scenario-missing` at the load. `scenarios.fzp.frontage`
+ * and `scenarios.fzp.gross` (older datasets) are ignored.
  */
 export function simInputUrls(m: Manifest): SimInputUrls | null {
   const fzp: unknown = (m.scenarios as { fzp?: unknown } | undefined)?.fzp;
@@ -94,7 +94,7 @@ export function simInputUrls(m: Manifest): SimInputUrls | null {
   return {
     ...(urls as Pick<SimInputUrls, 'parcels' | 'projects' | 'calibration'>),
     policy: datasetUrl(m, f.policy),
-    gross: datasetUrl(m, f.gross),
+    options: datasetUrl(m, f.options),
     cars: datasetUrl(m, f.cars),
     carZones: datasetUrl(m, f.carZones)
   };
@@ -216,17 +216,16 @@ class Stopped {}
 
 /**
  * §4.2 steps 4-7. Fetches the files concurrently (up to six: parcels, projects, calibration,
- * policy, gross, cars; each with `fetchWithRetry`; the first permanent failure ends the load and
- * stops the others), then, once every byte has arrived,
+ * policy, options, cars; each with `fetchWithRetry`; the first permanent failure ends the load
+ * and stops the others), then, once every byte has arrived,
  * decodes and validates them (never retried), builds the FZP input and its `baseZoning` twin,
  * and precomputes both with `deps.warn`. `projects.asOf ≥ horizon` is the caller's check.
  *
- * With `opts.policy` (/sim, plan 2) `policy.bin` is a fourth concurrent fetch, decoded after
- * parcels.bin and bound to it: no `urls.policy` gives `scenario-missing` before any fetch, and a
- * decode error gives `scenario-invalid`. Without it the policy URL is never requested. With
- * `opts.policy` and `urls.gross`, `gross.bin` is a fifth concurrent fetch, decoded after
- * parcels.bin and checked against it (`grossTableProblem`): a decode error or a mismatch gives
- * `scenario-invalid`. Without `opts.policy` the gross URL is never requested. With `opts.cars`
+ * `policy.bin` and `options.bin` are always fetched: no `urls.policy` or `urls.options` gives
+ * `scenario-missing` before any fetch. policy.bin is decoded after parcels.bin and bound to it, and
+ * its `fzpYieldCap` becomes the parcels' `fzpCap`; options.bin is decoded and checked against
+ * parcels.bin (`optionTableProblem`). A decode error or a mismatch gives `scenario-invalid`. With
+ * `opts.cars`
  * (the /sim timeline host) and `urls.cars`, `cars.bin` is a sixth, inflated and decoded against
  * parcels.bin's row count (`decodeCarData`): a decode error gives `scenario-invalid`. Otherwise it
  * is never requested, and `cars` is null.
@@ -239,16 +238,23 @@ export async function loadSimInput(
   deps: LoadDeps,
   urls: SimInputUrls,
   cancelled: () => boolean,
-  opts?: { policy: boolean; cars?: boolean }
+  opts?: { cars?: boolean }
 ): Promise<Loaded | LoadFailure> {
-  const wantPolicy = opts?.policy === true;
   const wantCars = opts?.cars === true;
-  if (wantPolicy && urls.policy === null) {
+  if (urls.policy === null) {
     return {
       code: 'scenario-missing',
       message: 'dataset has no policy.bin (scenarios.fzp.policy)'
     };
   }
+  if (urls.options === null) {
+    return {
+      code: 'scenario-missing',
+      message: 'dataset has no options.bin (scenarios.fzp.options)'
+    };
+  }
+  const policyUrl = urls.policy;
+  const optionsUrl = urls.options;
   let failed = false;
   const stop = () => failed || cancelled();
   const must = async <T>(p: Promise<FetchResult<T>>): Promise<T> => {
@@ -283,16 +289,16 @@ export async function loadSimInput(
   let bin: ArrayBuffer;
   let projectsJson: unknown;
   let calibrationJson: unknown;
-  let policyBin: ArrayBuffer | null;
-  let grossBin: ArrayBuffer | null;
+  let policyBin: ArrayBuffer;
+  let optionsBin: ArrayBuffer;
   let carsBin: ArrayBuffer | null;
   try {
-    [bin, projectsJson, calibrationJson, policyBin, grossBin, carsBin] = await Promise.all([
+    [bin, projectsJson, calibrationJson, policyBin, optionsBin, carsBin] = await Promise.all([
       bytes(urls.parcels),
       json(urls.projects),
       json(urls.calibration),
-      wantPolicy ? bytes(urls.policy!) : null,
-      wantPolicy && urls.gross !== null ? bytes(urls.gross) : null,
+      bytes(policyUrl),
+      bytes(optionsUrl),
       wantCars && urls.cars !== null ? bytes(urls.cars) : null
     ]);
   } catch (e) {
@@ -315,27 +321,25 @@ export async function loadSimInput(
   }
   if (cancelled()) return CANCELLED;
 
-  let policy: PolicyParcels | null = null;
-  if (policyBin !== null) {
-    try {
-      policy = await (deps.decodePolicy ?? readPolicyParcels)(new Uint8Array(policyBin), parcels);
-    } catch (e) {
-      return invalid('policy.bin', messageOf(e));
-    }
-    if (cancelled()) return CANCELLED;
+  let policy: PolicyParcels;
+  try {
+    policy = await (deps.decodePolicy ?? readPolicyParcels)(new Uint8Array(policyBin), parcels);
+  } catch (e) {
+    return invalid('policy.bin', messageOf(e));
   }
+  if (cancelled()) return CANCELLED;
+  // The FZP cap the options are clipped by: policy.bin's, until parcels.bin carries it.
+  parcels = { ...parcels, fzpCap: policy.fzpYieldCap };
 
-  let gross: GrossTable | null = null;
-  if (grossBin !== null) {
-    try {
-      gross = await (deps.decodeGross ?? readGrossTable)(new Uint8Array(grossBin));
-    } catch (e) {
-      return invalid('gross.bin', messageOf(e));
-    }
-    if (cancelled()) return CANCELLED;
-    const problem = grossTableProblem(gross, parcels);
-    if (problem !== null) return invalid('gross.bin', problem);
+  let options: OptionTable;
+  try {
+    options = await (deps.decodeOptions ?? readOptionTable)(new Uint8Array(optionsBin));
+  } catch (e) {
+    return invalid('options.bin', messageOf(e));
   }
+  if (cancelled()) return CANCELLED;
+  const problem = optionTableProblem(options, parcels);
+  if (problem !== null) return invalid('options.bin', problem);
 
   let cars: CarData | null = null;
   if (carsBin !== null) {
@@ -385,10 +389,10 @@ export async function loadSimInput(
     );
   }
 
-  // Step 6: the FZP input (A2 fillLevels check) and its twin.
+  // Step 6: the FZP input (its choice model checked) and its twin.
   let fzp: SimInput;
   try {
-    fzp = buildSimInput({ parcels, projects, calibration }, deps.warn);
+    fzp = buildSimInput({ parcels, projects, calibration, options }, deps.warn);
   } catch (e) {
     if (e instanceof SimInputError) return invalid(e.file, e.message);
     throw e;
@@ -406,5 +410,5 @@ export async function loadSimInput(
   };
   precomputeOf(fzp, warnOnce);
   precomputeOf(twin, warnOnce);
-  return { fzp, twin, projects, policy, gross, cars };
+  return { fzp, twin, projects, policy, options, cars };
 }

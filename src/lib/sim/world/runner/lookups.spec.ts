@@ -119,7 +119,7 @@ describe('createBrushService files', () => {
   let ds: Dataset;
   let h: MiniDataset;
   beforeAll(async () => {
-    h = miniDataset({ policy: true });
+    h = miniDataset();
     ds = await newDataset(h);
   });
   const Q: BrushQuery = { kind: 'transit', stopTypes: ['metro'], maxM: 100 };
@@ -188,7 +188,7 @@ describe('createBrushService files', () => {
 describe('direct lookups on the mini city', () => {
   let ds: Dataset;
   beforeAll(async () => {
-    ds = await newDataset(miniDataset({ policy: true }));
+    ds = await newDataset(miniDataset());
   });
 
   it('lotOutlinesResult answers the loaded lots and counts the missing', () => {

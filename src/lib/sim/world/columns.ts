@@ -1,4 +1,4 @@
-import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as policyCodecModule from '$lib/data/policy-codec';
 import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import * as typesModule from './types';
@@ -6,18 +6,17 @@ import type { LotColumns, ProjectColumns, World } from './types';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
-const { FILL_LEVELS } = scenarioCodecModule;
-const { END_ALIVE, NO_DAY, NO_STOP, LOT_FREE } = typesModule;
+const { NULL_CAP } = policyCodecModule;
+const { END_ALIVE, NO_BTYPE, NO_DAY, NO_STOP, LOT_FREE } = typesModule;
 
-type Typed = Int32Array | Uint32Array | Uint8Array | Float64Array;
+type Typed = Int32Array | Uint32Array | Uint16Array | Uint8Array | Float64Array;
 
 /** Stages a row's `entered` entry covers. */
 const ENTERED_STRIDE = 7;
-const YIELDS_STRIDE = FILL_LEVELS.length;
 const FIRST_CAPACITY = 64;
 
 /** Per-row strides of the project columns; every other typed column has one entry per row. */
-const STRIDE: Record<string, number> = { entered: ENTERED_STRIDE, yields: YIELDS_STRIDE };
+const STRIDE: Record<string, number> = { entered: ENTERED_STRIDE };
 const REV_COLUMNS = ['revDay', 'revUnits', 'revStories', 'revPrev'];
 const DISP_COLUMNS = ['dispRow', 'dispDay', 'dispUnits'];
 const COUNTS = new Set(['n', 'revN', 'dispN']);
@@ -93,10 +92,11 @@ function emptyProjects(): ProjectColumns {
     existing: new Int32Array(0),
     yieldCap: new Int32Array(0),
     envelope: new Int32Array(0),
-    level: new Uint8Array(0),
+    level: new Uint16Array(0),
+    btype: new Uint8Array(0),
+    optCap: new Uint16Array(0),
     env: new Int32Array(0),
     top: new Int32Array(0),
-    yields: new Int32Array(0),
     phaseNext: new Int32Array(0),
     phaseDay: new Int32Array(0),
     kind: new Uint8Array(0),
@@ -149,6 +149,8 @@ export function addProject(p: ProjectColumns): number {
   p.endKind[row] = END_ALIVE;
   p.stopAt[row] = NO_STOP;
   p.filed[row] = NO_DAY;
+  p.btype[row] = NO_BTYPE;
+  p.optCap[row] = NULL_CAP;
   p.revLast[row] = -1;
   p.programmes[row] = '';
   return row;

@@ -1,6 +1,28 @@
-// Test support: a copy of a ScenarioParcels with some of its rows, in a given order, under given
-// ids. Browser-safe.
+// Test support: a copy of a ScenarioParcels (and of its option table) with some of its rows, in a
+// given order, under given ids. Browser-safe.
+import { optionTableOf, type OptionTable } from '$lib/data/option-table';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { BUILDING_FORMS, BUILDING_TYPES, type Option } from '$lib/sim/choice/types';
+
+/** A copy of `t` with rows `rows` of the source, in that order (as `selectRows` takes them). */
+export function selectOptionRows(t: OptionTable, rows: readonly number[]): OptionTable {
+  return optionTableOf(
+    t.datasetVersion,
+    rows.map((r) => {
+      const options: Option[] = [];
+      for (let j = t.offset[r]; j < t.offset[r + 1]; j++) {
+        options.push({
+          type: BUILDING_TYPES[t.type[j]],
+          form: BUILDING_FORMS[t.form[j]],
+          stories: t.stories[j],
+          homes: t.homes[j],
+          plates: t.plates[j]
+        });
+      }
+      return { options, locationValue: t.locationValue[r] };
+    })
+  );
+}
 
 const F = FILL_LEVELS.length;
 
@@ -60,6 +82,7 @@ export function selectRows(
     rentControlLikely: pick(p.rentControlLikely, 1),
     landUseClass: pick(p.landUseClass, 1),
     hostableBase: pick(p.hostableBase, 1),
+    fzpCap: pick(p.fzpCap, 1),
     baseYield: pick(p.baseYield, F),
     yield: pick(p.yield, F),
     potentialRatio: { fzp: pick(p.potentialRatio.fzp, 1), base: pick(p.potentialRatio.base, 1) },

@@ -7,6 +7,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
+import { miniOptions } from './fixtures/mini-options';
 import { miniCity } from './fixtures/mini-parcels';
 import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput } from './input/build';
@@ -18,7 +19,8 @@ const city = miniCity();
 const base: SimInput = buildSimInput({
   parcels: city.parcels,
   projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration
+  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration,
+  options: miniOptions(city)
 });
 
 /** `base` with these envelope stories, row edits and districtMaxStories. */
@@ -84,7 +86,10 @@ describe('buildSimInput districtMaxStories', () => {
   it('is the projects.json districtMaxStories.stories, else null', () => {
     const file = parseProjectsFile(miniProjectsJson(), { onInvalid() {} });
     const calibration = base.calibration;
-    expect(buildSimInput({ parcels: city.parcels, projects: file, calibration })).toMatchObject({
+    const options = base.options;
+    expect(
+      buildSimInput({ parcels: city.parcels, projects: file, calibration, options })
+    ).toMatchObject({
       districtMaxStories: file.districtMaxStories?.stories ?? null
     });
     const withMax: typeof file = {
@@ -92,12 +97,14 @@ describe('buildSimInput districtMaxStories', () => {
       districtMaxStories: { stories: 14, n: 9, provenance: file.rhnaCompletedNet.provenance }
     };
     expect(
-      buildSimInput({ parcels: city.parcels, projects: withMax, calibration }).districtMaxStories
+      buildSimInput({ parcels: city.parcels, projects: withMax, calibration, options })
+        .districtMaxStories
     ).toBe(14);
     const without = { ...file };
     delete without.districtMaxStories;
     expect(
-      buildSimInput({ parcels: city.parcels, projects: without, calibration }).districtMaxStories
+      buildSimInput({ parcels: city.parcels, projects: without, calibration, options })
+        .districtMaxStories
     ).toBeNull();
   });
 });

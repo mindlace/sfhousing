@@ -1,28 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { NULL_CAP } from '$lib/data/policy-codec';
-import type { EnvelopeRow } from '$lib/data/envelope-row';
+import { miniOptions } from '../world/fixtures/mini-options';
 import { miniCity } from '../world/fixtures/mini-parcels';
 import { MINI_HISTORIC_ID, MINI_SB79_ID, miniPolicy } from '../world/fixtures/mini-policy';
 import { dayOf } from '../world/dates';
 import { stockTable, type EnvelopeTable, type LayerCtx } from './layers';
 import {
-  allNeeds,
-  fillNeeds,
+  capacityOf,
   leverCapacity,
-  needKey,
+  lotCapacity,
   netCapacity,
   protectedRows,
   resolveEnvelopes
 } from './resolve';
 import { DEFAULT_LEVERS, type SimLevers, type StoryEdit } from './types';
 
-const F = 5;
 const FZP_LOT = '2999A001'; // 4 stories, uncapped, 1 home
 const ASOF = dayOf(2025, 6, 1);
 
 function ctx(): LayerCtx {
   const city = miniCity();
-  return { parcels: city.parcels, policy: miniPolicy(city) };
+  return { parcels: city.parcels, policy: miniPolicy(city), options: miniOptions(city) };
 }
 const L = (patch: Partial<SimLevers> = {}): SimLevers => ({
   ...structuredClone(DEFAULT_LEVERS),
@@ -30,12 +28,7 @@ const L = (patch: Partial<SimLevers> = {}): SimLevers => ({
 });
 const e = (lots: string[], stories: number): StoryEdit => ({ lots, stories });
 function row(t: EnvelopeTable, i: number) {
-  return {
-    stories: t.stories[i],
-    cap: t.cap[i],
-    yield: Array.from(t.yield.subarray(i * F, i * F + F)),
-    hostable: t.hostable[i]
-  };
+  return { stories: t.stories[i], cap: t.cap[i], hostable: t.hostable[i] };
 }
 const at = (c: LayerCtx, id: string) => c.parcels.index.get(id)!;
 /** Protections that cover exactly `ids` in `c`: the historic category, flagged on those lots only. */
@@ -59,17 +52,16 @@ describe('rules and paint', () => {
     const r = resolveEnvelopes(c, L(), ASOF);
     const fzp = stockTable(c, 'fzp');
     for (let i = 0; i < c.parcels.count; i++) expect(row(r.plan.table, i)).toEqual(row(fzp, i));
-    expect(allNeeds(r)).toEqual([]);
   });
 
-  it('a rule above FZP raises the lot uncapped', () => {
+  it('a rule above FZP raises the lot uncapped, hosting where it is eligible', () => {
     const c = ctx();
     const id = c.parcels.id[CAPPED];
     const s = stockTable(c, 'fzp').stories[CAPPED];
     const r = resolveEnvelopes(c, L({ rules: [e([id], s + 3)] }), ASOF);
     expect(r.plan.table.stories[CAPPED]).toBe(s + 3);
     expect(r.plan.table.cap[CAPPED]).toBe(NULL_CAP);
-    expect(r.plan.needs).toEqual([{ row: CAPPED, stories: s + 3, cap: null }]);
+    expect(r.plan.table.hostable[CAPPED]).toBe(c.parcels.eligible[CAPPED]);
   });
 
   it('a rule at or below FZP leaves the FZP row, cap included', () => {
@@ -79,7 +71,6 @@ describe('rules and paint', () => {
     for (const n of [s, s - 1]) {
       const r = resolveEnvelopes(c, L({ rules: [e([id], n)] }), ASOF);
       expect(row(r.plan.table, CAPPED)).toEqual(row(stockTable(c, 'fzp'), CAPPED));
-      expect(r.plan.needs).toEqual([]);
     }
   });
 
@@ -107,16 +98,12 @@ describe('rules and paint', () => {
     expect(two.plan.table.stories[i]).toBe(7);
   });
 
-  it('paint to 0 stories hosts nothing and needs nothing', () => {
+  it('paint to 0 stories hosts nothing and holds nothing', () => {
     const c = ctx();
     const i = at(c, FZP_LOT);
     const r = resolveEnvelopes(c, L({ paint: [e([FZP_LOT], 0)] }), ASOF);
-    expect(row(r.plan.table, i)).toMatchObject({
-      stories: 0,
-      yield: [0, 0, 0, 0, 0],
-      hostable: 0
-    });
-    expect(r.plan.needs).toEqual([]);
+    expect(row(r.plan.table, i)).toMatchObject({ stories: 0, hostable: 0 });
+    expect(lotCapacity(c.options, i, 0, NULL_CAP, c.parcels.existingUnits[i])).toBe(0);
   });
 
   it('a protected lot keeps its FZP row, not hostable, whatever rules and paint say', () => {
@@ -177,16 +164,13 @@ describe('protections', () => {
       const r = resolveEnvelopes(c, L({ ...patch, protect: protecting(c, [FZP_LOT]) }), ASOF);
       expect(row(r.plan.table, i)).toEqual({ ...row(fzp, i), hostable: 0 });
       expect(Array.from(r.protectedRows)).toEqual([i]);
-      // The protected view makes no Need; the unprotected view may (a raise to 8 does).
-      expect(r.plan.needs).toEqual([]);
-      expect(allNeeds(r).map(needKey)).toEqual(r.unprotected.needs.map(needKey));
     }
     const lowered = resolveEnvelopes(
       c,
       L({ paint: [e([FZP_LOT], 0)], protect: protecting(c, [FZP_LOT]) }),
       ASOF
     );
-    const cap = leverCapacity(lowered, c.parcels);
+    const cap = leverCapacity(lowered, c);
     expect(cap.withoutProtections - cap.plan).toBe(0); // lowered to 0: nothing either way
   });
 
@@ -214,7 +198,7 @@ describe('protections', () => {
 
   it('withoutProtections minus plan is the sum over protected rows', () => {
     const c = ctx();
-    const resolved = resolveEnvelopes(
+    const r = resolveEnvelopes(
       c,
       L({
         rules: [e([MINI_SB79_ID], 8)],
@@ -223,49 +207,64 @@ describe('protections', () => {
       }),
       ASOF
     );
-    // The raise is a Need of the unprotected view only.
-    expect(resolved.plan.needs).toEqual([]);
-    const r = fillNeeds(
-      resolved,
-      new Map<string, EnvelopeRow>(
-        allNeeds(resolved).map((n) => [
-          needKey(n),
-          { stories: n.stories, cap: n.cap, yield: [0, 20, 40, 60, 80], hostable: true }
-        ])
-      )
-    );
-    const cap = leverCapacity(r, c.parcels);
+    const cap = leverCapacity(r, c);
     let sum = 0;
     for (const i of r.protectedRows) {
       const one = (t: EnvelopeTable) =>
-        t.hostable[i] === 1 ? Math.max(0, t.yield[i * F + F - 1] - c.parcels.existingUnits[i]) : 0;
+        t.hostable[i] === 1
+          ? lotCapacity(c.options, i, t.stories[i], t.cap[i], c.parcels.existingUnits[i])
+          : 0;
       sum += one(r.unprotected.table) - one(r.plan.table);
     }
     expect(cap.withoutProtections - cap.plan).toBe(sum);
     expect(cap.withoutProtections - cap.plan).toBeGreaterThan(0);
     expect(cap.protectedLots).toBe(2);
-    expect(cap.plan).toBe(netCapacity(r.plan.table, c.parcels));
+    expect(cap.plan).toBe(netCapacity(r.plan.table, c.parcels, c.options));
   });
 });
 
-describe('needs', () => {
-  it('allNeeds dedupes and sorts; fillNeeds writes rows and throws on a missing one', () => {
+describe('capacity by rule A', () => {
+  /** Every lot at `stories`, uncapped, hostable where eligible. */
+  function allAt(c: LayerCtx, stories: number): EnvelopeTable {
+    const n = c.parcels.count;
+    return {
+      count: n,
+      stories: new Uint8Array(n).fill(stories),
+      cap: new Uint16Array(n).fill(NULL_CAP),
+      hostable: Uint8Array.from(c.parcels.eligible)
+    };
+  }
+
+  it('never lowers capacity when every cap rises', () => {
     const c = ctx();
-    const a = at(c, FZP_LOT);
-    const r = resolveEnvelopes(c, L({ paint: [e([MINI_SB79_ID, FZP_LOT], 7)] }), ASOF);
-    const needs = allNeeds(r);
-    expect(needs.map((n) => n.row)).toEqual([a, at(c, MINI_SB79_ID)].sort((x, y) => x - y));
-    expect(() => fillNeeds(r, new Map())).toThrow(/no envelope row/);
-    const rows = new Map<string, EnvelopeRow>(
-      needs.map((n) => [
-        needKey(n),
-        { stories: n.stories, cap: n.cap, yield: [0, 1, 2, 3, 4], hostable: true }
-      ])
+    for (let s = 1; s < 40; s++) {
+      expect(netCapacity(allAt(c, s + 1), c.parcels, c.options)).toBeGreaterThanOrEqual(
+        netCapacity(allAt(c, s), c.parcels, c.options)
+      );
+    }
+    expect(netCapacity(allAt(c, 13), c.parcels, c.options)).toBeGreaterThan(0);
+  });
+
+  it('is the most homes an allowed option holds after the cap, less the homes there', () => {
+    const c = ctx();
+    const i = at(c, FZP_LOT);
+    const t = c.options;
+    const existing = c.parcels.existingUnits[i];
+    for (const stories of [0, 1, 4, 8, 13]) {
+      let most = 0;
+      for (let j = t.offset[i]; j < t.offset[i + 1]; j++)
+        if (t.stories[j] <= stories) most = Math.max(most, t.homes[j]);
+      expect(lotCapacity(t, i, stories, NULL_CAP, existing)).toBe(Math.max(0, most - existing));
+      expect(lotCapacity(t, i, stories, existing, existing)).toBe(0); // a cap at the homes there
+    }
+  });
+
+  it('capacityOf reads a view as netCapacity reads its table', () => {
+    const c = ctx();
+    const t = stockTable(c, 'fzp');
+    const parcels = { ...c.parcels, fzpCap: t.cap };
+    expect(capacityOf({ parcels, pre: { choice: { t: c.options } } })).toBe(
+      netCapacity(t, parcels, c.options)
     );
-    const filled = fillNeeds(r, rows);
-    expect(row(filled.plan.table, a).yield).toEqual([0, 1, 2, 3, 4]);
-    expect(filled.plan.table.hostable[a]).toBe(1);
-    expect(filled.unprotected).toBe(filled.plan);
-    expect(r.plan.table.hostable[a]).toBe(0); // input untouched
   });
 });

@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { decodeOptionPayload } from '../../src/lib/data/option-table';
+import { decodePolicyPayload } from '../../src/lib/data/policy-codec';
 import { decodeScenarioPayload } from '../../src/lib/data/scenario-codec';
 import { buildSimInput } from '../../src/lib/sim/world/input/build';
 import { oneMoneyTimeline, runFunded } from '../../src/lib/sim/world/funding/test/fixtures';
@@ -15,14 +17,19 @@ import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 
 const DIR = join(__dirname, '../../e2e/fixtures/data/fixture-0/scenarios/fzp');
 const json = (name: string): unknown => JSON.parse(readFileSync(join(DIR, name), 'utf8'));
+const inflated = (name: string) => inflateRawSync(readFileSync(join(DIR, name)));
 
 describe('fixture-0 funding', () => {
   it('runs with finance and funds at least one start on seed 1', () => {
-    const parcels = decodeScenarioPayload(inflateRawSync(readFileSync(join(DIR, 'parcels.bin'))));
+    const decoded = decodeScenarioPayload(inflated('parcels.bin'));
+    // the FZP cap is policy.bin's, as the loader binds it
+    const policy = decodePolicyPayload(inflated('policy.bin'), decoded);
+    const parcels = { ...decoded, fzpCap: policy.fzpYieldCap };
     const input = buildSimInput({
       parcels,
       projects: parseProjectsFile(json('projects.json')),
-      calibration: parseCalibration(json('calibration.json'))
+      calibration: parseCalibration(json('calibration.json')),
+      options: decodeOptionPayload(inflated('options.bin'))
     });
     expect(input.finance).toBeDefined();
     const { ledger } = runFunded(

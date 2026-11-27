@@ -3,12 +3,12 @@
 // its leaving the line.
 import { NEVER_KEY_DAY, below, coverageLevel, lineKey } from '$lib/sim/world/rules/funding';
 import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { allowedCount, capFrom, topHomes } from '$lib/sim/choice/choose';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
-import { lotEntity } from '../rates';
+import { logitsAt, lotEntity } from '../rates';
 import { monthOfDay } from '../months';
-import type { PolicyTimeline } from '../policy/frame';
+import type { PolicyTimeline, ZoningView } from '../policy/frame';
 import { NO_DAY, type StepCtx, type World } from '../types';
 import { kindClock, sizeIn, type KindClock, type Spell } from './clocks';
 import { frameMoney, sameMoney, type FrameMoney } from './frame-money';
@@ -23,7 +23,6 @@ import {
 } from './columns';
 import { beforeChange, isWaiting, leaveRows, noteAdded } from './line-index';
 
-const F = FILL_LEVELS.length;
 const KINDS: readonly ProjectKind[] = ['market', 'affordable'];
 const CODE: Record<ProjectKind, number> = { market: KIND_MARKET, affordable: KIND_AFFORDABLE };
 
@@ -90,11 +89,15 @@ export function spellsOf(ctx: StepCtx, lot: number): { market: Spell; affordable
  */
 export const ELIGIBILITY = { skip: true, early: true, memo: true };
 
-/** The most homes any fill level gives `lot` in `parcels` (the largest size a SIZE draw can give). */
-function topYield(parcels: ScenarioParcels, lot: number): number {
-  let top = 0;
-  for (let f = 0; f < F; f++) top = Math.max(top, parcels.yield[lot * F + f]);
-  return top;
+/**
+ * The most homes an option the view's envelope and cap allow gives `lot` (the largest size a SIZE
+ * draw can give).
+ */
+function topYield(view: ZoningView, lot: number): number {
+  const p = view.parcels;
+  const t = view.pre.choice.t;
+  const allowed = allowedCount(t, lot, p.envelopeStories[lot]);
+  return topHomes(t, lot, allowed, capFrom(p.fzpCap[lot]), p.existingUnits[lot]);
 }
 
 /**
@@ -164,8 +167,8 @@ function canFund(timeline: PolicyTimeline, m: number, kind: ProjectKind, lot: nu
   const fm = frameMoney(timeline, g);
   if (fm.offered[kind].length === 0) return false;
   if (!ELIGIBILITY.skip) return true;
-  if (g.view.pre.logit[lot] === -Infinity) return false;
-  return topYield(g.view.parcels, lot) >= fm.least[kind];
+  if (logitsAt(g.view, g.choiceStep)[lot] === -Infinity) return false;
+  return topYield(g.view, lot) >= fm.least[kind];
 }
 
 // ---- The eligibility memo for lots with no row ----
@@ -470,8 +473,8 @@ function remade(
 ): Remade | null {
   const view = ctx.frame.view;
   const uS = drawOn(spell.stream, P.SIZE, 0);
-  const size = sizeIn(ctx.statics, view, ctx.frame.calibration, lot, spell.existing, uS);
-  if (size === null || view.pre.logit[lot] === -Infinity) return null;
+  const size = sizeIn(view, ctx.frame.choiceStep, lot, spell.existing, uS);
+  if (size === null || logitsAt(view, ctx.frame.choiceStep)[lot] === -Infinity) return null;
   const bundle = fm.bundleOf(kind, size.units);
   if (bundle.length === 0) return null;
   const now = coverageLevel(fm.index.price(kind, bundle, size.protoId).coverage);

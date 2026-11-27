@@ -135,7 +135,7 @@ function directInput(p: SimPolicy): FrameCityInput {
   const r = resolveEnvelopes(CTX.layers, levers, ASOF);
   return {
     stories: r.plan.table.stories,
-    countable: countableMask(r.plan.table, PARCELS.eligible, r.plan.needs, r.protectedRows),
+    countable: countableMask(r.plan.table, PARCELS.eligible, r.protectedRows),
     sources: limitSources(CTX.layers, levers, r.protectedRows)
   };
 }

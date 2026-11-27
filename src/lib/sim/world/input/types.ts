@@ -1,6 +1,7 @@
 // The simulation's schedule, input, card and score types (T5, T8), types only and worker-safe (no
 // runtime exports). `protocol.ts` re-exports the card and the score.
 import type { ParcelId } from '$lib/data/parcel';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { GeneratedBuilding } from '$lib/generator';
 import type { Target } from '$lib/scoreboard';
@@ -75,6 +76,9 @@ export interface Schedule {
 }
 export type SimInput = {
   parcels: ScenarioParcels; // decoded T11
+  // options.bin: per T11 row, the lot's building options; a start chooses among those its view's
+  // envelope and cap allow (src/lib/sim/choice). Every view of the input shares it.
+  options: OptionTable;
   projects: InFlightProject[];
   calibration: Calibration;
   asOf: Day;

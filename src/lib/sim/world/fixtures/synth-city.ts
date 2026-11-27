@@ -10,6 +10,7 @@
 import { deflateRawSync } from 'node:zlib';
 import { idsHash } from '$lib/data/column-file';
 import type { Manifest } from '$lib/data/manifest';
+import { encodeOptionPayload, type OptionTable } from '$lib/data/option-table';
 import type { ParcelRecord } from '$lib/data/parcel';
 import { encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { NULL_CAP, S207_STATUSES, type PolicyParcels } from '$lib/data/policy-codec';
@@ -26,6 +27,7 @@ import type { InFlightProject, ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Pathway, Provenance, Stage } from '$lib/timelapse/types';
 import miniCalibrationJson from './mini-calibration.json';
+import { synthOptions } from './synth-options';
 import { MINI_AS_OF } from './mini-projects';
 
 // host.bench's grid: 420 × 358 label points over ≈13.2 km × 11.1 km, 16 × 16 cells.
@@ -53,6 +55,8 @@ const URLS = {
 };
 /** Where the bench host serves `policy.bin` (the rig answers it with `synthPolicy`). */
 export const SYNTH_POLICY_URL = `/data/${SYNTH_VERSION}/scenarios/fzp/policy.bin`;
+/** Where the bench host serves `options.bin` (the rig answers it with `SynthCity.optionsBin`). */
+export const SYNTH_OPTIONS_URL = `/data/${SYNTH_VERSION}/scenarios/fzp/options.bin`;
 
 export interface SynthCity {
   /** Decoded T11, exactly as the host decodes `bin`. */
@@ -66,6 +70,13 @@ export interface SynthCity {
   chunks: Map<string, unknown>;
   /** `parcels.bin` as served: deflate-raw over the T11 payload */
   bin: Uint8Array;
+  /**
+   * options.bin decoded: one option per story count up to twice the envelope (at least 8, at most
+   * 80), homes by the floor-area rule.
+   */
+  options: OptionTable;
+  /** `options.bin` as served: deflate-raw over the option payload */
+  optionsBin: Uint8Array;
   /** what the host fetches: the URL of `bin`, and url → body of every JSON file it may ask for */
   files: { bin: string; json: Map<string, unknown> };
 }
@@ -202,7 +213,9 @@ function t11Of(lots: Lot[]): ScenarioParcels {
     id: rows.map((r) => r.rec.id),
     index: new Map(rows.map((r, i) => [r.rec.id, i])),
     ...p,
-    // derived at decode; the decoded copy below is the one returned
+    // derived at decode (the FZP cap is not on the wire); the decoded copy below is the one
+    // returned
+    fzpCap: new Uint16Array(count).fill(NO_CAP),
     potentialRatio: { fzp: new Float32Array(count), base: new Float32Array(count) },
     storiesGap: { fzp: new Int16Array(count), base: new Int16Array(count) }
   };
@@ -378,7 +391,17 @@ export function synthCity(): SynthCity {
   const lots = lotsOf();
   const payload = encodeScenarioPayload(t11Of(lots));
   const bin = deflateRawSync(payload);
-  const parcels = decodeScenarioPayload(payload);
+  const decoded = decodeScenarioPayload(payload);
+  // the cap `synthPolicy`'s fzpYieldCap holds, which the loader binds as the FZP cap
+  const parcels: ScenarioParcels = {
+    ...decoded,
+    fzpCap: Uint16Array.from(decoded.baseCap, (c, i) => (decoded.localProgram[i] ? NULL_CAP : c))
+  };
+  const options = synthOptions(
+    parcels,
+    (i) => (parcels.eligible[i] ? Math.min(80, Math.max(8, 2 * parcels.envelopeStories[i])) : 0),
+    (i, stories) => grossUnits(parcels.lotAreaM2[i], stories)
+  );
   const projects = projectsOf(lots, parcels);
   const calibration = calibrationOf();
 
@@ -409,7 +432,7 @@ export function synthCity(): SynthCity {
     basemapTiles: `/data/${SYNTH_VERSION}/basemap/{z}/{x}/{y}.pbf`,
     glyphs: `/data/${SYNTH_VERSION}/glyphs/{fontstack}/{range}.pbf`,
     neighborhoods: `/data/${SYNTH_VERSION}/neighborhoods.geojson`,
-    scenarios: { fzp: { ...URLS } }
+    scenarios: { fzp: { ...URLS, policy: SYNTH_POLICY_URL, options: SYNTH_OPTIONS_URL } }
   } as Manifest;
   const json = new Map<string, unknown>(chunks);
   json.set(URLS.projects, projects);
@@ -421,6 +444,8 @@ export function synthCity(): SynthCity {
     manifest,
     chunks,
     bin: new Uint8Array(bin),
+    options,
+    optionsBin: new Uint8Array(deflateRawSync(encodeOptionPayload(options))),
     files: { bin: URLS.parcels, json }
   };
 }

@@ -259,6 +259,8 @@ export function scenarioTiny(): ScenarioParcels {
     rentControlLikely: col(Uint8Array, (r) => r.rentControlLikely),
     landUseClass: col(Uint8Array, (r) => r.landUseClass),
     hostableBase: col(Uint8Array, (r) => r.hostableBase),
+    // not on the wire: decode gives none (the loader binds policy.bin's)
+    fzpCap: new Uint16Array(n).fill(0xffff),
     baseYield,
     yield: yieldCol,
     potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },

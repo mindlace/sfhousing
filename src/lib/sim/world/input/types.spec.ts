@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
@@ -69,6 +70,7 @@ interface RowSchedule {
 }
 type RowSimInput = {
   parcels: ScenarioParcels;
+  options: OptionTable; // building choice: the lots' options
   projects: InFlightProject[];
   calibration: Calibration;
   asOf: Day;

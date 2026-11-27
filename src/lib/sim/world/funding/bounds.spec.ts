@@ -126,7 +126,10 @@ describe('older-format calibration', () => {
 
   beforeAll(async () => {
     const legacy = parseCalibration(JSON.parse(readFileSync(LEGACY_PATH, 'utf8')));
-    input = withBaselineMoney({ ...(await fixtureInput()), calibration: legacy });
+    const base = await fixtureInput();
+    // an older calibration has no choice model: the run reads the dataset's
+    const { choice, heightTime } = base.calibration;
+    input = withBaselineMoney({ ...base, calibration: { ...legacy, choice, heightTime } });
   });
 
   /** One world to month 480 under `doc`: the federal pool's least available money and shortfalls. */
