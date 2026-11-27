@@ -362,6 +362,12 @@ is certain; one project is worth 30 to 790 homes, far above the 5-home tolerance
 (spec 2) is measured and lands with the check as its acceptance gate, `money-monotone` is a
 report: it is run and its last line recorded, and its exit 1 blocks nothing.
 
+On the building-choice build `2026-11-27-247eaa0b` (cars on, 64 sets in 79.0 s, exit 1) the last
+line is `Not monotone: 200 drops on 64 edges`; the last drop printed is `net Dec 2060,
+[general-revenue, revolving-fund, public-bank, state-double, federal-support] + housing-bond: 72107
+-> 71709 (-398)`. Report only: it does not stop the upload, and realism, not monotonicity, is the
+bar for levers.
+
 ### Fixture mode
 
 On a `fixture-<n>` build `funding.json` is the twin

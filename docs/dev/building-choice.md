@@ -375,18 +375,16 @@ the records' height ÷ limit means are 0.903 (n 323), 0.839 (n 52), 0.753 (n 28)
 construction at ≤ 7, and homes per project at ≤ 4. The ten misses, with their figures and reasons,
 are in "Known misses" below. Large lots are report only (records n 28).
 
-The cap report below is still `2026-11-27-3abc9cb0`'s.
+Cap report on `2026-11-27-247eaa0b` (`completedNet` 2040 / 2066, old figures from `2026-11-25-76c90397` in brackets; share of starts V / III / I in percent), from `npx tsx scripts/cap-measure.ts pipeline/out/2026-11-27-247eaa0b`:
 
-Cap report (`completedNet` 2040 / 2066, old figures in brackets; share of starts V / III / I):
+| Run          | 12 stories                                    | 13                                            | 16                                            | 20                                            | 40                                            | 80                                            |
+| ------------ | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- |
+| Transit rule | 57,152 / 112,531 (63,092 / 138,298); 35/39/26 | 57,371 / 118,616 (60,832 / 126,709); 34/39/27 | 62,582 / 135,429 (61,648 / 135,976); 32/36/32 | 65,291 / 144,423 (63,950 / 140,339); 30/34/35 | 71,526 / 172,953 (68,106 / 156,754); 29/32/39 | 75,962 / 195,880 (73,248 / 182,282); 28/32/40 |
+| Full tree    | 69,977 / 134,776 (80,685 / 165,058); 35/39/27 | 71,344 / 142,592 (75,920 / 157,445); 33/39/28 | 78,706 / 158,744 (79,489 / 167,549); 31/35/34 | 84,459 / 176,500 (83,391 / 171,072); 30/34/37 | 90,773 / 213,396 (89,249 / 197,592); 28/32/40 | 98,626 / 242,764 (97,777 / 222,488); 28/31/41 |
 
-| Run          | 12 stories                                    | 13                                            | 16                                            | 20                                            | 40                                             | 80                                             |
-| ------------ | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | ---------------------------------------------- | ---------------------------------------------- |
-| Transit rule | 58,529 / 122,720 (63,092 / 138,298); 51/21/28 | 58,499 / 129,385 (60,832 / 126,709); 50/21/29 | 60,811 / 145,700 (61,648 / 135,976); 46/19/35 | 64,039 / 165,625 (63,950 / 140,339); 43/18/39 | 89,948 / 269,160 (68,106 / 156,754); 38/14/48  | 113,934 / 372,896 (73,248 / 182,282); 37/14/49 |
-| Full tree    | 74,100 / 139,893 (80,685 / 165,058); 50/21/29 | 76,082 / 146,228 (75,920 / 157,445); 49/20/30 | 81,707 / 172,669 (79,489 / 167,549); 45/19/36 | 88,325 / 196,614 (83,391 / 171,072); 42/17/41 | 118,495 / 327,730 (89,249 / 197,592); 37/14/49 | 154,893 / 447,756 (97,777 / 222,488); 36/14/50 |
+Current law: 46,058 / 75,289 (47,502 / 79,338); starts 66% V, 25% III, 9% I (n 1,625).
 
-Current law: 47,218 / 82,765 (47,502 / 79,338); starts 77% V, 12% III, 10% I (n 1,651). Transit at
-13 stories builds 30 fewer homes than at 12 by 2040 (58,499 against 58,529), within noise; every
-other step up builds more.
+Every step up in the cap builds more homes in both years, in both rows: no cap builds fewer than a lower one, so nothing here needs a reason beyond the records'. The report is not a gate. Against the old tables the full tree's 12-story figures are lower (69,977 against 80,685 by 2040) and its 40- and 80-story 2066 figures higher (213,396 against 197,592; 242,764 against 222,488); the mix of starts moved from Type V to Type III and Type I as the records' height checks say it should not be (see "Known misses").
 
 ## Known misses (owner ruling 2026-11-27)
 
