@@ -109,7 +109,10 @@ export interface ProjectColumns {
   existing: Int32Array;
   yieldCap: Int32Array;
   envelope: Int32Array;
-  /** A simulated row's option: its index in the lot's row of the option table. */
+  /**
+   * A simulated row's option: its index in the lot's row of the option table, the latest one (a
+   * revision moves it; the revision table keeps only units and stories).
+   */
   level: Uint16Array;
   /** The option's construction type (a code into `BUILDING_TYPES`); `NO_BTYPE` for none. */
   btype: Uint8Array;

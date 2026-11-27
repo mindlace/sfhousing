@@ -74,8 +74,8 @@ project not filed at the dataset date, `calibration` otherwise.
 **The building** (building-choice, [building-choice.md](building-choice.md)). A start chooses one of
 the lot's options (`SimInput.options`, options.bin): the view's envelope allows the row's prefix up
 to `envelopeStories` (`allowedCount`), their homes are clipped by the view's cap (`fzpCap`), and
-the choice row is built for the cost step in force on the start day (`choiceStepAt`) against the
-homes there now (0 once the lot is demolished in the run). `u = drawOn(stream, P.SIZE, 0)` picks the
+the choice row is built for the cost step of that frame (`frame.choiceStep`, else the step at the
+dataset date; the funded clocks and the shadows read the same step) against the homes there now (0 once the lot is demolished in the run). `u = drawOn(stream, P.SIZE, 0)` picks the
 option (`pickOption`); none gaining a home makes the lot `LOT_DONE`. The row records the option's
 index in the lot's row (`level`, a `Uint16Array`), its type (`btype`, `NO_BTYPE` 255 for rows with
 no option), the cap (`optCap`), the envelope (`env`), and `top`, the most homes among the allowed

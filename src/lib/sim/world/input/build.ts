@@ -109,7 +109,7 @@ export interface ChoiceStepColumns {
   /** 1 where the lot is hostable and some allowed option gains a home. */
   gains: Uint8Array;
   /** The best option's index in the lot's row (`expectations().best`), -1 where none gains. */
-  best: Int16Array;
+  best: Int32Array;
   /**
    * The unshifted initiation linear predictor on this step's choice features, -Infinity where the
    * row gets no hazard (not hostable, no gaining option, or a non-finite feature).
@@ -364,7 +364,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
     expStories: new Float32Array(n),
     margin: new Float32Array(n),
     gains: new Uint8Array(n),
-    best: new Int16Array(n).fill(-1),
+    best: new Int32Array(n).fill(-1),
     logit: new Float64Array(n).fill(-Infinity)
   }));
   const hazard = new Float64Array(n);
@@ -392,6 +392,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       const allowed = allowedCount(t, i, p.envelopeStories[i]);
       const cap = capFrom(p.fzpCap[i]);
       const existing = p.existingUnits[i];
+      let counted = false;
       for (let c = 0; c < byStep.length; c++) {
         const e = expectations(ctx, c, i, allowed, cap, existing);
         // whether an option gains does not depend on the cost step
@@ -407,9 +408,11 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
         for (const term of model.terms) {
           const v = featureValue(p, i, term.feature, 'fzp', choice);
           if (!Number.isFinite(v)) {
-            if (c === 0) {
+            // a lot counts once, at whichever step its feature is non-finite
+            if (!counted) {
               if (bad === 0) firstBad = `${p.id[i]} ${term.feature}`;
               bad++;
+              counted = true;
             }
             finite = false;
             break;

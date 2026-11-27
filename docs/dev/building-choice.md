@@ -232,7 +232,8 @@ until parcels.bin carries it (Task 9b), decode gives none and the loader binds p
   step's rates (`stepRates`). Frames carry `choiceStep` (the compiler's step on the month's first
   day), and start odds read that step's logits (`rates.ts` `logitsAt`); a change of step replans
   every free lot, as a market change does.
-- **A start** (`world.ts`) builds the market choice row for the step in force on its day against
+- **A start** (`world.ts`) builds the market choice row for the cost step of the frame of its
+  lot-month's first day (`choiceStep`, the step the funded clocks and the shadows read) against
   the homes there now (0 once demolished), draws `u = drawOn(stream, P.SIZE, 0)` and starts
   `pickOption`'s option: units its clipped homes, stories and type its own. The row keeps the
   option index (`level`, Uint16), `btype` and `optCap`; `top` is the most homes an allowed

@@ -15,16 +15,25 @@ import { monthFirstDay } from './months';
 import { staticsOf } from './statics';
 import { miniInput } from './test/mini';
 import { horizonMonth, Recorder, runWorld, SEEDS } from './test/run';
-import { frameOf, oneFrame } from './test/timeline';
+import { changingAt, frameOf, oneFrame } from './test/timeline';
 import { ORIGIN_SIM, type World } from './types';
 
 const input = miniInput();
 const t = input.options;
 
-function runMini(o: { months: number; seed?: number; input?: SimInput }) {
+/**
+ * A world on `o.input`'s own view. With `stepFrom`, frames from that month read cost step 1, as a
+ * compile sets `choiceStep` from the step in force on each month's first day.
+ */
+function runMini(o: { months: number; seed?: number; input?: SimInput; stepFrom?: number }) {
   const inp = o.input ?? input;
+  const f = frameOf(inp);
+  const timeline =
+    o.stepFrom === undefined
+      ? oneFrame(f)
+      : changingAt(o.stepFrom, f, { ...f, id: 1, choiceStep: 1 }, null);
   const rec = new Recorder();
-  const w = runWorld(staticsOf(inp), oneFrame(frameOf(inp)), o.seed ?? 1, o.months, rec);
+  const w = runWorld(staticsOf(inp), timeline, o.seed ?? 1, o.months, rec);
   return { w, rec };
 }
 
@@ -114,7 +123,7 @@ describe("a start chooses among the lot's options", () => {
     let differs = false;
     for (const seed of SEEDS) {
       const one = starts(runMini({ months, seed }).w);
-      const other = starts(runMini({ months, seed, input: twoInput }).w);
+      const other = starts(runMini({ months, seed, input: twoInput, stepFrom: 60 }).w);
       expect(before(other)).toEqual(before(one));
       if (JSON.stringify(after(other)) !== JSON.stringify(after(one))) differs = true;
     }

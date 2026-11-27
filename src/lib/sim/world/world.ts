@@ -37,8 +37,7 @@ import type {
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
 const { NULL_CAP } = policyCodecModule;
-const { allowedCount, capFrom, choiceRow, choiceStepAt, optionHomes, pickOption, topHomes } =
-  chooseModule;
+const { allowedCount, capFrom, choiceRow, optionHomes, pickOption, topHomes } = chooseModule;
 const { pathwayFrom } = stagesModule;
 const { P, drawOn, seedHash, streamOf } = rngModule;
 const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
@@ -348,14 +347,15 @@ function stepCtx(
     let li = ensureLot(l, lot, asOf);
     const k = l.k[li];
     const stream = streamOf(sh, lotEntity(statics, lot), k);
-    // Rule 8 and Open question 3: route shares, Local Program and size from the frame of the
-    // model month holding the lot-month's first day.
+    // Rule 8 and Open question 3: route shares, Local Program and the building from the frame of
+    // the model month holding the lot-month's first day (its view and its cost step).
     const from = ordinary === null ? frame : timeline.frameAt(Math.min(ordinary.frameMonth, month));
     const view = funded === null ? from.view : funded.view;
     const parcels = view.parcels;
     const existing = l.demolished[li] === 1 ? 0 : parcels.existingUnits[lot];
     // The developer's choice: the options the view's envelope allows, their homes clipped by its
-    // cap, against the homes there now (0 once demolished), at the cost step in force on the day.
+    // cap, against the homes there now (0 once demolished), at that frame's cost step (as the
+    // funded clocks and the shadows read it).
     const choice = view.pre.choice;
     const t = choice.t;
     const env = parcels.envelopeStories[lot];
@@ -365,7 +365,8 @@ function stepCtx(
     if (funded !== null) f = funded.f;
     else {
       if (cum.length < allowed) cum = new Float32Array(allowed);
-      choiceRow(choice, choiceStepAt(choice, day), lot, allowed, cap, existing, 'market', cum);
+      const step = from.choiceStep ?? view.pre.choiceStep;
+      choiceRow(choice, step, lot, allowed, cap, existing, 'market', cum);
       f = pickOption(cum, allowed, drawOn(stream, P.SIZE, 0));
       if (f < 0) {
         l.state[li] = LOT_DONE;
