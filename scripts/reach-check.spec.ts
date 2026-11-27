@@ -58,6 +58,34 @@ function recorder(open?: CheckIo['open']): { io: CheckIo; out: string[]; err: st
   return { io: { out: (l) => out.push(l), err: (l) => err.push(l), open }, out, err };
 }
 
+const reached = (who: Reach['who']): Reach => ({
+  who,
+  rung: who === 'current' ? 0 : RUNGS - 1,
+  amount: 100,
+  deadline: 0 as Day,
+  reachedOn: 0 as Day,
+  homesAtDeadline: 100,
+  marginMonths: 3
+});
+const missed = (who: Reach['who']): Reach => ({
+  ...reached(who),
+  reachedOn: null,
+  homesAtDeadline: 90,
+  marginMonths: null
+});
+
+describe('reachExit gates on the full tree only', () => {
+  it('current law missed and the full tree reached is exit 0, with the miss still printed', () => {
+    const r = [missed('current'), reached('full')];
+    expect(reachExit(r)).toBe(0);
+    expect(reachLines('v', r)[2]).toMatch(/^Current law by .*: missed, 90 homes, 10 short$/);
+  });
+
+  it('current law reached and the full tree missed is exit 1', () => {
+    expect(reachExit([reached('current'), missed('full')])).toBe(1);
+  });
+});
+
 describe('readReach on the fixture', () => {
   it('amount 1: both questions are reached in the first month', () => {
     const r = [readReach(current, asOf, 'current', 1), readReach(full, asOf, 'full', 1)];
@@ -73,7 +101,6 @@ describe('readReach on the fixture', () => {
     expect(reachLines('fixture-0', [c, readReach(full, asOf, 'full')])[2]).toMatch(
       /^Current law by [A-Z][a-z]{2} \d{4}: missed, [\d,]+ homes, [\d,]+ short$/
     );
-    expect(reachExit([c])).toBe(1);
   });
 
   it.each(['current', 'full'] as const)(
@@ -95,7 +122,7 @@ describe('readReach on the fixture', () => {
       const over = readReach(viewOf(who), asOf, who, h + 1);
       expect(over.reachedOn).toBeNull();
       expect(lineOf(over).endsWith(', 1 short')).toBe(true);
-      expect(reachExit([over])).toBe(1);
+      expect(reachExit([over])).toBe(who === 'full' ? 1 : 0);
     }
   );
 

@@ -531,8 +531,9 @@ Two sources: a built dataset directory, or a published version fetched from an o
 default production). Two questions, each reached or missed, at one amount (82,069 homes unless
 `--amount` gives another) on the engine of `scripts/reach-measure.ts`:
 
-1. Does current law (the empty policy document) reach the goal by rung 0's deadline?
-2. Does the full tree (`fullTree`) reach it by the last rung's deadline?
+1. Does current law (the empty policy document) reach the goal by rung 0's deadline? Reported,
+   not gated (owner ruling, 2026-11-26).
+2. Does the full tree (`fullTree`) reach it by the last rung's deadline? This is the gate.
 
 Five lines on stdout:
 
@@ -548,7 +549,8 @@ Lines 3 and 4 each read "reached <month>, <n> months early" ("1 month early" for
 <homes> homes, <short> short". The first month on a line is the rung's deadline. Line 5 is the
 opening fill's wall-clock time (`Engine.fillMs`) and the car switch.
 
-Exit 0 when both are reached; 1 when either is missed; 2 when the check could not run, with one
+Exit 0 when the full tree is reached (current law's line is printed either way); 1 when the full
+tree is missed; 2 when the check could not run, with one
 stderr line, `reach-check: <reason>`, and nothing on stdout (no source, both a directory and
 `--version`, an unknown flag, `--from` without `--version`, an `--amount` that is not a whole
 number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
