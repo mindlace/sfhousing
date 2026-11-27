@@ -10,6 +10,8 @@ export const PARCELS_BIN = 'scenarios/fzp/parcels.bin';
 export const POLICY_BIN = 'scenarios/fzp/policy.bin';
 /** sfh-gross/1 per-lot gross units by story count, in parcels.bin row order (pipeline/steps/gross.ts). */
 export const GROSS_BIN = 'scenarios/fzp/gross.bin';
+/** sfh-options/1 per-lot building options and location value, in parcels.bin row order (steps/options.ts). */
+export const OPTIONS_BIN = 'scenarios/fzp/options.bin';
 
 /** sfh-cars/1 car zones and start households, lotZone in parcels.bin row order (steps/cars.ts). */
 export const CARS_BIN = 'scenarios/fzp/cars.bin';

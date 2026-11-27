@@ -196,7 +196,11 @@
     "link.ppaOnly": 1,
     "link.satellites": 0,
     "link.splitComponents": 1,
-    "manifest.bytes": 8227,
+    "locationValue.buildings": 1,
+    "locationValue.neighborhoods": 3,
+    "locationValue.no_area": 0,
+    "locationValue.thin": 3,
+    "manifest.bytes": 8281,
     "multiphase.descendants.2007.0001PRX": 1,
     "multiphase.descendants.2010.0002PRX": 1,
     "multiphase.descendants.2012-000020PRX": 1,
@@ -215,6 +219,24 @@
     "multiphase.u.2010.0002PRX": 40,
     "multiphase.u.2010.0002PRX.n": 1,
     "neighborhoods.bytes": 709,
+    "options.bytes.payload": 2360,
+    "options.clamped": 0,
+    "options.district_rows": 0,
+    "options.e_crossings": 0,
+    "options.growth": 2.5741,
+    "options.lots": 14,
+    "options.panel.rows": 19,
+    "options.panel.values": 427,
+    "options.per_lot.max": 113,
+    "options.per_lot.p50": 16,
+    "options.per_lot.p90": 113,
+    "options.per_lot.p99": 113,
+    "options.per_lot_cost_pruned.max": 45,
+    "options.per_lot_cost_pruned.p50": 7,
+    "options.per_lot_cost_pruned.p90": 45,
+    "options.per_lot_cost_pruned.p99": 45,
+    "options.rows": 25,
+    "options.values": 417,
     "overture.contrib.Esri Community Maps": 1,
     "overture.contrib.Microsoft ML Buildings": 1,
     "overture.contrib.OpenStreetMap": 9,
@@ -705,7 +727,7 @@
       "ok": true
     },
     {
-      "detail": "manifest 8227/64000 B; neighborhoods 709/150000 B",
+      "detail": "manifest 8281/64000 B; neighborhoods 709/150000 B",
       "id": "V11",
       "ok": true
     },
@@ -820,7 +842,7 @@
       "ok": true
     },
     {
-      "detail": "25 rows decode; re-encode byte-identical; 25 rows equal scenarioYield at s 0..81 and 255",
+      "detail": "options: 25 rows, 417 options decode; re-encode byte-identical; rows sorted and pruned; 25 rows equal their pruned candidates; gross: 25 rows decode; re-encode byte-identical; 25 rows equal scenarioYield at s 0..81 and 255",
       "id": "V36",
       "ok": true
     },
@@ -837,6 +859,16 @@
     {
       "detail": "3 features",
       "id": "V39",
+      "ok": true
+    },
+    {
+      "detail": "no Type V above 6 stories, no Type III above 8",
+      "id": "V40",
+      "ok": true
+    },
+    {
+      "detail": "25 location values finite and above 0",
+      "id": "V41",
       "ok": true
     }
   ],

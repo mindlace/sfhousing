@@ -4,7 +4,7 @@
 //
 // Wire format (`scenarios/fzp/options.bin`, deflate-raw): ASCII `SFHO`, u8 version, u8 length +
 // ASCII datasetVersion, u32le row count, then per row u16le n, f32le locationValue and n options
-// of (u8 type, u8 form, u8 stories, u8 plates, LEB128 homes). Type and form are codes into
+// of (u8 type, u8 form, u8 stories, LEB128 plates, LEB128 homes). Type and form are codes into
 // BUILDING_TYPES and BUILDING_FORMS; a row's options rise in stories.
 import { inflateRawBody } from './column-file';
 import type { ScenarioParcels } from './scenario-codec';
@@ -13,6 +13,7 @@ import { BUILDING_FORMS, BUILDING_TYPES, type Option } from '../sim/choice/types
 /** The most options a row holds: n is a u16, and 1,023 keeps an option index in 10 bits. */
 export const OPTIONS_MAX_PER_LOT = 1023;
 const HOMES_MAX = 0xffff;
+const PLATES_MAX = 0xffff;
 const BYTE_MAX = 0xff;
 const VERSION = 1;
 const MAGIC = [0x53, 0x46, 0x48, 0x4f]; // SFHO
@@ -28,7 +29,8 @@ export interface OptionTable {
   /** Per option: a code into BUILDING_FORMS. */
   form: Uint8Array;
   stories: Uint8Array;
-  plates: Uint8Array;
+  /** Tower plates; a district sums its lots', so a u16 (LEB128 on the wire). */
+  plates: Uint16Array;
   homes: Uint16Array;
   /** Per row. */
   locationValue: Float32Array;
@@ -63,7 +65,7 @@ export function optionTableOf(
     type: new Uint8Array(total),
     form: new Uint8Array(total),
     stories: new Uint8Array(total),
-    plates: new Uint8Array(total),
+    plates: new Uint16Array(total),
     homes: new Uint16Array(total),
     locationValue: new Float32Array(count)
   };
@@ -85,7 +87,10 @@ export function optionTableOf(
       t.type[at] = type;
       t.form[at] = form;
       t.stories[at] = byte(o.stories, `row ${i} stories`);
-      t.plates[at] = byte(o.plates, `row ${i} plates`);
+      if (!Number.isInteger(o.plates) || o.plates < 0 || o.plates > PLATES_MAX) {
+        throw new RangeError(`options: row ${i} plates ${o.plates} outside 0 to ${PLATES_MAX}`);
+      }
+      t.plates[at] = o.plates;
       t.homes[at] = o.homes;
       at++;
     }
@@ -100,7 +105,9 @@ export function encodeOptionPayload(t: OptionTable): Uint8Array {
   const name = new TextEncoder().encode(t.datasetVersion);
   if (name.length > BYTE_MAX) throw new RangeError('options: datasetVersion longer than 255 bytes');
   let size = MAGIC.length + 2 + name.length + 4 + t.count * 6;
-  for (let j = 0; j < t.offset[t.count]; j++) size += 4 + varintLength(t.homes[j]);
+  for (let j = 0; j < t.offset[t.count]; j++) {
+    size += 3 + varintLength(t.plates[j]) + varintLength(t.homes[j]);
+  }
   const bytes = new Uint8Array(size);
   const view = new DataView(bytes.buffer);
   bytes.set(MAGIC, 0);
@@ -125,13 +132,13 @@ export function encodeOptionPayload(t: OptionTable): Uint8Array {
       bytes[at++] = t.type[j];
       bytes[at++] = t.form[j];
       bytes[at++] = t.stories[j];
-      bytes[at++] = t.plates[j];
-      let v = t.homes[j];
-      while (v >= 0x80) {
-        bytes[at++] = (v & 0x7f) | 0x80;
-        v >>>= 7;
+      for (let v of [t.plates[j], t.homes[j]]) {
+        while (v >= 0x80) {
+          bytes[at++] = (v & 0x7f) | 0x80;
+          v >>>= 7;
+        }
+        bytes[at++] = v;
       }
-      bytes[at++] = v;
     }
   }
   return bytes;
@@ -164,6 +171,21 @@ export function decodeOptionPayload(bytes: Uint8Array): OptionTable {
   const stories: number[] = [];
   const plates: number[] = [];
   const homes: number[] = [];
+  /** A LEB128 value of at most 3 bytes and `max`. */
+  const varint = (i: number, what: string, max: number): number => {
+    let v = 0;
+    let mul = 1;
+    for (;;) {
+      need(1, what);
+      const b = bytes[at++];
+      v += (b & 0x7f) * mul;
+      if (b < 0x80) break;
+      mul *= 0x80;
+      if (mul > 0x80 ** 2) throw new Error(`options: row ${i} ${what} varint too long`);
+    }
+    if (v > max) throw new Error(`options: row ${i} ${what} ${v} above ${max}`);
+    return v;
+  };
   for (let i = 0; i < count; i++) {
     need(6, 'row');
     const n = view.getUint16(at, true);
@@ -187,19 +209,8 @@ export function decodeOptionPayload(bytes: Uint8Array): OptionTable {
       type.push(ty);
       form.push(fo);
       stories.push(st);
-      plates.push(bytes[at++]);
-      let v = 0;
-      let mul = 1;
-      for (;;) {
-        need(1, 'homes');
-        const b = bytes[at++];
-        v += (b & 0x7f) * mul;
-        if (b < 0x80) break;
-        mul *= 0x80;
-        if (mul > 0x80 ** 2) throw new Error(`options: row ${i} homes varint too long`);
-      }
-      if (v > HOMES_MAX) throw new Error(`options: row ${i} homes ${v} above ${HOMES_MAX}`);
-      homes.push(v);
+      plates.push(varint(i, 'plates', PLATES_MAX));
+      homes.push(varint(i, 'homes', HOMES_MAX));
     }
   }
   offset[count] = type.length;
@@ -212,7 +223,7 @@ export function decodeOptionPayload(bytes: Uint8Array): OptionTable {
     type: Uint8Array.from(type),
     form: Uint8Array.from(form),
     stories: Uint8Array.from(stories),
-    plates: Uint8Array.from(plates),
+    plates: Uint16Array.from(plates),
     homes: Uint16Array.from(homes),
     locationValue
   };

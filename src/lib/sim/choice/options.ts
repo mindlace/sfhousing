@@ -25,11 +25,18 @@ const STORIES_MAX = 80;
 /** Type V under this many homes is priced as prototype E (pricing.ts). */
 const SMALL_HOMES = 25;
 
-/** The most stories the generator can mass on `rec`: its physical maximum, 80 for a district. */
-function storyBound(rec: ParcelRecord, seed: number): number {
+/** Whether the generator masses `rec` as a district (several lots on one parcel row). */
+export function isDistrictLot(rec: ParcelRecord): boolean {
+  return mayBeDistrict(rec.polygon) && districtArea(rec.polygon) >= DISTRICT_MIN_M2;
+}
+
+/**
+ * The most stories the generator can mass on `rec`: 0 when ineligible, 80 for a district, else
+ * its physical maximum (at most 80). Callers pass `seed = fnv1a32(rec.id)`.
+ */
+export function storyBound(rec: ParcelRecord, seed: number): number {
   if (!rec.eligible) return 0;
-  if (mayBeDistrict(rec.polygon) && districtArea(rec.polygon) >= DISTRICT_MIN_M2)
-    return STORIES_MAX;
+  if (isDistrictLot(rec)) return STORIES_MAX;
   const site = normaliseSite(rec.polygon, drawVariety(seed).edgeInsetM);
   return site ? Math.min(STORIES_MAX, physicalMaxStories(site)) : 0;
 }

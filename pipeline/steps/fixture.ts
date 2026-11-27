@@ -21,6 +21,7 @@ import { CALIBRATION_JSON, CALIBRATION_REPORT_MD } from './calibration';
 import { CARS_DUMP, formatCarsDump, readCarsBin } from './cars';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from './projects';
 import { GROSS_BIN, GROSS_DUMP, formatGrossDump, readGrossBin } from './gross';
+import { OPTIONS_BIN, OPTIONS_DUMP, formatOptionsDump, readOptionsBin } from './options';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from './policy';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from './scenario';
 
@@ -30,8 +31,9 @@ const E2E = join(REPO_ROOT, 'e2e/fixtures/data/fixture-0');
 const GOLDEN = join(MINI, 'golden');
 /**
  * Deterministic outputs pinned by golden.test.ts (tile bytes and fonts are not compared). The T11
- * file, policy.bin, gross.bin and cars.bin are pinned by their decoded dumps, SCENARIO_DUMP,
- * POLICY_DUMP, GROSS_DUMP and CARS_DUMP, not by their deflate bytes (spec §4.8).
+ * file, policy.bin, gross.bin, options.bin and cars.bin are pinned by their decoded dumps,
+ * SCENARIO_DUMP, POLICY_DUMP, GROSS_DUMP, OPTIONS_DUMP and CARS_DUMP, not by their deflate bytes
+ * (spec §4.8).
  */
 const GOLDEN_FILES = [
   'parcels',
@@ -170,6 +172,10 @@ export async function fixture(opts: FixtureOpts = {}): Promise<number> {
       writeFileSync(
         join(GOLDEN, GROSS_DUMP),
         formatGrossDump(readGrossBin(join(outDir, GROSS_BIN)))
+      );
+      writeFileSync(
+        join(GOLDEN, OPTIONS_DUMP),
+        formatOptionsDump(readOptionsBin(join(outDir, OPTIONS_BIN)))
       );
       writeFileSync(
         join(GOLDEN, POLICY_DUMP),

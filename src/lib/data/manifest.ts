@@ -63,6 +63,8 @@ const ManifestBaseSchema = z.object({
         policy: RootRelativeUrl.optional(),
         /** Per-lot gross table (pipeline-built, scenarios/fzp/gross.bin). Optional: older datasets lack it. */
         gross: RootRelativeUrl.optional(),
+        /** Per-lot building options (sfh-options/1, scenarios/fzp/options.bin). Optional: older datasets lack it. */
+        options: RootRelativeUrl.optional(),
         /** Car zones and start households (sfh-cars/1). Optional: datasets without Census data lack it. */
         cars: RootRelativeUrl.optional(),
         /** Car zones as GeoJSON (block groups, property `z`). Present exactly when `cars` is. */
@@ -179,6 +181,7 @@ export function manifestFiles(m: Manifest, glyphs?: GlyphSet): ManifestFile[] {
   add('scenarios.fzp.calibration', fzp?.calibration);
   add('scenarios.fzp.policy', fzp?.policy);
   add('scenarios.fzp.gross', fzp?.gross);
+  add('scenarios.fzp.options', fzp?.options);
   add('scenarios.fzp.cars', fzp?.cars);
   add('scenarios.fzp.carZones', fzp?.carZones);
   add('scenarios.fzp.frontage', fzp?.frontage);

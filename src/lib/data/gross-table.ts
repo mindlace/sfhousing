@@ -8,11 +8,7 @@ import type { ParcelRecord } from './parcel';
 import type { ScenarioParcels } from './scenario-codec';
 import { scenarioYield } from './scenario-yield';
 import { fnv1a32 } from '$lib/generator';
-import { DISTRICT_MIN_M2 } from '$lib/generator/constants';
-import { districtArea, mayBeDistrict } from '$lib/generator/district-layout';
-import { physicalMaxStories } from '$lib/generator/physical';
-import { normaliseSite } from '$lib/generator/site';
-import { drawVariety } from '$lib/generator/variety';
+import { storyBound } from '../sim/choice/options';
 
 export const GROSS_MAX = 0xffff;
 export const GROSS_STORIES_MAX = 80;
@@ -42,12 +38,7 @@ export function clampGross(g: number): number {
 
 /** Story count beyond which gross cannot change: the generator's physical clamp (80 for district-size lots). */
 export function grossStoryBound(rec: ParcelRecord): number {
-  if (!rec.eligible) return 0;
-  if (mayBeDistrict(rec.polygon) && districtArea(rec.polygon) >= DISTRICT_MIN_M2) {
-    return GROSS_STORIES_MAX;
-  }
-  const site = normaliseSite(rec.polygon, drawVariety(fnv1a32(rec.id)).edgeInsetM);
-  return site ? Math.min(GROSS_STORIES_MAX, physicalMaxStories(site)) : 0;
+  return storyBound(rec, fnv1a32(rec.id));
 }
 
 export function grossRowOf(

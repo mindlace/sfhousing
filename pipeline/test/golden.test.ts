@@ -11,6 +11,7 @@ import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
 import { GROSS_BIN, GROSS_DUMP, formatGrossDump, readGrossBin } from '../steps/gross';
+import { OPTIONS_BIN, OPTIONS_DUMP, formatOptionsDump, readOptionsBin } from '../steps/options';
 import { CARS_DUMP, formatCarsDump, readCarsBin } from '../steps/cars';
 import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
 import { PARCELS_BIN, SCENARIO_DUMP, formatScenarioDump, readParcelsBin } from '../steps/scenario';
@@ -46,6 +47,7 @@ const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
 const policyDumpOf = (dir: string) =>
   formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
 const grossDumpOf = (dir: string) => formatGrossDump(readGrossBin(join(dir, GROSS_BIN)));
+const optionsDumpOf = (dir: string) => formatOptionsDump(readOptionsBin(join(dir, OPTIONS_BIN)));
 const carsDumpOf = (dir: string) =>
   formatCarsDump(readCarsBin(join(dir, CARS_BIN), decodeBin(dir).count));
 
@@ -82,6 +84,9 @@ describe('pipeline fixture', () => {
     // gross.bin: the decoded payload too.
     expect(grossDumpOf(a)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
     expect(grossDumpOf(b)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
+    // options.bin: the decoded payload too.
+    expect(optionsDumpOf(a)).toBe(readFileSync(join(golden, OPTIONS_DUMP), 'utf8'));
+    expect(optionsDumpOf(b)).toBe(readFileSync(join(golden, OPTIONS_DUMP), 'utf8'));
     // cars.bin: the decoded payload too.
     expect(carsDumpOf(a)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
     expect(carsDumpOf(b)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
@@ -205,6 +210,7 @@ describe('pipeline fixture', () => {
     }
     expect(dumpOf(e2e)).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
     expect(grossDumpOf(e2e)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
+    expect(optionsDumpOf(e2e)).toBe(readFileSync(join(golden, OPTIONS_DUMP), 'utf8'));
     expect(carsDumpOf(e2e)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
   });
 });
@@ -644,7 +650,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files, policy.bin, gross.bin and the car files in the manifest', () => {
+  it('names the three scenario files, policy.bin, gross.bin, options.bin and the car files in the manifest', () => {
     const raw = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
@@ -654,6 +660,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'calibration.json',
       'policy.bin',
       'gross.bin',
+      'options.bin',
       'cars.bin',
       'car-zones.json'
     ]) {
@@ -667,6 +674,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
         calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
         policy: '/data/fixture-0/scenarios/fzp/policy.bin',
         gross: '/data/fixture-0/scenarios/fzp/gross.bin',
+        options: '/data/fixture-0/scenarios/fzp/options.bin',
         cars: '/data/fixture-0/scenarios/fzp/cars.bin',
         carZones: '/data/fixture-0/scenarios/fzp/car-zones.json'
       }

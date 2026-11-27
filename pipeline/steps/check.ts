@@ -34,6 +34,7 @@ import { checkV20 } from '../project-records/invariants';
 import { CALIBRATION_JSON } from './calibration';
 import { checkPolicy } from './check-policy';
 import { checkV36 } from './check-gross';
+import { checkOptions } from './check-options';
 import { PROJECTS_JSON } from './projects';
 import { CARS_BIN, CAR_ZONES_JSON, PARCELS_BIN } from '../lib/scenario-files';
 import { startTotal, zoneHomes } from '../lib/cars/population';
@@ -861,14 +862,25 @@ export async function checkDataset(
   // V31–V33 policy.bin (sim data layers), against the decoded parcels.bin.
   out.push(...checkPolicy(outDir, profile, c, p, m, extras.stableDetail ?? false));
 
-  // V36 gross.bin, against parcels.bin and the decoded chunk records.
-  out.push(checkV36(outDir, m, p, recById, extras.stableDetail ?? false));
+  // V36 options.bin and gross.bin (until the gross table is retired), V40 and V41 options.bin,
+  // against parcels.bin and the decoded chunk records.
+  const stable = extras.stableDetail ?? false;
+  const [v36, v40, v41] = checkOptions(outDir, m, p, recById, stable);
+  const gross = checkV36(outDir, m, p, recById, stable);
+  out.push({
+    id: 'V36',
+    ok: v36.ok && gross.ok,
+    detail: `options: ${v36.detail}; gross: ${gross.detail}`
+  });
 
   // V37 the render boxes, when the build had a building-boxes artifact.
   out.push(checkV37(c, extras.skipTiles ?? !existsSync(join(outDir, 'buildings.pmtiles'))));
 
   // V38 cars.bin and V39 car-zones.json, when the build had Census data.
   out.push(...checkCars(outDir, m, p));
+
+  // V40 type story ranges and V41 location values (options.bin), measured with V36 above.
+  out.push(v40, v41);
   return out;
 }
 

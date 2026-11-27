@@ -46,6 +46,7 @@ import {
 } from '../lib/road-lots';
 import { PARCELS_BIN, readParcelsBin } from '../lib/scenario-files';
 import { readClippedOriginals } from './chunks';
+import { candidateRows, sliceRows, type CandidateJob, type ScenarioCandidates } from './options';
 import { runScenarioSql } from './scenario-sql';
 
 export { PARCELS_BIN, readParcelsBin };
@@ -134,17 +135,23 @@ const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
  * (`scenarioYield(…, null)`, kept as `base_gross` for `hostable_base`, partner ruling option c)
  * capped by `capScenarioYield`. That year's values include the scenario eligibility on that
  * year's units (`eligible`, sd.landuse.none-with-units), a function of the memo key's parcel and
- * units. Writes sc_base_yield (one row per distinct input) and returns its size and the number of
- * sc_features rows (panel parcel-years) the rule makes eligible.
+ * units. Writes sc_base_yield (one row per distinct input; `option_row` is the row of its candidate
+ * inputs in the options step's panel-options.bin) and returns its size, the number of sc_features
+ * rows (panel parcel-years) the rule makes eligible and the panel's candidate jobs, one per
+ * distinct (mapblklot, units, floor area, stories), in `option_row` order.
  */
 async function writeBaseYields(
   db: Duck,
   recById: Map<string, ParcelRecord>
-): Promise<{ memoSize: number; noneWithUnits: number }> {
+): Promise<{ memoSize: number; noneWithUnits: number; panelJobs: CandidateJob[] }> {
   const years = await db.all<{ y: number }>(
     'SELECT DISTINCT roll_year y FROM sc_features ORDER BY y'
   );
   const memo = new Map<string, CellValue[]>();
+  // The panel's option rows (options step): one per distinct candidate input, the memo key without
+  // the base stories and cap, which the candidates do not read.
+  const optionRow = new Map<string, number>();
+  const panelJobs: CandidateJob[] = [];
   let noneWithUnits = 0;
   for (const { y } of years) {
     const rows = await db.all<FeatureRow>(
@@ -167,6 +174,25 @@ async function writeBaseYields(
       const eligible = scenarioEligible(rec, r.existing_units);
       if (eligible && !rec.eligible) noneWithUnits++;
       if (memo.has(key)) continue;
+      const jobKey = [
+        r.mapblklot,
+        r.existing_units,
+        r.existing_floor_area_m2,
+        r.existing_stories
+      ].join('|');
+      let row = optionRow.get(jobKey);
+      if (row === undefined) {
+        row = panelJobs.length;
+        optionRow.set(jobKey, row);
+        panelJobs.push({
+          id: r.mapblklot,
+          existingUnits: r.existing_units,
+          existingFloorAreaM2: r.existing_floor_area_m2,
+          existingStories: r.existing_stories,
+          eligible,
+          prune: true
+        });
+      }
       const view = scenarioRecordFrom(rec, {
         existingUnits: r.existing_units,
         existingFloorAreaM2: r.existing_floor_area_m2,
@@ -183,7 +209,8 @@ async function writeBaseYields(
         r.base_density_cap,
         capScenarioYield(gross, r.base_density_cap, r.existing_units),
         gross,
-        eligible
+        eligible,
+        row
       ]);
     }
   }
@@ -199,11 +226,12 @@ async function writeBaseYields(
       ['base_density_cap', 'INTEGER'],
       ['base_yield', 'INTEGER'],
       ['base_gross', 'INTEGER'],
-      ['eligible', 'BOOLEAN']
+      ['eligible', 'BOOLEAN'],
+      ['option_row', 'INTEGER']
     ],
     [...memo.values()]
   );
-  return { memoSize: memo.size, noneWithUnits };
+  return { memoSize: memo.size, noneWithUnits, panelJobs };
 }
 
 /**
@@ -509,7 +537,17 @@ export async function writeScenario(a: {
   report: Report;
   buildCounts: Record<string, number>;
   freewayLand?: FreewayLandFile | null;
-}): Promise<{ counts: Record<string, number>; warnings: string[] }> {
+  /**
+   * Generate the candidate options (options.ts `candidateRows`) of every parcels.bin row and panel
+   * key on `workers` threads (0: this thread) from the chunks under `outDir/parcels/`, before
+   * parcels.bin is written, and return them for the options step. Absent: no candidates.
+   */
+  candidates?: { workers: number; batch?: number };
+}): Promise<{
+  counts: Record<string, number>;
+  warnings: string[];
+  candidates: ScenarioCandidates | null;
+}> {
   const { db, report } = a;
   const warnings: string[] = [];
   const { parseFailures } = await report.time('scenario.sql', () => runScenarioSql(db, a.records));
@@ -519,10 +557,11 @@ export async function writeScenario(a: {
   const recById = new Map(a.records.map(({ rec }) => [rec.id, rec]));
 
   // ---- T13 panel and lineage ----
-  const { memoSize, noneWithUnits: panelNoneWithUnits } = await report.time(
-    'scenario.base_yield',
-    () => writeBaseYields(db, recById)
-  );
+  const {
+    memoSize,
+    noneWithUnits: panelNoneWithUnits,
+    panelJobs
+  } = await report.time('scenario.base_yield', () => writeBaseYields(db, recById));
   await db.run(PANEL_SQL);
   const [{ panel, feat, years, latest }] = await db.all<{
     panel: number;
@@ -1040,6 +1079,28 @@ export async function writeScenario(a: {
   // rule's fired/of is on T11).
   c['scenario.panel.landuse_none_with_units'] = panelNoneWithUnits;
 
+  // ---- Candidate options (options step): every row and panel key, on the worker pool ----
+  let candidates: ScenarioCandidates | null = null;
+  if (a.candidates) {
+    const opts = a.candidates;
+    const lotJobs: CandidateJob[] = p.id.map((id, i) => ({
+      id,
+      existingUnits: p.existingUnits[i],
+      existingFloorAreaM2: p.existingFloorAreaM2[i],
+      existingStories: p.existingStories[i],
+      eligible: p.eligible[i] === 1
+    }));
+    const all = await report.time('scenario.candidates', () =>
+      candidateRows(a.outDir, [...lotJobs, ...panelJobs], opts.workers, { batch: opts.batch })
+    );
+    candidates = {
+      lotIds: [...p.id],
+      lots: sliceRows(all, 0, n),
+      panel: sliceRows(all, n, n + panelJobs.length),
+      panelKeys: panelJobs
+    };
+  }
+
   // ---- File: encode, deflate, write, then decode what was written ----
   const payload = encodeScenarioPayload(p);
   const file = join(a.outDir, PARCELS_BIN);
@@ -1246,5 +1307,5 @@ export async function writeScenario(a: {
     ...sqlCounts.map((r): [string, number] => [r.key, r.value]),
     ...Object.entries(c).sort(([x], [y]) => cmp(x, y))
   ]);
-  return { counts, warnings };
+  return { counts, warnings, candidates };
 }

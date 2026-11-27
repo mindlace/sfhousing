@@ -196,25 +196,27 @@ its neighbourhood's `shrunk`; a lot with no neighbourhood takes 1. The build rep
 `locationValue.buildings`, `locationValue.neighborhoods`, `locationValue.thin` (neighbourhoods
 with n < 10) and `locationValue.no_area`.
 
-On the current sources (an approximation outside the build, Task 6): 119 buildings (10 more
-without floor area), 41 neighbourhoods, 38 thin; roll years 2016 to 2025, 7 of them pooled. Lot
-values run from 0.91 to 1.29: Financial District/South Beach 1.29 (n = 7, raw 1.71), Mission 1.15
-(n = 19), South of Market 1.01 (n = 20), Mission Bay 0.97 (n = 10), Pacific Heights 1.18 (n = 1,
-raw 2.97).
+The build calls it in the options step, which writes each lot's value into `options.bin`. A
+district parcel is one lot id, so it takes its own value; no rule across its member lots is needed.
+On `2026-11-27-b3038992` (live, unpublished): `locationValue.buildings` 114,
+`locationValue.no_area` 9, `locationValue.neighborhoods` 41, `locationValue.thin` 38. Lot values
+run from 0.919 to 1.378 over 155,020 lots; 25,552 lots sit at exactly 1 (no neighbourhood, or a
+neighbourhood with no building).
 
 ## The codec (`src/lib/data/option-table.ts`, `sfh-options/1`)
 
 `optionTableOf(datasetVersion, rows)` packs one row per scenario row, each `{ options,
 locationValue }`, into flat columns: `offset` (count + 1), per option `type` and `form`
 (codes into `BUILDING_TYPES` and `BUILDING_FORMS`), `stories`, `plates` and `homes`
-(`Uint16Array`), and per row `locationValue` (`Float32Array`). It throws a RangeError for a
-row of more than `OPTIONS_MAX_PER_LOT` (1,023) options, homes above 65,535, stories or plates
-above 255, or a row whose stories fall; the run time reads a row's allowed options as the prefix
+(`Uint16Array`; plates too, since a district tower sums its lots' plates), and per row
+`locationValue` (`Float32Array`). It throws a RangeError for a row of more than
+`OPTIONS_MAX_PER_LOT` (1,023) options, homes or plates above 65,535, stories above 255, or a
+row whose stories fall; the run time reads a row's allowed options as the prefix
 up to the cap.
 
 Wire format (deflate-raw): ASCII `SFHO`, u8 version (1), u8 length and the ASCII
 `datasetVersion`, u32le row count, then per row u16le n, f32le `locationValue` and n options
-of (u8 type, u8 form, u8 stories, u8 plates, LEB128 homes). `decodeOptionPayload` throws
+of (u8 type, u8 form, u8 stories, LEB128 plates, LEB128 homes). `decodeOptionPayload` throws
 `options: truncated …` on a short payload and rejects bad magic, versions, codes, row lengths,
 story order and trailing bytes. `readOptionTable(body)` inflates and decodes;
 `optionTableProblem(t, parcels)` names a table from another build (row count or

@@ -83,6 +83,12 @@ describe('option table', () => {
     expect(optionTableOf('v', [row(1023)]).count).toBe(1);
     expect(() => optionTableOf('v', [row(1024)])).toThrow(RangeError);
   });
+  it("round-trips a district tower's summed plates above one byte, refuses above 65,535", () => {
+    const one = (plates: number) => [{ options: [{ ...many[0], plates }], locationValue: 1 }];
+    const t = optionTableOf('v', one(620));
+    expect(decodeOptionPayload(encodeOptionPayload(t)).plates[0]).toBe(620);
+    expect(() => optionTableOf('v', one(65_536))).toThrow(RangeError);
+  });
   it('refuses homes above 65,535 and rows out of story order', () => {
     const one = (o: Partial<Option>) => [{ options: [{ ...many[0], ...o }], locationValue: 1 }];
     expect(optionTableOf('v', one({ homes: 65_535 })).homes[0]).toBe(65_535);
