@@ -230,26 +230,48 @@ export function entryOf(key: string): RoundEntry | undefined {
   return CATALOGUE.find((e) => e.key === key);
 }
 
+/** The catalogue kind a policy's selector belongs to; null: none (painted, category). */
+function entryKind(tag: Policy['where']['tag']): RoundEntry['kind'] | null {
+  if (tag === 'transit') return 'zoning';
+  if (tag === 'routes') return 'permitting';
+  if (tag === 'fund' || tag === 'baseline' || tag === 'terms') return 'money';
+  return null;
+}
+
 /**
- * A transit policy whose id is a transit key; a routes policy whose preset is a permitting
- * entry's; a fund, baseline or terms policy whose string preset is a money entry's; else null.
+ * The key `p`'s id names: a transit policy whose id is a transit key; a routes, fund, baseline or
+ * terms policy whose id is a permitting or money key, or that key with `-2`, `-3`, ... (a money
+ * entry may add several policies); else null. Ids survive every edit, so this key does too.
+ */
+export function keyOfId(p: Policy): PolicyKey | null {
+  const kind = entryKind(p.where.tag);
+  if (kind === null) return null;
+  const e = entryOf(p.id) ?? (kind === 'zoning' ? undefined : entryOf(p.id.replace(/-\d+$/, '')));
+  return e !== undefined && e.kind === kind ? e.key : null;
+}
+
+/**
+ * keyOfId; else a routes policy whose preset is a permitting entry's, or a fund, baseline or
+ * terms policy whose string preset is a money entry's (a document from before the ids, such as a
+ * version 2 game's: offerThrough gives those their key's id); else null.
  */
 export function keyOf(p: Policy): PolicyKey | null {
-  const w = p.where.tag;
-  if (w === 'transit') {
-    const e = entryOf(p.id);
-    return e !== undefined && e.kind === 'zoning' ? e.key : null;
-  }
-  if (p.preset === null) return null;
-  const kind =
-    w === 'routes'
-      ? 'permitting'
-      : w === 'fund' || w === 'baseline' || w === 'terms'
-        ? 'money'
-        : null;
-  if (kind === null) return null;
+  const byId = keyOfId(p);
+  if (byId !== null) return byId;
+  const kind = entryKind(p.where.tag);
+  if (kind === null || kind === 'zoning' || p.preset === null) return null;
   const e = CATALOGUE.find((x) => x.kind === kind && 'preset' in x && x.preset === p.preset);
   return e === undefined ? null : e.key;
+}
+
+/** The ids for `n` policies of `key`: `key`, then `key-2`, `key-3`, ..., none in `used`. */
+export function keyIds(key: PolicyKey, n: number, used: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (let i = 1; out.length < n; i++) {
+    const id = i === 1 ? key : `${key}-${i}`;
+    if (!used.has(id)) out.push(id);
+  }
+  return out;
 }
 
 const metres = (m: number): string => m.toLocaleString('en-US');

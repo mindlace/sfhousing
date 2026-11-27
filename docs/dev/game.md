@@ -15,11 +15,11 @@ and saved games live in `src/lib/game/`:
 | `upgrade.ts`                         | `upgradeV2`, `V2_LADDER_YEARS`, `V2_KEYS`: a version 2 game read as version 3              |
 | `save-shape.ts`                      | `GameSave`, `SaveEntry`, `parseGameSave`, `parseGameState`                                 |
 | `rounds.ts`                          | `judge`, `Verdict`, `monthsBetween`, `spanText`, `fitState`, `takeWin`                     |
-| `offer.ts`                           | `addEntry`, `offerThrough`, `catalogueDoc`, `onKeys`                                       |
+| `offer.ts`                           | `addEntry`, `offerThrough`, `keyedById`, `catalogueDoc`, `onKeys`                          |
 | `round-panel.ts`                     | `roundPanel` (the round panel's text), `giftItems` (the explainers' text)                  |
 | `limits.ts`                          | `Limits`, `limitsOf`, `within`, `runnable`, `isGiven`, `isFixed`, `whatFixed`, `canRemove` |
 | `words.ts`                           | The store's and the sync's words                                                           |
-| `catalogue/rounds.ts`                | The twelve policies (`CATALOGUE`, `POLICY_KEYS`, `ROUNDS`, `keyOf`)                        |
+| `catalogue/rounds.ts`                | The twelve policies (`CATALOGUE`, `POLICY_KEYS`, `ROUNDS`, `keyOf`, `keyOfId`, `keyIds`)   |
 | `ui/`                                | The screens and header parts                                                               |
 | `store.svelte.ts`, `saves.ts`        | The store, `MAX_SAVES`, storage keys                                                       |
 | `save-sync.svelte.ts`, `save-api.ts` | The browser's sync with an account                                                         |
@@ -48,6 +48,17 @@ key, project cards and the tooltip, held to what the game offers ([Limits](#limi
 document loads in a game, `SimPage`'s `load` adds every catalogue policy of rounds 1 to the
 current round, and every editable key, that the document lacks, off (`offerThrough`), as the
 store's reset (no undo step).
+
+A catalogue policy's key is its id (`keyOfId`): `addEntry` names a transit policy `transit-rail`
+and the policies a preset adds `housing-bond`, `housing-bond-2`, ... (`keyIds`). An edit to what a
+given measure pays clears its `preset` (the player's own measure, `lens.ts`), but never its id, so
+the policy stays keyed: it runs, its row reads Edit and the open editor stays open, and no load adds
+a second copy. A catalogue timing policy keeps its name through a custom edit (`readTiming` leaves
+a policy `keyOfId` names alone). `keyOf` tries the id, then the preset: a document from before the
+ids (a version 2 game's, its bought policies added with "+") is keyed by preset, and
+`offerThrough` first gives each such policy its key's id (`keyedById`, for keys no id names yet),
+changing nothing else, before any edit can clear the preset. Published documents carry these ids;
+outside a game they are plain ids.
 
 The header has no steps; the site name is the way home. In the opening it shows the name, the save
 state, the pinned room score, Publish and the Menu button. After it: the name, the round ("Current

@@ -208,10 +208,11 @@ describe('SimRoute in a game', () => {
     );
     vi.stubGlobal('fetch', spy);
     await opened(game, mem);
-    // The worker runs the runnable document: no painted area, the clock as it stands.
+    // The worker runs the runnable document: no painted area, the clock as it stands, under its
+    // key's id (the load names a catalogue preset's policy by its key, keyedById).
     const run = w().lastOf('openTimeline')!.policy;
     expect(run.kinds.zoning.map((p) => p.id)).toEqual(['historic']);
-    expect(run.kinds.permitting.map((p) => [p.id, p.on])).toEqual([[clock.id, false]]);
+    expect(run.kinds.permitting.map((p) => [p.id, p.on])).toEqual([['sb423-clock', false]]);
 
     await publish().click();
     const dialog = page.getByRole('dialog');
@@ -233,7 +234,9 @@ describe('SimRoute in a game', () => {
     await expect.poll(() => storedDoc(mem).title).toBe('Clock');
     const saved = () => storedDoc(mem);
     expect(saved().policy.kinds.zoning.some((p) => p.where.tag === 'painted')).toBe(true);
-    expect(saved().policy.kinds.permitting.map((p) => [p.id, p.on])).toEqual([[clock.id, false]]);
+    expect(saved().policy.kinds.permitting.map((p) => [p.id, p.on])).toEqual([
+      ['sb423-clock', false]
+    ]);
     await dialog.getByRole('button', { name: 'Done' }).click();
   });
 
@@ -756,6 +759,64 @@ describe('SimRoute in a game: taking a win', () => {
     expect(rail.getByTestId('tl-policy-new').elements()).toHaveLength(0);
     expect(countOf('tl-policy-edit')).toBe(1);
     expect(countOf('tl-policy-new')).toBe(5);
+  });
+
+  it("an edit to an editable bond's amount keeps it in the game: the row, the editor, the run", async () => {
+    const mem = new MemoryStorage();
+    // Round 2, the bond won with in round 1: editable, on.
+    const seeded = offerThrough(EMPTY, 2, fcal, ['housing-bond']);
+    store(mem, {
+      ...seeded,
+      kinds: {
+        ...seeded.kinds,
+        money: seeded.kinds.money.map((p) => (p.label === 'Housing bond' ? { ...p, on: true } : p))
+      }
+    });
+    const game = seed(mem, 2, { target: M[K + 6], editable: ['housing-bond'] });
+    await openedLong(game, mem);
+    const bondOf = () => debug().policy.kinds.money.find((p) => p.label === 'Housing bond')!;
+    const id = bondOf().id;
+    const dollars = (p: Policy) => {
+      const what = p.spans[0].what;
+      const first = what.tag === 'fund' ? what.pool?.inflows[0] : undefined;
+      return first?.kind === 'once' ? first.dollars : first?.dollarsPerYear;
+    };
+    const before = dollars(bondOf());
+    await openKinds();
+    const row = page.getByTestId('tl-policy').filter({ hasText: 'Housing bond' });
+    await row.getByTestId('tl-policy-edit').click();
+    const amount = inspector()
+      .getByRole('spinbutton', { name: /^Amount, \$ million/ })
+      .first();
+    await expect.element(amount).toBeVisible();
+    await amount.fill('321');
+    await userEvent.keyboard('{Tab}');
+    await expect.poll(() => dollars(bondOf())).toBe(321_000_000);
+    expect(before).not.toBe(321_000_000);
+    // It is the player's own measure now, still the game's bond.
+    expect(bondOf().preset).toBeNull();
+    expect(bondOf().id).toBe(id);
+    // The editor stays open; the row keeps its name and reads Edit, with its switch.
+    await expect.element(amount).toBeVisible();
+    await expect.element(row.getByTestId('tl-policy-edit')).toBeVisible();
+    expect(row.getByTestId('tl-policy-new').elements()).toHaveLength(0);
+    await expect
+      .element(row.getByRole('switch', { name: 'Housing bond on' }))
+      .toHaveAttribute('aria-checked', 'true');
+    // The worker runs the edited bond.
+    await expect
+      .poll(() => {
+        const sent = w()
+          .lastOf('setPolicy')
+          ?.policy.kinds.money.find((p) => p.id === id);
+        return sent === undefined ? undefined : dollars(sent);
+      })
+      .toBe(321_000_000);
+    // The next load adds no second bond.
+    expect(offerThrough(debug().policy, 2, fcal, ['housing-bond'])).toBe(debug().policy);
+    expect(debug().policy.kinds.money.filter((p) => p.label === 'Housing bond')).toHaveLength(
+      seeded.kinds.money.filter((p) => p.label === 'Housing bond').length
+    );
   });
 
   it('a refused store write changes nothing and the win stands', async () => {

@@ -5,7 +5,9 @@ import {
   bandsText,
   CATALOGUE,
   entryOf,
+  keyIds,
   keyOf,
+  keyOfId,
   ROUNDS,
   roundEntries,
   rulesText,
@@ -89,6 +91,30 @@ describe('the round catalogue', () => {
     expect(keyOf(pol('timing', { tag: 'routes' }, null))).toBeNull();
     expect(keyOf(pol('fund', { tag: 'fund', pool: 'p' }, 'housing-bond'))).toBe('housing-bond');
     expect(keyOf(pol('fund', { tag: 'fund', pool: 'p' }, 'state-off'))).toBeNull();
+    // The id first: an edited money policy (preset null) keeps the key its id names.
+    expect(keyOf(pol('housing-bond', { tag: 'fund', pool: 'p' }, null))).toBe('housing-bond');
+    expect(keyOf(pol('housing-bond-2', { tag: 'terms' }, null))).toBe('housing-bond');
+    expect(keyOf(pol('no-discretionary', { tag: 'routes' }, 'observed'))).toBe('no-discretionary');
+  });
+
+  it('keyOfId: the key an id names, for a selector of its kind only', () => {
+    expect(keyOfId(pol('housing-bond', { tag: 'fund', pool: 'p' }, null))).toBe('housing-bond');
+    expect(keyOfId(pol('state-double-3', { tag: 'baseline' }, null))).toBe('state-double');
+    expect(keyOfId(pol('sb423-clock', { tag: 'routes' }, null))).toBe('sb423-clock');
+    expect(keyOfId(pol('fund', { tag: 'fund', pool: 'p' }, 'housing-bond'))).toBeNull();
+    expect(keyOfId(pol('housing-bond', { tag: 'routes' }, null))).toBeNull();
+    expect(keyOfId(pol('housing-bond', { tag: 'transit', stopTypes: [] }, null))).toBeNull();
+    // Transit keeps the exact id.
+    expect(keyOfId(pol('transit-rail-2', { tag: 'transit', stopTypes: [] }, null))).toBeNull();
+  });
+
+  it('keyIds', () => {
+    expect(keyIds('housing-bond', 1, new Set())).toEqual(['housing-bond']);
+    expect(keyIds('housing-bond', 3, new Set(['housing-bond-2']))).toEqual([
+      'housing-bond',
+      'housing-bond-3',
+      'housing-bond-4'
+    ]);
   });
 
   it('bandsText and rulesText', () => {
