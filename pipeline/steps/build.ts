@@ -12,7 +12,7 @@ import {
 import { writeFileSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { FREEWAY_LAND_JSON, TOOL_VERSIONS, type InvariantProfile } from '../config';
+import { BBOX, FREEWAY_LAND_JSON, TOOL_VERSIONS, type InvariantProfile } from '../config';
 import { BuildError } from '../lib/build-error';
 import { run } from '../lib/exec';
 import { openDuck, type Duck } from '../lib/duck';
@@ -50,7 +50,7 @@ import { writePolicy } from './policy';
 import { writeProjectRecords } from './projects';
 import { writeRenderBoxes } from './render-boxes';
 import { writeScenario } from './scenario';
-import { installFonts, writeBasemap, writeBuildingsTiles } from './tiles';
+import { installFonts, parcelIdsAtZoom, writeBasemap, writeBuildingsTiles } from './tiles';
 import { lockTransitYears, transitTargetDate, writeTransit } from './transit';
 
 export interface BuildOpts {
@@ -409,7 +409,12 @@ export async function build(
       const tiles = await report.time('tiles', () =>
         writeBuildingsTiles(db, outDir, work, { split: renderBoxes.written })
       );
-      if (renderBoxes.written) counts['tiles.buildings.drops_z14plus'] = tiles.dropsAtSplit;
+      if (renderBoxes.written) {
+        counts['tiles.buildings.drops_z14plus'] = tiles.dropsAtSplit;
+        const archive = join(outDir, 'buildings.pmtiles');
+        counts['tiles.buildings.z12_parcels'] = await parcelIdsAtZoom(archive, 12, BBOX);
+        counts['tiles.buildings.z13_parcels'] = await parcelIdsAtZoom(archive, 13, BBOX);
+      }
       // tippecanoe's bytes vary by platform: live builds only, so the fixture report stays stable.
       if (!fixtureMode) {
         counts['tiles.buildings.bytes'] = statSync(join(outDir, 'buildings.pmtiles')).size;

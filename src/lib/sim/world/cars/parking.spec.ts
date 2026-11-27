@@ -3,7 +3,7 @@
 // and one spaces table per refresh month.
 import { describe, expect, it } from 'vitest';
 import { PROTOTYPES, costPerHome, signedOddsShift } from '$lib/sim/finance';
-import { benchMarket } from '$lib/sim/scenario/fixtures/bench-finance';
+import { benchMarket } from '$lib/sim/world/fixtures/bench-finance';
 import type { CarModel } from '$lib/sim/cars';
 import { addProject, pushRev } from '../columns';
 import type { ParkingShift, PolicyFrame, PolicyTimeline } from '../policy/frame';

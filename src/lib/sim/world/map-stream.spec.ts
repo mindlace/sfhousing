@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import type { TimedPackedCell, TimelineUpdate } from '$lib/map/types';
-import { cellAnchorParcel, footprintParcel } from '$lib/sim/scenario/massing';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { cellAnchorParcel, footprintParcel } from '$lib/sim/world/massing';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 import { createMapStream, MASSING_CAP } from './map-stream';
 import {

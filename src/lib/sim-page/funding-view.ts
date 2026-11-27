@@ -23,15 +23,15 @@ import {
   type BundleItem
 } from '$lib/sim/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import { CITY_POOL_KINDS } from '$lib/sim/scenario/finance-score';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
+import { CITY_POOL_KINDS } from '$lib/sim/world/score/finance';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
 import {
   formatDollars,
   formatDollarsExact,
   formatMonthYear,
   formatOddsChange
 } from '$lib/fzp/format';
-import { firstOfMonth } from '$lib/sim/scenario/dates';
+import { firstOfMonth } from '$lib/sim/world/dates';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthLastDay } from '$lib/sim/world/months';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';

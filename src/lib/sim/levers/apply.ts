@@ -11,9 +11,9 @@
  * whole input. Worker-safe and pure.
  */
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
-import { applyPolicies, baseZoning } from '../scenario/policy';
-import { REFERENCES } from '../scenario/score';
-import type { SimInput, TimelineScore } from '../scenario/types';
+import { applyPolicies, baseZoning } from '../world/input/policy';
+import { REFERENCES } from '../world/score/targets';
+import type { SimInput, TimelineScore } from '../world/input/types';
 import { buildFinance } from './finance';
 import type { LayerCtx } from './layers';
 import {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
-import { dayOf } from '$lib/sim/scenario/dates';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { dayOf } from '$lib/sim/world/dates';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day, Pool } from '$lib/timelapse/types';
 import {
   FIXTURE_AS_OF,

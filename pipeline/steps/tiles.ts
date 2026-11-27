@@ -1,10 +1,14 @@
 import { execFile } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { VectorTile } from '@mapbox/vector-tile';
+import Pbf from 'pbf';
+import { PMTiles } from 'pmtiles';
 import { BOXES } from '../boxes-config';
 import { FONT_STACKS, type BBOX } from '../config';
 import type { Duck } from '../lib/duck';
 import { run } from '../lib/exec';
+import { NodeFileSource } from '../lib/pmtiles-file';
 
 interface ExportRow {
   parcel_id: string | null;
@@ -68,7 +72,8 @@ export const SPLIT_MAX_TILE_BYTES = 1_000_000;
  * - Without `split` (no building-boxes artifact): buildings_export only, exactly as before the
  *   boxes work (same input bytes and tippecanoe arguments).
  * - With `split`: two tippecanoe runs joined by tile-join. buildings.geojsonseq holds
- *   buildings_export at z12–13 (tippecanoe minzoom/maxzoom per feature, today's four properties),
+ *   low_export at z12–13 (a parts building as its render boxes, every other building as
+ *   buildings_export; tippecanoe minzoom/maxzoom per feature, today's four properties),
  *   tiled under MAX_TILE_BYTES as before; boxes.geojsonseq holds render_export at z14–15
  *   (`BOXES.splitZoom`), which adds `src`, `groundM` and `groundMinM` (each left out when null),
  *   tiled under `maxTileBytes` (default SPLIT_MAX_TILE_BYTES). Returns how many z14+ tiles the
@@ -83,7 +88,9 @@ export async function writeBuildingsTiles(
 ): Promise<{ dropsAtSplit: number }> {
   const split = opts.split ?? false;
   const rows = await db.all<ExportRow>(
-    'SELECT parcel_id, height_m, base_m, hs, geojson4326 FROM buildings_export ORDER BY parcel_id NULLS LAST, bid'
+    split
+      ? 'SELECT parcel_id, height_m, base_m, hs, geojson4326 FROM low_export ORDER BY parcel_id NULLS LAST, bid, k'
+      : 'SELECT parcel_id, height_m, base_m, hs, geojson4326 FROM buildings_export ORDER BY parcel_id NULLS LAST, bid'
   );
   const lines = rows.map((r) => {
     const properties: Record<string, unknown> = {};
@@ -248,4 +255,35 @@ export async function z12TileBytes(pmtilesFile: string, bbox: typeof BBOX): Prom
     for (let y = y0; y <= y1; y++) total += await tileBytes(pmtilesFile, z, x, y);
   }
   return total;
+}
+
+/**
+ * Distinct parcelId values in the decoded `buildings` features of every z tile over bbox (absent
+ * tiles add none): how many parcels the zoom still draws.
+ */
+export async function parcelIdsAtZoom(
+  pmtilesFile: string,
+  z: number,
+  bbox: typeof BBOX
+): Promise<number> {
+  const n = 2 ** z;
+  const tx = (lng: number) => Math.floor(((lng + 180) / 360) * n);
+  const ty = (lat: number) => {
+    const r = (lat * Math.PI) / 180;
+    return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+  };
+  const archive = new PMTiles(new NodeFileSource(pmtilesFile));
+  const ids = new Set<string>();
+  for (let x = tx(bbox.w); x <= tx(bbox.e); x++) {
+    for (let y = ty(bbox.n); y <= ty(bbox.s); y++) {
+      const t = await archive.getZxy(z, x, y);
+      if (!t) continue;
+      const layer = new VectorTile(new Pbf(new Uint8Array(t.data))).layers.buildings;
+      for (let i = 0; i < (layer?.length ?? 0); i++) {
+        const id = layer.feature(i).properties.parcelId;
+        if (id !== undefined && id !== null) ids.add(String(id));
+      }
+    }
+  }
+  return ids.size;
 }

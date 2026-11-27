@@ -32,7 +32,7 @@ let out: string[];
 let err: string[];
 
 const inputs: BoxesInputs = {
-  schema: 1,
+  schema: 2,
   code: sha('code'),
   config: sha('config'),
   sources: { 'overture-buildings': sha('ob') }

@@ -1,6 +1,6 @@
 // The warm-ahead queue (plan D12): one (row, revision) per unit.
 import { describe, expect, it } from 'vitest';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import { createWarmQueue } from './warm';
 
 /** A stub schedule with `n` revisions; the queue reads only `revisions.length`. */

@@ -16,7 +16,7 @@ import {
 } from './columns';
 import { lineIndex } from './line-index';
 import { fundedMini, oneMoneyTimeline } from './test/fixtures';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 import { recordWaiting, waitingHomes } from './system';
 
 function lineWorld(): World {

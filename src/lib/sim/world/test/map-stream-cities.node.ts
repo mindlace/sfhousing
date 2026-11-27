@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parseManifest } from '$lib/data/manifest';
 import type { ParcelRecord } from '$lib/data/parcel';
 import { decodeParcelChunk } from '$lib/data/parcel-chunk';
-import { synthCity } from '$lib/sim/scenario/fixtures/synth-city';
+import { synthCity } from '$lib/sim/world/fixtures/synth-city';
 
 const ROOT = fileURLToPath(new URL('../../../../../', import.meta.url));
 const FIXTURE_DIR = join(ROOT, 'e2e/fixtures/data/fixture-0');

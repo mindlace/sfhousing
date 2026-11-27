@@ -46,7 +46,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import { dayOf, firstOfMonth } from '$lib/sim/scenario/dates';
+  import { dayOf, firstOfMonth } from '$lib/sim/world/dates';
   import {
     AVERAGE_DRAWN,
     DRAW_UP_FRONT,

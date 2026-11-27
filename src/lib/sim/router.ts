@@ -1,47 +1,33 @@
-// The worker router (spec §4.1): the scenario host beside the unchanged editor host and the
-// timeline host, behind the same Worker. Worker-bundle module: DOM-free and $app-free.
+// The worker router (spec §4.1): the unchanged editor host and the timeline host, behind the same
+// Worker. Worker-bundle module: DOM-free and $app-free.
 import type { SimRequest, SimResponse } from './protocol';
-import type { ScenarioRequest, ScenarioResponse, WorkerRequest } from './scenario/types';
-import type {
-  TimelineHostRequest,
-  TimelineHostResponse,
-  TimelineRequest
-} from './timeline-protocol';
+import type { TimelineHostRequest, TimelineHostResponse, WorkerRequest } from './timeline-protocol';
 
-type WorkerMode = 'editor' | 'scenario' | 'timeline';
+type WorkerMode = 'editor' | 'timeline';
 
 export interface RouterDeps {
   editor: { handle(r: SimRequest): void; dispose(): void };
   /**
-   * Called on the first `initScenario` (or a `reroll` or `setLevers` outside timeline mode that
-   * arrives before one), and again on the next one after an `openTimeline` disposed and dropped
-   * it. An `init` disposes the host but keeps the handle, so later requests reuse it.
-   */
-  createScenario: () => { handle(r: ScenarioRequest): void; dispose(): void };
-  /**
    * Called on the first `openTimeline` (timeline mode), and again on the next one after an
-   * `init` or `initScenario` disposed it.
+   * `init` disposed it.
    */
   createTimeline: () => { handle(r: TimelineHostRequest): void; dispose(): void };
   /**
-   * The router's own answers: brush, outline, preview and lid requests outside scenario mode
+   * The router's own answers: brush, outline, preview, lid and lot requests outside timeline mode
    * (`no-session`), `bad-request` errors, and the editor's `heightLots` outside editor mode
    * (`result: null`).
    */
-  post(msg: ScenarioResponse | SimResponse | TimelineHostResponse): void;
+  post(msg: SimResponse | TimelineHostResponse): void;
 }
 
 export function createWorkerRouter(deps: RouterDeps): {
-  handle(req: WorkerRequest | TimelineRequest): void;
+  handle(req: WorkerRequest): void;
 } {
-  type ScenarioHandle = ReturnType<RouterDeps['createScenario']>;
   type TimelineHandle = ReturnType<RouterDeps['createTimeline']>;
   let timeline: TimelineHandle | null = null;
-  let scenario: ScenarioHandle | null = null;
-  // Which host received the latest `init` / `initScenario` / `openTimeline`; the editor before any.
+  // Which host received the latest `init` / `openTimeline`; the editor before any.
   let mode: WorkerMode = 'editor';
 
-  const scenarioHost = (): ScenarioHandle => (scenario ??= deps.createScenario());
   const timelineHost = (): TimelineHandle => (timeline ??= deps.createTimeline());
   const endTimeline = () => {
     timeline?.dispose();
@@ -53,7 +39,6 @@ export function createWorkerRouter(deps: RouterDeps): {
       switch (req.type) {
         case 'init':
           mode = 'editor';
-          scenario?.dispose();
           endTimeline();
           deps.editor.handle(req);
           return;
@@ -69,18 +54,10 @@ export function createWorkerRouter(deps: RouterDeps): {
           if (mode === 'editor') deps.editor.handle(req);
           else deps.post({ type: 'heightLots', reqId: req.reqId, result: null });
           return;
-        case 'initScenario':
-          mode = 'scenario';
-          deps.editor.dispose();
-          endTimeline();
-          scenarioHost().handle(req);
-          return;
         case 'openTimeline':
-          // One dataset in memory: every other host goes.
+          // One dataset in memory: the editor host goes.
           mode = 'timeline';
           deps.editor.dispose();
-          scenario?.dispose();
-          scenario = null;
           timelineHost().handle(req);
           return;
         case 'setPolicy':
@@ -94,35 +71,21 @@ export function createWorkerRouter(deps: RouterDeps): {
         case 'resyncMap':
           if (mode === 'timeline') timelineHost().handle(req);
           return;
-        case 'reroll':
-        case 'setLevers':
-          // Timeline mode has no scenario session: answered here, no scenario host is created.
-          if (mode === 'timeline') {
-            const message = `${req.type} needs a /sim scenario session`;
-            deps.post({ type: 'error', rev: req.rev, code: 'bad-request', message });
-          }
-          // With no scenario host yet, a lazily created one answers `bad-request`.
-          else scenarioHost().handle(req);
-          return;
         case 'prefetch':
         case 'retryChunks':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else deps.editor.handle(req);
           return;
         case 'parcelSummary':
           if (mode === 'timeline') timelineHost().handle(req as TimelineHostRequest);
-          // `req` may be the editor's shape (no `day`); a scenario client always sends the full one.
-          else if (mode === 'scenario') scenarioHost().handle(req as ScenarioRequest);
-          // The editor's request shape has no `day` or `projectId`.
+          // `req` may be the editor's shape (no `day`).
           else
             deps.editor.handle({ type: 'parcelSummary', reqId: req.reqId, parcelId: req.parcelId });
           return;
         case 'resolveBrush':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else {
-            const message = 'brushes need a /sim scenario session';
+            const message = 'brushes need a timeline session';
             deps.post({
               type: 'brushLots',
               reqId: req.reqId,
@@ -131,15 +94,13 @@ export function createWorkerRouter(deps: RouterDeps): {
           }
           return;
         case 'brushCatalog':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else deps.post({ type: 'brushCatalog', reqId: req.reqId, catalog: null });
           return;
         case 'lotOutlines':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else {
-            const message = 'outlines need a /sim scenario session';
+            const message = 'outlines need a timeline session';
             deps.post({
               type: 'lotOutlines',
               reqId: req.reqId,
@@ -148,10 +109,9 @@ export function createWorkerRouter(deps: RouterDeps): {
           }
           return;
         case 'previewBuildings':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else {
-            const message = 'previews need a /sim scenario session';
+            const message = 'previews need a timeline session';
             deps.post({
               type: 'previewBuildings',
               reqId: req.reqId,
@@ -160,10 +120,9 @@ export function createWorkerRouter(deps: RouterDeps): {
           }
           return;
         case 'heightLids':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else {
-            const message = 'height lids need a /sim scenario session';
+            const message = 'height lids need a timeline session';
             deps.post({
               type: 'heightLids',
               reqId: req.reqId,
@@ -172,10 +131,9 @@ export function createWorkerRouter(deps: RouterDeps): {
           }
           return;
         case 'lotAt':
-          if (mode === 'scenario') scenarioHost().handle(req);
-          else if (mode === 'timeline') timelineHost().handle(req);
+          if (mode === 'timeline') timelineHost().handle(req);
           else {
-            const message = 'lot lookup needs a /sim scenario session';
+            const message = 'lot lookup needs a timeline session';
             deps.post({
               type: 'lotAt',
               reqId: req.reqId,

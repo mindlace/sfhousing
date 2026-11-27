@@ -30,7 +30,7 @@
 import { M1_TARGETS } from '$lib/scoreboard';
 import { debtService, limitStatements } from '$lib/sim/finance';
 import type { TimelineScore } from '$lib/sim/protocol';
-import { tierTargetsOf } from '$lib/sim/scenario/score';
+import { tierTargetsOf } from '$lib/sim/world/score/targets';
 import type { Provenance, TierUnits } from '$lib/timelapse/types';
 import { dayFromUtc } from '../time';
 

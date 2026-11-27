@@ -4,9 +4,9 @@
 // (they start). `withFunding(f)` adds the calls into `f` in the months whose frame has `finance`;
 // `withFunding(f, cars)` also runs the car system every month (it only observes housing).
 import * as scenarioCodecModule from '$lib/data/scenario-codec';
-import * as engineModule from '$lib/sim/scenario/engine';
-import * as inputModule from '$lib/sim/scenario/input';
-import * as rngModule from '$lib/sim/scenario/rng';
+import * as stagesModule from '$lib/sim/world/rules/stages';
+import * as inputModule from '$lib/sim/world/input/build';
+import * as rngModule from '$lib/sim/world/rules/rng';
 import type { Day } from '$lib/timelapse/time';
 import * as timelapseTypesModule from '$lib/timelapse/types';
 import type { Pathway, Stage } from '$lib/timelapse/types';
@@ -37,7 +37,7 @@ import type {
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
 const { FILL_LEVELS, fillStories } = scenarioCodecModule;
-const { pathwayFrom } = engineModule;
+const { pathwayFrom } = stagesModule;
 const { sizeCumAgainst } = inputModule;
 const { P, drawOn, seedHash, streamOf } = rngModule;
 const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;

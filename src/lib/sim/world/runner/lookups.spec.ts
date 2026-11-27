@@ -1,6 +1,4 @@
-// The timeline host's shared lookups (ensemble-runner Task 3), differential against the old
-// scenario host on the mini city: a lever session on `DEFAULT_LEVERS`, before any `setLevers`, so
-// the old host answers on the base parcels with nothing protected.
+// The timeline host's brush service files (ensemble-runner Task 3), on the mini city.
 import { afterAll, beforeAll, describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import {
@@ -11,23 +9,15 @@ import {
 } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
-import type { ParcelSummary } from '$lib/sim/protocol';
-import { MINI_NEIGHBORHOOD } from '$lib/sim/scenario/fixtures/mini-brushes';
-import { miniCity } from '$lib/sim/scenario/fixtures/mini-parcels';
-import { MINI_AS_OF } from '$lib/sim/scenario/fixtures/mini-projects';
-import { scenarioUrls } from '$lib/sim/scenario/load';
-import { massingFor } from '$lib/sim/scenario/massing';
-import { PREVIEW_MAX_LOTS } from '$lib/sim/scenario/preview';
-import type { ScenarioHostDeps } from '$lib/sim/scenario/scenario-host';
-import {
-  MINI_TRANSIT_URL,
-  makeScenarioHarness,
-  type ScenarioHarness
-} from '$lib/sim/scenario/test/host-harness';
-import type { ScenarioResponse, Schedule } from '$lib/sim/scenario/types';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
+import { MINI_TRANSIT_URL, miniDataset, type MiniDataset } from '../test/mini-dataset';
 import { createChunkSet, loadDataset, type Dataset, type DatasetDeps } from './dataset';
+import { MINI_AS_OF } from '$lib/sim/world/fixtures/mini-projects';
+import { massingFor } from '$lib/sim/world/massing';
+import { PREVIEW_MAX_LOTS } from '$lib/sim/world/runner/budget';
+import type { Schedule } from '$lib/sim/world/input/types';
 import {
   buildableStories,
   cardDepsOf,
@@ -40,11 +30,15 @@ import { fakeClock, mapFetch, type MapFetch } from './test/harness';
 
 const city = miniCity();
 const LOADED_LOT: ParcelId = '0026T009';
-const OTHER_LOADED_LOT: ParcelId = '0026T014';
-const UNLOADED_LOT: ParcelId = '2999A001';
 const cellOf = (id: ParcelId) =>
   city.parcels.cells[city.parcels.cell[city.parcels.index.get(id)!]].cellId;
+const OTHER_LOADED_LOT: ParcelId = '0026T014';
+const UNLOADED_LOT: ParcelId = '2999A001';
 const LOADED_CELL = cellOf(LOADED_LOT);
+const labelOf = (id: ParcelId): [number, number] => {
+  const i = city.parcels.index.get(id)!;
+  return [city.parcels.labelPoint[2 * i], city.parcels.labelPoint[2 * i + 1]];
+};
 
 function bboxOf(cellId: string): [number, number, number, number] {
   const c = city.manifest.chunks.find((x) => x.cellId === cellId)!;
@@ -52,55 +46,18 @@ function bboxOf(cellId: string): [number, number, number, number] {
   const y = (c.bbox[1] + c.bbox[3]) / 2;
   return [x - 1e-6, y - 1e-6, x + 1e-6, y + 1e-6];
 }
-const labelOf = (id: ParcelId): [number, number] => {
-  const i = city.parcels.index.get(id)!;
-  return [city.parcels.labelPoint[2 * i], city.parcels.labelPoint[2 * i + 1]];
-};
-
-const STROKE: [number, number][] = [labelOf('0026T001A'), labelOf('0026T006')];
-const FREEHAND: BrushQuery = { kind: 'freehand', strokes: [{ path: STROKE, radiusM: 30 }] };
-const TRANSIT: BrushQuery = { kind: 'transit', stopTypes: ['regionalRail', 'metro'], maxM: 5 };
-const AREA: BrushQuery = { kind: 'area', districts: [], neighborhoods: [MINI_NEIGHBORHOOD] };
-
 let warnSpy: MockInstance<typeof console.warn>;
 beforeAll(() => {
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 afterAll(() => warnSpy.mockRestore());
 
-/** An old lever session, loaded, with `LOADED_CELL` prefetched and its timeline run out. */
-async function oldSession(deps: Partial<ScenarioHostDeps> = {}): Promise<ScenarioHarness> {
-  const h = makeScenarioHarness({ deps: { bandRuns: 2, ...deps }, policy: true });
-  h.init({ levers: structuredClone(DEFAULT_LEVERS) });
-  await h.flush();
-  h.host.handle({ type: 'prefetch', bbox: bboxOf(LOADED_CELL) });
-  await h.runAll();
-  expect(h.errors()).toEqual([]);
-  return h;
-}
-
-let reqId = 1000;
-/** The old host's one post for a request it answers (after settling). */
-async function ask<T extends ScenarioResponse['type']>(
-  h: ScenarioHarness,
-  req: Parameters<ScenarioHarness['host']['handle']>[0] & { reqId: number },
-  type: T
-): Promise<Extract<ScenarioResponse, { type: T }>> {
-  h.host.handle(req);
-  await h.flush();
-  const ps = h.posts.filter(
-    (m) => m.type === type && (m as { reqId?: number }).reqId === req.reqId
-  ) as Extract<ScenarioResponse, { type: T }>[];
-  expect(ps).toHaveLength(1);
-  return ps[0];
-}
-
 const settle = async () => {
   for (let k = 0; k < 6; k++) await new Promise((r) => setImmediate(r));
 };
 
-/** The new dataset over the old harness's bodies, with `LOADED_CELL` loaded. */
-async function newDataset(h: ScenarioHarness, gen = generate): Promise<Dataset> {
+/** The dataset over the mini city's bodies, with `LOADED_CELL` loaded. */
+async function newDataset(h: MiniDataset, gen = generate): Promise<Dataset> {
   const manifest = h.manifest();
   const f = mapFetch(h.bodies);
   const deps: DatasetDeps = {
@@ -119,7 +76,7 @@ async function newDataset(h: ScenarioHarness, gen = generate): Promise<Dataset> 
   const chunks = createChunkSet(manifest, deps);
   const ds = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     chunks,
     deps,
     createLru<string, GeneratedBuilding | null>(1000),
@@ -158,227 +115,11 @@ function brushService(
   return { svc, posted, of };
 }
 
-describe('differential against the old host', () => {
-  let h: ScenarioHarness;
-  let ds: Dataset;
-  beforeAll(async () => {
-    h = await oldSession();
-    ds = await newDataset(h);
-  });
-
-  it('brush answers equal the old host’s', async () => {
-    const b = brushService(ds, mapFetch(h.bodies));
-    const queries: (BrushQuery | null)[] = [FREEHAND, TRANSIT, AREA, null];
-    for (const q of queries) {
-      const id = ++reqId;
-      const old =
-        q === null
-          ? await ask(h, { type: 'brushCatalog', reqId: id }, 'brushCatalog')
-          : await ask(h, { type: 'resolveBrush', reqId: id, query: q }, 'brushLots');
-      b.svc.request(id, q);
-      await settle();
-      const mine = b.of(id);
-      expect(mine).toHaveLength(1);
-      expect(mine[0].msg).toEqual(old);
-      if (old.type === 'brushLots') {
-        expect(old.result.ok).toBe(true);
-        const k = h.posts.indexOf(old);
-        expect(mine[0].transfer.map((t) => t.byteLength)).toEqual(
-          h.transfers[k].map((t) => t.byteLength)
-        );
-      } else {
-        expect(old.catalog).not.toBeNull();
-      }
-    }
-  });
-
-  it('a bad brush query is the old host’s bad-request', async () => {
-    const b = brushService(ds, mapFetch(h.bodies));
-    const id = ++reqId;
-    const q = { kind: 'transit', stopTypes: ['ferry'], maxM: 100 } as unknown as BrushQuery;
-    const old = await ask(h, { type: 'resolveBrush', reqId: id, query: q }, 'brushLots');
-    b.svc.request(id, q);
-    expect(b.of(id).map((p) => p.msg)).toEqual([old]);
-    expect(old.result).toMatchObject({ ok: false, reason: 'bad-request' });
-  });
-
-  it('lotOutlinesResult equals the old host’s lotOutlines', async () => {
-    const lots = [LOADED_LOT, UNLOADED_LOT, OTHER_LOADED_LOT];
-    const id = ++reqId;
-    const old = await ask(h, { type: 'lotOutlines', reqId: id, lots }, 'lotOutlines');
-    const mine = lotOutlinesResult(ds.chunks.records, lots);
-    expect(mine.result).toEqual(old.result);
-    expect(mine.result).toMatchObject({ ok: true, missing: 1 });
-    expect(mine.transfer).toHaveLength(3);
-  });
-
-  it('lotAtResult equals the old host’s lotAt', async () => {
-    for (const point of [
-      labelOf(LOADED_LOT),
-      labelOf(OTHER_LOADED_LOT),
-      [0, 0] as [number, number]
-    ]) {
-      const id = ++reqId;
-      const old = await ask(h, { type: 'lotAt', reqId: id, point }, 'lotAt');
-      if (!old.result.ok) throw new Error(old.result.message);
-      const oldOwner = old.result.owner;
-      const asked: ParcelId[] = [];
-      const mine = lotAtResult(ds.manifest, ds.chunks.byCell, point, (pid) => {
-        asked.push(pid);
-        return oldOwner;
-      });
-      expect(mine).toEqual(old.result);
-      expect(asked).toEqual(old.result.parcelId === null ? [] : [old.result.parcelId]);
-    }
-  });
-
-  const previewOf = (lots: ParcelId[], stories: number, prot: (row: number) => boolean) =>
-    previewResult({
-      parcels: ds.loaded.fzp.parcels,
-      protectedRow: prot,
-      records: ds.chunks.records,
-      memo: createLru(1000),
-      gen: generate,
-      lots,
-      stories,
-      maxLots: PREVIEW_MAX_LOTS
-    });
-
-  it('previewResult equals the old host’s previewBuildings', async () => {
-    const lots = [LOADED_LOT, OTHER_LOADED_LOT, UNLOADED_LOT, LOADED_LOT];
-    for (const stories of [40, 5]) {
-      const id = ++reqId;
-      const old = await ask(
-        h,
-        { type: 'previewBuildings', reqId: id, lots, stories },
-        'previewBuildings'
-      );
-      const mine = previewOf(lots, stories, () => false);
-      expect(mine.result).toEqual(old.result);
-      expect(mine.result).toMatchObject({ ok: true, built: 2, missing: 1 });
-      const k = h.posts.indexOf(old);
-      expect(mine.transfer.length).toBe(h.transfers[k].length);
-    }
-  });
-
-  it('previewResult skips a protected row', async () => {
-    const row = ds.loaded.fzp.parcels.index.get(LOADED_LOT)!;
-    const id = ++reqId;
-    const old = await ask(
-      h,
-      { type: 'previewBuildings', reqId: id, lots: [OTHER_LOADED_LOT, UNLOADED_LOT], stories: 40 },
-      'previewBuildings'
-    );
-    const mine = previewOf([LOADED_LOT, OTHER_LOADED_LOT, UNLOADED_LOT], 40, (r) => r === row);
-    expect(mine.result).toEqual(old.result);
-    expect(mine.result).toMatchObject({ ok: true, built: 1, missing: 1 });
-  });
-
-  async function oldSummary(hh: ScenarioHarness, parcelId: ParcelId): Promise<ParcelSummary> {
-    const id = ++reqId;
-    const p = await ask(
-      hh,
-      { type: 'parcelSummary', reqId: id, parcelId, day: MINI_AS_OF },
-      'parcelSummary'
-    );
-    expect(p.summary?.limits?.protected).toBe(false);
-    return p.summary!;
-  }
-
-  it('buildableStories equals the old host’s limits.buildable (generator path)', async () => {
-    const s = await oldSummary(h, LOADED_LOT);
-    const got = buildableStories(
-      {
-        parcels: ds.loaded.fzp.parcels,
-        records: ds.chunks.records,
-        memo: createLru(10),
-        gen: generate
-      },
-      LOADED_LOT,
-      s.limits!.allowed,
-      s.existingUnits
-    );
-    expect(got).toBe(s.limits!.buildable);
-  });
-
-  it('buildableStories equals the old host’s limits.buildable (lotBuildableStories fallback)', async () => {
-    const none = () => null;
-    const hn = await oldSession({ generate: none });
-    const dn = await newDataset(hn, none);
-    const s = await oldSummary(hn, LOADED_LOT);
-    const spy = vi.fn(none);
-    const got = buildableStories(
-      { parcels: dn.loaded.fzp.parcels, records: dn.chunks.records, memo: createLru(10), gen: spy },
-      LOADED_LOT,
-      s.limits!.allowed,
-      s.existingUnits
-    );
-    expect(got).toBe(s.limits!.buildable);
-    expect(spy).toHaveBeenCalledTimes(1);
-    const rec = dn.chunks.records.get(LOADED_LOT)!;
-    expect(got).toBe(lotBuildableStories(rec.polygon, s.limits!.allowed, s.existingUnits));
-  });
-
-  it('cardDepsOf: the record and buildable stories of the old card', async () => {
-    const logged: [string, string][] = [];
-    const deps = cardDepsOf(
-      ds,
-      () => ds.loaded.fzp.parcels,
-      (k, m) => logged.push([k, m])
-    );
-    const s = await oldSummary(h, LOADED_LOT);
-    const rec = deps.record(LOADED_LOT)!;
-    expect({
-      neighborhood: rec.neighborhood,
-      landUse: rec.landUse,
-      eligible: rec.eligible
-    }).toEqual({
-      neighborhood: s.neighborhood,
-      landUse: s.landUse,
-      eligible: s.eligible
-    });
-    expect(deps.record(UNLOADED_LOT)).toBeNull();
-    expect(deps.buildable(LOADED_LOT, s.limits!.allowed, s.existingUnits)).toBe(
-      s.limits!.buildable
-    );
-    expect(deps.qualityRules).toEqual(
-      new Map(ds.loaded.projects.qualityRules.map((q) => [q.id, q]))
-    );
-    deps.logOnce('x', 'm');
-    expect(logged).toEqual([['card:x', 'm']]);
-  });
-
-  it('cardDepsOf.building masses only a schedule whose cells are all loaded', () => {
-    const deps = cardDepsOf(
-      ds,
-      () => ds.loaded.fzp.parcels,
-      () => {}
-    );
-    const sched = (parcelIds: ParcelId[]): Schedule => ({
-      projectId: `sim:${parcelIds[0]}`,
-      origin: 'simulated',
-      parcelIds,
-      pathway: 'discretionary',
-      entered: {},
-      end: { kind: 'open' },
-      revisions: [{ day: MINI_AS_OF, units: 20, stories: 5 }],
-      existingUnits: 0,
-      multiPhase: false,
-      phase: null
-    });
-    const drawn = sched([LOADED_LOT]);
-    expect(deps.building(drawn, 0)).toEqual(massingFor(drawn, 0, ds.massing));
-    expect('footprint' in deps.building(drawn, 0)).toBe(false);
-    expect(deps.building(sched([LOADED_LOT, UNLOADED_LOT]), 0)).toEqual({ footprint: [] });
-    expect(deps.building(sched(['NOT-IN-T11']), 0)).toEqual({ footprint: [] });
-  });
-});
-
 describe('createBrushService files', () => {
   let ds: Dataset;
-  let h: ScenarioHarness;
+  let h: MiniDataset;
   beforeAll(async () => {
-    h = makeScenarioHarness({ policy: true });
+    h = miniDataset({ policy: true });
     ds = await newDataset(h);
   });
   const Q: BrushQuery = { kind: 'transit', stopTypes: ['metro'], maxM: 100 };
@@ -441,5 +182,152 @@ describe('createBrushService files', () => {
     expect(b.of(2).map((p) => p.msg)).toEqual([{ type: 'brushCatalog', reqId: 2, catalog: null }]);
     while (await clock.runNext());
     expect(b.posted).toHaveLength(2);
+  });
+});
+
+describe('direct lookups on the mini city', () => {
+  let ds: Dataset;
+  beforeAll(async () => {
+    ds = await newDataset(miniDataset({ policy: true }));
+  });
+
+  it('lotOutlinesResult answers the loaded lots and counts the missing', () => {
+    const lots = [LOADED_LOT, UNLOADED_LOT, OTHER_LOADED_LOT];
+    const { result, transfer } = lotOutlinesResult(ds.chunks.records, lots);
+    expect(result).toMatchObject({ ok: true, missing: 1 });
+    expect(transfer).toHaveLength(3);
+    expect(lotOutlinesResult(ds.chunks.records, [UNLOADED_LOT]).result).toMatchObject({
+      ok: true,
+      missing: 1
+    });
+  });
+
+  it('lotAtResult finds the lot at its label point and asks the owner once', () => {
+    for (const id of [LOADED_LOT, OTHER_LOADED_LOT]) {
+      const asked: ParcelId[] = [];
+      const got = lotAtResult(ds.manifest, ds.chunks.byCell, labelOf(id), (pid) => {
+        asked.push(pid);
+        return null;
+      });
+      expect(got.ok).toBe(true);
+      if (got.ok) expect(got.parcelId).toBe(id);
+      expect(asked).toEqual([id]);
+    }
+  });
+
+  it('lotAtResult asks no owner where no lot is', () => {
+    const asked: ParcelId[] = [];
+    const got = lotAtResult(ds.manifest, ds.chunks.byCell, [0, 0], (pid) => {
+      asked.push(pid);
+      return null;
+    });
+    expect(got).toMatchObject({ ok: true, parcelId: null });
+    expect(asked).toEqual([]);
+  });
+
+  const previewOf = (lots: ParcelId[], stories: number, prot: (row: number) => boolean) =>
+    previewResult({
+      parcels: ds.loaded.fzp.parcels,
+      protectedRow: prot,
+      records: ds.chunks.records,
+      memo: createLru(1000),
+      gen: generate,
+      lots,
+      stories,
+      maxLots: PREVIEW_MAX_LOTS
+    });
+
+  it('previewResult builds the loaded lots and counts the missing', () => {
+    const lots = [LOADED_LOT, OTHER_LOADED_LOT, UNLOADED_LOT, LOADED_LOT];
+    for (const stories of [40, 5]) {
+      const { result, transfer } = previewOf(lots, stories, () => false);
+      expect(result).toMatchObject({ ok: true, built: 2, missing: 1 });
+      expect(transfer.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('previewResult skips a protected row', () => {
+    const row = ds.loaded.fzp.parcels.index.get(LOADED_LOT)!;
+    const { result } = previewOf(
+      [LOADED_LOT, OTHER_LOADED_LOT, UNLOADED_LOT],
+      40,
+      (r) => r === row
+    );
+    expect(result).toMatchObject({ ok: true, built: 1, missing: 1 });
+  });
+
+  it('buildableStories is the generator’s stories, at most the allowed', () => {
+    const deps = {
+      parcels: ds.loaded.fzp.parcels,
+      records: ds.chunks.records,
+      memo: createLru<string, GeneratedBuilding | null>(10),
+      gen: generate
+    };
+    const low = buildableStories(deps, LOADED_LOT, 2, 0);
+    const high = buildableStories(deps, LOADED_LOT, 40, 0);
+    expect(high).not.toBeNull();
+    expect(low === null ? 0 : low).toBeLessThanOrEqual(2);
+    expect(high!).toBeLessThanOrEqual(40);
+    expect(high!).toBeGreaterThanOrEqual(low ?? 0);
+  });
+
+  it('buildableStories falls back to the lot’s polygon when the generator gives nothing', () => {
+    const spy = vi.fn(() => null);
+    const got = buildableStories(
+      {
+        parcels: ds.loaded.fzp.parcels,
+        records: ds.chunks.records,
+        memo: createLru(10),
+        gen: spy
+      },
+      LOADED_LOT,
+      40,
+      0
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
+    const rec = ds.chunks.records.get(LOADED_LOT)!;
+    expect(got).toBe(lotBuildableStories(rec.polygon, 40, 0));
+  });
+
+  it('cardDepsOf: record, quality rules and the once-only log', () => {
+    const logged: [string, string][] = [];
+    const deps = cardDepsOf(
+      ds,
+      () => ds.loaded.fzp.parcels,
+      (k, m) => logged.push([k, m])
+    );
+    const rec = deps.record(LOADED_LOT)!;
+    expect(rec).toBe(ds.chunks.records.get(LOADED_LOT));
+    expect(deps.record(UNLOADED_LOT)).toBeNull();
+    expect(deps.qualityRules).toEqual(
+      new Map(ds.loaded.projects.qualityRules.map((q) => [q.id, q]))
+    );
+    deps.logOnce('x', 'm');
+    expect(logged).toEqual([['card:x', 'm']]);
+  });
+
+  it('cardDepsOf.building masses only a schedule whose cells are all loaded', () => {
+    const deps = cardDepsOf(
+      ds,
+      () => ds.loaded.fzp.parcels,
+      () => {}
+    );
+    const sched = (parcelIds: ParcelId[]): Schedule => ({
+      projectId: `sim:${parcelIds[0]}`,
+      origin: 'simulated',
+      parcelIds,
+      pathway: 'discretionary',
+      entered: {},
+      end: { kind: 'open' },
+      revisions: [{ day: MINI_AS_OF, units: 20, stories: 5 }],
+      existingUnits: 0,
+      multiPhase: false,
+      phase: null
+    });
+    const drawn = sched([LOADED_LOT]);
+    expect(deps.building(drawn, 0)).toEqual(massingFor(drawn, 0, ds.massing));
+    expect('footprint' in deps.building(drawn, 0)).toBe(false);
+    expect(deps.building(sched([LOADED_LOT, UNLOADED_LOT]), 0)).toEqual({ footprint: [] });
+    expect(deps.building(sched(['NOT-IN-T11']), 0)).toEqual({ footprint: [] });
   });
 });

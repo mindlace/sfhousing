@@ -12,7 +12,7 @@ import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Calibration } from '$lib/timelapse/types';
 import { formatDollarsExact } from '$lib/fzp/format';
 import { coverageShortLine } from '$lib/timeline/money-copy';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import {
   dateRangeError,

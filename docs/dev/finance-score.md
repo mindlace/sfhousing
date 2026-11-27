@@ -10,21 +10,20 @@ the engine ([finance-engine.md](finance-engine.md)); the prices, `inclusionaryUn
 statements from the finance model ([finance-model.md](finance-model.md)); the baseline pools and
 `byTier` from the dataset ([finance-data.md](finance-data.md)).
 
-Code, all in `src/lib/sim/scenario/finance-score.ts` unless noted:
+Code, all in `src/lib/sim/world/score/finance.ts` unless noted:
 
-| Export                                                                  | Holds                                                                       |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `tierContext`, `TierCtx`                                                | a run's context, built once per loaded input                                |
-| `tiersOf`, `splitByShares`, `allocatePhases`                            | one schedule's final units by tier; the rounding rule; the phase allocation |
-| `tierSeries`                                                            | cumulative homes by tier per month                                          |
-| `tierBaselineOf`, `tierBaselineLabel`, `TIER_SOURCES`                   | the baseline by tier, its label, the page's Sources                         |
-| `poolSeries`, `moneyOf`, `addedBorrowing`                               | the seven series per pool, the whole `money`, the borrowing the policy adds |
-| `cityOf`, `perAddedHome`, `displacedShare`, `owedAt`, `CITY_POOL_KINDS` | the derived figures, pure functions of the posted `money`                   |
-| `MONEY_SOURCES`                                                         | the page's Sources under "Money details"                                    |
-| `src/lib/sim/scenario/simulate.ts`                                      | `simulateDetailed`: the one ledger collector                                |
-| `src/lib/sim/scenario/scenario-host.ts`                                 | `shownRun` computes `tiers` and `money`; `postTimeline` posts them          |
+| Export                                                                  | Holds                                                                                               |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `tierContext`, `TierCtx`                                                | a run's context, built once per loaded input                                                        |
+| `tiersOf`, `splitByShares`, `allocatePhases`                            | one schedule's final units by tier; the rounding rule; the phase allocation                         |
+| `tierBaselineOf`, `tierBaselineLabel`, `TIER_SOURCES`                   | the baseline by tier, its label, the page's Sources                                                 |
+| `poolSeries`, `addedBorrowing`                                          | the seven series per pool, the borrowing the policy adds                                            |
+| `cityOf`, `perAddedHome`, `displacedShare`, `owedAt`, `CITY_POOL_KINDS` | the derived figures, pure functions of the posted `money`                                           |
+| `MONEY_SOURCES`                                                         | the page's Sources under "Money details"                                                            |
+| `src/lib/sim/world/score/money.ts`                                      | `moneyRowsOf`: the world's ledger rows for the money series                                         |
+| `src/lib/sim/world/score/test/oracles.ts`                               | `tierSeries`, `moneyOf`, `shownSeries`: whole-history folds the score specs compare the chunks with |
 
-`LedgerEvent` is declared in `money.ts` (the engine's type) and re-exported from `finance-score.ts`
+`LedgerEvent` is declared in `src/lib/sim/world/types.ts` and re-exported from `finance.ts`
 rather than declared again: the two are the identical type.
 
 ## How a completed home gets a tier
@@ -76,19 +75,16 @@ guess. So `aboveModerate` can be negative in a month, as `completedNet` can.
 
 ## The tier series and the baseline
 
-`tierSeries(schedules, ctx, asOf, horizon, months)` has exactly the month rules of `addNet`
-(`score.ts`): at a construction start after `asOf`, `existingUnits` come off `aboveModerate`; at
+The world's chunks hold the tier series (`score/chunk.ts`); the whole-history fold `tierSeries(schedules, ctx, asOf, horizon, months)` in `score/test/oracles.ts` is what the specs compare them with. Both have the month rules of `addNet`: at a construction start after `asOf`, `existingUnits` come off `aboveModerate`; at
 completion `tiersOf` is added; both at `idx(day)` with no clamp. The five fields of month `i` sum
-to `shownSeries(...)[i].completedNet`: the equivalence with `completedNet`, asserted by the tests
-and by the e2e case. Nothing is added for a master.
+to `completedNet`: the equivalence, asserted by the tests and by the e2e case. Nothing is added for a master.
 
 `unrecorded` homes belong to no tier's fraction. They count in the total (so in the RHNA total's
 progress) and a page may show them as their own line; they are never spread over the tiers. The
 four tier fractions, weighted by their targets, sum to less than the total's progress by
 `(baseline.unrecorded + completed[i].unrecorded) / 82,069`.
 
-There are no twin tiers: the twin and the band run through `simulateNet`, which computes none; the
-"vs FZP" comparison stays on the total.
+There are no comparison-world tiers: the "vs FZP" comparison stays on the total.
 
 **The baseline.** `tierBaselineOf(rhnaCompletedNet)` passes `rhnaCompletedNet.byTier` through (all
 zeros when a file has none). It is net completions since 30 June 2022 from the housing-production
@@ -101,8 +97,8 @@ data. Each tier's `fraction[i]` is `(baseline + completed[i]) / target.units`, u
 
 ## The ledger and its series
 
-`simulateDetailed` collects the engine's ledger (see [finance-engine.md](finance-engine.md), "The
-ledger protocol"). The events, one per programme of a project, `in` with `programme: null`:
+The plan world's ledger (see [finance-engine.md](finance-engine.md), "The
+ledger protocol") feeds the series. The events, one per programme of a project, `in` with `programme: null`:
 
 | Moment                            | Event                                                                                |
 | --------------------------------- | ------------------------------------------------------------------------------------ |
@@ -159,7 +155,7 @@ off at the construction start). The rule keys on `funding`, never on `origin`. `
 sums `funding.displaced` over the same schedules. **In the step engine's score
 (`world-score.md`, design section 3.5) displaced homes count on the `'displaced'` event's own day**,
 not at the funded project's completion, so they include funded projects still building or dropped.
-The text below describes `shownSeries`, which counts them only for funded projects that completed,
+The text below describes the fold `shownSeries` (`score/test/oracles.ts`), which counts them only for funded projects that completed,
 in the month the project completes. `displacedShare(money, i)` is displaced over funded, null with none
 funded, for the page to set beside `DISPLACEMENT_RANGE`.
 
@@ -230,7 +226,7 @@ the rows, and a chunk built from a re-stepped world reads its re-made history.
 per pool of `money.pools`, in that order, whose `closed` day less 1 is before the end of the
 calendar month starting `at`: `{label}: ran out {Mon YYYY}`, the month being that of the day less
 1, the month the pool was found spent; for example "City: general-obligation bonds and other debt:
-ran out Mar 2030". A money without `closed` (the older engine's) gives none. `closedPools` is the
+ran out Mar 2030". A money without `closed` gives none. `closedPools` is the
 same list with each pool's id. `MoneyResults` (part `money`) renders each line as a `p`,
 `data-testid="fzp-money-closed"`, after the all-money line (`fzp-money-all`) and before the "Money
 details" button; with no line it renders nothing.
@@ -280,29 +276,16 @@ statements carry their own provenance.
 
 ## Which runs carry what
 
-| Run                                   | `tiers`        | `money`                   | Computed by                                       |
-| ------------------------------------- | -------------- | ------------------------- | ------------------------------------------------- |
-| Shown run (the simulation, `/s/<id>`) | yes, every run | when `finance` has a pool | `shownRun`, once per run, from `simulateDetailed` |
-| Twin                                  | no             | no                        | `simulateNet`, unchanged                          |
-| Band runs                             | no             | no                        | `simulateNet`, unchanged                          |
-
-**`simulateDetailed` is the one ledger collector**: it passes a `ledger` sink that pushes each event
-in arrival order, and only when the input has `finance` (otherwise `ledger` is `[]` and no sink
-is passed, so a run without finance is untouched). **The fast path is untouched:** `addNet`,
-`NetAcc` and `simulateNet` are unchanged, so the band and the twin cost what they cost before.
-`shownRun` computes `tiers` with `tierSeries` and `money` with `moneyOf` (the twin's
-`finance.pools` as `baseline`), after `shownSeries`; `postTimeline` posts the same objects on every
-post. `TierCtx` is built when the loaded input changes (a lever revision), not per run.
+The plan world's chunks carry `tiers` on every run and `money` when `finance` has a pool
+(`score/chunk.ts`, `moneyRowsOf`); the comparison world's carry neither. `TierCtx` is built when the
+loaded input changes (a lever revision), not per chunk.
 
 ## The budget
 
-On the bench city with the bench funding set, `tierSeries` plus `moneyOf` add at most 15 ms to the
-shown run (`scenario.bench.spec.ts`, "finance-score: tierSeries + moneyOf add ≤ 15 ms to the shown
-run"; `npm run test:perf`, not in signoff). Tiers are linear in schedules and months plus one
-`fundBundle` call per distinct set of paying programmes; money is linear in events and in
-7 x pools x months. The posted money is at most 20 pools x 7 series x 483 months, about 68,000
-numbers a post. **Measured (BALLPARK):** median 2.6 ms (nine runs, 2.4 to 3.4 ms), load average
-1.45 on a machine with other agents running.
+Tiers are linear in schedules and months plus one `fundBundle` call per distinct set of paying
+programmes; money is linear in events and in 7 x pools x months. The posted money is at most 20
+pools x 7 series x 483 months, about 68,000 numbers a post. The chunk's cost is held by
+`score/chunk.perf.spec.ts` (`npm run test:perf`, not in signoff).
 
 The e2e case (`e2e/sim.spec.ts`, "a run carries homes by tier and, with the baseline funding, money
 with no limits") runs the shipped path against `fixture-0`: four tier targets, the five fields of

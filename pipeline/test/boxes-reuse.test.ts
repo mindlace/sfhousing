@@ -138,6 +138,24 @@ describe('boxesReusing', () => {
     expect(readFileSync(s.lockPath, 'utf8')).toBe(saved);
   });
 
+  it('a probe goes straight to the command and leaves the lock bytes unchanged', async () => {
+    const s = setup();
+    const f = fake(s);
+    await boxesReusing(opts(s, []), f.run);
+    s.strip();
+    const before = readFileSync(s.lockPath);
+    const seen: BoxesCommandOpts[] = [];
+    const probeRun = async (o: BoxesCommandOpts): Promise<number> => {
+      seen.push(o);
+      return 0;
+    };
+    const out: string[] = [];
+    expect(await boxesReusing(opts(s, out, { probe: ['b1'] }), probeRun)).toBe(0);
+    expect(seen.map((o) => o.probe)).toEqual([['b1']]);
+    expect(out.some((l) => l.startsWith('boxes:'))).toBe(false);
+    expect(readFileSync(s.lockPath).equals(before)).toBe(true);
+  });
+
   it('--force runs in full', async () => {
     const s = setup();
     const f = fake(s);

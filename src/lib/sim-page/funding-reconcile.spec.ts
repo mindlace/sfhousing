@@ -5,8 +5,8 @@ import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Programme } from '$lib/timelapse/types';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { reconcileFunding } from './funding-reconcile';
 import { DEFAULT_POLICY } from './policy';
 

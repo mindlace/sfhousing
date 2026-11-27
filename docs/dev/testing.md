@@ -7,7 +7,7 @@
 - **server** (Node): `src/**/*.{test,spec}.ts` and `scripts/**/*.spec.ts`, excluding `*.svelte.{test,spec}.ts` and the wall-clock budgets below.
 - **client** (browser via Playwright, `vite.config.client-test.ts`): component tests named `*.svelte.spec.ts`, importing `page` from `vitest/browser`, excluding `*.perf.svelte.spec.ts`.
 
-`npm run test:perf` runs the wall-clock budgets, one file at a time (and then the e2e budgets, see below): project **perf** (Node: `src/**/*.bench.spec.ts` and `src/**/*.perf.spec.ts`, e.g. `src/lib/sim/host.bench.spec.ts`, `src/lib/sim/scenario/scenario.bench.spec.ts`, `src/lib/map/height/height.bench.spec.ts`) and project **client-perf** (browser, no retry: `src/**/*.perf.svelte.spec.ts`, the C5 frame budgets in `src/lib/map/generated-controller.perf.svelte.spec.ts` and `src/lib/map/timeline.perf.svelte.spec.ts`). Their limits sit a few milliseconds above an idle M5 Pro, so any other load on the machine (another agent's test run, a preview server) fails them: they are not in `test:unit` or signoff. Run `npm run test:perf` on an idle machine before merging a change that could move them (the scenario worker, the sim host, the generator, the map controllers, the height builds). A spec whose assertions are wall-clock budgets goes in a `*.bench.spec.ts` / `*.perf.spec.ts` / `*.perf.svelte.spec.ts` file; behaviour tests stay deterministic (count work, not milliseconds). The fixture checks inside the bench files (bench city size, every eligible lot built) run with them.
+`npm run test:perf` runs the wall-clock budgets, one file at a time (and then the e2e budgets, see below): project **perf** (Node: `src/**/*.bench.spec.ts` and `src/**/*.perf.spec.ts`, e.g. `src/lib/sim/host.bench.spec.ts`, `src/lib/sim/world/world.bench.spec.ts`, `src/lib/map/height/height.bench.spec.ts`) and project **client-perf** (browser, no retry: `src/**/*.perf.svelte.spec.ts`, the C5 frame budgets in `src/lib/map/generated-controller.perf.svelte.spec.ts` and `src/lib/map/timeline.perf.svelte.spec.ts`). Their limits sit a few milliseconds above an idle M5 Pro, so any other load on the machine (another agent's test run, a preview server) fails them: they are not in `test:unit` or signoff. Run `npm run test:perf` on an idle machine before merging a change that could move them (the sim worker, the sim host, the generator, the map controllers, the height builds). A spec whose assertions are wall-clock budgets goes in a `*.bench.spec.ts` / `*.perf.spec.ts` / `*.perf.svelte.spec.ts` file; behaviour tests stay deterministic (count work, not milliseconds). The fixture checks inside the bench files (bench city size, every eligible lot built) run with them.
 
 The pipeline project (`npm run test:pipeline`) runs `pipeline/test/setup-cache-root.ts`, which sets `SFH_CACHE_DIR` to a fresh temp dir per test file and removes it afterwards, so no test reads or writes `~/.cache/sfhousing`.
 
@@ -31,40 +31,19 @@ A coarse pointer in a client spec is a stubbed `window.matchMedia` (`vi.stubGlob
 
 ## Finance engine tests
 
-The engine's funded starts ([finance-engine.md](finance-engine.md)) have their own golden, fixtures
-and bench cases.
+The engine's funded starts ([finance-engine.md](finance-engine.md)) have their own fixtures and bench cases; the funded golden is `src/lib/sim/world/funding/funded.golden.test.ts`.
 
-- **Finance golden.** `src/lib/sim/scenario/fixtures/golden-finance-seed1.json` holds the schedules
-  and ledger of the mini city with `miniCalibrationWithRoutes()` and `miniFinance()`, its federal pool
-  capped at 20,000,000 a year (`withFederalYearly`), for seeds 1 and 4 (horizon 2050-12-31), checked in Node (`simulate.finance.golden.test.ts`) and in the browser
-  (`simulate.finance.golden.svelte.spec.ts`). Its builder is
-  `fixtures/build-finance-golden.ts`, run deliberately (`env -C <worktree> node_modules/.bin/tsx
-src/lib/sim/scenario/fixtures/build-finance-golden.ts`), never from CI: a changed file is an engine
-  change to review. It does not replace `golden-seed1.json`, which has no `finance` and locks "no
-  public money means no change".
-- **Fixtures.** `fixtures/mini-finance.ts` (`miniFinance()`, `miniCalibrationWithRoutes()`: three
+- **Fixtures.** `src/lib/sim/world/fixtures/mini-finance.ts` (`miniFinance()`, `miniCalibrationWithRoutes()`: three
   pools, `m-city` yearly, `m-bank` with one inflow, and `federal` with a yearly
   `LEGACY_UNCAPPED_DOLLARS` that no test reaches; a certain affordable stack, a market loan, a
   market guarantee, one `off` span; `withFederalYearly` caps any finance's `federal` pool) and
-  `fixtures/tiny-queue.ts` (`tinyQueue()`, a five-lot city with hand-set hazards and
+  `world/fixtures/tiny-queue.ts` (`tinyQueue()`, a five-lot city with hand-set hazards and
   yields for exact queue cases; `tinyStack()`, a baseline-shaped affordable stack with an optional
   bond and optional federal inflows). Under the fallback award (rule 16 as amended, 2026-11-25) an
   application waits only when every pool of its bundle is short, so a test about the waiting line
   makes every pool short (empty, late or capped federal and state money), not one. All values are
-  test values, not data. `test/finance-harness.ts` checks the ledger identities after every event
-  (`checkLedger`) and collects a run (`runCollect`).
-- **Old-engine comparisons retired.** The tolerance referee (`tolerance.referee.spec.ts`) and
-  `score/money.spec.ts`'s "rule 12 against today's engine" compared the world engine with the old
-  scenario engine. They were retired on 2026-11-25 by the owner's decision: the old engine no
-  longer runs in production, and under the fallback award the two engines differ by construction
-  (monthly against daily serving and re-application; [world-funding.md](world-funding.md),
-  Tolerance referee). The old engine's own tests and goldens stay.
-- **Bench cases.** `scenario.bench.spec.ts`, run by `npm run test:perf` on an idle machine:
-  `simulateNet` with the bench baseline and with `benchFunding()`, the host's 101 band pairs and
-  longest macrotask, a fixture check of the first-day applications and awards, and a reported case
-  with `state` off. The fixtures are `fixtures/bench-finance.ts`. The budgets and the measured
-  medians are in [finance-engine.md](finance-engine.md); cases 2, 3 and 5 miss their budgets on a
-  busy machine until the conductor re-sets them after a quiet run.
+  test values, not data. `world/score/test/money-identities.ts` holds the ledger identities.
+- **Bench cases.** `src/lib/sim/world/world.bench.spec.ts`, run by `npm run test:perf` on an idle machine: the step's cost for 48 worlds on the bench city with no money, and the printed cases on the live city. The funded step's budgets and measured medians are in [finance-engine.md](finance-engine.md).
 
 ## Stored schema-2 policies
 
@@ -119,7 +98,7 @@ The game's rules are in [game.md](game.md), saved games in [game-save.md](game-s
 
 `npx tsx scripts/money-monotone.ts <datasetDir> | --version <v> [--from <origin>] [--presets a,b] [--out <file.jsonl>] [--cars on|off]` checks that more public money never builds fewer homes. It opens one timeline host on the dataset (a built directory, or a published version fetched from `--from`, default production; `scripts/lib/engine-runner.ts`) and runs every subset of the funding presets the data offers (`fundingPresets(cal)`, those `available` that add money, so not `state-off` or `federal-credits-off`, which withdraw a pool; 2^n sets: 64 for the six today) as a policy document that adds each preset from month 1 of the window, prerequisites ignored. `--presets` limits the check to those ids (kept in offered order); `--cars off` runs without the car system, as reach-check does (default on). An edge is a set S and a preset p not in S. Three readings are taken at the December of 2035, 2040, 2045, 2055 and 2060: `net` (completed net homes), `funded` (funded homes) and `affordable` (very low, low and moderate income homes). A reading that falls by more than `MONOTONE_TOLERANCE` (5) homes from S to S + p is an offender. `--out` writes one JSON line per set (`set`, `secs`, `at` by year).
 
-Output: `Dataset <v>`, `Presets: a, b, ...`, one `Drop: net Dec 2045, [a] + b: 100 -> 94 (-6)` line per offender, then `Monotone: no reading drops more than 5 homes` or `Not monotone: N drops on M edges`. The run's wall time goes to stderr. Exit 0 when monotone, 1 on an offender, 2 when the check could not run (one stderr line, `money-monotone: {reason}`, nothing on stdout). Its test, `scripts/money-monotone.spec.ts`, runs the sets, the edges and the readings on `fixture-0`. The dataset-free property test in `src/lib/sim/scenario/funding.spec.ts` is the gate signoff enforces; this command is the dataset-level check, run by hand ([pipeline.md](pipeline.md), step 3b, and "Changes on the funding paths"). For now it is a report, not a gate: on `2026-11-25-76c90397` it prints `Not monotone: 132 drops on 44 edges`, and the cause and its follow-up are in [finance-data.md](finance-data.md), "What current law builds against the check".
+Output: `Dataset <v>`, `Presets: a, b, ...`, one `Drop: net Dec 2045, [a] + b: 100 -> 94 (-6)` line per offender, then `Monotone: no reading drops more than 5 homes` or `Not monotone: N drops on M edges`. The run's wall time goes to stderr. Exit 0 when monotone, 1 on an offender, 2 when the check could not run (one stderr line, `money-monotone: {reason}`, nothing on stdout). Its test, `scripts/money-monotone.spec.ts`, runs the sets, the edges and the readings on `fixture-0`. The dataset-free property test in `src/lib/sim/world/rules/funding.spec.ts` is the gate signoff enforces; this command is the dataset-level check, run by hand ([pipeline.md](pipeline.md), step 3b, and "Changes on the funding paths"). For now it is a report, not a gate: on `2026-11-25-76c90397` it prints `Not monotone: 132 drops on 44 edges`, and the cause and its follow-up are in [finance-data.md](finance-data.md), "What current law builds against the check".
 
 ## Fixture dataset
 

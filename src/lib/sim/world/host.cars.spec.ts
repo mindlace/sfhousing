@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru } from '$lib/sim/lru';
-import { scenarioUrls } from '$lib/sim/scenario/load';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
@@ -46,7 +46,7 @@ beforeAll(async () => {
   };
   const r = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     createChunkSet(manifest, deps),
     deps,
     createLru<string, GeneratedBuilding | null>(1000),

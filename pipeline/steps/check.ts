@@ -16,7 +16,6 @@ import {
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { Calibration, Pathway, Stage } from '../../src/lib/timelapse/types';
-import { BOXES } from '../boxes-config';
 import { BBOX, type InvariantProfile } from '../config';
 import { checkQuality } from '../lib/quality';
 import { pointStrictlyInside } from '../lib/rings';
@@ -984,9 +983,10 @@ export function checkCars(
  * V37 render boxes (docs/dev/building-boxes.md), from the counts. Without the artifact (no
  * `boxes.missing_buildings`, which the render-boxes step always writes) OK with `no boxes
  * artifact`. Otherwise it passes iff `boxes.outside_footprint` and `boxes.missing_buildings` are 0,
- * `boxes.step.max_per_building` is at most `BOXES.stepCap` and, unless tiles were skipped,
- * `tiles.buildings.drops_z14plus` is 0 (measured). The detail summarises src counts, the fallback
- * share of buildings and the fit share of registration clusters, after any problems.
+ * `boxes.step.over_cap` (buildings with more steps than their own cap: 4, or 32 once sliced) is 0
+ * and, unless tiles were skipped, `tiles.buildings.drops_z14plus` is 0 (measured). The detail
+ * summarises src counts, the fallback share of buildings and the fit share of registration
+ * clusters, after any problems.
  */
 export function checkV37(c: Record<string, number>, tilesSkipped: boolean): InvariantResult {
   if (c['boxes.missing_buildings'] === undefined)
@@ -997,10 +997,8 @@ export function checkV37(c: Record<string, number>, tilesSkipped: boolean): Inva
     problems.push(`boxes outside their footprint ${n('boxes.outside_footprint')}`);
   if (n('boxes.missing_buildings') !== 0)
     problems.push(`buildings without a box ${n('boxes.missing_buildings')}`);
-  if (n('boxes.step.max_per_building') > BOXES.stepCap)
-    problems.push(
-      `steps on one building ${n('boxes.step.max_per_building')} > cap ${BOXES.stepCap}`
-    );
+  if (n('boxes.step.over_cap') > 0)
+    problems.push(`steps over their building's cap ${n('boxes.step.over_cap')}`);
   if (!tilesSkipped) {
     const drops = c['tiles.buildings.drops_z14plus'];
     if (drops === undefined) problems.push('z14+ tile drops not measured');

@@ -1,6 +1,6 @@
 import type { ParcelId } from '$lib/data/parcel';
-import { parcelRankOf } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { parcelRankOf } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 

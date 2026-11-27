@@ -1,7 +1,7 @@
 import type { ParcelId } from '$lib/data/parcel';
-import type { Precompute } from '$lib/sim/scenario/input';
-import * as inputModule from '$lib/sim/scenario/input';
-import * as rngModule from '$lib/sim/scenario/rng';
+import type { Precompute } from '$lib/sim/world/input/build';
+import * as inputModule from '$lib/sim/world/input/build';
+import * as rngModule from '$lib/sim/world/rules/rng';
 import * as mathModule from '$lib/timelapse/math';
 import * as timeModule from '$lib/timelapse/time';
 import type { Day } from '$lib/timelapse/time';

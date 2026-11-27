@@ -20,7 +20,7 @@
     LotAtResult,
     LotOutlinesResult,
     PreviewResult
-  } from '$lib/sim/scenario/types';
+  } from '$lib/sim/timeline-protocol';
   import type { LeverLookups, Lookups } from '$lib/sim/levers/apply';
   import { lotsText } from '$lib/paint/rows';
   import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
@@ -127,8 +127,7 @@
   import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
   import type { LimitOwner } from '$lib/sim/levers/source';
   import type { ProjectCard } from '$lib/sim/protocol';
-  import type { ScenarioWorkerInput } from '$lib/sim/scenario-client';
-  import { TimelineClient, WINDOW_MONTHS } from '$lib/sim/timeline-client';
+  import { TimelineClient, WINDOW_MONTHS, type WorkerInput } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
   import type { Day } from '$lib/timelapse/time';
   import { HIDDEN_VIEW, type ViewPrefs } from '$lib/view/prefs';
@@ -150,7 +149,7 @@
     type CityMarkerRow
   } from './activity';
   import { loadPlaces, placeOf } from './places';
-  import { datasetUrl } from '$lib/sim/scenario/load';
+  import { datasetUrl } from '$lib/sim/world/input/load';
   import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
   import type { AddChoice } from './add';
   import { CHANGE_NOT_APPLIED, STALE_NOTE, UPDATING, WAITING_NOTE } from './copy';
@@ -204,7 +203,7 @@
   import { moneyFigureAt } from '$lib/fzp/money-view';
   import type { CameraFrame } from '$lib/map/types';
   import { RUN_VIEW, type GamePhase, type PhaseEvent } from '$lib/sim-page/game-phase';
-  import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+  import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 
   interface Props {
     manifest: Manifest | null;
@@ -216,7 +215,7 @@
     /** Retry before the worker: reloads the manifest and calibration; rejects on any failure. */
     reload(): Promise<{ manifest: Manifest; calibration: Calibration }>;
     /** Tests inject a fake worker. */
-    createWorker?: () => ScenarioWorkerInput;
+    createWorker?: () => WorkerInput;
     /** The map's layer toggles. Default all off. */
     view?: ViewPrefs;
     /** Taps open project cards (default true); off, a tap is the page's (a paint tool). */

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { monthFirstDay } from '$lib/sim/world/months';
 import type { ScoreStatics } from '$lib/sim/world/score/types';

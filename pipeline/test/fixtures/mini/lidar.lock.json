@@ -3,10 +3,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/0413d93443bce66564e6c09361edf6ae412d14bbc14fea219a1bcc8772b881c9.sfhl",
-          "bytes": 11053,
+          "archiveKey": "sources/8cfab2cc8ba35b4bf276987672ece2ee4dd19aef203cbc2375c8200db023e1c3.sfhl",
+          "bytes": 11170,
           "name": "usgs-lidar-sf/101_50.sfhl",
-          "sha256": "0413d93443bce66564e6c09361edf6ae412d14bbc14fea219a1bcc8772b881c9",
+          "sha256": "8cfab2cc8ba35b4bf276987672ece2ee4dd19aef203cbc2375c8200db023e1c3",
           "url": "https://fixture.invalid/usgs-lidar-sf/101_50.sfhl"
         }
       ],

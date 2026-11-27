@@ -113,6 +113,16 @@ export function reviewStats(report: { counts: Record<string, number> }): ReviewS
   };
 }
 
+/** The named buildings, in `bids` order; throws naming any bid not in roofs. */
+export function pickBuildings(roofs: RoofRow[], bids: string[]): RoofRow[] {
+  const byBid = new Map(roofs.map((r) => [r.bid, r]));
+  return bids.map((bid) => {
+    const r = byBid.get(bid);
+    if (!r) throw new Error(`unknown bid ${bid}`);
+    return r;
+  });
+}
+
 /**
  * `n` buildings with steps (or, with kind 'front', false fronts), in a fixed order per version:
  * sorted by md5(bid + version), so a re-run of the same round samples the same buildings.
@@ -363,7 +373,7 @@ async function main(): Promise<void> {
   const after = flag(args, '--after');
   if (!before || !after) {
     console.error(
-      'usage: building-review.ts --before <v> --after <v> [--out <dir>] [--sample 20] [--roofs <parquet>]'
+      'usage: building-review.ts --before <v> --after <v> [--out <dir>] [--sample 20] [--roofs <parquet>] [--bids a,b,c]'
     );
     process.exit(2);
   }
@@ -372,9 +382,15 @@ async function main(): Promise<void> {
   const roofs = await readRoofs(
     flag(args, '--roofs') ?? `pipeline/.cache/derived/${after}/building-roofs.parquet`
   );
+  // --bids: the named buildings are captured (zoom 17, pitch 65, as the sample) ahead of it.
+  const bids = (flag(args, '--bids') ?? '').split(',').filter(Boolean);
+  const named = pickBuildings(roofs, bids);
   const sample = [
-    ...sampleBuildings(roofs, after, n, 'step'),
-    ...sampleBuildings(roofs, after, 10, 'front')
+    ...named,
+    ...[
+      ...sampleBuildings(roofs, after, n, 'step'),
+      ...sampleBuildings(roofs, after, 10, 'front')
+    ].filter((s) => !bids.includes(s.bid))
   ];
 
   console.log('building (VITE_E2E=1 npm run build)');

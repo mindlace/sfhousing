@@ -5,11 +5,11 @@ import {
   benchFundingLevers,
   benchMarket,
   benchRoutes
-} from '$lib/sim/scenario/fixtures/bench-finance';
-import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import type { SimInput } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/fixtures/bench-finance';
+import { miniCalibrationWithRoutes, miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/world/rules/funding';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
@@ -115,7 +115,7 @@ export function benchSet(
 
 /**
  * A city loaded without `finance` (`test/cities.node.ts`) with it re-added from its calibration
- * as `buildSimInput` adds it (`scenario/input.ts:85-93`); unchanged without a market or baseline.
+ * as `buildSimInput` adds it; unchanged without a market or baseline.
  */
 export function withBaselineMoney(base: SimInput): SimInput {
   const m = base.calibration.market;

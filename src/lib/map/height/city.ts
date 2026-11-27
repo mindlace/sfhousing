@@ -1,7 +1,7 @@
 /**
  * The staged city build (height-lids plan, Task 6): a 15 m label-point raster of the whole city,
  * its regions (components) with room to grow, and contour chains with labels. Pure and
- * worker-safe; the scenario worker steps it in slices at each lever revision.
+ * worker-safe; the timeline worker steps it in slices at each lever revision.
  *
  * Each cell takes the nearest lot label point within that lot's reach. Components are 4-connected
  * cells of equal stories > 0. A lot takes its label-point cell's component when the stories match,

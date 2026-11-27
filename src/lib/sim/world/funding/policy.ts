@@ -1,8 +1,8 @@
 // A change of policy (spec rules 17, 18, 19): each waiting application re-made under the new
-// frame as `remake` does (`funded.ts:1684-1720`), or lapsed, its kind starting a new spell on the
-// month's first day (`respell`, `funded.ts:1033-1051`) and its lot planned again. Rule 19 needs no
+// frame, or lapsed, its kind starting a new spell on the
+// month's first day (`respell`) and its lot planned again. Rule 19 needs no
 // code here: `planLot` is pure, and world-core's system 1 replans the free lots before this runs.
-import { seedHash } from '$lib/sim/scenario/rng';
+import { seedHash } from '$lib/sim/world/rules/rng';
 import { lotRow } from '../columns';
 import { plannedMonth } from '../due';
 import { ordinaryStart } from '../rates';

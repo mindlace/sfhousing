@@ -2,11 +2,12 @@
 // `tierSeries` files them, each funded project split by the programme definitions in force in the
 // month of its award (design 3.4).
 import { beforeAll, describe, expect, it } from 'vitest';
-import { tierContext, tierSeries, tiersOf, type TierCtx } from '$lib/sim/scenario/finance-score';
-import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { tierContext, tiersOf, type TierCtx } from '$lib/sim/world/score/finance';
+import { tierSeries } from './test/oracles';
+import { targetsOf, tierTargetsOf } from '$lib/sim/world/score/targets';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import type { TierUnits } from '$lib/timelapse/types';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
 import { benchFunded } from '../funding/test/cities.node';
 import { benchMoney, fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import { monthOfDay } from '../months';
@@ -94,7 +95,7 @@ const want = (c: City, schedules: Schedule[], ctx: TierCtx): TierUnits[] =>
 
 const sumOf = (t: TierUnits) => t.veryLow + t.low + t.moderate + t.aboveModerate + t.unrecorded;
 
-/** The referee: `tierSeries` of the horizon's schedules, one ctx for all (programmes unchanged). */
+/** `tierSeries` of the horizon's schedules, one ctx for all (programmes unchanged). */
 function checkTiers(c: City, r: Run): TierUnits[] {
   const last = c.score.lastIndex;
   expect(r.series.finalThrough()).toBe(last);

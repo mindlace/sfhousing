@@ -30,7 +30,8 @@ export async function boxesReusing(
   run: (o: BoxesCommandOpts) => Promise<number> = boxesCommand
 ): Promise<number> {
   const { indexDir, force, lockDeps, ...cmd } = o;
-  if (indexDir === null || !existsSync(o.lockPath)) return run(cmd);
+  // A probe writes nothing: a hit here would rewrite the lock and print no verdicts.
+  if (o.probe || indexDir === null || !existsSync(o.lockPath)) return run(cmd);
   const out = o.out ?? ((l: string) => console.log(l));
   const lock = readLock(o.lockPath);
   const lidarLock = readLidarLock(o.lidarLockPath);

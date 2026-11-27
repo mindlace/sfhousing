@@ -23,9 +23,9 @@ import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
-import { synthCity, synthPolicy } from '$lib/sim/scenario/fixtures/synth-city';
-import { buildSimInput } from '$lib/sim/scenario/input';
-import type { Loaded } from '$lib/sim/scenario/load';
+import { synthCity, synthPolicy } from '$lib/sim/world/fixtures/synth-city';
+import { buildSimInput } from '$lib/sim/world/input/build';
+import type { Loaded } from '$lib/sim/world/input/load';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import type { CustomBrush } from '$lib/sim-page/policy';
 import { parseCalibration } from '$lib/timelapse/model';
@@ -196,15 +196,15 @@ vi.mock('./map-stream', async (orig) => {
     }
   };
 });
-vi.mock('$lib/sim/scenario/massing', async (orig) => {
-  const m = await orig<typeof import('$lib/sim/scenario/massing')>();
+vi.mock('$lib/sim/world/massing', async (orig) => {
+  const m = await orig<typeof import('$lib/sim/world/massing')>();
   return {
     ...m,
     massingFor: rec.wrap('massingFor', m.massingFor, (s, k) => `${s.projectId}:${k}`)
   };
 });
-vi.mock('$lib/sim/scenario/input', async (orig) => {
-  const m = await orig<typeof import('$lib/sim/scenario/input')>();
+vi.mock('$lib/sim/world/input/build', async (orig) => {
+  const m = await orig<typeof import('$lib/sim/world/input/build')>();
   return { ...m, precomputeOf: rec.wrap('precomputeOf', m.precomputeOf) };
 });
 vi.mock('$lib/sim/levers/apply', async (orig) => {

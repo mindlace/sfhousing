@@ -1,7 +1,7 @@
 // The warm-ahead queue (ensemble-runner plan D12): the plan world's started and revised rows,
 // massed one (row, revision) per unit before a flush, so the flush finds them on the generator memo
 // and the slice estimator gates each massing. Worker-bundle module: pure TS.
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 
 export interface WarmQueue {
   /** Queues a row (a `'start'` or `'revise'` of the plan's world). */

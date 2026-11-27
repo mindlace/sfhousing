@@ -1,6 +1,6 @@
 // The funding notices on load (funding-ui spec 4.15) and the R22 and R24 caveats.
 import { describe, expect, it } from 'vitest';
-import { dayOf } from '$lib/sim/scenario/dates';
+import { dayOf } from '$lib/sim/world/dates';
 import {
   MONTH_OFFER_CAVEAT,
   customValueText,

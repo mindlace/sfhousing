@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HeightLids } from '$lib/map/height/types';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
-import type { HeightLidsResult } from '$lib/sim/scenario/types';
+import type { HeightLidsResult } from '$lib/sim/timeline-protocol';
 import { LidRequest, clampBbox } from './lid-request';
 
 type BBox = [number, number, number, number];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import type { Pool, Programme } from '$lib/timelapse/types';
 import { monthFirstDay } from '../months';

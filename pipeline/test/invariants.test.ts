@@ -1238,8 +1238,8 @@ describe('V37 render boxes', () => {
   const without = (c: Record<string, number>) =>
     Object.fromEntries(Object.entries(c).filter(([k]) => !/^(boxes|render)\./.test(k)));
   const patched = (patch: Record<string, number>) => ({ ...counts, ...patch });
-  // The fixture's src counts (README "Building boxes"); fallback 4 of 12, fit 9 of 11 clusters.
-  const FIXTURE_DETAIL = 'src box/base/front/step/part 4/7/1/1/9; fallback 33.3%; reg fit 81.8%';
+  // The fixture's src counts (the golden report's counts); fallback 3 of 12, fit 9 of 11 clusters.
+  const FIXTURE_DETAIL = 'src box/base/front/step/part 3/8/1/5/9; fallback 25.0%; reg fit 81.8%';
 
   it('V37 is OK without an artifact', async () => {
     const ok = { id: 'V37', ok: true, detail: 'no boxes artifact' };
@@ -1257,7 +1257,7 @@ describe('V37 render boxes', () => {
     });
   });
 
-  it('V37 fails on a box outside its footprint, on a missing building, on 5 steps and on z14+ drops', () => {
+  it('V37 fails on a box outside its footprint, on a missing building, on steps over the cap and on z14+ drops', () => {
     const fails = (c: Record<string, number>, tilesSkipped = true) => {
       const r = checkV37(c, tilesSkipped);
       expect(r.ok, r.detail).toBe(false);
@@ -1269,16 +1269,17 @@ describe('V37 render boxes', () => {
     expect(fails(patched({ 'boxes.missing_buildings': 2 }))).toBe(
       `buildings without a box 2; ${FIXTURE_DETAIL}`
     );
-    expect(fails(patched({ 'boxes.step.max_per_building': 5 }))).toBe(
-      `steps on one building 5 > cap 4; ${FIXTURE_DETAIL}`
+    expect(fails(patched({ 'boxes.step.over_cap': 1 }))).toBe(
+      `steps over their building's cap 1; ${FIXTURE_DETAIL}`
     );
     expect(fails(patched({ 'tiles.buildings.drops_z14plus': 3 }), false)).toBe(
       `z14+ tile drop reports 3; ${FIXTURE_DETAIL}`
     );
     // Tiles built but the drop count missing: not measured.
     expect(fails(counts, false)).toBe(`z14+ tile drops not measured; ${FIXTURE_DETAIL}`);
-    // At the cap passes; skipped tiles are not checked for drops.
-    expect(checkV37(patched({ 'boxes.step.max_per_building': 4 }), true).ok).toBe(true);
+    // A building's own cap (32 on a sliced one) is checked by the step, not the count.
+    expect(checkV37(patched({ 'boxes.step.max_per_building': 32 }), true).ok).toBe(true);
+    // Skipped tiles are not checked for drops.
     expect(checkV37(patched({ 'tiles.buildings.drops_z14plus': 3 }), true).ok).toBe(true);
   });
 

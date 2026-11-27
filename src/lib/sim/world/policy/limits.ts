@@ -172,7 +172,7 @@ export function limitsAt(frame: PolicyFrame, row: number): FrameLimits {
 }
 
 /**
- * The city inputs of `frame`, as the old host's `cityOf` hands them to `createCityBuild` and
+ * The city inputs of `frame`, as `cityOf` hands them to `createCityBuild` and
  * `lidStep` to `createLidBuild`: over `resolveEnvelopes` of the zoning in force (unfilled),
  * `stories` = the plan table's stories (a protected lot at FZP), `countable` = `countableMask`,
  * `sources` = `limitSources` (the one `limitsAt` reads). For the runner's `heights` and

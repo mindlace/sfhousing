@@ -1,14 +1,14 @@
 import { limitStatements } from '$lib/sim/finance';
-import { addMonths } from '$lib/sim/scenario/dates';
+import { addMonths } from '$lib/sim/world/dates';
 import {
   addedBorrowing,
   tierBaselineOf,
   tierContext,
   type TierCtx
-} from '$lib/sim/scenario/finance-score';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
-import { REFERENCES, monthsOf, phasingOf } from '$lib/sim/scenario/score';
-import type { SimInput } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/score/finance';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
+import { REFERENCES, monthsOf, phasingOf } from '$lib/sim/world/score/targets';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool } from '$lib/timelapse/types';

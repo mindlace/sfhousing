@@ -1,9 +1,9 @@
 // Serving the funding line and the award (spec rules 10, 11): one scan a month in line order,
 // each application tested against the pools as they stand, an award starting its funded project.
 import { PROTOTYPES, projectDollars, prototypeFor, type PrototypeId } from '$lib/sim/finance';
-import { pathwayFrom } from '$lib/sim/scenario/engine';
-import { awardPasses, awardSet, coverageLevel, type Award } from '$lib/sim/scenario/funding';
-import { seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { pathwayFrom } from '$lib/sim/world/rules/stages';
+import { awardPasses, awardSet, coverageLevel, type Award } from '$lib/sim/world/rules/funding';
+import { seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import type { Day } from '$lib/timelapse/time';
 import type { Pathway, ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
@@ -270,8 +270,8 @@ export function awardDay(
 
 /**
  * Rule 11's `FundedStart` for line row `i`: the size of its view, its paying programme ids and its
- * dollars as `fundingOf` computes them (`funded.ts:1657-1675`), `certain` from the award's
- * coverage and the route as `funded.ts:1738-1745` draws it.
+ * dollars as `fundingOf` computes them, `certain` from the award's
+ * coverage and the route drawn from it.
  */
 export function fundedStartOf(
   ctx: StepCtx,

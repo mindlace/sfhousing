@@ -10,6 +10,7 @@ import {
   checkDataset,
   type InvariantResult
 } from './steps/check';
+import { boxesCommand } from './steps/boxes';
 import { boxesReusing } from './steps/boxes-reuse';
 import { cacheImport } from './steps/cache-import';
 import { doctor, reportDoctor } from './steps/doctor';
@@ -100,16 +101,26 @@ const steps: Record<string, { help: string; run: Step }> = {
     run: async () => reportDoctor(await doctor(), console.log)
   },
   boxes: {
-    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact; reuses an earlier run with the same code, config and inputs [--force: run in full] [--fixture: the mini fixture]',
-    run: (args) => {
+    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact; reuses an earlier run with the same code, config and inputs [--force: run in full] [--fixture: the mini fixture] [--probe <bid,bid,…|@file>: derive only those buildings, print per-part verdicts as JSON lines, write nothing]',
+    run: async (args) => {
       const fixture = args.flags.fixture === true;
-      return boxesReusing({
+      const probe = str(args.flags.probe);
+      if (args.flags.probe !== undefined && !probe) {
+        console.error('--probe needs building ids: --probe <bid,bid,…> or --probe @file');
+        return 1;
+      }
+      const cmd = {
         lockPath: fixture ? join(MINI, 'sources.lock.json') : LOCK,
         lidarLockPath: fixture ? LIDAR_LOCK.fixture : LIDAR_LOCK.live,
         rawDir: fixture ? join(MINI, 'raw') : raw(),
         byName: fixture,
         repoRoot: ROOT,
-        fixture,
+        fixture
+      };
+      // A probe writes nothing: never through the reuse path, which rewrites the lock on a hit.
+      if (probe) return boxesCommand({ ...cmd, probe: probe.split(',').filter((b) => b !== '') });
+      return boxesReusing({
+        ...cmd,
         indexDir: fixture ? null : sharedCache().boxesIndex,
         force: args.flags.force === true
       });

@@ -21,7 +21,7 @@
   import { isGiven, OPEN_LIMITS, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
-  import { marketLevel } from '$lib/sim/scenario/market';
+  import { marketLevel } from '$lib/sim/world/input/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
   import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';

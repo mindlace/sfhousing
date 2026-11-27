@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LotOutlinesResult } from '$lib/sim/scenario/types';
+import type { LotOutlinesResult } from '$lib/sim/timeline-protocol';
 import { OutlineRequest } from './outline-request';
 
 type Ok = Extract<LotOutlinesResult, { ok: true }>;

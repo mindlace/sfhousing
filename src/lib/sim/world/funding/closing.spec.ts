@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { dayFromUtc } from '$lib/fzp/time';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';

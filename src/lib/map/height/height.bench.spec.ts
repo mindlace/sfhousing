@@ -6,7 +6,7 @@
 // within its total. Fails above budget. Timing-sensitive: run it alone
 // (`vitest run --project server src/lib/map/height/height.bench.spec.ts`) for the numbers.
 import { describe, expect, it } from 'vitest';
-import { SLICE_MS, SLICE_PLAN_MS } from '$lib/sim/scenario/scenario-host';
+import { SLICE_MS, SLICE_PLAN_MS } from '$lib/sim/world/runner/budget';
 import { createCityBuild, type StagedBuild } from './city';
 import { createLidBuild, type LidInput } from './lids';
 import { cityInputOf, lidLotsOf, scene, synthBlocks, toLngLat } from './test/fixtures';

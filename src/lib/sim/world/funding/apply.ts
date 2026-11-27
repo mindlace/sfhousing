@@ -1,9 +1,8 @@
 // Planning and making applications (spec rules 5, 6, 8, 9): which model month a free lot applies
 // in, the rows it adds to the funding line, re-making a row under a new frame (rules 17, 18) and
 // its leaving the line.
-import { NEVER_KEY_DAY, lineKey } from '$lib/sim/scenario/funded';
-import { below, coverageLevel } from '$lib/sim/scenario/funding';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { NEVER_KEY_DAY, below, coverageLevel, lineKey } from '$lib/sim/world/rules/funding';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ProjectKind } from '$lib/timelapse/types';
 import { lotRow } from '../columns';
@@ -104,7 +103,7 @@ function topYield(parcels: ScenarioParcels, lot: number): number {
  * it through the month (the segments `kindClock` walks). A frame can when it has money offering a
  * programme of `kind`, the lot has a chance in its view (`logit` not -Infinity) and the lot's
  * largest size in that view meets the least `minHomes` offered (`segOn` gives an empty bundle
- * otherwise; as today's `eligibleOf`, `funded.ts:232-256`, but per frame and on offered
+ * otherwise; as today's `eligibleOf`, but per frame and on offered
  * programmes). When none can, every lot-month's bundle is empty and the clock has no day (rule 5);
  * callers read only the day, so skipping the clock is exact. Per lot, O(levels) per frame: no
  * whole-city pass.

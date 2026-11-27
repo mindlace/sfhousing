@@ -72,9 +72,8 @@ day's. Stage outcomes and lengths are drawn on the step's frame: `newCalibration
 filed at the dataset date, `calibration` otherwise.
 
 Pipeline phases filed after the dataset date take their caps and existing homes from month 1's view
-(`world.ts:228`, `pipeline.ts:395-404`), not the view in force when they file. Today's engine does
-the same: `staticOf` (`scenario/engine.ts`) reads only `input.parcels`, and dated regimes reach
-only simulated projects (`scenario/types.ts:110-117`).
+(`world.ts:228`, `pipeline.ts:395-404`), not the view in force when they file; dated regimes reach
+only simulated projects.
 
 **Speed.** A stage's scale is `speed` times each `speedNew` entry that reaches the project, clamped
 to `[MIN_SCALE, MAX_SCALE]` (`stage.ts` `speedOf`). An entry reaches it when its filing day is
@@ -120,15 +119,13 @@ only the entries still due that month.
 
 ## Readers
 
-`scheduleAt(world, statics, row, day)` and `masterAt(…)` (`read.ts`) give a row as today's
+`scheduleAt(world, statics, row, day)` and `masterAt(…)` (`read.ts`) give a row as its
 `Schedule` or `Master`, as seen on `day`: nothing dated after `day`, `end.kind` `'open'` until it
 ends. A phase row read before its filing day gives null from both. `funding` comes from what
 `startProject` stored.
 
 `scheduleAt` sets `inFlight: true` on every row that runs on `calibration` (pipeline rows filed at
-the dataset date, and phases) and never sets `regime`. To compare, the referee runs the old engine
-with an identity `newProjects` (`calibration`, identity scale; `test/timeline.ts` `oldInputOf`) and
-strips `regime` from its schedules (`frames.referee.spec.ts`); main's ruling Q4.
+the dataset date, and phases) and never sets `regime`.
 
 ## The funding hook
 
@@ -212,12 +209,6 @@ cars (`docs/dev/cars.md`, Measured cost); it was 8.7 s with cars on before.
 
 All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.
 
-- **Referee** (exact against `simulateDetailed`): `referee.spec.ts` (one frame, all rows),
-  `referee.variants.spec.ts` (market, speed, `speedNew`, route shares), `pipeline.referee.spec.ts`
-  (pipeline, masters, phases), `frames.referee.spec.ts` (a zoning change equals a dated regime, a
-  market change a dated market step; on the bench city, seeds 1 to 5, a change at month 13 that
-  cuts phase parcels' yields, with phases filing after it). Bench and fixture cities, seeds 1 to
-  20; live seeds 1 to 5.
 - **Properties**: `frames.property.spec.ts` (speed and zoning changes), `due.property.spec.ts`
   (carried vs rebuilt list, window extension, `structuredClone` copies, skip shortcut, no frame
   past `readyThrough`), `order.property.spec.ts` (event order, rule 2's lot-table permutation),

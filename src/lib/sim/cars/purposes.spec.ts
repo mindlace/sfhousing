@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { P } from '../scenario/rng';
+import { P } from '../world/rules/rng';
 import { CAR_P, IN_MIX_DRAW, MIXES } from './types';
 
 describe('car draw purposes', () => {

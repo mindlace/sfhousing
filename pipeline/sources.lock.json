@@ -3,24 +3,24 @@
     {
       "files": [
         {
-          "archiveKey": "sources/849943fe26ec09d91c7c4d5b0a9266a96672ac3c2aafc3c4381bdd3d852d713c.parquet",
-          "bytes": 11887785,
+          "archiveKey": "sources/cb71e7a333711734c7342ef9a7415cbc19c5979ad96e577902f52cc9dab54060.parquet",
+          "bytes": 12494786,
           "name": "building-boxes/boxes.parquet",
-          "sha256": "849943fe26ec09d91c7c4d5b0a9266a96672ac3c2aafc3c4381bdd3d852d713c",
+          "sha256": "cb71e7a333711734c7342ef9a7415cbc19c5979ad96e577902f52cc9dab54060",
           "url": "derived:building-boxes/boxes.parquet"
         },
         {
-          "archiveKey": "sources/c12d536ed6562e85066422108c05de15fde83b144bc2c0bd643bf62dd0c13d1d.parquet",
-          "bytes": 9618995,
+          "archiveKey": "sources/0b5bc479c492188faf4337905d74046942e5d401459a8bb278d048ddae338d81.parquet",
+          "bytes": 9626589,
           "name": "building-boxes/roofs.parquet",
-          "sha256": "c12d536ed6562e85066422108c05de15fde83b144bc2c0bd643bf62dd0c13d1d",
+          "sha256": "0b5bc479c492188faf4337905d74046942e5d401459a8bb278d048ddae338d81",
           "url": "derived:building-boxes/roofs.parquet"
         },
         {
-          "archiveKey": "sources/2b8531b70b7c96084dc99a259ac11575e3f8ec771bd72a3a1abcca1010a7db4e.json",
+          "archiveKey": "sources/041e3412a025768321bdf56f7fe4b3fc34540c7c9b72816eb7ab4d63e2c8647f.json",
           "bytes": 697,
           "name": "building-boxes/inputs.json",
-          "sha256": "2b8531b70b7c96084dc99a259ac11575e3f8ec771bd72a3a1abcca1010a7db4e",
+          "sha256": "041e3412a025768321bdf56f7fe4b3fc34540c7c9b72816eb7ab4d63e2c8647f",
           "url": "derived:building-boxes/inputs.json"
         }
       ],
@@ -28,9 +28,9 @@
       "id": "building-boxes",
       "label": "Building boxes (USGS 3DEP LiDAR 2023 and Overture)",
       "license": "ODbL-1.0",
-      "retrievedAt": "2026-11-14T11:55:36.324Z",
+      "retrievedAt": "2026-11-27T01:10:37.005Z",
       "rowCount": 162733,
-      "upstreamVersion": "boxes/1 code=472f4d15c2df config=dc85575b930a overture-buildings=edc5682f2cd8 overture-building-parts=a49c23350b4c usgs-lidar-sf=75c8da13a523 datasf-parcels=508b9268da45 datasf-streets=f0582c8ff890 datasf-neighborhoods=ddd0f07a9a90"
+      "upstreamVersion": "boxes/2 code=95528749ff84 config=edb99722c18b overture-buildings=edc5682f2cd8 overture-building-parts=a49c23350b4c usgs-lidar-sf=75c8da13a523 datasf-parcels=508b9268da45 datasf-streets=f0582c8ff890 datasf-neighborhoods=ddd0f07a9a90"
     },
     {
       "files": [

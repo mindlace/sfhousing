@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { rowMeta } from '$lib/paint/rows';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import type { BrushLotsResult } from '$lib/sim/timeline-protocol';
 import { simPaintRows } from './brush-summary';
 import { customQuery, DEFAULT_POLICY, queryKey, type CustomBrush } from './policy';
 

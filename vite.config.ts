@@ -14,7 +14,7 @@ const SRC_LIB = fileURLToPath(new URL('./src/lib', import.meta.url));
 
 /**
  * The pipeline project imports src by relative path and has no `$lib` alias. This resolves the
- * `$lib` imports of src modules only (pipeline/test/simulate-replay.test.ts runs `simulate`), so
+ * `$lib` imports of src modules only (pipeline/test/fixture-funding.test.ts runs the step engine), so
  * pipeline code itself still cannot import `$lib`: the pipeline runs outside SvelteKit.
  */
 const srcLibForSrc: Plugin = {

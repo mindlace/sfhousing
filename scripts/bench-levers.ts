@@ -1,7 +1,7 @@
 // `npx tsx scripts/bench-levers.ts <datasetDir>` (sim-page plan Task 11): resolve three citywide
 // brushes on a built dataset read from disk, each as a zoning rule (max(FZP, N), uncapped where it
 // raises), then time the touched-lot yield recompute, the way
-// the scenario host runs it (resolveEnvelopes -> allNeeds -> createYieldRecompute -> fillNeeds ->
+// the timeline host runs it (resolveEnvelopes -> allNeeds -> createYieldRecompute -> fillNeeds ->
 // applyLevers). Not part of the bundle; prints a Markdown table.
 import { readFileSync, statSync } from 'node:fs';
 import { cpus, totalmem } from 'node:os';
@@ -29,7 +29,7 @@ import {
 } from '../src/lib/sim/levers/recompute';
 import { allNeeds, fillNeeds, resolveEnvelopes } from '../src/lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, type SimLevers } from '../src/lib/sim/levers/types';
-import { loadScenario, scenarioUrls } from '../src/lib/sim/scenario/load';
+import { loadSimInput, simInputUrls } from '../src/lib/sim/world/input/load';
 
 /** A brush compiled to one rule: every lot it resolves takes max(FZP, stories). */
 type Brush = { name: string; query: BrushQuery; stories: number };
@@ -49,7 +49,7 @@ async function main(): Promise<number> {
     if (!url.startsWith(prefix)) throw new Error(`${url} is not under ${prefix}`);
     return join(dir, url.slice(prefix.length));
   };
-  const urls = scenarioUrls(manifest);
+  const urls = simInputUrls(manifest);
   if (!urls?.policy) throw new Error('manifest has no policy.bin');
   const bytes = (url: string) => {
     const b = readFileSync(pathOf(url));
@@ -57,7 +57,7 @@ async function main(): Promise<number> {
   };
 
   const tLoad = performance.now();
-  const loaded = await loadScenario(
+  const loaded = await loadSimInput(
     {
       fetch: async (url) => ({
         ok: true,

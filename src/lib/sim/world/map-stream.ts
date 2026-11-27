@@ -46,8 +46,8 @@ import {
   footprintParcel,
   massingFor,
   type MassingCtx
-} from '$lib/sim/scenario/massing';
-import type { Massing, Schedule } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/massing';
+import type { Massing, Schedule } from '$lib/sim/world/input/types';
 import { STAGE_ORDER } from '$lib/timelapse/types';
 import { createCityFeed } from './city-feed';
 import { monthLastDay } from './months';
@@ -62,7 +62,7 @@ import {
   type WorldEvent
 } from './types';
 
-/** Massings kept (today's `MEMO_CAP`, scenario-host.ts:253). */
+/** Massings kept (`MEMO_CAP`). */
 export const MASSING_CAP = 60_000;
 
 export interface MapStreamDeps {

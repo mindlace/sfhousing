@@ -1,7 +1,7 @@
 import * as scenarioCodecModule from '$lib/data/scenario-codec';
 import * as leversTypesModule from '$lib/sim/levers/types';
-import * as rngModule from '$lib/sim/scenario/rng';
-import * as engineModule from '$lib/sim/scenario/engine';
+import * as rngModule from '$lib/sim/world/rules/rng';
+import * as stagesModule from '$lib/sim/world/rules/stages';
 import * as modelModule from '$lib/timelapse/model';
 import * as timeModule from '$lib/timelapse/time';
 import type { Day } from '$lib/timelapse/time';
@@ -17,7 +17,7 @@ import type { World } from './types';
 const { FILL_LEVELS, fillStories } = scenarioCodecModule;
 const { MAX_SCALE, MIN_SCALE } = leversTypesModule;
 const { P, drawOn } = rngModule;
-const { revisionRatio } = engineModule;
+const { revisionRatio } = stagesModule;
 const { sampleAdvance, sampleTransition } = modelModule;
 const { stageMonths } = timeModule;
 const { EXIT_ORDER, PATHWAYS, STAGE_ORDER } = timelapseTypesModule;

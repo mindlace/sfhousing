@@ -1,6 +1,6 @@
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { StageScale } from '$lib/sim/levers/timers';
-import type { Precompute } from '$lib/sim/scenario/input';
+import type { Precompute } from '$lib/sim/world/input/build';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Pool, Programme, ResolvedTerms } from '$lib/timelapse/types';
 

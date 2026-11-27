@@ -1,13 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ordinaryMonth } from '$lib/sim/scenario/engine';
 import {
   lastInitiationMonth,
   piecewiseMonth,
   precomputeOf,
   regimeMonths
-} from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, simEntity, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/input/build';
+import { P, drawOn, seedHash, simEntity, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { log } from '$lib/timelapse/math';
 import { MONTH_DAYS } from '$lib/timelapse/time';
 import { monthFirstDay, monthLastDay, monthOfDay } from './months';
@@ -69,38 +68,6 @@ describe.each(cities)('the ordinary clock on the %s city', (_name, inputOf) => {
       expect(lotEntity(statics, pre.candidates[c])).toBe(pre.entity[c]);
     }
     expect(lotEntity(statics, 0)).toBe(simEntity(input.parcels.id[0]));
-  });
-
-  it('one frame: the day of today’s first initiation, every candidate, seeds 1..3', () => {
-    const input = inputOf();
-    const pre = precomputeOf(input);
-    const statics = staticsOf(input);
-    const t = oneFrame(frameOf(input));
-    const asOf = input.asOf;
-    let planned = 0;
-    const bad: unknown[] = [];
-    for (const s of [1, 2, 3]) {
-      const sh = seedHash(s);
-      for (let c = 0; c < pre.candidates.length; c++) {
-        const i = pre.candidates[c];
-        const stream = streamOf(sh, pre.entity[c], 0);
-        const T = ordinaryMonth(drawOn(stream, P.INIT, 0), pre.log1mh[i], null, []);
-        const got = ordinaryStart(statics, t, 1, sh, i, asOf, 0);
-        if (T === 0) {
-          if (got !== null) bad.push({ s, c, got, want: null });
-          continue;
-        }
-        const day = asOf + 1 + Math.floor((T - 1 + drawOn(stream, P.INIT_DAY, 0)) * MONTH_DAYS);
-        const month = monthOfDay(asOf, day);
-        const frameMonth = monthOfDay(asOf, asOf + 1 + Math.floor((T - 1) * MONTH_DAYS));
-        if (got) planned++;
-        if (got?.day !== day || got.month !== month || got.frameMonth !== frameMonth) {
-          bad.push({ s, c, got, want: { day, month, frameMonth } });
-        }
-      }
-    }
-    expectNone(bad);
-    expect(planned).toBeGreaterThan(0);
   });
 
   it('two frames: piecewiseMonth over regimeMonths bounds', () => {

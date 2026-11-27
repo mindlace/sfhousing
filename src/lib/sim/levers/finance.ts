@@ -6,8 +6,8 @@
  */
 import { MARKET_TERMS, missingTerms, resolveTerms, validateInstrument } from '$lib/sim/finance';
 import { CalibrationFormatError, checkPool } from '$lib/timelapse/model';
-import { inflowArrivals } from '../scenario/funding';
-import type { SimInput } from '../scenario/types';
+import { inflowArrivals } from '../world/rules/funding';
+import type { SimInput } from '../world/input/types';
 import {
   INCOME_TIERS,
   type Day,

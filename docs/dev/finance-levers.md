@@ -1,6 +1,6 @@
 # Funding levers: `FinanceLevers` and `buildFinance`
 
-The funding part of the lever document, and how it compiles onto the dataset's baseline funding for the plan. Source: `src/lib/sim/levers/finance.ts` (parser, limits, `buildFinance`), `types.ts` (`FinanceLevers`, schema 3), `apply.ts` (`planOf`, `bare()`, `twinInput`), and `src/lib/sim/scenario/scenario-host.ts` (the worker's guard and the warm task). Spec: `docs/superpowers/specs/2026-11-09-finance-levers-design.md` (sections 4.1 and 4.4). Everything here is worker-safe and pure except the host. The page side (the policy, the schema-3 loader, presets) is in [sim-funding.md](sim-funding.md) and [plan-sharing.md](plan-sharing.md); the engine that consumes the result is in [finance-engine.md](finance-engine.md).
+The funding part of the lever document, and how it compiles onto the dataset's baseline funding for the plan. Source: `src/lib/sim/levers/finance.ts` (parser, limits, `buildFinance`), `types.ts` (`FinanceLevers`, schema 3), `apply.ts` (`planOf`, `bare()`, `twinInput`), and the timeline host (`src/lib/sim/world/host.ts`, the worker's guard). Spec: `docs/superpowers/specs/2026-11-09-finance-levers-design.md` (sections 4.1 and 4.4). Everything here is worker-safe and pure except the host. The page side (the policy, the schema-3 loader, presets) is in [sim-funding.md](sim-funding.md) and [plan-sharing.md](plan-sharing.md); the engine that consumes the result is in [finance-engine.md](finance-engine.md).
 
 ## The document
 
@@ -55,23 +55,12 @@ The test that pins it is `'scale 0 then 1 on a pool: one off span, no arrival in
 
 ## The worker
 
-`initScenario` and `setLevers` parse with `parseSimLevers`; a schema-2 or malformed `finance` is a `bad-request` with `levers <path>: <message>`. The baseline check runs where the baseline is known: `applyLevers` in `leverStep`. On a `LeverFormatError` (the only error it catches; any other ends the session as `internal`) `leverStep` sets `lw.pending = null`, posts `{ type: 'error', rev, code: 'bad-request', message: 'levers ' + message }`, and leaves `w.loaded`, `w.run` and the band as they were, so the previous revision stays in force. A session whose first revision fails runs nothing until the next `setLevers`: `LeverWork.inForce` is false until a revision becomes `current`, and the host picks no further job while it is.
-
-What a failing revision has already done by then (guard paths the page never takes, so they are tested in the host only):
-
-- Its `heights` post still goes out, because the city builds ahead of the recompute, and its limits replace `lw.limits`: the lid views, `lotAt` and `parcelSummary` follow the failing revision's limits, while the run, the band and the timelines stay on the previous revision.
-- A `reroll` folded into a failing pending revision is dropped with it.
-
-## The finance warm task
-
-The per-input finance precompute (`financePreOf`, then the skip rates and tables, then the skip bounds; `financeWarm` in `funded.ts`, see [finance-engine.md](finance-engine.md)) is cold-expensive: about 250 ms on the bench funding input under vitest (about 440 ms before the perf round, ballpark; the host's lever `current` to first band task is about 400 ms with the bench funding on a loaded machine). It used to run inside the first band task, which broke the 50 ms macrotask budget there. The host now runs it in load-phase macrotasks of its own, job kind `'warm'`: `warmOf(loaded, horizon)` gives the `financeWarm` of each distinct input of `fzp` and `twin` that has a `finance` (none when `deps.warmFinance === false`, the test seam that shows warming changes no output), and each `'warm'` slice calls the first one's `step(deps.warmChunk ?? WARM_CHUNK)`, dropping it once it returns true. A non-lever session warms at load; a lever session warms after each lever `current` (the plan input is new then), before revision 0's runs. Each warm slice has a slice of its own, as the shown run does.
-
-Limits: a warm chunk is about 23 ms bundled (about 32 ms under vitest) on the bench funding input; the step that builds `financePreOf` also builds the input's `precomputeOf` when nothing has (about 30 ms), which is not split.
+A policy document reaches the engine through `openTimeline` and `setPolicy` ([ensemble-runner.md](ensemble-runner.md)); a schema-2 or malformed `finance` is a `bad-request` with `levers <path>: <message>`. The baseline check runs where the baseline is known, at the compile. On a `LeverFormatError` (the only error it catches; any other is `'timeline'`) the host posts `{ type: 'error', rev, code: 'bad-request', message: 'levers ' + message }` and keeps the previous revision in force.
 
 ## The bench levers
 
-Host bench cases 4 and 5 (`scenario.bench.spec.ts`, [finance-engine.md](finance-engine.md), "Performance") put the bench funding on the plan through `levers.finance`: `benchFundingLevers(asOf)` in `fixtures/bench-finance.ts` is `benchFunding(asOf)` with every pool and programme id prefixed `u-` (and programme `pool` references following), no baseline scale and no terms. The twin stays on the unscaled bench baseline (`compare: 'fzp'`). The host serves a `policy.bin` (decoded to `synthPolicy`: FZP as written) because levers need one.
+`benchFundingLevers(asOf)` in `world/fixtures/bench-finance.ts` is `benchFunding(asOf)` with every pool and programme id prefixed `u-` (and programme `pool` references following), no baseline scale and no terms. `world/funding/test/fixtures.ts` puts it on a world as a schema 4 document.
 
 ## Tests
 
-`finance.spec.ts` (parser tables, `buildFinance` steps, spans, leap days), `apply.spec.ts` (identity of `finance` and `market` through `baseZoning` and `planOf`, twins), `types.spec.ts`, `scenario-host.levers.spec.ts` and `scenario-host.finance.spec.ts` (the guard and the warm task). `maxFunding()` and `fundingOnly()` are in `src/lib/sim/levers/fixtures/finance.ts`; `maxFunding()` sits at every limit and `sim-doc.spec.ts` asserts it serialises under 32,768 bytes.
+`finance.spec.ts` (parser tables, `buildFinance` steps, spans, leap days), `apply.spec.ts` (identity of `finance` and `market` through `baseZoning` and `planOf`, twins), `types.spec.ts` and the host's specs (`world/host.spec.ts`, the guard). `maxFunding()` and `fundingOnly()` are in `src/lib/sim/levers/fixtures/finance.ts`; `maxFunding()` sits at every limit and `sim-doc.spec.ts` asserts it serialises under 32,768 bytes.

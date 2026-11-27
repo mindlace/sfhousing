@@ -1,8 +1,8 @@
 // The plan world's money by calendar month (world-score rule 9): its ledger filed as `poolSeries`
 // files it, and the funded and displaced homes its series counted (rule 2).
-import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
-import { poolSeries } from '$lib/sim/scenario/finance-score';
-import { monthsOf } from '$lib/sim/scenario/score';
+import { addMonths, firstOfMonth } from '$lib/sim/world/dates';
+import { poolSeries } from '$lib/sim/world/score/finance';
+import { monthsOf } from '$lib/sim/world/score/targets';
 import { fundOf } from '../funding/columns';
 import { NO_DAY } from '../types';
 import type { Extras } from './series';

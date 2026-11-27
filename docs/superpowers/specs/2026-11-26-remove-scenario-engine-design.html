@@ -1,0 +1,67 @@
+<article>
+  <header>
+    <h1>Remove the scenario engine</h1>
+    <p>Delete the old Monte Carlo engine and the tests that held the step engine to it; move what the step engine still uses into <code>src/lib/sim/world/</code>.</p>
+  </header>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <ul>
+      <li>The owner does not keep unused code. The step engine (<code>src/lib/sim/world/</code>) replaced the scenario engine (<code>src/lib/sim/scenario/</code>); the old run loop, its host and its worker mode serve no page.</li>
+      <li>The parity tests that made the new engine equal the old one were right while the step engine was being built. Now they limit the model to what the old engine could represent. Every one of them goes.</li>
+    </ul>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> <code>src/lib/sim/scenario/</code> no longer exists. Nothing named "scenario" survives as an engine, mode, client or host.</li>
+      <li><strong>Goal:</strong> no test compares the step engine with the old engine (referee, golden, equality or replay).</li>
+      <li><strong>Goal:</strong> what the step engine still calls lives under <code>src/lib/sim/world/</code>, and what nothing calls is deleted.</li>
+      <li><strong>Non-goal:</strong> rewriting the borrowed rules in the world's own style, or changing any model behaviour. That is later work.</li>
+      <li><strong>Anti-goal:</strong> a change in what the game shows. Every simulation number, map frame and card stays as it is today.</li>
+      <li><strong>Anti-goal:</strong> a change in the dataset version. Moving code must not change <code>codeTreeHash</code> or <code>treeDatasetVersion</code>, which would force a new dataset upload.</li>
+    </ul>
+  </section>
+
+  <section id="sec-today">
+    <h2>What is there today</h2>
+    <ul>
+      <li><strong>Dead:</strong> <code>scenario/simulate.ts</code> (the run loop), <code>scenario/scenario-host.ts</code>, the <code>'scenario'</code> mode in <code>src/lib/sim/router.ts</code> and <code>src/lib/sim/worker.ts</code>, <code>src/lib/sim/scenario-client.ts</code>, and the golden suites <code>scenario/simulate.golden.*</code> and <code>simulate.finance.golden.*</code>.</li>
+      <li><strong>Parity tests outside <code>scenario/</code>:</strong> <code>world/referee.spec.ts</code>, <code>referee.variants.spec.ts</code>, <code>pipeline.referee.spec.ts</code>, <code>frames.referee.spec.ts</code>, <code>score/series.referee.spec.ts</code>, <code>map-stream.equality.spec.ts</code> and <code>pipeline/test/simulate-replay.test.ts</code>, together with the helpers that only serve them (for example <code>oldInputOf</code> in <code>world/test/timeline.ts</code>).</li>
+      <li><strong>Live, borrowed by the step engine:</strong> <code>engine.ts</code> (<code>stage.ts</code>, <code>world.ts</code>, <code>pipeline.ts</code>, <code>holds.ts</code> and <code>funding/serve.ts</code> call into it), <code>card.ts</code>, <code>lot-at.ts</code>, <code>preview.ts</code>'s <code>PREVIEW_MAX_LOTS</code>, the host's <code>createToken</code>, <code>MEMO_CAP</code> and <code>SLICE_PLAN_MS</code>, the <code>Master</code> type from <code>simulate.ts</code>, and the shared modules <code>types</code>, <code>input</code>, <code>money</code>, <code>funding</code>, <code>dates</code>, <code>rng</code>, <code>score</code>, <code>load</code>, <code>finance-score</code>, <code>funded</code>, <code>market</code>, <code>policy</code>, <code>massing</code>, <code>geometry</code>, <code>line</code>, <code>band</code> and <code>fixtures/</code>. These are imported from about 230 files across <code>src</code>, <code>scripts</code> and <code>pipeline</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <ul>
+      <li><strong>A. Cut only the dead parts.</strong> This is the smallest diff, but the live rules would stay in a folder named after the old engine, mixed with leftovers.</li>
+      <li><strong>B. Cut, then move what is live into <code>world/</code>.</strong> <em>Chosen by the owner, with <code>world/</code> as the destination.</em> Both reasons are fully addressed: no unused code, and nothing that reads as the old model setting the shape of the new one.</li>
+      <li><strong>C. B, plus rewriting the borrowed rules natively.</strong> This would change the model, which is out of scope here.</li>
+    </ul>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+    <ol>
+      <li><strong>Delete the parity tests first</strong>, along with the test helpers and fixtures that only they use. The suite then no longer needs the old run loop.</li>
+      <li><strong>Delete the old engine's entry points:</strong> <code>simulate.ts</code> (after moving <code>Master</code>), <code>scenario-host.ts</code> (after moving the constants and <code>createToken</code> the world host uses), <code>scenario-client.ts</code>, the router's <code>'scenario'</code> mode and the worker's scenario host. <code>ScenarioWorkerInput</code> and <code>ScenarioWorkerLike</code>, which the timeline client and session use, move to <code>timeline-client.ts</code> under names that drop "Scenario". The same goes for the "Scenario" names in <code>lookup-requests.ts</code> and <code>scenario/types.ts</code>'s worker request union.</li>
+      <li><strong>Prune <code>engine.ts</code></strong> down to what the world calls, and move it into <code>world/</code>. Functions only the run loop used are deleted. The remaining modules move too, each one deleted if nothing outside the old engine uses it.</li>
+      <li><strong>Rewrite imports</strong> everywhere (<code>src</code>, <code>scripts</code>, <code>pipeline</code>, <code>e2e</code>), then delete <code>src/lib/sim/scenario/</code>.</li>
+      <li><strong>Keep the dataset version.</strong> <code>codeTreeHash</code> ignores <code>scenario/engine.ts</code> today (see <code>pipeline/test/version.test.ts</code>). Its path rules are updated so the moved files hash exactly as before, and the test's paths follow the move.</li>
+      <li><strong>Docs:</strong> remove every <code>docs/dev/</code> mention of the scenario engine, the referees and the golden suites, and fix moved paths. That covers <code>world-core.md</code>, <code>world-funding.md</code>, <code>ensemble-runner.md</code>, <code>finance-*.md</code>, <code>testing.md</code>, <code>pipeline.md</code>, <code>policy-timeline.md</code> and the others grep finds. Specs and plans under <code>docs/superpowers/</code> are history and stay as they are.</li>
+    </ol>
+    <aside data-kind="decision"><strong>Builder's call</strong> The layout inside <code>world/</code> (for example <code>world/rules/</code> for the pruned engine and <code>world/input/</code> for the loaders and types) and the new names for symbols that carry "Scenario" or "scenario" (<code>loadScenario</code>, <code>scenarioUrls</code>, <code>ScenarioParcels</code>, <code>manifest.scenarios</code> in code) are left to the builder. Dataset keys and the manifest's on-disk field names do not change.</aside>
+  </section>
+
+  <section id="sec-done">
+    <h2>Done when</h2>
+    <ul>
+      <li><code>src/lib/sim/scenario/</code> and <code>src/lib/sim/scenario-client.ts</code> are gone, and a grep for <code>sim/scenario</code>, <code>simulateDetailed</code>, <code>referee</code> or <code>golden</code> in <code>src</code>, <code>scripts</code>, <code>pipeline</code>, <code>e2e</code> and <code>docs/dev</code> finds nothing.</li>
+      <li><code>npm run check</code>, <code>npm run lint</code>, <code>npm run test:unit</code> and <code>npm run test:e2e</code> pass, and <code>npm run signoff</code> posts.</li>
+      <li>The build's dataset version equals <code>main</code>'s.</li>
+      <li><code>npx tsx scripts/reach-check.ts</code> on the fixture gives the same result as on <code>main</code>.</li>
+    </ul>
+  </section>
+</article>

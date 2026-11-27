@@ -3,8 +3,8 @@
 // steps like its original, the skip shortcut changes nothing, and no frame past `readyThrough` is
 // read. Bench city, a frame change at month 121 with a market shift and a speed change.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { planDue, planDueWith, type DueList } from './due';
 import type { PolicyFrame, PolicyTimeline } from './policy/frame';
 import { lotEntity, ordinaryStart, skipBound } from './rates';

@@ -2,9 +2,10 @@
 // the chain `startProject` began, so the row's 'end' 'complete' reaches the series first. Tiers
 // must not assume the award precedes completion (comprehension gate, row 20).
 import { beforeAll, describe, expect, it } from 'vitest';
-import { tierContext, tierSeries, tiersOf } from '$lib/sim/scenario/finance-score';
+import { tierContext, tiersOf } from '$lib/sim/world/score/finance';
+import { tierSeries } from './test/oracles';
 import { MIN_SCALE } from '$lib/sim/levers/types';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import type { Calibration, Transition } from '$lib/timelapse/types';
 import { fundedMini, oneMoneyTimeline } from '../funding/test/fixtures';
 import { monthFirstDay, monthOfDay } from '../months';

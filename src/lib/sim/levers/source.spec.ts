@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { miniCity } from '../scenario/fixtures/mini-parcels';
-import { miniPolicy } from '../scenario/fixtures/mini-policy';
-import { dayOf } from '../scenario/dates';
+import { miniCity } from '../world/fixtures/mini-parcels';
+import { miniPolicy } from '../world/fixtures/mini-policy';
+import { dayOf } from '../world/dates';
 import { stockTable, type LayerCtx } from './layers';
 import { resolveEnvelopes } from './resolve';
 import { limitSources, ownerOf, SRC_FZP, SRC_NONE, SRC_PAINT, SRC_RULE0 } from './source';

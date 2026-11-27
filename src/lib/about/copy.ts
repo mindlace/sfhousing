@@ -7,7 +7,7 @@ import { MAX_SAVES } from '$lib/game/saves';
 import { BUFFER_SHARE, bufferAmount, GOAL_BASE } from '$lib/goal/goal';
 import { ROOM_MEANS } from '$lib/paint/details';
 import { formatCount } from '$lib/scoreboard/format';
-import { RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 

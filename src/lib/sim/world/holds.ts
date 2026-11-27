@@ -1,8 +1,7 @@
-// Holds (rule 9; today's `Holds`, scenario/engine.ts:593-627, 706-729, 814-848, and the demolished
-// lot, funded.ts:1595-1602): a lot is free only when every project holding it has dropped out; it
+// Holds (rule 9): a lot is free only when every project holding it has dropped out; it
 // is blocked for good when a holder completes, is skipped or never ends; once a project has
 // entered construction on it, its existing homes count as 0.
-import * as engineModule from '$lib/sim/scenario/engine';
+import * as stagesModule from '$lib/sim/world/rules/stages';
 import type { Day } from '$lib/timelapse/time';
 import * as columnsModule from './columns';
 import type { RowStatics } from './pipeline';
@@ -12,7 +11,7 @@ import type { World } from './types';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
-const { isSkipped } = engineModule;
+const { isSkipped } = stagesModule;
 const { ensureLot, lotRow } = columnsModule;
 const { LOT_DONE, LOT_FREE, LOT_HELD, ORIGIN_MASTER, ORIGIN_PHASE, ORIGIN_PIPELINE, ORIGIN_SIM } =
   typesModule;
@@ -123,7 +122,7 @@ export function passToPhases(w: World, rs: RowStatics, master: number, asOf: Day
 /**
  * The holds at the dataset date, before any row is made: a skipped row blocks its own lots, an
  * unphased row holds its own, a phased master holds `all`. A lot is demolished when a holder's
- * history (or current stage) has construction; a master's never does (`engine.ts:825`).
+ * history (or current stage) has construction; a master's never does.
  */
 export function createHolds(w: World, statics: Statics, rs: RowStatics): void {
   const asOf = statics.asOf;

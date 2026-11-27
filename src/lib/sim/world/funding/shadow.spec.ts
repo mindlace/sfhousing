@@ -1,10 +1,10 @@
 // world-funding Task 10: shadow starts and displaced homes (spec rule 20).
 import { describe, expect, it } from 'vitest';
 import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import { lineKey } from '$lib/sim/scenario/funded';
-import { sizeCumAgainst } from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
+import { lineKey } from '$lib/sim/world/rules/funding';
+import { sizeCumAgainst } from '$lib/sim/world/input/build';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { addProject, ensureLot, lotRow } from '../columns';

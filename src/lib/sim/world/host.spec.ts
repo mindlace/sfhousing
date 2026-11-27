@@ -7,8 +7,8 @@ import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generat
 import { SLOT_FLAG, type TimelineUpdate } from '$lib/map/types';
 import type { FetchLike } from '$lib/sim/chunks';
 import { createLru } from '$lib/sim/lru';
-import { scenarioUrls } from '$lib/sim/scenario/load';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import { simInputUrls } from '$lib/sim/world/input/load';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
@@ -93,7 +93,7 @@ beforeAll(async () => {
   };
   const r = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     createChunkSet(manifest, deps),
     deps,
     createLru<string, GeneratedBuilding | null>(1000),

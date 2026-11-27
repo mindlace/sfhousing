@@ -17,7 +17,7 @@ import {
   type Stage,
   type Transition
 } from '$lib/timelapse/types';
-import type { PolicyOp } from '../scenario/policy';
+import type { PolicyOp } from '../world/input/policy';
 import { MAX_SCALE, MIN_SCALE, type TimedStage, type TimerEdit } from './types';
 
 /** Per pathway and stage, the time scale; absent = 1. */

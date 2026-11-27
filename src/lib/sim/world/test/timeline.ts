@@ -2,10 +2,10 @@ import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
 import type { StageScale } from '$lib/sim/levers/timers';
-import { precomputeOf } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, STAGE_ORDER, type Calibration, type MarketStep } from '$lib/timelapse/types';
+import { PATHWAYS, STAGE_ORDER, type Calibration } from '$lib/timelapse/types';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
 
 export const IDENTITY: StageScale = { discretionary: {}, streamlined: {}, permitOnly: {} };
@@ -102,28 +102,6 @@ export function scaleProduct(a: StageScale, b: StageScale): StageScale {
     for (const s of stages) out[p][s] = clamp((a[p][s] ?? 1) * (b[p][s] ?? 1));
   }
   return out;
-}
-
-export interface OldOpts {
-  inFlightScale?: StageScale;
-  newScale?: StageScale;
-  newCalibration?: Calibration;
-  market?: MarketStep[];
-  regimes?: { day: Day; parcels: ScenarioParcels }[];
-}
-
-/** The input today's engine runs for the same policy (Open question 4: `newProjects` always set). */
-export function oldInputOf(base: SimInput, o: OldOpts = {}): SimInput {
-  return {
-    ...base,
-    newProjects: {
-      calibration: o.newCalibration ?? base.calibration,
-      scale: o.newScale ?? IDENTITY
-    },
-    ...(o.inFlightScale ? { inFlightScale: o.inFlightScale } : {}),
-    ...(o.market ? { market: o.market } : {}),
-    ...(o.regimes ? { regimes: o.regimes } : {})
-  };
 }
 
 /** Every timed stage of every route scaled by `v`. */

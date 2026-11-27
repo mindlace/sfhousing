@@ -15,7 +15,7 @@ import {
   type Stage,
   type Transition
 } from '$lib/timelapse/types';
-import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
+import miniCalibrationJson from '../world/fixtures/mini-calibration.json';
 import fixture0CalibrationJson from '../../../../e2e/fixtures/data/fixture-0/scenarios/fzp/calibration.json';
 import {
   DISAPPROVAL_NEGLIGIBLE,

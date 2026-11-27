@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../generator/seed';
-import { miniCity } from '../sim/scenario/fixtures/mini-parcels';
+import { miniCity } from '../sim/world/fixtures/mini-parcels';
 import { featureValue } from '../data/scenario-codec';
-import mini from '../sim/scenario/fixtures/mini-calibration.json';
+import mini from '../sim/world/fixtures/mini-calibration.json';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import { readFileSync } from 'node:fs';

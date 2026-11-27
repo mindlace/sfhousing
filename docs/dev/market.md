@@ -160,22 +160,20 @@ on a project's first filing.
 ## The engine contract
 
 `SimInput.market?: MarketStep[]` (`{ from, logOdds }`, declared in `src/lib/timelapse/types.ts` and
-`src/lib/sim/scenario/types.ts`). `[]` and absent both mean shift 0.
+`src/lib/sim/world/input/types.ts`). `[]` and absent both mean shift 0.
 
-- **Validation** (`checkInput`, memoised as today): `runEngine` throws a `RangeError` when a step's
-  `logOdds` is not finite, when steps are not strictly ascending by `from`, or when the first step
-  is after `asOf`.
+- **Contract.** Steps are finite, strictly ascending by `from`, and the first is not after `asOf`; the caller keeps it (`marketSteps` builds them that way).
 - **Steps in force.** The last step with `from <= asOf` gives the starting shift `s0`; steps after
   `asOf` apply from their `from`. **Month granularity**: a month falls under the step in force on
   its first day, `r + 1 + floor((T - 1) x MONTH_DAYS)`, as `regimes` already apply it.
 - **Precompute** (`precomputeOf`): `initiationLogit` (`src/lib/timelapse/model.ts`) returns the
   linear predictor `z`; `initiationHazard` is unchanged because `model-golden.json` locks it.
   `hazard = 1 / (1 + exp(-(z + s0)))`; with `s0 = 0`, `z + 0` is `z`, so hazards are bit-identical
-  to today's (a test asserts it). Each later step adds a `Float64Array` of `ln(1 - hazard)`; with
+  to the unshifted ones. Each later step adds a `Float64Array` of `ln(1 - hazard)`; with
   one step (Release 1) there is nothing extra.
 - **Composition with `regimes`.** The segment boundaries are the union of the regime days and the
   later step days, sorted and merged; each segment has a `(view, step)` pair and
-  `simulatedPass` fills the per-segment rates from it. With no later steps the path is today's.
+  `precomputeOf` fills the per-segment rates from it (`world/input/build.ts`). With no later steps there is one segment.
 - **`skipAbove`** stays a safe bound: `skipBounds` reads the same merged boundaries and rate
   arrays as the exact path, so a draw at or below the bound always takes the exact computation.
 - **Memoisation** is by `SimInput` identity: a different `market` array is a different input and
@@ -189,13 +187,12 @@ unchanged ([sim-levers.md](sim-levers.md)).
 
 ## `marketLevel`: the one rule for the level
 
-`marketLevel(calibration)` (`src/lib/sim/scenario/market.ts`) returns `'all'` or `'private'`. It
+`marketLevel(calibration)` (`src/lib/sim/world/input/market.ts`) returns `'all'` or `'private'`. It
 returns `'private'` exactly when the calibration has both `market` and `baselineFunding` (from
 Release 2; in Release 1 it returned `'all'` for every calibration), which is exactly when
 `buildSimInput` also sets `finance` ([finance-engine.md](finance-engine.md)). `buildSimInput` calls
 `marketSteps(calibration.market, projects.asOf, marketLevel(calibration))` and **omits the key**
-when that is empty, so existing inputs stay deep-equal to today's and `golden-seed1.json` is
-untouched. When `calibration.market` is absent it warns once
+when that is empty, so an input with no market stays deep-equal to one built without it. When `calibration.market` is absent it warns once
 (`calibration.json: no market model; the run uses the 2007-2025 average market`). The page's
 sentence and the dialog's "In force" line call the same function, so the engine and the page cannot
 state different levels.
