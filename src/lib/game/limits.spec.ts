@@ -13,6 +13,7 @@ import {
   isGiven,
   limitsOf,
   runnable,
+  whatFixed,
   within
 } from './limits';
 import { NEW_GAME, type GameState } from './state';
@@ -225,6 +226,25 @@ describe('within', () => {
       expect(within(kind, p, OPEN_LIMITS)).toBe(true);
       expect(within(kind, { ...p, on: false }, OPEN_LIMITS)).toBe(true);
     }
+  });
+});
+
+describe('whatFixed', () => {
+  const free = (preset: string) => ({ ...money('baseline', preset), id: preset });
+
+  it('a free measure is summary-only in a game before the end', () => {
+    for (const p of ['state-off', 'federal-credits-off']) {
+      expect(whatFixed(free(p), R1)).toBe(true);
+      expect(whatFixed(free(p), DONE)).toBe(false);
+      expect(whatFixed(free(p), OPEN_LIMITS)).toBe(false);
+    }
+  });
+
+  it('a catalogue policy follows isFixed; an own policy is not fixed', () => {
+    expect(whatFixed(RAIL, R1)).toBe(true);
+    expect(whatFixed(RAIL, limitsOf(game({ round: 1, editable: ['transit-rail'] })))).toBe(false);
+    expect(whatFixed(money('fund', null), R1)).toBe(false);
+    expect(whatFixed(GAME_TRANSIT, R1)).toBe(false);
   });
 });
 

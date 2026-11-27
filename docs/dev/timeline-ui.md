@@ -80,7 +80,7 @@ The game's rules live in `src/lib/game/` ([game.md](game.md)); the page in a gam
 - **The goal headline** (`GoalHeadline`'s props, `goalProps`; none with no game): `words`, the round's pending words (`pinnedWords(PENDING, ctx)` with the amount, the target, the legal deadline, the round, finished and the next round's policy count), and `fill`, the view on show's homes at the playhead's month over the amount (0 with that month not filled).
 - **A game's limits** (`Timeline`'s `limits`, `KindRow`'s `canAdd` and `isLocked`). No lane is locked: a kind shows its miniature and opens as always, and has a "+" only when `kindOpen(kind, limits)`. A locked policy (one `within` refuses) is dimmed (`data-locked`), says `NOT_IN_GAME` ("Not in this game") under its name, and is not a button: no Tab stop, no drag, no arrow keys, no selection; its name is still read. The Inspector and the "+" menu take `limits` too.
 - **No game.** The published view (`/s/<id>`) and the open game show none of this: no goal headline, no locks.
-- **Hooks**: `tl-locked-lane`, and `data-locked` on a locked policy row and its bars. `TimelineModeHost` provides a given `game` (as the root layout does) and takes `initialRun` and `ctl.setRun`; `src/lib/timeline/test/game.ts` makes a store through the store's own API.
+- **Hooks**: `data-locked` on a locked policy row and its bars, and `tl-policy-note` with `NOT_IN_GAME` under its name. `TimelineModeHost` provides a given `game` (as the root layout does) and takes `initialRun` and `ctl.setRun`; `src/lib/timeline/test/game.ts` makes a store through the store's own API.
 
 ## Commit path and load notices
 

@@ -9,7 +9,8 @@
     (WhatEditor, today's editors on the selected span through `spanLens`). A refused edit's
     reason shows in the alert line.
   `limits` (what the game offers): "+" offers only what they allow, and a catalogue policy the
-  player cannot edit yet (`isFixed`) has `PolicySummary` as its What; its switch, order, Remove and
+  player cannot edit yet, or a given measure outside the catalogue before the end (`whatFixed`),
+  has `PolicySummary` as its What; its switch, order, Remove and
   When edit as today.
   Read-only (rule 17): When as text, What as `PolicySummary`; nothing edits. Selecting another
   policy, opening "+" or closing discards an unfinished funding draft and says so (rule 15). Close
@@ -18,7 +19,7 @@
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
-  import { isFixed, OPEN_LIMITS, type Limits } from '$lib/game/limits';
+  import { OPEN_LIMITS, whatFixed, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { marketLevel } from '$lib/sim/scenario/market';
@@ -487,7 +488,7 @@
           {catalog}
           {drafts}
           {playheadDay}
-          readonly={readonly || isFixed(policy, limits)}
+          readonly={readonly || whatFixed(policy, limits)}
           {limits}
           {announce}
           onremove={removeThis}

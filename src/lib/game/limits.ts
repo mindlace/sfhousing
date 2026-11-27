@@ -106,6 +106,16 @@ export function isFixed(p: Policy, l: Limits): boolean {
   return key !== null && !l.editable.has(key);
 }
 
+/**
+ * The Inspector's What is the summary only: a catalogue policy not yet editable (`isFixed`), or, in
+ * a game before the end, a given measure outside the catalogue (a free measure runs at any values,
+ * so editing it could reach a later round's policy). Its switch, order and When still edit.
+ */
+export function whatFixed(p: Policy, l: Limits): boolean {
+  if (l.open || l.whole) return false;
+  return isFixed(p, l) || (keyOf(p) === null && isGiven(p));
+}
+
 /** Remove is offered: no game, a finished game, or a policy outside the catalogue. */
 export function canRemove(p: Policy, l: Limits): boolean {
   return l.open || l.whole || keyOf(p) === null;

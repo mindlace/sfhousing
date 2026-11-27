@@ -362,6 +362,8 @@ describe('PUT /api/game/[id] signed in', () => {
     const res = await GET(event(c, id, { user: ANA }));
     const body = (await res.json()) as { save: GameSave };
     expect(body.save.state).toMatchObject({ v: 3, round: 2, editable: ['sb423-clock'] });
+    const [row] = await c.db.select().from(gameSave).where(eq(gameSave.id, id));
+    expect(row.rung).toBe(2);
     expect(body.save.plan).toBe('{"v":1}');
     expect(body.save.policy).toBe('{"schema":4}');
   });

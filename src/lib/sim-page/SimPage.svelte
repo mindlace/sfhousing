@@ -263,7 +263,8 @@
       return g && cal ? offerThrough(p, g.state.round, cal, g.state.editable) : p;
     });
     store.reset(offered);
-    // The runnable document of `p`, as `run` holds it, so the sync effect sees no change.
+    // The runnable document of what was loaded (in a game, `p` with the offered policies added),
+    // as `run` holds it, so the sync effect sees no change.
     const r = run;
     synced = r;
     // A load, not a change: no debounce (`PolicySync.open`).

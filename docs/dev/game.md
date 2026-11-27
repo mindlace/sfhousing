@@ -9,20 +9,20 @@ three a round over four rounds (`catalogue/rounds.ts`); round 0 is current law. 
 version 3: the round, the month to beat, the policies the player can edit and the wins. The rules
 and saved games live in `src/lib/game/`:
 
-| File                                 | Holds                                                                         |
-| ------------------------------------ | ----------------------------------------------------------------------------- |
-| `state.ts`                           | `GameState`, `Win`, `NEW_GAME`                                                |
-| `upgrade.ts`                         | `upgradeV2`, `V2_LADDER_YEARS`, `V2_KEYS`: a version 2 game read as version 3 |
-| `save-shape.ts`                      | `GameSave`, `SaveEntry`, `parseGameSave`, `parseGameState`                    |
-| `rounds.ts`                          | `judge`, `Verdict`, `monthsBetween`, `spanText`, `fitState`, `takeWin`        |
-| `offer.ts`                           | `addEntry`, `offerThrough`, `catalogueDoc`, `onKeys`                          |
-| `limits.ts`                          | `Limits`, `limitsOf`, `within`, `runnable`, `isGiven`, `isFixed`, `canRemove` |
-| `words.ts`                           | The store's and the sync's words                                              |
-| `catalogue/rounds.ts`                | The twelve policies (`CATALOGUE`, `POLICY_KEYS`, `ROUNDS`, `keyOf`)           |
-| `ui/`                                | The screens and header parts                                                  |
-| `store.svelte.ts`, `saves.ts`        | The store, `MAX_SAVES`, storage keys                                          |
-| `save-sync.svelte.ts`, `save-api.ts` | The browser's sync with an account                                            |
-| `e2e.ts`                             | The e2e seam's readers                                                        |
+| File                                 | Holds                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `state.ts`                           | `GameState`, `Win`, `NEW_GAME`                                                             |
+| `upgrade.ts`                         | `upgradeV2`, `V2_LADDER_YEARS`, `V2_KEYS`: a version 2 game read as version 3              |
+| `save-shape.ts`                      | `GameSave`, `SaveEntry`, `parseGameSave`, `parseGameState`                                 |
+| `rounds.ts`                          | `judge`, `Verdict`, `monthsBetween`, `spanText`, `fitState`, `takeWin`                     |
+| `offer.ts`                           | `addEntry`, `offerThrough`, `catalogueDoc`, `onKeys`                                       |
+| `limits.ts`                          | `Limits`, `limitsOf`, `within`, `runnable`, `isGiven`, `isFixed`, `whatFixed`, `canRemove` |
+| `words.ts`                           | The store's and the sync's words                                                           |
+| `catalogue/rounds.ts`                | The twelve policies (`CATALOGUE`, `POLICY_KEYS`, `ROUNDS`, `keyOf`)                        |
+| `ui/`                                | The screens and header parts                                                               |
+| `store.svelte.ts`, `saves.ts`        | The store, `MAX_SAVES`, storage keys                                                       |
+| `save-sync.svelte.ts`, `save-api.ts` | The browser's sync with an account                                                         |
+| `e2e.ts`                             | The e2e seam's readers                                                                     |
 
 Syncing saved games to an account is [game-save.md](game-save.md). The page's shell, autosave and
 workshop are [sim-page.md](sim-page.md); the timeline and its worker messages are
@@ -135,7 +135,9 @@ worker runs and Publish sends the runnable one.
 
 `isFixed(policy, limits)`: a catalogue policy the player cannot edit yet (not open, not whole, its
 key not editable); only its switch, order and When work, and its What is the summary.
-`canRemove(policy, limits)`: no game, a finished game, or a policy outside the catalogue.
+`whatFixed(policy, limits)` is what the Inspector reads: `isFixed`, or, in a game before the end, a
+given measure outside the catalogue (the free measures, which run at any values). `canRemove(policy,
+limits)`: no game, a finished game, or a policy outside the catalogue.
 
 ## The screens and header parts
 

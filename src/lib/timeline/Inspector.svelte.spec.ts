@@ -7,7 +7,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatMonthYear } from '$lib/fzp/format';
-import { FREE_MEASURES, type Limits } from '$lib/game/limits';
+import { FREE_MEASURES, OPEN_LIMITS, type Limits } from '$lib/game/limits';
 import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import { fundingPresets } from '$lib/sim-page/funding-presets';
@@ -645,6 +645,42 @@ describe('Inspector with given measures', () => {
     expect(names).not.toContain('Your own pool');
     expect(names).not.toContain('City funding scale');
     expect(names).not.toContain('Market terms');
+  });
+
+  describe('a free measure', () => {
+    const freeMade = (preset: string) =>
+      addPolicy(EMPTY, { kind: 'money', what: 'preset', preset }, { w, month: 13, cal });
+    const round1 = limitsWith({ offered: new Set(['housing-bond']), money: true });
+    /** The What section's controls: none while its What is the summary. */
+    const whatControls = () => {
+      const what = [...(editor()?.querySelectorAll('section') ?? [])].find(
+        (s) => s.querySelector('h3')?.textContent === 'What'
+      );
+      return what ? what.querySelectorAll('input, select, button').length : -1;
+    };
+
+    for (const preset of ['state-off', 'federal-credits-off']) {
+      it(`${preset}: summary only in a game before the end; switch and When still edit`, async () => {
+        const made = freeMade(preset);
+        const { store } = setup({ doc: made.doc, initial: made.ref, limits: round1 });
+        await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
+        await expect.element(page.getByRole('combobox', { name: 'From year' })).toBeEnabled();
+        expect(whatControls()).toBe(0);
+        await page.getByRole('switch', { name: 'On' }).click();
+        expect(store.policy.kinds.money.find((p) => p.id === made.ref.id)!.on).toBe(false);
+      });
+
+      for (const [name, limits] of [
+        ['a finished game', limitsWith({ whole: true })],
+        ['OPEN_LIMITS', OPEN_LIMITS]
+      ] as const) {
+        it(`${preset}: the editor shows in ${name}`, async () => {
+          const made = freeMade(preset);
+          setup({ doc: made.doc, initial: made.ref, limits });
+          await expect.poll(whatControls).toBeGreaterThan(0);
+        });
+      }
+    }
   });
 
   it('under open limits a given measure is edited as today', async () => {
