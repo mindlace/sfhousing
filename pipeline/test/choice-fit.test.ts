@@ -14,12 +14,20 @@ import { choiceFeatures } from '../../src/lib/sim/choice/choose';
 import type { Calibration } from '../../src/lib/timelapse/types';
 import {
   affordableRule,
+  affordableRuleMeasurable,
+  atSearchBound,
   choiceRecords,
+  marketRecords,
+  measureOverlap,
+  SPREAD_RANGE,
   fitChoiceSpread,
   optionsOf,
   type ChoiceRecord
 } from '../lib/fzp-cal/choice-fit';
 import { choiceOutcomes } from '../lib/fzp-cal/invariants';
+import { choiceModelOf, choiceSpreadWarning } from '../lib/fzp-cal/calibrate';
+import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
+import type { ShippedStep } from '../lib/fzp-cal/shipped-step';
 import { withChoiceFeatures, type PanelSource, type PanelYearRow } from '../lib/fzp-cal/panel';
 import type { NormHistory } from '../lib/fzp-cal/types';
 import { isoToDay } from '../project-records/multiphase';
@@ -91,6 +99,12 @@ describe('affordableRule', () => {
     expect(affordableRule(cohort(0.05, 0.04))).toEqual({ rule: 'market', diff: 0.05, se: 0.04 });
   });
 
+  it("is 'market' without a measurable difference, whatever the difference", () => {
+    expect(affordableRule(cohort(0.12, 0)).rule).toBe('market');
+    expect(affordableRule(cohort(NaN, 0.04)).rule).toBe('market');
+    expect(affordableRuleMeasurable({ diff: 0.12, se: 0 })).toBe(false);
+  });
+
   it("is 'most-homes' when affordable projects build closer to the limit beyond 2 SE", () => {
     expect(affordableRule(cohort(0.12, 0.04))).toEqual({
       rule: 'most-homes',
@@ -150,19 +164,30 @@ describe('withChoiceFeatures', () => {
 });
 
 describe('choiceRecords', () => {
-  const hist = (id: string, parcel: string, day: string, stories: number, base: number) =>
+  const hist = (
+    id: string,
+    parcel: string,
+    day: string,
+    stories: number,
+    base: number,
+    affordable = 0
+  ) =>
     ({
       id,
       parcelIds: [parcel],
       eff: { filed: isoToDay(day) },
-      src: { storiesProposed: stories, baseStoriesAtFiling: base }
+      src: {
+        storiesProposed: stories,
+        baseStoriesAtFiling: base,
+        planningProposed: { units: 20, affordable }
+      }
     }) as unknown as NormHistory;
 
   it("takes each record's panel row of its first record's year, with today's location value", async () => {
     const out = await choiceRecords(
       [
         hist('P1', 'A', '2018-05-01', 6, 6),
-        hist('P2', 'B', '2019-02-01', 8, 8),
+        hist('P2', 'B', '2019-02-01', 8, 8, 20),
         hist('P3', 'C', '2019-02-01', 4, 6), // no choice inputs on its row
         hist('P4', 'A', '2012-01-01', 4, 6) // before 2015: not a record
       ],
@@ -180,7 +205,8 @@ describe('choiceRecords', () => {
         limit: 6,
         stories: 6,
         existing: 2,
-        cap: null
+        cap: null,
+        cohort: 'private'
       },
       {
         options: optionsOf(panelTable, 1),
@@ -188,7 +214,8 @@ describe('choiceRecords', () => {
         limit: 8,
         stories: 8,
         existing: 2,
-        cap: null
+        cap: null,
+        cohort: 'affordable'
       }
     ]);
   });
@@ -219,5 +246,94 @@ describe('choiceOutcomes (V25)', () => {
       'choice.provenance.choiceSpread is tier 4 and its label does not say invented'
     ]);
     expect(choiceOutcomes({ asOf: 1 })).toEqual(['no choice', 'no heightTime']);
+  });
+});
+
+describe('marketRecords', () => {
+  const rec = (cohort?: ChoiceRecord['cohort']): ChoiceRecord => ({
+    options: lotOptions(4),
+    locationValue: 1,
+    limit: 6,
+    stories: 6,
+    cohort
+  });
+  const all = [rec('private'), rec('affordable'), rec(), rec('affordable'), rec('noRecord')];
+
+  it("leaves affordable-cohort records out under 'most-homes' and counts them", () => {
+    const out = marketRecords(all, 'most-homes');
+    expect(out.affordable).toBe(2);
+    expect(out.records.map((r) => r.cohort)).toEqual(['private', undefined, 'noRecord']);
+  });
+
+  it("keeps every record under 'market'", () => {
+    expect(marketRecords(all, 'market')).toEqual({ records: all, affordable: 0 });
+  });
+});
+
+describe('a spread fitted at a search bound', () => {
+  const prov = heightTime.provenance;
+  const step: ShippedStep = {
+    prices: shippedPrices(),
+    heightTime,
+    aboveTop: { ratio: 1.21, n: [10, 30], provenance: prov },
+    filedToIssued: [],
+    provenance: { anchors: prov, carrying: prov }
+  };
+  const cohort = {
+    affordable: { mean: 1, n: 40, se: 0.05 },
+    private: { mean: 0.95, n: 400, se: 0.02 },
+    diff: 0.05,
+    se: 0.054
+  };
+  const fit = (choiceSpread: number) => ({
+    choiceSpread,
+    logLik: -800,
+    n: 500,
+    excludedOver: 0,
+    noOption: 0,
+    profile: []
+  });
+  const model = (s: number) =>
+    choiceModelOf(step, fit(s), affordableRule(cohort), cohort, prov, LIVE_CAL, 100, {
+      affordableLeftOut: 3
+    });
+
+  it('ships the bound as tier 4, labelled invented (fit at search bound)', () => {
+    for (const bound of SPREAD_RANGE) {
+      expect(atSearchBound({ choiceSpread: bound * 0.9999 })).toBe(true);
+      const m = model(bound * 0.9999);
+      expect(m.choiceSpread).toBeCloseTo(bound * 0.9999, 12);
+      expect(m.provenance.choiceSpread.tier).toBe(4);
+      expect(m.provenance.choiceSpread.label).toBe('Choice spread: invented (fit at search bound)');
+    }
+    const inside = model(0.4).provenance.choiceSpread;
+    expect(inside.tier).toBe(2);
+    expect(inside.method).toContain('3 in the affordable cohort left out');
+  });
+
+  it('warns at a bound, and not inside it or under too few records', () => {
+    expect(choiceSpreadWarning(fit(99.99), LIVE_CAL)).toMatch(
+      /^choice: choiceSpread 99\.99 sits at the search bound .* shipped as tier 4 \(invented\)$/
+    );
+    expect(choiceSpreadWarning(fit(0.4), LIVE_CAL)).toBeNull();
+    expect(choiceSpreadWarning({ ...fit(100), n: 1 }, FIXTURE_CAL)).toBeNull();
+  });
+});
+
+describe('measureOverlap', () => {
+  it('reads every year once and counts the hostable rows with choice inputs', async () => {
+    const ctx = choiceCtxOf(panelTable, choiceModel(0.5), heightTime);
+    const reads: number[] = [];
+    const src: PanelSource = {
+      years: panelSrc.years,
+      async read(y) {
+        reads.push(y);
+        return panelSrc.read(y);
+      }
+    };
+    const out = await measureOverlap(src, ctx);
+    expect(reads).toEqual([2018, 2019]);
+    // rows A and B each year; C has no choice inputs
+    expect(out.n).toBe(4);
   });
 });

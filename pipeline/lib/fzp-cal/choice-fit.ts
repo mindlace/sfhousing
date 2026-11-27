@@ -32,6 +32,7 @@ import { isoToDay } from '../../project-records/multiphase';
 import type { RecordTargets } from '../building-records';
 import { primaryParcel, type PanelSource, type PanelYearRow } from './panel';
 import type { NormHistory } from './types';
+import { startCohort, type StartCohort } from '../affordable-cohort';
 import { PLANNING_START } from './window';
 
 /** One record: its lot's options (rising in stories), location value, limit and built stories. */
@@ -46,6 +47,8 @@ export interface ChoiceRecord {
   existing?: number;
   /** The density cap in homes; none when absent. */
   cap?: number | null;
+  /** The start cohort of the record's project (affordable-cohort.ts); absent counts as market. */
+  cohort?: StartCohort;
 }
 
 export interface ChoiceSpreadFit {
@@ -204,17 +207,43 @@ export function fitChoiceSpread(
   };
 }
 
+/** Whether the cohort check measured a difference: a finite difference and an SE above 0. */
+export function affordableRuleMeasurable(t: { diff: number; se: number }): boolean {
+  return Number.isFinite(t.diff) && Number.isFinite(t.se) && t.se > 0;
+}
+
 /**
  * The affordable projects' rule (spec, owner decision): 'most-homes' (rule A) exactly when the
  * affordable mean of built height ÷ limit exceeds the private mean by more than 2 SE of the
- * difference, else 'market'.
+ * difference, else 'market'. Without a measurable difference it is 'market'.
  */
 export function affordableRule(t: RecordTargets['cohort']): {
   rule: 'most-homes' | 'market';
   diff: number;
   se: number;
 } {
-  return { rule: t.diff > 2 * t.se ? 'most-homes' : 'market', diff: t.diff, se: t.se };
+  const rule = affordableRuleMeasurable(t) && t.diff > 2 * t.se ? 'most-homes' : 'market';
+  return { rule, diff: t.diff, se: t.se };
+}
+
+/**
+ * The records the market spread is fitted on: all of them under the market rule; under
+ * 'most-homes' those whose project is not in the affordable cohort, since affordable projects
+ * then choose by rule A, not the market rule. `affordable` counts the records left out.
+ */
+export function marketRecords(
+  records: readonly ChoiceRecord[],
+  rule: 'most-homes' | 'market'
+): { records: ChoiceRecord[]; affordable: number } {
+  if (rule === 'market') return { records: [...records], affordable: 0 };
+  const kept = records.filter((r) => r.cohort !== 'affordable');
+  return { records: kept, affordable: records.length - kept.length };
+}
+
+/** Whether a fitted spread sits at either end of SPREAD_RANGE (within 0.1% on the log scale). */
+export function atSearchBound(fit: Pick<ChoiceSpreadFit, 'choiceSpread'>): boolean {
+  const s = fit.choiceSpread;
+  return Number.isFinite(s) && SPREAD_RANGE.some((b) => Math.abs(log(s / b)) < 1e-3);
 }
 
 /** Row `i` of an option table as options. */
@@ -259,7 +288,10 @@ export async function choiceRecords(
 ): Promise<{ records: ChoiceRecord[]; measured: number; noPanelRow: number }> {
   const from = isoToDay(PLANNING_START);
   const years = [...panel.years].sort((a, b) => a - b);
-  const wanted = new Map<number, { parcel: ParcelId; stories: number; limit: number }[]>();
+  const wanted = new Map<
+    number,
+    { parcel: ParcelId; stories: number; limit: number; cohort: StartCohort }[]
+  >();
   let measured = 0;
   for (const h of [...norm].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const first = firstRecord(h);
@@ -273,7 +305,12 @@ export async function choiceRecords(
     const year = years.filter((v) => v <= y).pop() ?? years[0];
     if (year === undefined) continue;
     const list = wanted.get(year) ?? [];
-    list.push({ parcel: primaryParcel(h.parcelIds, lotArea), stories, limit });
+    list.push({
+      parcel: primaryParcel(h.parcelIds, lotArea),
+      stories,
+      limit,
+      cohort: startCohort(h.src.planningProposed)
+    });
     wanted.set(year, list);
   }
   const records: ChoiceRecord[] = [];
@@ -291,7 +328,8 @@ export async function choiceRecords(
         limit: w.limit,
         stories: w.stories,
         existing: c.existingUnits,
-        cap: c.baseCap
+        cap: c.baseCap,
+        cohort: w.cohort
       });
     }
   }
@@ -340,4 +378,28 @@ export function marginOverlap(ctx: ChoiceCtx) {
       return { r: n > 1 && vx > 0 && vy > 0 ? cov / Math.sqrt(vx * vy) : NaN, n };
     }
   };
+}
+
+/**
+ * The margin's overlap with the market slope over a panel, as its own pass: every hostable row
+ * with choice inputs, every year read once.
+ */
+export async function measureOverlap(
+  panel: PanelSource,
+  ctx: ChoiceCtx
+): Promise<{ r: number; n: number }> {
+  const overlap = marginOverlap(ctx);
+  for (const y of panel.years) {
+    for (const row of await panel.read(y)) {
+      const c = row.choice;
+      if (!c || !row.hostableBase) continue;
+      overlap.add(
+        c.optionRow,
+        allowedCount(ctx.t, c.optionRow, c.baseStories),
+        c.baseCap,
+        c.existingUnits
+      );
+    }
+  }
+  return overlap.result();
 }

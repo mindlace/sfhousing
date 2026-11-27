@@ -187,7 +187,9 @@ shipped step; golden-section search on ln choiceSpread in [0.001, 100]. Records
 (`choiceRecords`): histories first recorded from 2015-01-01 to `asOf` with proposed and base
 stories at filing of at least 1, on their largest parcel's panel row of the first record's roll
 year, with that year's existing homes and base cap. A record over its limit is left out and
-counted (`excludedOver`, the same histories `sizeOverEnvelope` counts); a record whose stories
+counted (`excludedOver`, the same histories `sizeOverEnvelope` counts); under the affordable
+rule 'most-homes', records whose project is in the affordable cohort are left out and counted
+(`marketRecords`), since they choose by rule A; a record whose stories
 no gaining option has takes the options at the nearest stories. The panel options carry today's
 locationValue, not the roll year's: the index is against each roll year's median, so the fit
 assumes neighbourhoods kept their rank. Under `sizeMinN` records the spread is 1, tier 4
@@ -218,21 +220,23 @@ of the row's best option (`uncoveredPerHome ÷ costPerHome` of the prototype it 
 per-project share behind `typicalUncoveredShare`). `calibration.market` is recomputed from the
 refitted model by the unchanged `market.ts`.
 
-**Live figures** (build `2026-11-27-00c716fd`, uncommitted tree, not uploaded):
+**Live figures** (build `2026-11-27-6264ccf1`, uncommitted tree, not uploaded):
 
-- choiceSpread 99.99, at the search's upper bound, from 581 records (817 measured, 2 without a
-  panel row, 171 over their limit, 63 with no gaining option). Log-likelihood -1906.5 at 0.01,
-  -847.6 at 0.1, -826.7 at 1, -823.5 at 10, -823.1 at 100: the records rule out a sharp choice
-  but do not fix the spread above about 1. On the 581 records the mean built stories ÷ limit is
-  0.81; a uniform draw over the allowed gaining options gives 0.68; the tallest allowed option
-  matches 43% of records and the most-homes option 24%.
+- choiceSpread 99.99, at the search's upper bound, from 562 records (817 measured, 2 without a
+  panel row, 49 affordable-cohort records left out under 'most-homes', 144 over their limit, 60
+  with no gaining option). Log-likelihood -1853.9 at 0.01, -813.1 at 0.1, -792.5 at 1, -789.2 at
+  10, -788.9 at 100: the records rule out a sharp choice but do not identify the spread above
+  about 1. A fit at either bound ships as tier 4, "invented (fit at search bound)", and the build
+  warns. On the first build's 581 records the mean built stories ÷ limit is 0.81; a uniform draw
+  over the allowed gaining options gives 0.68; the tallest allowed option matches 43% of records
+  and the most-homes option 24%.
 - Affordable rule 'most-homes': affordable mean 1.228 (n = 38), private 1.014 (n = 481),
   difference 0.214 against 2 SE = 0.1995.
-- `choiceMargin` bins merge to `[-100, 0, 0.001, 0.02]`, coefficients 0.738, -1.863, 0.816,
-  0.308: a lot exactly at break-even starts least often. Its correlation with the slope's cost
+- `choiceMargin` bins merge to `[-100, 0, 0.001, 0.02]`, coefficients 0.720, -1.833, 0.827,
+  0.287: a lot exactly at break-even starts least often. Its correlation with the slope's cost
   share is r = -0.0046.
 - Height bands merge to ≤ 4, 5 to 7 and 8+; construction months 23.6, 25.8, 23.6.
-- `today.all` -0.544734, `today.private` -0.618236 (docs/dev/market.md).
+- `today.all` -0.545606, `today.private` -0.619108 (docs/dev/market.md).
 
 **V25** (`choiceOutcomes`, `invariants.ts`) checks both keys: one step each from `asOf`, a
 spread above 0, a known affordable rule, positive anchors and cost ratio, carrying in [0, 1],

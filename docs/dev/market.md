@@ -119,12 +119,11 @@ section 11):
   `costCoefficient` 11.4345, `priceCoefficient` 2.01297.
 - `crossCheck.logOdds` = -1.28933; the gap to `today.all` is 0.64737.
 
-**Building-choice refit** (Task 8; live build `2026-11-27-00c716fd` from the uncommitted tree,
+**Building-choice refit** (Task 8; live build `2026-11-27-6264ccf1` from the uncommitted tree,
 not uploaded; `market.ts` unchanged). The start model gains the `choiceMargin` term and takes
 `potentialRatio` and `storiesGap` from the choice, so `today` is recomputed against it:
-`observed` 127 (private 118) in 2023-2025 against `implied` 218.967, so `today.all` =
-ln(127 ÷ 218.967) = -0.544734 and `today.private` = -0.618236; the reproduction check gives
-127.019. The margin's correlation with the slope's cost share over the at-risk panel is
+`observed` 127 (private 118) in 2023-2025, so `today.all` = -0.545606 and `today.private` =
+-0.619108. The margin's correlation with the slope's cost share over the at-risk panel is
 r = -0.0046 (1,309,634 parcel-years), so the two barely overlap on today's single cost step.
 
 **Acceptance 7.3.** `|today.all - (-0.643571)| <= 0.10` (tier 4 tolerance). Outcome: met. The live

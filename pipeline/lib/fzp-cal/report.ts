@@ -1,7 +1,7 @@
 /**
  * `calibration-report.md` (stage-calibration spec §4.10; section 11, market-baseline spec §4.7;
- * sections 12 and 13, finance-data spec 4.7 and 4.8; section 16, building-choice spec): the sections in order, deterministic
- * Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
+ * sections 12 and 13, finance-data spec 4.7 and 4.8; section 16, building-choice spec): the
+ * sections in order, deterministic Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
  * `num`, which writes a non-finite value as "none".
  */
 import { isoOf } from '../../project-records/parse';
@@ -79,6 +79,8 @@ export interface ReportInput {
     /** histories passing the record filters, and those of them with no panel row */
     measured: number;
     noPanelRow: number;
+    /** affordable-cohort records left out of the market fit under 'most-homes' */
+    affordableLeftOut: number;
     affordable: { rule: 'most-homes' | 'market'; diff: number; se: number } & {
       cohort: RecordTargets['cohort'];
     };
@@ -1053,7 +1055,7 @@ export function siteChoiceSection(x: ReportInput): string[] {
   ];
 }
 
-/** The calibration report (spec §4.10): thirteen sections, deterministic. */
+/** Section 16: the choice spread, the affordable rule, the margin's overlap, prices and bands. */
 function choiceSection(x: ReportInput): string[] {
   const c = x.calibration.choice;
   const ht = x.calibration.heightTime;
@@ -1071,7 +1073,7 @@ function choiceSection(x: ReportInput): string[] {
     '',
     `### Choice spread (tier ${c.provenance.choiceSpread.tier}, n = ${num(s.n)})`,
     '',
-    `choiceSpread = ${num(c.choiceSpread)}; fitted ${num(s.choiceSpread)}, log-likelihood ${num(s.logLik)}, search [${SPREAD_RANGE.join(', ')}]. Records: ${x.choice.measured} measured histories; ${x.choice.noPanelRow} without a panel row; ${s.excludedOver} over their limit left out; ${s.noOption} with no option gaining a home left out; ${s.n} in the likelihood. calibration.method.sizeOverEnvelope = ${x.sizeOverEnvelope.fired} of ${x.sizeOverEnvelope.of}.`,
+    `choiceSpread = ${num(c.choiceSpread)}; fitted ${num(s.choiceSpread)}, log-likelihood ${num(s.logLik)}, search [${SPREAD_RANGE.join(', ')}]. Records: ${x.choice.measured} measured histories; ${x.choice.noPanelRow} without a panel row; ${x.choice.affordableLeftOut} in the affordable cohort left out (rule ${c.affordableRule}); ${s.excludedOver} over their limit left out; ${s.noOption} with no option gaining a home left out; ${s.n} in the likelihood. calibration.method.sizeOverEnvelope = ${x.sizeOverEnvelope.fired} of ${x.sizeOverEnvelope.of}.`,
     '',
     ...table(
       ['choiceSpread', 'log-likelihood'],
@@ -1122,6 +1124,7 @@ function choiceSection(x: ReportInput): string[] {
   ];
 }
 
+/** The calibration report (spec §4.10): its sections in order, deterministic. */
 export function calibrationReport(x: ReportInput): string {
   const sections = [
     header(x),

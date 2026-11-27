@@ -27,7 +27,6 @@ import type {
 } from '../../../src/lib/timelapse/types';
 import type { FundingFile } from '../../enrichment/funding-schema';
 import type { MarketFile } from '../../enrichment/market-schema';
-import { log } from '../../../src/lib/timelapse/math';
 import { isoOf } from '../../project-records/parse';
 import { isoToDay } from '../../project-records/multiphase';
 import { recordTargets, type RecordTargets } from '../building-records';
@@ -37,7 +36,11 @@ import {
   affordableRule,
   choiceRecords,
   fitChoiceSpread,
-  marginOverlap,
+  marketRecords,
+  measureOverlap,
+  atSearchBound,
+  affordableRuleMeasurable,
+  SPREAD_RANGE,
   type ChoiceSpreadFit
 } from './choice-fit';
 import { baselineFunding } from './funding';
@@ -185,6 +188,18 @@ export function fzpApplication(
   };
 }
 
+/**
+ * The build warning for a spread fit that sits at a search bound (the shipped value is then the
+ * invented bound), or null.
+ */
+export function choiceSpreadWarning(spread: ChoiceSpreadFit, cal: CalProfile): string | null {
+  if (spread.n < cal.sizeMinN || !atSearchBound(spread)) return null;
+  return (
+    `choice: choiceSpread ${g(spread.choiceSpread)} sits at the search bound of [${SPREAD_RANGE.join(', ')}] ` +
+    `over ${spread.n} records: the records do not identify it; shipped as tier 4 (invented)`
+  );
+}
+
 /** The spread a fit with too few records takes (tier 4, invented). */
 export const FALLBACK_CHOICE_SPREAD = 1;
 
@@ -201,40 +216,54 @@ export function choiceModelOf(
   cohort: RecordTargets['cohort'],
   locationValue: Provenance,
   cal: CalProfile,
-  asOf: Day
+  asOf: Day,
+  o: { affordableLeftOut?: number } = {}
 ): ChoiceModel {
   const window: [string, string] = [PLANNING_START, isoOf(asOf)];
   const sources = [datasf('planningProjects'), datasf('permits')];
   const fitted = spread.n >= cal.sizeMinN && Number.isFinite(spread.choiceSpread);
-  const bound = fitted && Math.abs(log(spread.choiceSpread / 100)) < 1e-3;
+  const bound = fitted && atSearchBound(spread);
   const records =
     `${spread.n} histories first recorded ${window[0]} to ${window[1]} with proposed and base ` +
     `stories at filing of at least 1 on a panel row; ${spread.excludedOver} over their limit ` +
-    `left out (sizeOverEnvelope), ${spread.noOption} with no option gaining a home left out`;
-  const choiceSpread: Provenance = fitted
+    `left out (sizeOverEnvelope), ${spread.noOption} with no option gaining a home left out, ` +
+    `${o.affordableLeftOut ?? 0} in the affordable cohort left out (they choose by rule A)`;
+  const method =
+    `maximum likelihood of each record's built stories under the market choice among its ` +
+    `lot's options allowed at its base stories at filing (choose.ts choiceRow, the shipped ` +
+    `step), golden-section on ln choiceSpread in [${SPREAD_RANGE.join(', ')}]; ${records}; ` +
+    `log-likelihood ${g(spread.logLik)}; ` +
+    "locationValue is today's for every record (the panel options carry no past value), " +
+    "an index against each roll year's median, so it assumes neighbourhoods kept their rank";
+  const choiceSpread: Provenance = bound
     ? {
-        tier: 2,
-        label: `SF Planning & permit records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: choice spread (tier 2)`,
+        tier: 4,
+        label: 'Choice spread: invented (fit at search bound)',
         sources,
         method:
-          `maximum likelihood of each record's built stories under the market choice among its ` +
-          `lot's options allowed at its base stories at filing (choose.ts choiceRow, the shipped ` +
-          `step), golden-section on ln choiceSpread in [0.001, 100]; ${records}; log-likelihood ` +
-          `${g(spread.logLik)}${bound ? '; at the upper bound: the records barely fix the spread' : ''}; ` +
-          "locationValue is today's for every record (the panel options carry no past value), " +
-          "an index against each roll year's median, so it assumes neighbourhoods kept their rank",
+          `the likelihood is highest at the search bound ${g(spread.choiceSpread)}, an invented ` +
+          `limit, so the records do not identify the spread and the bound is shipped; ${method}`,
         n: spread.n,
         window
       }
-    : {
-        tier: 4,
-        label: 'Choice spread: invented, too few records to fit',
-        sources,
-        method: `invented value ${FALLBACK_CHOICE_SPREAD}: only ${spread.n} records (fewer than SIZE_MIN_N = ${cal.sizeMinN}); ${records}`,
-        n: spread.n,
-        window
-      };
-  const known = Number.isFinite(aff.diff) && Number.isFinite(aff.se) && aff.se > 0;
+    : fitted
+      ? {
+          tier: 2,
+          label: `SF Planning & permit records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: choice spread (tier 2)`,
+          sources,
+          method,
+          n: spread.n,
+          window
+        }
+      : {
+          tier: 4,
+          label: 'Choice spread: invented, too few records to fit',
+          sources,
+          method: `invented value ${FALLBACK_CHOICE_SPREAD}: only ${spread.n} records (fewer than SIZE_MIN_N = ${cal.sizeMinN}); ${records}`,
+          n: spread.n,
+          window
+        };
+  const known = affordableRuleMeasurable(aff);
   const affordable: Provenance = known
     ? {
         tier: 2,
@@ -295,46 +324,32 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     return i === undefined ? 0 : parcels.lotAreaM2[i];
   };
   const step = shippedStep({ histories: input.histories, permits, asOf, cal });
+  // The affordable rule comes first: under 'most-homes' affordable records leave the market fit.
+  const targets = recordTargets(input.histories, permits, parcels, asOf);
+  const aff = affordableRule(targets.cohort);
   const recs = await choiceRecords(p.norm, input.panel, input.panelOptions, lotArea, asOf);
+  const market = marketRecords(recs.records, aff.rule);
   const spread = fitChoiceSpread(
-    recs.records,
+    market.records,
     step.prices,
     step.heightTime.steps[0].value,
     step.heightTime.upTo
   );
-  const targets = recordTargets(input.histories, permits, parcels, asOf);
-  const aff = affordableRule(targets.cohort);
-  const choice = choiceModelOf(step, spread, aff, targets.cohort, input.locationValue, cal, asOf);
+  const choice = choiceModelOf(step, spread, aff, targets.cohort, input.locationValue, cal, asOf, {
+    affordableLeftOut: market.affordable
+  });
   const heightTime = step.heightTime;
   const panelCtx = choiceCtxOf(input.panelOptions, choice, heightTime);
-  const overlap = marginOverlap(panelCtx);
   const filled = withChoiceFeatures(input.panel, panelCtx);
-  const panelSrc: PanelSource = {
-    years: filled.years,
-    async read(y) {
-      const rows = await filled.read(y);
-      for (const r of rows) {
-        const c = r.choice;
-        if (!c || !r.hostableBase) continue;
-        overlap.add(
-          c.optionRow,
-          allowedCount(input.panelOptions, c.optionRow, c.baseStories),
-          c.baseCap,
-          c.existingUnits
-        );
-      }
-      return rows;
-    }
-  };
 
   // §4.6 initiation.
   const ev = initiationEvents(p.norm, firstFiled, lotArea);
-  const panel = await aggregatePanel(panelSrc, ev, INITIAL_EDGES);
+  const panel = await aggregatePanel(filled, ev, INITIAL_EDGES);
   const fzpCtx = choiceCtxOf(input.options, choice, heightTime);
   const init = fitInitiation(panel, cal, fzpApplication(parcels, input.inFlight, fzpCtx), {
     permitOnlyPre2015: n.method.permitOnlyPre2015
   });
-  const marginVsSlope = overlap.result();
+  const marginVsSlope = await measureOverlap(filled, panelCtx);
   // Today's market (market-baseline spec §4.6), from the initiation report and the panel starts.
   const r = init.report;
   const mk = marketModel({
@@ -419,6 +434,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'calibration.choice.excludedOver': spread.excludedOver,
     'calibration.choice.noOption': spread.noOption,
     'calibration.choice.noPanelRow': recs.noPanelRow,
+    'calibration.choice.affordableLeftOut': market.affordable,
     'calibration.choice.mostHomes': choice.affordableRule === 'most-homes' ? 1 : 0,
     'calibration.rung3': fit.rung3,
     'calibration.noFcd.flaggedPooled': fit.noFcdFlaggedPooled,
@@ -452,6 +468,8 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     );
   }
   warnings.push(...mk.report.warnings);
+  const spreadWarning = choiceSpreadWarning(spread, cal);
+  if (spreadWarning) warnings.push(spreadWarning);
   // A fixture build takes the routes fallback by design and does not warn (spec 4.4).
   if (ar.fallback && cal.name !== 'fixture') warnings.push(routesWarning(ar.n));
   warnings.push(...bf.warnings);
@@ -474,6 +492,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
       spread,
       measured: recs.measured,
       noPanelRow: recs.noPanelRow,
+      affordableLeftOut: market.affordable,
       affordable: { ...aff, cohort: targets.cohort },
       marginVsSlope,
       filedToIssued: step.filedToIssued,
