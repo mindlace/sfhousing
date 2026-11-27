@@ -363,5 +363,11 @@ describe('main', () => {
     writeFileSync(t, JSON.stringify(targets()));
     expect(await main([FIXTURE, '--targets', t, '--histories', '/nonexistent/h.json'], io)).toBe(2);
     expect(err[2]).toMatch(/^record-check: no project histories at /);
+    const h = join(t, '..', 'project-histories.json');
+    writeFileSync(h, JSON.stringify({ schema: 1, asOf: 20_001, histories: [] }));
+    expect(await main([FIXTURE, '--targets', t, '--histories', h], io)).toBe(2);
+    expect(err[3]).toBe(
+      `record-check: asOf differs: targets ${t} 20000, histories ${h} 20001 (not one build)`
+    );
   });
 });

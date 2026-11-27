@@ -523,12 +523,12 @@ export function inLimitHeightRatio(
   histories: readonly ProjectHistory[],
   asOf: Day
 ): RecordTargets['heightRatio'] {
-  const within = histories.filter(
-    (h) =>
-      h.storiesProposed === null ||
-      h.baseStoriesAtFiling === null ||
-      h.storiesProposed <= h.baseStoriesAtFiling
-  );
+  // A history without stories or a base is kept here and dropped by recordTargets itself.
+  const over = (h: ProjectHistory) =>
+    h.storiesProposed !== null &&
+    h.baseStoriesAtFiling !== null &&
+    h.storiesProposed > h.baseStoriesAtFiling;
+  const within = histories.filter((h) => !over(h));
   const none = { index: new Map(), lotAreaM2: new Uint32Array(0), baseStories: new Uint8Array(0) };
   return recordTargets(within, [], none, asOf).heightRatio;
 }
@@ -769,6 +769,12 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
     const historiesPath =
       args.histories ?? join(ROOT, 'pipeline/.cache/derived', version, 'project-histories.json');
     const hf = readHistories(historiesPath);
+    if (hf.asOf !== targets.asOf) {
+      throw new Error(
+        `asOf differs: targets ${targetsPath} ${targets.asOf}, histories ${historiesPath} ` +
+          `${hf.asOf} (not one build)`
+      );
+    }
     const inLimit = inLimitHeightRatio(hf.histories, hf.asOf);
     const warnings: string[] = [];
     const worlds = await openWorlds(args.dir, { warn: (m) => warnings.push(m) });
