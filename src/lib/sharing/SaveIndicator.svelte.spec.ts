@@ -29,6 +29,29 @@ describe('SaveIndicator', () => {
     expect(state().element().getBoundingClientRect().width).toBe(width);
   });
 
+  it('with fold, below sm it takes no width while nothing shows; from sm it keeps it', async () => {
+    onTestFinished(() => page.viewport(1280, 900));
+    await page.viewport(375, 700);
+    const { rerender } = await render(SaveIndicator, { status: 'saved', fold: true });
+    const state = () => page.getByTestId('save-state');
+    const width = () => state().element().getBoundingClientRect().width;
+    await expect.element(state()).toHaveAttribute('data-save-status', 'saved');
+    expect(width()).toBe(0);
+
+    await rerender({ status: 'saving', fold: true });
+    await expect.element(page.getByTestId('save-text')).toBeVisible();
+    expect(width()).toBeGreaterThan(0);
+    await rerender({ status: 'off', fold: true });
+    await expect.element(page.getByRole('button', { name: COPY.autosaveOff })).toBeVisible();
+    expect(width()).toBeGreaterThan(0);
+
+    await rerender({ status: 'saved', fold: true });
+    await expect.element(state()).toHaveAttribute('data-save-status', 'saved');
+    expect(width()).toBe(0);
+    await page.viewport(1280, 900);
+    await expect.poll(width).toBeGreaterThan(0);
+  });
+
   it('shows "Saving…" for saving', async () => {
     render(SaveIndicator, { status: 'saving' });
     const text = page.getByTestId('save-text');

@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Test host: SiteHeader on /sim with the real GoalHeadline pinned, plus an area outside the
-  // header. Pins where the headline's root nodes sit (in the pinned box). With `status` the
-  // header's status cell holds an "Autosave off" button.
+  // Test host: SiteHeader on / (the simulation) with the real GoalHeadline pinned, plus an area
+  // outside the header. Pins where the headline's root nodes sit (in the pinned box). With
+  // `status` the header's status cell holds an "Autosave off" button.
   import type { ComponentProps } from 'svelte';
   import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
   import { provideGame, type GameStore } from '$lib/game/store.svelte';
@@ -28,5 +28,5 @@
   <button type="button" data-testid="status-control">Autosave off</button>
 {/snippet}
 
-<SiteHeader routeId="/sim" {pinned} status={status ? statusCell : undefined} />
+<SiteHeader routeId="/" {pinned} status={status ? statusCell : undefined} />
 <div data-testid="outside" style="height: 400px">Map</div>

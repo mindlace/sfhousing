@@ -1240,7 +1240,7 @@
 
 {#snippet saveState(covered: boolean)}
   {#if autosave}
-    <SaveIndicator status={autosave.status} {covered} align="start" />
+    <SaveIndicator status={autosave.status} {covered} align="start" fold={!!game && !game.open} />
   {/if}
 {/snippet}
 

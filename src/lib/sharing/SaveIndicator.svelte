@@ -6,7 +6,8 @@
   let {
     status,
     align = 'end',
-    covered = false
+    covered = false,
+    fold = false
   }: {
     status: SaveStatus;
     /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left; right
@@ -17,6 +18,11 @@
      * the popover closes; the live region keeps speaking.
      */
     covered?: boolean;
+    /**
+     * A game's header: below sm, while nothing shows, the cell takes no width (the pinned goal
+     * needs the room on a phone); from sm it keeps the width of "Saving…" as always.
+     */
+    fold?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -59,14 +65,20 @@
 <svelte:window onkeydown={onWindowKeydown} onpointerdown={onWindowPointerdown} />
 
 <!-- One inline grid cell: the invisible sizer holds the width of "Saving…" so the header never moves
-  when the text comes or goes; the shown text and the "Autosave off" button share its cell. -->
+  when the text comes or goes; the shown text and the "Autosave off" button share its cell. With
+  `fold`, below sm, the sizer goes while nothing shows. -->
 <div
   class="relative inline-grid items-center text-xs text-gray-700 dark:text-gray-300"
   data-testid="save-state"
   data-save-status={status}
   bind:this={root}
 >
-  <span class="invisible col-start-1 row-start-1 whitespace-nowrap" aria-hidden="true">Saving…</span
+  <span
+    class={[
+      'invisible col-start-1 row-start-1 whitespace-nowrap',
+      fold && status === 'saved' && 'max-sm:hidden'
+    ]}
+    aria-hidden="true">Saving…</span
   >
   {#if status === 'off'}
     <button

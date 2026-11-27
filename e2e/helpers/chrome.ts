@@ -9,8 +9,10 @@ export async function expectNoFooter(page: Page): Promise<void> {
 }
 
 /**
- * The header's About entry (in the Menu below lg): visible, fully in the viewport, the topmost
- * element at its centre, and tappable (trial). Closes the Menu again if it opened it.
+ * The header's About entry (in the Menu): visible, scrolled into view inside the Menu's panel
+ * (which scrolls in itself when it is taller than the room under the header, a landscape phone),
+ * then fully in the viewport, the topmost element at its centre, and tappable (trial). Closes the
+ * Menu again if it opened it.
  */
 export async function expectAboutReachable(page: Page): Promise<void> {
   const banner = page.getByRole('banner');
@@ -20,6 +22,8 @@ export async function expectAboutReachable(page: Page): Promise<void> {
   await openHeaderMenu(page);
   const about = banner.getByRole('link', { name: 'About', exact: true });
   await expect(about).toBeVisible();
+  // Inside the panel only: the panel is the nearest scroller, and the page itself does not scroll.
+  await about.evaluate((el) => el.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
   await expect(about).toBeInViewport({ ratio: 1 });
   const hit = await about.evaluate((el) => {
     const r = el.getBoundingClientRect();

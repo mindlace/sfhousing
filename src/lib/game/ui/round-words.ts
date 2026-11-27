@@ -18,8 +18,11 @@ export interface PinnedCtx {
 export interface PinnedWords {
   line1: string;
   line2: string;
-  /** Below sm, one line: count, then homes (may hide), then rest. */
-  phone: { count: string; short: string; homes: string; rest: string };
+  /**
+   * Below sm: count, then homes (may hide), then rest (the month); then result (the early or late
+   * part, '' while pending), which wraps beneath when the line has no room for it.
+   */
+  phone: { count: string; short: string; homes: string; rest: string; result: string };
   /** What a screen reader is told when this state arrives; null for pending. */
   live: string | null;
   /** The gift's accessible name in a win; null otherwise. */
@@ -53,7 +56,7 @@ export function pinnedWords(v: Verdict, c: PinnedCtx): PinnedWords {
     return {
       line1: `${count} homes ${when}`,
       line2,
-      phone: { count, short, homes: ' homes', rest: when },
+      phone: { count, short, homes: ' homes', rest: when, result: '' },
       live: null,
       gift: null
     };
@@ -81,7 +84,7 @@ export function pinnedWords(v: Verdict, c: PinnedCtx): PinnedWords {
   return {
     line1,
     line2,
-    phone: { count, short, homes: '', rest: `${when} · ${line2}` },
+    phone: { count, short, homes: '', rest: when, result: line2 },
     live: `${line1}, ${line2}.${gift === null ? '' : ` ${gift}.`}`,
     gift
   };

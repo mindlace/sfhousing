@@ -3,7 +3,8 @@
   the round's words, a bar (the homes at the playhead's month over the amount), line 2 what
   beating it brings or by how much it was early or late. Below sm one line from `words.phone`,
   from the bar's left up to the Menu, the bar under it: "homes" hides first as the box narrows,
-  then the short count replaces the full one; the rest is always shown. A win carries the gift
+  then the short count replaces the full one; the month is always shown, and the early or late
+  part wraps beneath it when the line has no room for it (never cut off). A win carries the gift
   (with `ongift`), a 24 px button that jiggles (still under reduced motion), and an accent border
   on top of its words. Win and late arriving after mount are announced in `goal-live`. With
   `panel` the lines are a button that opens it under the goal; without, plain text. The panel is a
@@ -93,13 +94,17 @@
 
 {#snippet lines()}
   <span data-testid="goal-line1" class="truncate font-semibold max-sm:hidden">{words.line1}</span>
+  <!-- One line when it fits; else the early or late part wraps beneath the first part. -->
   <span
     data-testid="goal-phone"
-    class="goal-phone block text-xs leading-tight font-semibold sm:hidden"
-    ><span class="goal-count">{words.phone.count}</span><span class="goal-short"
-      >{words.phone.short}</span
-    ><span class="goal-homes">{words.phone.homes}</span>
-    <span class="goal-rest">{words.phone.rest}</span></span
+    class="goal-phone flex flex-wrap items-baseline gap-x-1 text-xs leading-tight font-semibold sm:hidden"
+    ><span class="goal-first"
+      ><span class="goal-count">{words.phone.count}</span><span class="goal-short"
+        >{words.phone.short}</span
+      ><span class="goal-homes">{words.phone.homes}</span>
+      <span class="goal-rest">{words.phone.rest}</span></span
+    >{#if words.phone.result !== ''}<span class="goal-result">· {words.phone.result}</span
+      >{/if}</span
   >
   <span
     aria-hidden="true"
@@ -128,7 +133,7 @@
       bind:this={box}
       data-testid="goal-box"
       class={[
-        'flex max-w-80 min-w-6 items-center gap-1 rounded-md border bg-surface px-2 text-sm leading-tight whitespace-nowrap text-ink tabular-nums max-sm:max-w-none max-sm:flex-1 max-sm:px-1.5 dark:bg-surface-dark dark:text-ink-dark',
+        'flex max-w-80 min-w-6 items-center gap-1 rounded-md border bg-surface px-2 text-sm leading-tight whitespace-nowrap text-ink tabular-nums max-sm:max-w-none max-sm:flex-1 max-sm:px-1 dark:bg-surface-dark dark:text-ink-dark',
         result === 'win'
           ? 'border-accent dark:border-accent-dark'
           : 'border-gray-300 dark:border-gray-600'

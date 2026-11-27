@@ -52,7 +52,8 @@ store's reset (no undo step).
 The header has no steps; the site name is the way home. In the opening it shows the name, the save
 state, the pinned room score, Publish and the Menu button. After it: the name, the round ("Current
 law", "Round 2", "Every policy": plain text, not a control; `round-label`, below sm in the Menu's
-panel beside the name as `round-label-menu`; never for the open game), the save state (or
+panel beside the name as `round-label-menu`; only on `/`, never for the open game and never on
+`/p/<id>`, `/s/<id>` or another page, whatever game the browser holds), the save state (or
 "Updating"), the pinned goal (`GoalHeadline`: pending, win or late) and the actions: Undo and Redo while a pointer is
 coarse, Publish and the Menu button. The Menu holds the saved games (`GamePanel`), the account entry
 and About. In the open game the Menu has no game part. Below sm the pinned item leads the bar
@@ -165,10 +166,14 @@ All in `src/lib/game/ui/`; none renders for the open game.
   the round's result state (P19). Props `{ state, words, fill, ongift?, panel? }`: `state` is
   `'pending'`, `'win'` or `'late'`; `words` from `pinnedWords(verdict, ctx)` (`ui/round-words.ts`),
   drawn from sm as line 1, the bar (`fill`, 0 to 1: the homes at the playhead's month over the
-  amount) and line 2. Below sm it is one line, `goal-phone` (count, " homes" in pending, a space,
-  the rest), from the bar's left up to the Menu with the bar under it; the line is an inline-size
-  container: at 17rem or less "homes" hides, at 13rem or less the short count ("82k") replaces the
-  full one, and the rest ("by Mar 2058 · 2 yr 3 mo early") always shows. A win reads "early" in
+  amount) and line 2. Below sm it is `goal-phone` (count, " homes" in pending, a space, the rest:
+  the month, "by Mar 2058"; then in a win or late the result, "· 2 yr 3 mo early"), from the bar's
+  left up to the Menu with the bar under it. It reads on one line when it fits; when it does not
+  (beside "Autosave off" or "Updating"), the result wraps beneath as a second line, within the
+  48 px bar, and nothing is cut off. The line is an inline-size container: at 17rem or less "homes"
+  hides, at 13rem or less the short count ("82k") replaces the full one; the month and the result
+  always show. In a game below sm the save state takes no width while nothing shows
+  (`SaveIndicator`'s `fold`). A win reads "early" in
   words and adds an accent border; with `ongift` it carries the gift, a 24 px button named by
   `words.gift` that jiggles once every `JIGGLE_MS` (4 s, `ui/motion.ts`; a 600 ms turn,
   the keyframes' first 15%) and is still under reduced motion. Win and late arriving after mount put
@@ -415,10 +420,11 @@ journey whole plays about 8 s of months on top of the page's work and nears a te
   editor showing 3219.
 
 `e2e/game-a11y.spec.ts` runs the accessibility checklist on each state ([accessibility.md](accessibility.md)).
-`e2e/game-shell.spec.ts` checks the round's header at 320 px (pending, win, late), a win beside
-"Autosave off" at 320 and 375 px, and the round panel inside the viewport under the header at 320
-and 1280 px. The win and late lines clip at 320 px, and a win beside "Autosave off" clips at 320
-and 375 px: those cases are `test.fixme`, with their measured boxes in the spec.
+`e2e/game-shell.spec.ts` checks the round's header at 320 and 375 px in pending, win and late,
+with no status and beside "Autosave off": every part of the goal line inside the line's box and the
+viewport, the row fitting, the word ("before", "early", "late") drawn; the win on one line at 375 px
+with no status, and wrapped within the 48 px bar at 320 px beside "Autosave off"; and the round
+panel inside the viewport under the header at 320 and 1280 px.
 
 ## The reach check
 

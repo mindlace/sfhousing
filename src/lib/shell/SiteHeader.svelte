@@ -68,9 +68,13 @@
   const game = useGame();
   // The first client render matches the server's: the game's state shows only after mount.
   let mounted = $state(false);
-  /** The round, plain text after the name: a game in its runs, never the open game. */
+  /**
+   * The round, plain text after the name: a game in its runs on the game's page, `/`; never the
+   * open game, and never on another page (a shared plan or policy, About), whatever game the
+   * browser holds.
+   */
   const round = $derived(
-    mounted && !game.open && game.state.phase === 'runs'
+    mounted && routeId === '/' && !game.open && game.state.phase === 'runs'
       ? roundName(game.state.round, game.state.finished)
       : null
   );
@@ -231,6 +235,8 @@
       </svg>
     </button>
   </div>
+  <!-- The panel starts at the header's padding edge, 47 px down (the bar is 48 px with its 1 px
+       bottom border), and ends at the viewport's bottom at most: taller, it scrolls in itself. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
     bind:this={panel}
@@ -238,7 +244,7 @@
     data-header-panel
     class={[
       open
-        ? 'absolute top-full z-50 flex max-h-[calc(100vh-4rem)] flex-col gap-3 overflow-y-auto border-b bg-surface p-4 shadow-lg max-lg:inset-x-0 lg:right-4 lg:w-96 lg:rounded-lg lg:border dark:border-gray-700 dark:bg-chrome-dark'
+        ? 'absolute top-full z-50 flex max-h-[calc(100dvh-47px)] flex-col gap-3 overflow-y-auto overscroll-contain border-b bg-surface p-4 shadow-lg max-lg:inset-x-0 lg:right-4 lg:w-96 lg:rounded-lg lg:border dark:border-gray-700 dark:bg-chrome-dark'
         : 'hidden'
     ]}
     onclick={onpanelclick}

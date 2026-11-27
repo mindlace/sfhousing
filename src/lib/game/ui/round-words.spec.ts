@@ -26,7 +26,8 @@ describe('pinnedWords', () => {
       count: '82,069',
       short: '82k',
       homes: ' homes',
-      rest: 'before Jun 2060'
+      rest: 'before Jun 2060',
+      result: ''
     });
     expect(w.live).toBeNull();
     expect(w.gift).toBeNull();
@@ -49,7 +50,8 @@ describe('pinnedWords', () => {
       count: '82,069',
       short: '82k',
       homes: '',
-      rest: 'by Mar 2058 · 2 yr 3 mo early'
+      rest: 'by Mar 2058',
+      result: '2 yr 3 mo early'
     });
     expect(w.gift).toBe('Open the gift: 3 new policies');
     expect(w.live).toBe(
@@ -62,7 +64,8 @@ describe('pinnedWords', () => {
     const w = pinnedWords(win(d(2061, 10)), r0);
     expect(w.line1).toBe('82,069 homes by Oct 2061');
     expect(w.line2).toBe('Current law');
-    expect(w.phone.rest).toBe('by Oct 2061 · Current law');
+    expect(w.phone.rest).toBe('by Oct 2061');
+    expect(w.phone.result).toBe('Current law');
     const n = pinnedWords(win(null), r0);
     expect(n.line1).toBe('82,069 homes after Oct 2066');
     expect(n.line2).toBe('Current law');
@@ -76,7 +79,8 @@ describe('pinnedWords', () => {
     const w = pinnedWords(late(d(2062, 6)), c);
     expect(w.line1).toBe('82,069 homes by Jun 2062');
     expect(w.line2).toBe('2 years late');
-    expect(w.phone.rest).toBe('by Jun 2062 · 2 years late');
+    expect(w.phone.rest).toBe('by Jun 2062');
+    expect(w.phone.result).toBe('2 years late');
     expect(w.gift).toBeNull();
     expect(w.live).toBe('82,069 homes by Jun 2062, 2 years late.');
     expect(pinnedWords(late(d(2060, 6)), c).line2).toBe('Not earlier');

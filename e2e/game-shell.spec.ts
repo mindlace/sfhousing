@@ -117,8 +117,12 @@ const ROUND: Record<'pending' | 'win' | 'late', Partial<GameState>> = {
   late: { phase: 'runs', round: 1, target: monthDay(2035, 1) }
 };
 
-/** A seeded round at `width`, on the simulation, filled; the ruler's End unless pending. */
-async function roundAt(page: Page, width: number, state: 'pending' | 'win' | 'late') {
+/**
+ * A seeded round at `width`, on the simulation, filled; the ruler's End unless pending. With
+ * `off`, storage refuses the policy record, so the autosave is off.
+ */
+async function roundAt(page: Page, width: number, state: 'pending' | 'win' | 'late', off = false) {
+  if (off) await refusePolicyRecord(page);
   await page.setViewportSize({ width, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedRuns(page, ROUND[state], FIXTURE_AMOUNT);
@@ -133,96 +137,103 @@ async function roundAt(page: Page, width: number, state: 'pending' | 'win' | 'la
   await waitResult(page, state);
 }
 
-/**
- * The phone line as drawn: its text, the rest's box against the line's (overflow hidden), and the
- * header's parts as [left, right] for the failure message.
- */
-async function phoneLine(page: Page) {
-  return page.getByTestId('goal-phone').evaluate((line) => {
-    const box = line.getBoundingClientRect();
-    const rest = line.querySelector('.goal-rest')!.getBoundingClientRect();
-    const span = (el: Element | null) => {
-      if (!el || !(el as HTMLElement).checkVisibility()) return null;
-      const r = el.getBoundingClientRect();
-      return [Math.round(r.left * 10) / 10, Math.round(r.right * 10) / 10];
-    };
-    return {
-      text: (line as HTMLElement).innerText,
-      restLeft: rest.left,
-      restRight: rest.right,
-      lineLeft: box.left,
-      lineRight: box.right,
-      parts: {
-        goalBox: span(document.querySelector('[data-testid="goal-box"]')),
-        gift: span(document.querySelector('[data-testid="goal-gift"]')),
-        status: [...document.querySelectorAll('header [data-header-status]')].map(span),
-        menu: span(document.querySelector('header [data-header-menu]'))
-      }
+/** Storage refuses the policy record only: the autosave is off, the game still saves. */
+async function refusePolicyRecord(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+      if (key === 'sfhousing:sim:v2') throw new DOMException('refused', 'QuotaExceededError');
+      return set.call(this, key, value);
     };
   });
 }
 
-/** Each state at 320 px: the word its line must show, and how many gifts it has. */
-const AT_320 = [
+/**
+ * The phone line as drawn: its box, each drawn part's box (count, short count, homes, the rest
+ * and the result), the part holding `word` and the viewport's width, for the checks and their
+ * failure messages.
+ */
+async function phoneLine(page: Page, word: string) {
+  return page.getByTestId('goal-phone').evaluate((line, w) => {
+    const box = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
+    };
+    const parts = ['count', 'short', 'homes', 'rest', 'result']
+      .map((c) => ({ c, el: line.querySelector(`.goal-${c}`) }))
+      .filter((p) => p.el !== null && p.el.getBoundingClientRect().width > 0)
+      .map((p) => ({ c: p.c, text: p.el!.textContent ?? '', ...box(p.el!) }));
+    return {
+      line: box(line),
+      parts,
+      word: parts.find((p) => p.text.includes(w)) ?? null,
+      viewport: innerWidth
+    };
+  }, word);
+}
+
+/** Every drawn part of the line inside the line's box and the viewport; the word drawn whole. */
+function expectWhole(drawn: Awaited<ReturnType<typeof phoneLine>>): void {
+  const why = JSON.stringify(drawn);
+  for (const p of drawn.parts) {
+    expect(p.left, why).toBeGreaterThanOrEqual(drawn.line.left - 0.5);
+    expect(p.right, why).toBeLessThanOrEqual(drawn.line.right + 0.5);
+    expect(p.top, why).toBeGreaterThanOrEqual(drawn.line.top - 0.5);
+    expect(p.bottom, why).toBeLessThanOrEqual(drawn.line.bottom + 0.5);
+    expect(p.right, why).toBeLessThanOrEqual(drawn.viewport);
+  }
+  expect(drawn.word, why).not.toBeNull();
+}
+
+/** Each state's word, and how many gifts it shows. */
+const STATES = [
   { state: 'pending', word: 'before', gifts: 0 },
   { state: 'win', word: 'early', gifts: 1 },
   { state: 'late', word: 'late', gifts: 0 }
 ] as const;
 
-for (const c of AT_320) {
-  test(`at 320 px the round's header fits: ${c.state}`, async ({ page }) => {
-    // At 320 px the win and late lines clip (measured 2026-11-26, both projects, FIXTURE_AMOUNT):
-    // in a win the phone line runs 23 to 173.5 px (the gift 177.5 to 201.5, the status cell 216.5
-    // to 264 with nothing shown in it, the Menu 272 to 304) and its rest "by Sep 2039 · 5 yr 4 mo
-    // early" ends at 223.3, so "early" is cut; late, the line ends at 201.5 and "· 4 yr 8 mo late"
-    // at 216. Reported as a concern in Task 11; the row itself fits and the gift is 24 by 24.
+for (const width of [320, 375])
+  for (const off of [false, true])
+    for (const c of STATES) {
+      test(`at ${width} px ${c.state}${off ? ' beside Autosave off' : ''}: the goal line is whole`, async ({
+        page
+      }) => {
+        await roundAt(page, width, c.state, off);
+        await expect(
+          page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true })
+        ).toHaveCount(off ? 1 : 0);
+        await expectHeaderRowFits(page);
+        expectWhole(await phoneLine(page, c.word));
+        await expect(page.getByTestId('goal-phone')).toContainText(c.word);
+        const gifts = await page
+          .getByTestId('goal-gift')
+          .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+        expect(gifts).toHaveLength(c.gifts);
+        expect(gifts.every((r) => r.width >= 24 && r.height >= 24)).toBe(true);
+      });
+    }
 
-    test.fixme(c.state !== 'pending', 'the win and late lines clip at 320 px (see the comment)');
-    await roundAt(page, 320, c.state);
-    await expectHeaderRowFits(page);
-    const line = await phoneLine(page);
-    expect(line.restRight, `the rest is clipped: ${JSON.stringify(line)}`).toBeLessThanOrEqual(
-      line.lineRight + 0.5
-    );
-    expect(line.text).toContain(c.word);
-    const gifts = await page
-      .getByTestId('goal-gift')
-      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
-    expect(gifts).toHaveLength(c.gifts);
-    expect(gifts.every((r) => r.width >= 24 && r.height >= 24)).toBe(true);
-  });
-}
+test('at 375 px with no status the win line is one line', async ({ page }) => {
+  await roundAt(page, 375, 'win');
+  const drawn = await phoneLine(page, 'early');
+  expectWhole(drawn);
+  expect(new Set(drawn.parts.map((p) => Math.round(p.top))).size, JSON.stringify(drawn)).toBe(1);
+});
 
-for (const width of [320, 375]) {
-  test(`at ${width} px a win with the gift and Autosave off: the goal is not clipped`, async ({
-    page
-  }) => {
-    // With "Autosave off" the status cell is 97 px wide (166.9 to 264 at 320 px, 221.9 to 319 at
-    // 375; measured 2026-11-26, both projects): the phone line ends at 123.9 (320) and 178.9 (375)
-    // and its rest "by Sep 2039 · 5 yr 4 mo early" at 223.3, so "early" is cut. The row fits.
-    // Reported as a concern in Task 11.
-
-    test.fixme(true, 'the win line clips beside Autosave off at 320 and 375 px (see the comment)');
-    // Storage refuses the policy record only: the autosave is off, the game still saves.
-    await page.addInitScript(() => {
-      const set = Storage.prototype.setItem;
-      Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
-        if (key === 'sfhousing:sim:v2') throw new DOMException('refused', 'QuotaExceededError');
-        return set.call(this, key, value);
-      };
-    });
-    await roundAt(page, width, 'win');
-    const off = page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true });
-    await expect(off).toBeVisible();
-    await expect(page.getByTestId('goal-gift')).toBeVisible();
-    await expectHeaderRowFits(page);
-    const line = await phoneLine(page);
-    expect(line.restRight, `the rest is clipped: ${JSON.stringify(line)}`).toBeLessThanOrEqual(
-      line.lineRight + 0.5
-    );
-    expect(line.text).toContain('early');
-  });
-}
+test('at 320 px beside Autosave off the wrapped line keeps the header at its height', async ({
+  page
+}) => {
+  await roundAt(page, 320, 'win', true);
+  await expect(
+    page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true })
+  ).toBeVisible();
+  const drawn = await phoneLine(page, 'early');
+  expectWhole(drawn);
+  const rest = drawn.parts.find((p) => p.c === 'rest')!;
+  const result = drawn.parts.find((p) => p.c === 'result')!;
+  expect(result.top, JSON.stringify(drawn)).toBeGreaterThan(rest.top);
+  expect((await page.getByRole('banner').boundingBox())!.height).toBe(48);
+});
 
 for (const width of [320, 1280]) {
   test(`at ${width} px the round panel opens inside the viewport, under the header`, async ({

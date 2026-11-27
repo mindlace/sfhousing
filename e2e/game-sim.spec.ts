@@ -13,7 +13,7 @@ import {
 import type { SfhFzpDebug } from '../src/lib/fzp/debug';
 import { seedRuns, waitSim } from './helpers/play';
 import { addPolicy, openKind } from './helpers/run';
-import { gotoHydrated, openPublish, type Win } from './helpers/sharing';
+import { gotoHydrated, openHeaderMenu, openPublish, type Win } from './helpers/sharing';
 
 type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
@@ -102,10 +102,17 @@ async function publishFromOpenGame(
   }
 }
 
-/** The view outside the game: no pinned goal, nothing fixed or locked, no Remix. */
+/**
+ * The view outside the game: no pinned goal, no round label in the bar or the Menu, nothing fixed
+ * or locked, no Remix.
+ */
 async function expectOutsideGame(page: Page): Promise<void> {
   await expect(page.getByTestId('tl-mode')).toBeVisible();
   await expect(page.getByTestId('goal-headline')).toHaveCount(0);
+  await openHeaderMenu(page);
+  await expect(page.getByTestId('round-label')).toHaveCount(0);
+  await expect(page.getByTestId('round-label-menu')).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect(page.getByTestId('tl-policy-new')).toHaveCount(0);
   await expect(page.locator('[data-testid="tl-policy"][data-locked]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Remix/ })).toHaveCount(0);

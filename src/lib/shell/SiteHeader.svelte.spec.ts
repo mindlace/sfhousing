@@ -889,6 +889,20 @@ describe('SiteHeader', () => {
         expect(page.getByTestId('round-label').elements()).toEqual([]);
       });
 
+      for (const routeId of ['/s/[id]', '/p/[id]', '/about'])
+        for (const width of [1280, 375])
+          it(`never shows on ${routeId} at ${width} px, in the bar or the Menu`, async () => {
+            await page.viewport(width, 800);
+            const pinned = createRawSnippet(() => ({ render: () => '<span>Pinned</span>' }));
+            render(GameHeaderHost, { game: runs(), routeId, pinned });
+            const menu = page.getByRole('button', { name: 'Menu', exact: true });
+            await menu.click();
+            await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
+            await expect.element(page.getByTestId('game-panel')).toBeVisible();
+            expect(page.getByTestId('round-label').elements()).toEqual([]);
+            expect(page.getByTestId('round-label-menu').elements()).toEqual([]);
+          });
+
       it('below sm with a pinned item it waits in the Menu beside the name, as text', async () => {
         await page.viewport(375, 812);
         render(GoalPinnedHeader, { game: runs(), headline: HEADLINE });
@@ -910,6 +924,58 @@ describe('SiteHeader', () => {
         await expect.element(label()).toBeVisible();
         await page.getByRole('button', { name: 'Menu', exact: true }).click();
         expect(page.getByTestId('round-label-menu').element().getClientRects()).toHaveLength(0);
+      });
+    });
+
+    describe('the Menu panel fits the viewport', () => {
+      const panelOf = () => {
+        const menu = page.getByRole('button', { name: 'Menu', exact: true }).element();
+        return document.getElementById(menu.getAttribute('aria-controls')!)!;
+      };
+      for (const [width, height, saves] of [
+        [667, 375, 3],
+        [320, 568, 3]
+      ] as const)
+        it(`at ${width} by ${height} with ${saves} saved games it ends at the viewport's bottom and scrolls inside`, async () => {
+          await page.viewport(width, height);
+          const pinned = createRawSnippet(() => ({ render: () => '<span>Pinned</span>' }));
+          const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves });
+          render(GameHeaderHost, { game, routeId: '/', pinned });
+          const menu = page.getByRole('button', { name: 'Menu', exact: true });
+          await menu.click();
+          await expect.element(page.getByTestId('game-panel')).toBeVisible();
+          const panel = panelOf();
+          const r = panel.getBoundingClientRect();
+          const style = getComputedStyle(panel);
+          expect(style.overflowY).toBe('auto');
+          expect(style.overscrollBehaviorY).toBe('contain');
+          expect(panel.scrollHeight).toBeGreaterThan(panel.clientHeight);
+          expect(r.bottom).toBeLessThanOrEqual(height);
+          expect(r.bottom).toBeGreaterThan(height - 1);
+          // The last entry, About, is reached by Tab from the Menu button (focus scrolls the
+          // panel) and by scrolling the panel; either way it is then whole in the viewport.
+          const about = page.getByRole('link', { name: 'About', exact: true });
+          (menu.element() as HTMLElement).focus();
+          for (let i = 0; i < 40 && document.activeElement !== about.element(); i++)
+            await userEvent.tab();
+          expect(document.activeElement).toBe(about.element());
+          panel.scrollTop = 0;
+          about.element().scrollIntoView({ block: 'nearest' });
+          await expect
+            .poll(() => about.element().getBoundingClientRect().bottom)
+            .toBeLessThanOrEqual(height);
+          expect(about.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(r.top);
+        });
+
+      it('at 1280 px the pop-over has no scrollbar it does not need', async () => {
+        await page.viewport(1280, 800);
+        const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves: 3 });
+        render(GameHeaderHost, { game, routeId: '/' });
+        await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        await expect.element(page.getByTestId('game-panel')).toBeVisible();
+        const panel = panelOf();
+        expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
+        expect(panel.getBoundingClientRect().bottom).toBeLessThan(800);
       });
     });
 

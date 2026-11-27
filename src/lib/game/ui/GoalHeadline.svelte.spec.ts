@@ -243,7 +243,63 @@ describe('GoalHeadline', () => {
         .map((c) => part(c))
         .filter(shows)
         .map((el, i, all) => (el === all.at(-1) ? ` ${el.textContent}` : el.textContent))
-        .join('');
+        .join('') + (part('result') ? ` ${part('result').textContent}` : '');
+    const rect = (el: Element) => el.getBoundingClientRect();
+    /** Every drawn part of the phone line lies inside the line's box: nothing is cut off. */
+    const expectWhole = () => {
+      const line = rect(phone().element());
+      for (const c of ['count', 'short', 'homes', 'rest', 'result'] as const) {
+        const el = part(c);
+        if (!el || !shows(el)) continue;
+        const r = rect(el);
+        expect(r.left, c).toBeGreaterThanOrEqual(line.left - 0.5);
+        expect(r.right, c).toBeLessThanOrEqual(line.right + 0.5);
+        expect(r.top, c).toBeGreaterThanOrEqual(line.top - 0.5);
+        expect(r.bottom, c).toBeLessThanOrEqual(line.bottom + 0.5);
+      }
+    };
+    // The e2e journeys' win at 443 homes, against Jan 2045: the widest rest the fixture shows.
+    const WIDE_WIN = pinnedWords(
+      { tag: 'win', goalMonth: dayFromUtc(2039, 9, 1) },
+      { ...CTX, amount: 443, target: dayFromUtc(2045, 1, 1) }
+    );
+
+    it('at 320 px beside a status the result wraps beneath: nothing cut off, the bar 48 px', async () => {
+      await page.viewport(320, 700);
+      render(GoalPinnedHeader, {
+        props: {
+          game: realStore(),
+          headline: win({ words: WIDE_WIN, ongift: () => {} }),
+          status: true
+        }
+      });
+      await expect.element(phone()).toBeVisible();
+      expect(part('result').textContent).toContain('5 yr 4 mo early');
+      expect(shows(part('result'))).toBe(true);
+      expectWhole();
+      expect(rect(part('result')).top).toBeGreaterThan(rect(part('rest')).top);
+      const banner = page.getByRole('banner').element();
+      expect(rect(banner).height).toBe(48);
+      const g = rect(giftEl().element());
+      expect(g.width).toBeGreaterThanOrEqual(24);
+      expect(g.height).toBeGreaterThanOrEqual(24);
+      expect(g.left).toBeGreaterThanOrEqual(rect(phone().element()).right);
+      const status = rect(page.getByTestId('status-control').element());
+      expect(g.right).toBeLessThanOrEqual(status.left);
+      expect(status.right).toBeLessThanOrEqual(
+        rect(page.getByRole('button', { name: 'Menu' }).element()).left
+      );
+    });
+
+    it('at 375 px with no status the win is one line', async () => {
+      await page.viewport(375, 700);
+      render(GoalPinnedHeader, {
+        props: { game: realStore(), headline: win({ words: WIDE_WIN, ongift: () => {} }) }
+      });
+      await expect.element(phone()).toBeVisible();
+      expectWhole();
+      expect(rect(part('result')).top).toBe(rect(part('rest')).top);
+    });
 
     for (const [name, p, rest] of [
       ['pending', props(), 'before Jun 2060'],
