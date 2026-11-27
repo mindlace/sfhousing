@@ -307,6 +307,62 @@ spread above 0, a known affordable rule, positive anchors and cost ratio, carryi
 band edges ascending to 999 with one positive multiplier and non-negative months per band, and
 every provenance at tier 0 to 4 with tier 4 labelled invented.
 
+## The record check and the cap report (`scripts/record-check.ts`, `scripts/cap-measure.ts`)
+
+`record-check` is the spec's acceptance test. It loads a dataset directory with the timeline host's
+loader (`loadDataset`), compiles the empty document as the host does (brush lots resolved by
+`resolveBrushRows`, as the host's brush service resolves them), and steps one world with the
+dataset's core (funding and cars) on the host's seed through model month 120. Every simulated row
+(`ORIGIN_SIM`) becomes a `SimProject`: its first stage's day, stories and homes now, the envelope
+stories its start was allowed (`env`), its type (`btype`), its lot's area, its cohort (`kind`) and
+the days it entered `permitIssued`, `construction` and `complete`. `simStats` then computes each
+statistic over the window of those 120 months as `recordTargets` computes it over the records:
+
+| Check                    | Simulated population                                                                                                                                       | Status                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Height ÷ limit by bucket | starts in the window: stories ÷ `env` (uncapped, as Task 5's records), by `LIMIT_BUCKETS`; mean (± 0.10) and share ≥ 0.9 (2 SE)                            | checked where the records' n ≥ 30        |
+| Code limits              | starts in the window: Type V above 6, Type III above 8                                                                                                     | exact: any one misses                    |
+| Type I at 8 to 12        | permits issued in the window (entered `permitIssued`) at 8 to 12 stories                                                                                   | checked (2 SE)                           |
+| Type shares by band      | the same permits by `HEIGHT_BANDS` and type                                                                                                                | report                                   |
+| Stage medians by band    | `permitIssued` (issued to construction) and `construction` (construction to completion): spells entered in the window and completed by its end (ruling F8) | checked (2 SE)                           |
+| Issued to completion     | the two stages summed per project, beside the raw pull's 28.4, 36.8, 36.5, 33.7 and 40.1 months                                                            | report                                   |
+| Homes per project        | permits issued in the window for 10 or more homes, median by band                                                                                          | checked (2 SE)                           |
+| Large lots               | permits issued on lots of 1,500 m² or more with `env` ≥ 13: Type I at 13 or more stories                                                                   | checked (2 SE) where n ≥ 30; report here |
+| Cohorts                  | height ÷ limit, affordable (`kind` 1) and private, and their difference                                                                                    | report                                   |
+
+A checked target that the simulation has no project for misses. `checkLines(targets, sim)` and
+`recordExit(lines)` are the pure parts its spec tests.
+
+`cap-measure` runs the same runner over the whole window (480 months) with the score series fed
+as the ensemble's plain loop feeds it, so `rows[i].completedNet` is the view's row for row (its spec
+checks this against `openEngine` on fixture-0; on `2026-11-27-3abc9cb0` the 480 current-law rows
+agree exactly). The transit rule is `GAME_TRANSIT_ID` with all four stop types at 805 m; the full
+tree is `fullTree(cal)` with every band of its transit rule set to the cap. The old figures
+(`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
+
+**Live figures** (build `2026-11-27-3abc9cb0`, uncommitted tree, not uploaded; records 2016-11-27
+to 2026-11-27). Record check: 9 pass, 11 miss, 32 report, exit 1. Height ÷ limit misses in every
+checked bucket: sim mean 0.759, 0.709, 0.631 and 0.459 against records 1.027, 1.296, 1.145 and 0.904
+(≤ 4, ≤ 6, ≤ 8, above 12), share ≥ 0.9 0.436, 0.221, 0.114 and 0.071 against 0.760, 0.713, 0.568 and
+0.421, the near-uniform choice the spread at its search bound gives (see "Calibration" above). 116
+of the 433 starts face an envelope above their base stories; divided by base stories instead, the
+≤ 4 mean is 0.824, still a miss. The code limits pass (no V above 6, no III above 8 among 433
+starts). Type I at 8 to 12: 0.909 (n 11) against 0.984 ± 0.032, a miss. Permit-issued medians pass
+at ≤ 4, ≤ 7 and ≤ 12; construction ≤ 4 misses (23.7 against 26.2 ± 1.3 months), ≤ 7 and ≤ 12 pass.
+Homes per project pass at ≤ 4 and ≤ 12 and miss at ≤ 7 (33 against 57 ± 16.9). Large lots are
+report only (records n 28).
+
+Cap report (`completedNet` 2040 / 2066, old figures in brackets; share of starts V / III / I):
+
+| Run          | 12 stories                                    | 13                                            | 16                                            | 20                                            | 40                                             | 80                                             |
+| ------------ | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | --------------------------------------------- | ---------------------------------------------- | ---------------------------------------------- |
+| Transit rule | 58,529 / 122,720 (63,092 / 138,298); 51/21/28 | 58,499 / 129,385 (60,832 / 126,709); 50/21/29 | 60,811 / 145,700 (61,648 / 135,976); 46/19/35 | 64,039 / 165,625 (63,950 / 140,339); 43/18/39 | 89,948 / 269,160 (68,106 / 156,754); 38/14/48  | 113,934 / 372,896 (73,248 / 182,282); 37/14/49 |
+| Full tree    | 74,100 / 139,893 (80,685 / 165,058); 50/21/29 | 76,082 / 146,228 (75,920 / 157,445); 49/20/30 | 81,707 / 172,669 (79,489 / 167,549); 45/19/36 | 88,325 / 196,614 (83,391 / 171,072); 42/17/41 | 118,495 / 327,730 (89,249 / 197,592); 37/14/49 | 154,893 / 447,756 (97,777 / 222,488); 36/14/50 |
+
+Current law: 47,218 / 82,765 (47,502 / 79,338); starts 77% V, 12% III, 10% I (n 1,651). Transit at
+13 stories builds 30 fewer homes than at 12 by 2040 (58,499 against 58,529), within noise; every
+other step up builds more.
+
 ## Location value (`pipeline/lib/location-value.ts`, `86_location_value.sql`)
 
 `locationValueByLot(db)` runs after the scenario SQL, on `parcels` and `sc_roll_agg` (one row per
