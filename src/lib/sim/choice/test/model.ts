@@ -31,7 +31,7 @@ export const shippedPrices = (): PriceStep => ({
       }
     ])
   ) as PriceStep['anchors'],
-  aboveTopCostRatio: 1.39,
+  aboveTopCostRatio: 1.21,
   carrying: { rate: 0.085, drawn: 0.55 }
 });
 

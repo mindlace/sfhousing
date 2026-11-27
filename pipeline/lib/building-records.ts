@@ -290,8 +290,8 @@ const SLOPE_FROM_STORIES = 13;
 /**
  * Cost per home above the top anchor as a multiple of the anchor's: the median permit valuation
  * per home of permits for 10 or more homes issued 2015 on above 24 stories, over that at 13 to
- * 24. Valuation is not cost; only the ratio is used (tier 2, weak). Superseded permits are left
- * out. With fewer than 10 permits on either side the ratio is 1 (tier 4, invented).
+ * 24. Valuation is not cost; only the ratio is used (tier 2, weak). Each permit counts once (the
+ * first row with its number); superseded permits are left out. With fewer than 10 permits on either side the ratio is 1 (tier 4, invented).
  */
 export function aboveTopCostRatio(permits: readonly PermitRow[]): {
   ratio: number;
@@ -302,7 +302,13 @@ export function aboveTopCostRatio(permits: readonly PermitRow[]): {
   const above: number[] = [];
   const slope: number[] = [];
   let last = since;
+  // One value per permit: a permit's first row counts, later rows with its number do not.
+  const counted = new Set<string>();
   for (const p of permits) {
+    if (p.permit_number !== null) {
+      if (counted.has(p.permit_number)) continue;
+      counted.add(p.permit_number);
+    }
     const s = p.proposed_stories;
     const u = p.proposed_units;
     if (p.superseded === true || p.issued_day === null || p.issued_day < since) continue;
@@ -314,7 +320,7 @@ export function aboveTopCostRatio(permits: readonly PermitRow[]): {
   }
   const n: [number, number] = [above.length, slope.length];
   const sources = [datasf('permits')];
-  const what = `median permit valuation per home (revised cost, else estimate) of permits for ${PROJECT_MIN_HOMES} or more homes issued ${RATIO_FROM} on, superseded permits left out: above ${TOP_ANCHOR_STORIES} stories (n = ${n[0]}) over ${SLOPE_FROM_STORIES} to ${TOP_ANCHOR_STORIES} stories (n = ${n[1]})`;
+  const what = `median permit valuation per home (revised cost, else estimate) of permits for ${PROJECT_MIN_HOMES} or more homes issued ${RATIO_FROM} on, one per permit number, superseded permits left out: above ${TOP_ANCHOR_STORIES} stories (n = ${n[0]}) over ${SLOPE_FROM_STORIES} to ${TOP_ANCHOR_STORIES} stories (n = ${n[1]})`;
   if (n[0] < RATIO_MIN_N || n[1] < RATIO_MIN_N) {
     return {
       ratio: 1,

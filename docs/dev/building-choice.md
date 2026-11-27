@@ -148,10 +148,12 @@ same bands; no multiplier is fitted for it. With no completed spell at all: one 
 
 **Cost above 24 stories** (`aboveTopCostRatio`, `pipeline/lib/building-records.ts`, tier 2, weak).
 The median valuation per home of permits for 10 or more homes issued 2015 on above 24 stories,
-over that at 13 to 24; superseded permits are left out. Fewer than 10 permits on either side
-gives 1 (tier 4). On the raw pull (not deduplicated) this is 727k ÷ 365k = 1.99 (n = 15 and 40);
-the spec's 502k ÷ 361k = 1.39 is the same pull on 21+ against 13 to 20 stories. The build fits it
-on `permits.parquet` (linked permits, superseded ones out).
+over that at 13 to 24; each permit counts once (its first row) and superseded permits are left
+out. Fewer than 10 permits on either side gives 1 (tier 4). On the raw pull, one row per permit,
+this is about 1.21 (n = 10 and 30). The raw pull repeats a permit once per address: counted per
+row it gives 1.99, and the spec's 1.39 (21+ against 13 to 20 stories) is also a per-row figure
+(1.21 per permit). The build fits it on `permits.parquet` (linked permits, one row each,
+superseded ones out).
 
 **Record targets** (`recordTargets`, `pipeline/lib/building-records.ts`). The calibration step
 writes `pipeline/.cache/derived/<v>/record-targets.json` (never uploaded) for the record check.
