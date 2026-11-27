@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { RunResult } from '../lib/exec';
@@ -73,6 +81,53 @@ const TILES: [number, number][] = [
 ];
 
 describe('fetchLidar', () => {
+  it('a second fetch with the same settings waits for the first, then runs', async () => {
+    const work = join(tmp(), 'abcd1234');
+    const lock = `${work}.lock`;
+    mkdirSync(join(work, '..'), { recursive: true });
+    writeFileSync(
+      lock,
+      JSON.stringify({ pid: process.pid, host: hostname(), startedAt: new Date().toISOString() })
+    );
+    const { run, calls } = fakeRun();
+    const events: string[] = [];
+    const waits: number[] = [];
+    const entry = await fetchLidar(
+      tmp(),
+      { tiles: TILES, workDir: work },
+      {
+        run: async (c, a) => {
+          events.push(`run:${existsSync(lock)}`);
+          return run(c, a);
+        },
+        lock: {
+          pollMs: 7,
+          sleep: async (ms) => {
+            waits.push(ms);
+            events.push('sleep');
+            rmSync(lock);
+          },
+          onWait: (h) => events.push(`wait:${h.pid}`)
+        }
+      }
+    );
+    expect(events).toEqual([`wait:${process.pid}`, 'sleep', 'run:true']);
+    expect(waits).toEqual([7]);
+    expect(calls).toHaveLength(1);
+    expect(entry?.files).toHaveLength(1);
+    expect(existsSync(lock)).toBe(false);
+  });
+
+  it('the .sfhl temp file is unique per call and left behind by none', async () => {
+    const work = tmp();
+    const { run } = fakeRun();
+    await fetchLidar(tmp(), { tiles: TILES, workDir: work }, { run });
+    expect(readdirSync(work).filter((n) => n.includes('.sfhl'))).toEqual([]);
+    expect(readFileSync(join(import.meta.dirname, '../sources/lidar.ts'), 'utf8')).not.toContain(
+      '.sfhl.tmp`'
+    );
+  });
+
   it('encodes tiles with points into lock files', async () => {
     const raw = tmp();
     const { run } = fakeRun();

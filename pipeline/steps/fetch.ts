@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tempSibling } from '../lib/atomic';
+import { sharedCache } from '../lib/cache-root';
 import { openDuck } from '../lib/duck';
 import { nodeHttp, type Http } from '../lib/http';
 import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } from '../lib/lock';
@@ -18,7 +20,6 @@ import { GTFS_ARCHIVE_IDS, GTFS_IDS, type GtfsLockId } from '../transit-config';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 export const LOCK_PATH = join(ROOT, 'pipeline/sources.lock.json');
-export const RAW_DIR = join(ROOT, 'pipeline/.cache/raw');
 
 export const LIDAR_LOCK_PATH = LIDAR_LOCK.live;
 
@@ -91,7 +92,7 @@ export async function restoreRaw(
         present++;
         continue;
       }
-      const part = `${dest}.part`;
+      const part = tempSibling(dest);
       try {
         if (!(await r2.get(f.archiveKey, part))) {
           throw new Error(`${entry.id}: archive ${f.archiveKey} not found in R2`);
@@ -116,7 +117,7 @@ export async function restoreRaw(
 export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
   const lockPath = opts.lockPath ?? LOCK_PATH;
   const lidarLockPath = opts.lidarLockPath ?? LIDAR_LOCK_PATH;
-  const rawDir = opts.rawDir ?? RAW_DIR;
+  const rawDir = opts.rawDir ?? sharedCache().raw;
   if (opts.restore) {
     // Plain --restore never reads the LiDAR lock; --lidar reads only it.
     const from = opts.lidar ? lidarLockPath : lockPath;

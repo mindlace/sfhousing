@@ -79,6 +79,7 @@ export default defineConfig({
           name: 'pipeline',
           environment: 'node',
           include: ['pipeline/test/**/*.test.ts'],
+          setupFiles: ['pipeline/test/setup-cache-root.ts'],
           testTimeout: 120_000,
           hookTimeout: 300_000,
           expect: { requireAssertions: true }
