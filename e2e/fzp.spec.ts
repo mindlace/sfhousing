@@ -52,6 +52,7 @@ interface CalibrationFixture {
   };
   baselineFunding?: unknown;
   cars?: { parking: { provenance: unknown[] } };
+  choice?: unknown;
 }
 
 const projectsFile = readJson<ProjectsFixture>('scenarios/fzp/projects.json');
@@ -516,7 +517,8 @@ test("About's assumptions list every parameter and every data check", async ({ p
   const dialog = await openSources(page);
 
   // One entry per calibration parameter: each present transition, the Local Program proxy, and the
-  // six single-parameter models, today's market level (fixture-0 carries calibration.market) and,
+  // single-parameter models (the developer's choice gives four: its spread, costs, values and the
+  // affordable rule), today's market level (fixture-0 carries calibration.market) and,
   // when the market level is 'private' (market and baseline funding both present), the market slope;
   // and, when calibration.cars is present, the car model's choice, moves and new homes, then one
   // entry per source in cars.parking.provenance. The baseline, target and reference entries and the
@@ -530,7 +532,9 @@ test("About's assumptions list every parameter and every data check", async ({ p
     ),
     'src-local-program',
     'src-initiation-model',
-    'src-size-model',
+    ...(calibration.choice
+      ? ['src-size-model', 'src-size-costs', 'src-size-value', 'src-size-affordable']
+      : []),
     'src-revision-model',
     'src-pathway-for-new',
     'src-ppa-share',
