@@ -20,6 +20,7 @@
     onretry?: (keys: string[]) => void;
     cap?: TransitCap;
     part?: 'all' | 'stops' | 'bands';
+    stopsFixed?: boolean;
   }
 
   let {
@@ -32,7 +33,8 @@
     onremove = () => {},
     onretry = () => {},
     cap = undefined,
-    part = undefined
+    part = undefined,
+    stopsFixed = undefined
   }: Props = $props();
 
   // The prop only seeds the host's own rule, as a page's store would.
@@ -55,5 +57,6 @@
     {onretry}
     {cap}
     {part}
+    {stopsFixed}
   />
 </ol>

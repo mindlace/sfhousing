@@ -10,7 +10,7 @@
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
-  import { OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
+  import { isFixed, OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
   import { marketLevel } from '$lib/sim/scenario/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
@@ -103,6 +103,7 @@
   }: Props = $props();
 
   const lockedIn = (kind: PolicyKind) => (p: Policy) => !within(kind, p, limits);
+  const fixedIn = (p: Policy) => isFixed(p, limits);
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));
@@ -297,6 +298,7 @@
           {stale}
           canAdd={kindOpen(kind, limits)}
           isLocked={lockedIn(kind)}
+          isFixed={fixedIn}
         />
       {/each}
 
@@ -365,6 +367,7 @@
           {stale}
           canAdd={kindOpen(sheet, limits)}
           isLocked={lockedIn(sheet)}
+          isFixed={fixedIn}
         />
         <div
           class="line"
@@ -400,7 +403,7 @@
   }
   @media (min-width: 768px) {
     .tl {
-      --lab: 168px;
+      --lab: 288px;
     }
   }
   .grid {

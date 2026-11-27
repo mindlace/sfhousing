@@ -523,15 +523,34 @@ describe('Inspector under limits', () => {
     expect(added.spans[0].what).toEqual({ tag: 'bands', bands: DEFAULT_BANDS });
   });
 
-  it('a catalogue policy not yet editable: What is the summary, the switch works', async () => {
+  it('a catalogue policy not yet editable shows its details and no editor control', async () => {
     const made = bondMade();
-    const { store } = setup({ doc: made.doc, initial: made.ref, limits: round1 });
-    await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
-    expect(editor()!.querySelector('[data-funding-editor]')).toBeNull();
-    await expect.element(page.getByText('Public money', { exact: false }).first()).toBeVisible();
-    await page.getByRole('switch', { name: 'On' }).click();
-    expect(store.policy.kinds.money.find((p) => p.id === made.ref.id)!.on).toBe(false);
+    setup({ doc: made.doc, initial: made.ref, limits: round1 });
+    await expect.element(page.getByTestId('policy-details')).toBeVisible();
+    expect(editor()).toBeNull();
+    expect(document.querySelectorAll('[role=switch], input, select')).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Remove policy' }).all()).toHaveLength(0);
   });
+
+  it('once editable, an offered catalogue policy shows the editor without Remove', async () => {
+    const made = bondMade();
+    const editable = limitsWith({ ...round1, editable: new Set(['housing-bond']) });
+    setup({ doc: made.doc, initial: made.ref, limits: editable });
+    await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
+    expect(page.getByRole('button', { name: 'Remove policy' }).all()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Move up' }).all()).toHaveLength(1);
+  });
+
+  for (const [name, limits] of [
+    ['a finished game', limitsWith({ whole: true })],
+    ['no game', OPEN_LIMITS]
+  ] as const) {
+    it(`${name} shows Remove`, async () => {
+      const made = bondMade();
+      setup({ doc: made.doc, initial: made.ref, limits });
+      await expect.element(page.getByRole('button', { name: 'Remove policy' })).toBeVisible();
+    });
+  }
 
   it('once editable, its What edits', async () => {
     const made = bondMade();
@@ -568,7 +587,7 @@ describe('Inspector with given measures', () => {
   const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
   const made = addPolicy(
     EMPTY,
-    { kind: 'money', what: 'preset', preset: 'housing-bond' },
+    { kind: 'money', what: 'preset', preset: 'state-off' },
     { w, month: 13, cal }
   );
   const GIVEN_DOC: SimPolicy4 = {
@@ -582,7 +601,7 @@ describe('Inspector with given measures', () => {
     [...document.querySelectorAll('[data-add-menu] button')].map((b) => b.textContent?.trim());
 
   it('a given measure under closed limits', async () => {
-    expect(GIVEN_DOC.kinds.money[0].preset).toBe('housing-bond');
+    expect(GIVEN_DOC.kinds.money[0].preset).toBe('state-off');
     const { store } = setup({ doc: GIVEN_DOC, initial: givenRef, limits: givenLimits });
     await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
     await expect.element(page.getByRole('button', { name: 'Move up' })).toBeVisible();
@@ -613,13 +632,13 @@ describe('Inspector with given measures', () => {
     const at = ids().indexOf(givenRef.id);
     await page.getByRole('button', { name: 'Move down' }).click();
     expect(ids().indexOf(givenRef.id)).toBe(at + 1);
-    expect(measure(store)!.preset).toBe('housing-bond');
+    expect(measure(store)!.preset).toBe('state-off');
 
     await page.getByRole('switch', { name: 'On' }).click();
     expect(measure(store)!.on).toBe(false);
     await page.getByRole('switch', { name: 'On' }).click();
     expect(measure(store)!.on).toBe(true);
-    expect(measure(store)!.preset).toBe('housing-bond');
+    expect(measure(store)!.preset).toBe('state-off');
 
     const before = measure(store)!.spans[0].from;
     const y = new Date(first(40) * 86_400_000).getUTCFullYear();
@@ -628,7 +647,7 @@ describe('Inspector with given measures', () => {
       String(y)
     );
     expect(measure(store)!.spans[0].from).not.toBe(before);
-    expect(measure(store)!.preset).toBe('housing-bond');
+    expect(measure(store)!.preset).toBe('state-off');
   });
 
   it("'+' on Public money lists the free measures only before the end", async () => {
@@ -686,8 +705,13 @@ describe('Inspector with given measures', () => {
   it('under open limits a given measure is edited as today', async () => {
     setup({ doc: GIVEN_DOC, initial: givenRef });
     await expect
-      .poll(() => editor()?.querySelector('[data-funding-editor]') ?? null)
-      .not.toBeNull();
+      .poll(() => {
+        const what = [...(editor()?.querySelectorAll('section') ?? [])].find(
+          (x) => x.querySelector('h3')?.textContent === 'What'
+        );
+        return what?.querySelectorAll('input, select, button').length ?? 0;
+      })
+      .toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Add money', exact: true }).click();
     await expect.element(page.getByRole('button', { name: 'Your own pool' })).toBeVisible();
   });

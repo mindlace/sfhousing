@@ -598,6 +598,22 @@ describe('SimRoute in a game: taking a win', () => {
     await expect.poll(() => document.querySelector('[data-testid=gift-dialog]')).toBeNull();
   }
 
+  /** Opens the three kinds so every policy row shows. */
+  async function openKinds() {
+    for (const [kind, name] of [
+      ['zoning', /^Zoning/],
+      ['permitting', /^Permitting/],
+      ['money', /^Public money/]
+    ] as const) {
+      const toggle = page.getByTestId(`tl-kind-${kind}`).getByRole('button', { name });
+      if ((await toggle.element().getAttribute('aria-expanded')) === 'false') await toggle.click();
+    }
+    await expect
+      .poll(() => document.querySelectorAll('[data-testid=tl-policy]').length)
+      .toBeGreaterThan(0);
+  }
+  const countOf = (id: string) => document.querySelectorAll(`[data-testid=${id}]`).length;
+
   it('the gift takes the win: round 1, the target, and the three policies off, before any Accept', async () => {
     const mem = new MemoryStorage();
     const game = seed(mem, 0);
@@ -642,6 +658,11 @@ describe('SimRoute in a game: taking a win', () => {
     expect(policies(doc)).toHaveLength(3);
     for (const p of policies(doc)) expect(isFixed(p, game.limits)).toBe(true);
     expect(page.getByTestId('goal-headline').element().getAttribute('data-state')).toBe('pending');
+    // Each of the three rows reads New: a switch and the details button, no Edit.
+    await openKinds();
+    expect(countOf('tl-policy-new')).toBe(3);
+    expect(countOf('tl-policy-edit')).toBe(0);
+    expect(document.querySelectorAll('[data-testid=tl-policy] [role=switch]')).toHaveLength(3);
   });
 
   it('after the gift Undo is not possible; switching a rule on then Undo and Redo keeps the policies and the game', async () => {
@@ -664,8 +685,9 @@ describe('SimRoute in a game: taking a win', () => {
       .getByTestId('tl-kind-zoning')
       .getByRole('button', { name: /^Zoning/ })
       .click();
-    await page.getByTestId('tl-kind-zoning').getByTestId('tl-bar').first().click();
-    const on = inspector().getByRole('switch', { name: 'On' });
+    const on = page
+      .getByTestId('tl-kind-zoning')
+      .getByRole('switch', { name: 'Taller near BART and Caltrain on' });
     await expect.element(on).toHaveAttribute('aria-checked', 'false');
     await on.click();
     const rail = () => debug().policy.kinds.zoning.find((p) => p.id === 'transit-rail')!;
@@ -678,6 +700,24 @@ describe('SimRoute in a game: taking a win', () => {
     await expect.poll(() => rail().on).toBe(true);
     expect(policies(debug().policy)).toHaveLength(3);
     expect($state.snapshot(game.state)).toEqual(before);
+  });
+
+  it('New opens the read-only details and Close returns focus to New', async () => {
+    const mem = new MemoryStorage();
+    const game = seed(mem, 0);
+    await openedLong(game, mem);
+    await seeWin();
+    await gift().click();
+    await acceptAll(3);
+    await openKinds();
+    const row = page.getByTestId('tl-policy').filter({ hasText: 'Taller near BART and Caltrain' });
+    await row.getByTestId('tl-policy-new').click();
+    const details = page.getByTestId('policy-details');
+    await expect.element(details).toBeVisible();
+    expect(details.element().querySelectorAll('input, select, [role=switch]')).toHaveLength(0);
+    await page.getByRole('button', { name: 'Close details' }).click();
+    await expect.element(page.getByTestId('policy-details')).not.toBeInTheDocument();
+    await expect.element(row.getByTestId('tl-policy-new')).toHaveFocus();
   });
 
   it('in round 1 with the rail rule on, the gift makes it editable; the rest stay fixed', async () => {
@@ -709,6 +749,13 @@ describe('SimRoute in a game: taking a win', () => {
     expect(rest).toHaveLength(5);
     for (const p of rest) expect(isFixed(p, game.limits)).toBe(true);
     expect(rest.filter((p) => p.on)).toEqual([]);
+    // The rail row reads Edit; the other five read New.
+    await openKinds();
+    const rail = page.getByTestId('tl-policy').filter({ hasText: 'Taller near BART and Caltrain' });
+    await expect.element(rail.getByTestId('tl-policy-edit')).toBeVisible();
+    expect(rail.getByTestId('tl-policy-new').elements()).toHaveLength(0);
+    expect(countOf('tl-policy-edit')).toBe(1);
+    expect(countOf('tl-policy-new')).toBe(5);
   });
 
   it('a refused store write changes nothing and the win stands', async () => {

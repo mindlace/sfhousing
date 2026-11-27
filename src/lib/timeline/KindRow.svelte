@@ -3,7 +3,8 @@
   bar per policy over its spans. Open: the label row as a heading, then the kind's fixed row and a
   full row per policy; no miniature. Renders cells for the Timeline's two-column grid.
   The "+" shows only when `canAdd` (the kind opens in the game). A policy `isLocked` picks is
-  dimmed and inert and says NOT_IN_GAME under its name.
+  dimmed and inert and says NOT_IN_GAME under its name; one `isFixed` picks reads New (its
+  switch works, its bars do not move).
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
@@ -51,6 +52,8 @@
     canAdd?: boolean;
     /** A policy that does not run in this game. */
     isLocked?: (p: Policy) => boolean;
+    /** A catalogue policy the player cannot edit yet: its row reads New. */
+    isFixed?: (p: Policy) => boolean;
   }
 
   let {
@@ -73,7 +76,8 @@
     reached = day,
     stale = false,
     canAdd = true,
-    isLocked = () => false
+    isLocked = () => false,
+    isFixed = () => false
   }: Props = $props();
   /** Only Public money has pools. */
   const kindLevels = $derived(kind === 'money' ? levels : null);
@@ -168,6 +172,7 @@
       {@const pLocked = isLocked(p)}
       <PolicyRow
         locked={pLocked}
+        fixed={!pLocked && isFixed(p)}
         note={pLocked ? NOT_IN_GAME : null}
         levels={kindLevels}
         {day}

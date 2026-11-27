@@ -33,7 +33,7 @@
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
   import { e2eGoalAmount } from '$lib/game/e2e';
-  import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
+  import { isFixed, OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
   import { offerThrough, onKeys } from '$lib/game/offer';
   import { giftItems, type GiftItem } from '$lib/game/round-panel';
   import type { GameStore } from '$lib/game/store.svelte';
@@ -583,13 +583,26 @@
   /**
    * The editor closed (Close, Escape, Remove, "+" or a draft closed): focus goes to the bar that
    * was selected, or, when it is gone (Remove) or there was none, to its kind's "+", else the
-   * kind's toggle (WCAG 2.4.3).
+   * kind's toggle (WCAG 2.4.3). A fixed policy's pane closes to the row's New button.
    */
   function closeEditor(): void {
+    const sel = selected;
+    const picked =
+      sel !== null && !isFixedRef(sel) ? policyOf(store.policy, sel.kind, sel.id) : undefined;
+    const newButton =
+      sel !== null && picked !== undefined && isFixed(picked, limits)
+        ? document.querySelector<HTMLElement>(
+            `[data-testid="tl-dock"] [data-testid="tl-kind-${sel.kind}"] [data-policy-id="${CSS.escape(sel.id)}"] [data-testid="tl-policy-new"]`
+          )
+        : null;
     const bar = document.querySelector<HTMLElement>(`[data-testid="tl-dock"] :is(${PRESSED})`);
     const kind = selected?.kind ?? focusKind;
     void tick().then(() => {
       if (dead) return;
+      if (newButton?.isConnected) {
+        newButton.focus();
+        return;
+      }
       if (bar?.isConnected) {
         bar.focus();
         return;

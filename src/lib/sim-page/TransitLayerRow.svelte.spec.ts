@@ -430,4 +430,13 @@ describe('TransitLayerRow', () => {
       ).toHaveLength(4);
     });
   });
+
+  describe('stopsFixed', () => {
+    it('shows the stop types as text, with no chip', async () => {
+      render(TransitLayerRowHost, { props: { rule: metro, part: 'stops', stopsFixed: true } });
+      const group = page.getByRole('group', { name: 'Stop types' });
+      await expect.element(group).toHaveTextContent(STOP_LABELS.metro);
+      expect(group.getByRole('button').elements()).toHaveLength(0);
+    });
+  });
 });

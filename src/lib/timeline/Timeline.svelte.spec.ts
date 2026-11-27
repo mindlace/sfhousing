@@ -354,7 +354,7 @@ describe('Timeline rows', () => {
     (page.getByRole('button', { name }).element() as HTMLElement).focus();
     await userEvent.keyboard('{Shift>}{ArrowRight}{/Shift}');
     expect(onedit).toHaveBeenCalledTimes(1);
-    const [change, label] = onedit.mock.calls[0];
+    const [change, label] = onedit.mock.calls[0] as [(d: SimPolicy4) => SimPolicy4, string];
     expect(label).toBe('Moved: Faster permit review');
     const ref: SpanRef = { kind: 'permitting', id: 'p1', span: 0 };
     // The playhead is at month 1, so the nearer edge is the start.
@@ -510,7 +510,7 @@ describe('Timeline rows', () => {
     expect(onedit).not.toHaveBeenCalled();
     fire('pointerup', at(60));
     expect(onedit).toHaveBeenCalledTimes(1);
-    const [change, label] = onedit.mock.calls[0];
+    const [change, label] = onedit.mock.calls[0] as [(d: SimPolicy4) => SimPolicy4, string];
     expect(label).toBe('Moved: Faster permit review');
     const next = change(doc) as SimPolicy4;
     expect(next.kinds.permitting[0].spans[0].to).not.toBe(doc.kinds.permitting[0].spans[0].to);
@@ -829,7 +829,7 @@ describe('the rows below md: a name line above each lane', () => {
       const { lab, lane } = parts(row);
       const l = rect(lab);
       const n = rect(lane);
-      expect(Math.abs(l.width - 168)).toBeLessThanOrEqual(1);
+      expect(Math.abs(l.width - 288)).toBeLessThanOrEqual(1);
       expect(Math.abs(n.left - l.right)).toBeLessThanOrEqual(1);
       expect(Math.abs(n.top - l.top)).toBeLessThanOrEqual(1);
     }
@@ -1184,4 +1184,156 @@ describe("a game's limits", () => {
       expect(r.violations).toEqual([]);
     });
   }
+});
+
+describe('Timeline policy rows: switch, New and Edit', () => {
+  const metro: Policy = {
+    id: 'transit-metro',
+    label: 'Taller near Muni Metro',
+    preset: null,
+    on: false,
+    where: { tag: 'transit', stopTypes: ['metro'] },
+    spans: [
+      {
+        from: first(1),
+        to: null,
+        what: {
+          tag: 'bands',
+          bands: [
+            { maxM: 402, stories: 6 },
+            { maxM: 805, stories: 5 }
+          ]
+        }
+      }
+    ]
+  };
+  const rail: Policy = {
+    ...metro,
+    id: 'transit-rail',
+    label: 'Taller near BART and Caltrain',
+    on: true,
+    where: { tag: 'transit', stopTypes: ['regionalRail'] }
+  };
+  const gameDoc: SimPolicy4 = {
+    schema: 4,
+    kinds: { zoning: [rail, metro], permitting: [], money: [] }
+  };
+  const round2 = limitsWith({
+    offered: new Set(['transit-rail', 'transit-metro'] as const),
+    editable: new Set(['transit-rail'] as const),
+    stops: new Set(['regionalRail', 'metro'] as const)
+  });
+  const policyRow = (label: string) =>
+    page.getByTestId('tl-kind-zoning').getByTestId('tl-policy').filter({ hasText: label });
+
+  async function open(over: Over = {}) {
+    const r = await setup({ policy: gameDoc, limits: round2, ...over });
+    await kindButton('Zoning').click();
+    await expect.element(policyRow('Taller near Muni Metro')).toBeInTheDocument();
+    return r;
+  }
+
+  it('a fixed policy has a switch and New, an editable one a switch and Edit', async () => {
+    await open();
+    const fixedRow = policyRow('Taller near Muni Metro');
+    const editRow = policyRow('Taller near BART and Caltrain');
+    await expect
+      .element(fixedRow.getByRole('switch', { name: 'Taller near Muni Metro on' }))
+      .toHaveAttribute('aria-checked', 'false');
+    await expect
+      .element(fixedRow.getByRole('button', { name: 'New: Taller near Muni Metro, details' }))
+      .toBeVisible();
+    expect(fixedRow.getByTestId('tl-policy-edit').all()).toHaveLength(0);
+    await expect
+      .element(editRow.getByRole('switch', { name: 'Taller near BART and Caltrain on' }))
+      .toHaveAttribute('aria-checked', 'true');
+    await expect
+      .element(editRow.getByRole('button', { name: 'Edit Taller near BART and Caltrain' }))
+      .toBeVisible();
+    expect(editRow.getByTestId('tl-policy-new').all()).toHaveLength(0);
+  });
+
+  it('the switch turns a fixed policy on in one undo step', async () => {
+    const { onedit } = await open();
+    await policyRow('Taller near Muni Metro')
+      .getByRole('switch', { name: 'Taller near Muni Metro on' })
+      .click();
+    expect(onedit).toHaveBeenCalledTimes(1);
+    const [change, label] = onedit.mock.calls[0] as [(d: SimPolicy4) => SimPolicy4, string];
+    expect(label).toBe('Switched on: Taller near Muni Metro');
+    expect(change(gameDoc).kinds.zoning.find((p) => p.id === 'transit-metro')?.on).toBe(true);
+  });
+
+  it('New and Edit select the policy', async () => {
+    const { onselect } = await open();
+    await policyRow('Taller near Muni Metro').getByTestId('tl-policy-new').click();
+    expect(onselect).toHaveBeenLastCalledWith({ kind: 'zoning', id: 'transit-metro', span: 0 });
+    await policyRow('Taller near BART and Caltrain').getByTestId('tl-policy-edit').click();
+    expect(onselect).toHaveBeenLastCalledWith({ kind: 'zoning', id: 'transit-rail', span: 0 });
+  });
+
+  it('a fixed policy bar selects but has no edges and no keys', async () => {
+    const { onselect, onedit } = await open();
+    const row = policyRow('Taller near Muni Metro').element();
+    expect(row.querySelectorAll('[data-edge]')).toHaveLength(0);
+    const bar = row.querySelector<HTMLElement>('[data-testid=tl-bar]')!;
+    bar.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    await userEvent.keyboard('{Shift>}{ArrowLeft}{/Shift}');
+    expect(onedit).not.toHaveBeenCalled();
+    bar.click();
+    expect(onselect).toHaveBeenLastCalledWith({ kind: 'zoning', id: 'transit-metro', span: 0 });
+    const edit = policyRow('Taller near BART and Caltrain').element();
+    expect(edit.querySelectorAll('[data-edge]').length).toBeGreaterThan(0);
+  });
+
+  it('at 375 px New sits below the switch', async () => {
+    await setup({ policy: gameDoc, limits: round2 });
+    await page.viewport(375, 812);
+    await kindButton('Zoning').click();
+    const sheet = page.getByRole('dialog', { name: 'Zoning' });
+    const row = sheet.getByTestId('tl-policy').filter({ hasText: 'Taller near Muni Metro' });
+    await expect.element(row).toBeVisible();
+    const sw = row.getByRole('switch').element().getBoundingClientRect();
+    const nb = row.getByTestId('tl-policy-new').element().getBoundingClientRect();
+    expect(nb.top).toBeGreaterThanOrEqual(sw.bottom - 1);
+    expect(nb.height).toBeGreaterThanOrEqual(24);
+    expect(sw.height).toBeGreaterThanOrEqual(24);
+    expect(sw.width).toBeGreaterThanOrEqual(24);
+  });
+
+  it('read-only has no switch and no button', async () => {
+    await open({ readonly: true });
+    expect(all('[role=switch]')).toHaveLength(0);
+    expect(all('[data-testid=tl-policy-new]')).toHaveLength(0);
+    expect(all('[data-testid=tl-policy-edit]')).toHaveLength(0);
+    await expect.element(policyRow('Taller near Muni Metro')).toHaveTextContent(', off');
+  });
+
+  it('with no game every row has the switch and Edit', async () => {
+    await setup();
+    await kindButton('Permitting').click();
+    const rows = page.getByTestId('tl-kind-permitting').getByTestId('tl-policy');
+    await expect.element(rows.nth(1)).toBeInTheDocument();
+    expect(all('[data-testid=tl-kind-permitting] [role=switch]')).toHaveLength(2);
+    expect(all('[data-testid=tl-kind-permitting] [data-testid=tl-policy-edit]')).toHaveLength(2);
+    expect(all('[data-testid=tl-policy-new]')).toHaveLength(0);
+  });
+
+  it('a locked row has neither the switch nor a button', async () => {
+    const painted: Policy = {
+      ...zoning,
+      id: 'z2',
+      label: 'Painted rule',
+      where: { tag: 'painted' }
+    };
+    await setup({
+      limits: limitsWith({ stops: new Set(['metro'] as const), own: false }),
+      policy: { schema: 4, kinds: { zoning: [painted], permitting: [], money: [] } }
+    });
+    await kindButton('Zoning').click();
+    await expect.element(page.getByTestId('tl-policy-note')).toHaveTextContent(NOT_IN_GAME);
+    expect(all('[data-testid=tl-kind-zoning] [role=switch]')).toHaveLength(0);
+    expect(all('[data-testid=tl-kind-zoning] button[data-testid^=tl-policy-]')).toHaveLength(0);
+  });
 });

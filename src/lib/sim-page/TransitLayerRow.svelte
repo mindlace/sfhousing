@@ -47,6 +47,8 @@
     part?: 'all' | 'stops' | 'bands';
     /** What the bought limits allow: the chips offered, the bands, stories and reach. Default open. */
     cap?: TransitCap;
+    /** The stop types stay as they are: shown as text, not chips (a catalogue rule in a game). */
+    stopsFixed?: boolean;
   }
 
   let {
@@ -59,7 +61,8 @@
     onremove,
     onretry,
     part = 'all',
-    cap = OPEN_CAP
+    cap = OPEN_CAP,
+    stopsFixed = false
   }: Props = $props();
 
   const uid = $props.id();
@@ -173,7 +176,11 @@
 
   {#if selected || part !== 'all'}
     <div class="flex flex-col gap-3 px-1 pt-1 pb-2">
-      {#if part !== 'bands'}
+      {#if part !== 'bands' && stopsFixed}
+        <div role="group" aria-label="Stop types">
+          {rule.stopTypes.map((t) => STOP_LABELS[t]).join(', ')}
+        </div>
+      {:else if part !== 'bands'}
         <div role="group" aria-label="Stop types" class="flex flex-wrap gap-1">
           {#each chipTypes as t (t)}
             {@const on = rule.stopTypes.includes(t)}

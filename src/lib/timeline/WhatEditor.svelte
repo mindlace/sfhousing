@@ -14,6 +14,7 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { keyOf } from '$lib/game/catalogue/rounds';
   import { OPEN_LIMITS, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { capOf } from '$lib/sim-page/transit-edit';
@@ -78,6 +79,8 @@
   }: Props = $props();
 
   const cap = $derived(capOf(limits));
+  /** A catalogue transit rule keeps its stop types until the end of the game. */
+  const stopsFixed = $derived(!limits.open && !limits.whole && keyOf(policy) !== null);
 
   const span = $derived(policy.spans[at.span]);
   const where = $derived(policy.where);
@@ -136,6 +139,7 @@
       part="stops"
       {rule}
       {cap}
+      {stopsFixed}
       status={ruleLotStatus(rule, result)}
       {catalog}
       selected={true}

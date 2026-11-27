@@ -2605,7 +2605,7 @@ describe('TimelineMode', () => {
     await expect.element(page.getByTestId('tl-chart-legend')).toBeVisible();
     const legend = page.getByTestId('tl-chart-legend').element() as HTMLElement;
     const lab = legend.parentElement!.getBoundingClientRect();
-    expect(lab.width).toBe(168);
+    expect(lab.width).toBe(288);
     const names = [...legend.querySelectorAll('li')].map((li) => li.textContent!.trim());
     // The fixture's 24 months end before the goal's deadline: no step, so no goal entry.
     expect(page.getByTestId('chart-target').elements()).toEqual([]);
