@@ -22,6 +22,7 @@ import {
   RECORD_TARGETS_JSON,
   TYPE_MAX_STORIES,
   quantile,
+  recordTargets,
   type RecordTargets,
   type Target
 } from '../pipeline/lib/building-records';
@@ -61,7 +62,12 @@ import {
   type WorldEvent
 } from '../src/lib/sim/world/types';
 import { MONTH_DAYS, type Day } from '../src/lib/timelapse/time';
-import { STAGE_ORDER, type Calibration } from '../src/lib/timelapse/types';
+import {
+  STAGE_ORDER,
+  type Calibration,
+  type ProjectHistoriesFile,
+  type ProjectHistory
+} from '../src/lib/timelapse/types';
 import { DEFAULT_POLICY4, queriesOf4, type SimPolicy4 } from '../src/lib/timeline/policy4';
 import { reconcilePolicy4 } from '../src/lib/timeline/reconcile4';
 
@@ -508,14 +514,49 @@ const report = (
 const bandName = (upTo: number, prev: number | undefined): string =>
   upTo === 999 ? `above ${prev}` : `≤ ${upTo}`;
 
-/** Every check of the spec's Acceptance table, simulated against the records. */
-export function checkLines(targets: RecordTargets, sim: SimStats): CheckLine[] {
+/**
+ * Built height ÷ limit targets over the records built at or under their limit (owner ruling
+ * 2026-11-27): no option exceeds the limit, and the density bonus that lets a project do so is a
+ * later spec. The same `recordTargets` the calibration step runs, on those histories only.
+ */
+export function inLimitHeightRatio(
+  histories: readonly ProjectHistory[],
+  asOf: Day
+): RecordTargets['heightRatio'] {
+  const within = histories.filter(
+    (h) =>
+      h.storiesProposed === null ||
+      h.baseStoriesAtFiling === null ||
+      h.storiesProposed <= h.baseStoriesAtFiling
+  );
+  const none = { index: new Map(), lotAreaM2: new Uint32Array(0), baseStories: new Uint8Array(0) };
+  return recordTargets(within, [], none, asOf).heightRatio;
+}
+
+/**
+ * Every check of the spec's Acceptance table, simulated against the records. The height ÷ limit
+ * checks take `inLimit` (the records at or under their limit, `inLimitHeightRatio`; by default
+ * `targets.heightRatio`, every record), and each bucket reports the share of all its records
+ * built over their limit.
+ */
+export function checkLines(
+  targets: RecordTargets,
+  sim: SimStats,
+  inLimit: RecordTargets['heightRatio'] = targets.heightRatio
+): CheckLine[] {
   const lines: CheckLine[] = [];
-  targets.heightRatio.forEach((t, i) => {
+  inLimit.forEach((t, i) => {
     const s = sim.heightRatio.find((b) => b.upTo === t.upTo);
-    const name = `height ÷ limit ${bandName(t.upTo, targets.heightRatio[i - 1]?.upTo)}`;
+    const name = `height ÷ limit ${bandName(t.upTo, inLimit[i - 1]?.upTo)}`;
     lines.push(judged(`${name}: mean`, s?.mean ?? 0, s?.n ?? 0, t.mean));
     lines.push(judged(`${name}: share ≥ ${NEAR_LIMIT}`, s?.nearLimit ?? 0, s?.n ?? 0, t.nearLimit));
+    const all = targets.heightRatio.find((b) => b.upTo === t.upTo);
+    if (all !== undefined) {
+      const n = all.mean.n;
+      lines.push(
+        report(`${name}: records over their limit`, null, 0, n ? all.overLimit / n : null, n)
+      );
+    }
   });
 
   const ct = targets.constructionType;
@@ -639,7 +680,9 @@ export function formatLine(l: CheckLine): string {
 
 // --- the command ---
 
-const USAGE = 'usage: npx tsx scripts/record-check.ts <datasetDir> [--json] [--targets <file>]';
+const USAGE =
+  'usage: npx tsx scripts/record-check.ts <datasetDir> [--json] [--targets <file>] ' +
+  '[--histories <file>]';
 
 export interface RecordIo {
   out(line: string): void;
@@ -654,10 +697,13 @@ const CONSOLE_IO: RecordIo = {
 /** The command's arguments, or the reason they are refused. */
 function parseArgs(
   argv: string[]
-): { dir: string; json: boolean; targets: string | null } | { error: string } {
+):
+  | { dir: string; json: boolean; targets: string | null; histories: string | null }
+  | { error: string } {
   let dir: string | null = null;
   let json = false;
   let targets: string | null = null;
+  let histories: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--json') json = true;
@@ -665,11 +711,28 @@ function parseArgs(
       const v = argv[++i];
       if (v === undefined || v.startsWith('--')) return { error: '--targets needs a file' };
       targets = v;
+    } else if (a === '--histories') {
+      const v = argv[++i];
+      if (v === undefined || v.startsWith('--')) return { error: '--histories needs a file' };
+      histories = v;
     } else if (a.startsWith('--')) return { error: `unknown flag ${a}` };
     else if (dir === null) dir = a;
     else return { error: USAGE };
   }
-  return dir === null ? { error: USAGE } : { dir, json, targets };
+  return dir === null ? { error: USAGE } : { dir, json, targets, histories };
+}
+
+/** `project-histories.json` as the projects step wrote it. */
+function readHistories(path: string): ProjectHistoriesFile {
+  let f: ProjectHistoriesFile;
+  try {
+    f = JSON.parse(readFileSync(path, 'utf8')) as ProjectHistoriesFile;
+  } catch {
+    throw new Error(`no project histories at ${path}`);
+  }
+  if (f.schema !== 1 || !Array.isArray(f.histories))
+    throw new Error(`project histories at ${path} are not schema 1`);
+  return f;
 }
 
 /** `record-targets.json` as the calibration step wrote it. */
@@ -703,6 +766,10 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
     const targetsPath =
       args.targets ?? join(ROOT, 'pipeline/.cache/derived', version, RECORD_TARGETS_JSON);
     const targets = readTargets(targetsPath);
+    const historiesPath =
+      args.histories ?? join(ROOT, 'pipeline/.cache/derived', version, 'project-histories.json');
+    const hf = readHistories(historiesPath);
+    const inLimit = inLimitHeightRatio(hf.histories, hf.asOf);
     const warnings: string[] = [];
     const worlds = await openWorlds(args.dir, { warn: (m) => warnings.push(m) });
     const { world } = worlds.run(DEFAULT_POLICY4, { months: RECORD_MONTHS });
@@ -711,7 +778,7 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
       monthLastDay(worlds.asOf, RECORD_MONTHS)
     ];
     const sim = simStats(simProjectsOf(world, worlds.ds.loaded.fzp.parcels), window);
-    const lines = checkLines(targets, sim);
+    const lines = checkLines(targets, sim, inLimit);
     for (const w of warnings) io.err(w);
     if (args.json) {
       io.out(
@@ -721,6 +788,7 @@ export async function main(argv: string[], io: RecordIo = CONSOLE_IO): Promise<0
             months: RECORD_MONTHS,
             window,
             targets: targetsPath,
+            histories: historiesPath,
             sim,
             lines
           },

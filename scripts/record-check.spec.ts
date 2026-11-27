@@ -5,9 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { RecordTargets, Target } from '../pipeline/lib/building-records';
+import type { ProjectHistory } from '../src/lib/timelapse/types';
+import { isoToDay } from '../pipeline/project-records/multiphase';
 import {
   checkLines,
   emptySimStats,
+  inLimitHeightRatio,
   main,
   recordExit,
   simStats,
@@ -161,6 +164,69 @@ describe('checkLines', () => {
   });
 });
 
+/** A completed permit-only history first recorded in 2018 at `stories` on a limit of `base`. */
+function hist(id: string, stories: number, base: number): ProjectHistory {
+  const issued = isoToDay('2018-03-01');
+  return {
+    id,
+    pathway: 'permitOnly',
+    parcelIds: [],
+    entered: {
+      permitFiled: isoToDay('2017-06-01'),
+      permitIssued: issued,
+      construction: issued + 100,
+      complete: issued + 800
+    },
+    end: { kind: 'complete', day: issued + 800 },
+    unitsAt: { permitFiled: 20 },
+    existingUnits: 0,
+    storiesProposed: stories,
+    baseStoriesAtFiling: base,
+    sources: [],
+    quality: [],
+    planningProposed: null
+  } as ProjectHistory;
+}
+
+describe('the height ÷ limit checks on records at or under their limit', () => {
+  // Base 4: 30 at 4 stories, 10 at 3, and 20 over their limit at 6 (density bonus).
+  const hs = [
+    ...Array.from({ length: 30 }, (_, i) => hist(`A${i}`, 4, 4)),
+    ...Array.from({ length: 10 }, (_, i) => hist(`B${i}`, 3, 4)),
+    ...Array.from({ length: 20 }, (_, i) => hist(`C${i}`, 6, 4))
+  ];
+  const inLimit = inLimitHeightRatio(hs, isoToDay('2026-09-30'));
+
+  it('leaves out every record built over its limit', () => {
+    const b = inLimit.find((x) => x.upTo === 4)!;
+    expect(b.mean.n).toBe(40);
+    expect(b.mean.stat).toBeCloseTo((30 + 10 * 0.75) / 40, 9);
+    expect(b.nearLimit.stat).toBe(0.75);
+    expect(b.overLimit).toBe(0);
+  });
+
+  it('checks against the in-limit targets and reports the share over the limit per bucket', () => {
+    const t = targets();
+    // all records: mean 1.3 with 25 of 100 over their limit
+    for (const b of t.heightRatio) Object.assign(b, { mean: target(1.3, 100, 0.1), overLimit: 25 });
+    const within = targets().heightRatio; // mean 0.72, as meeting() simulates
+    const lines = checkLines(t, meeting(), within);
+    expect(line(lines, 'height ÷ limit ≤ 6: mean')).toMatchObject({
+      status: 'pass',
+      target: 0.72,
+      n: 100
+    });
+    expect(line(lines, 'height ÷ limit ≤ 6: records over their limit')).toMatchObject({
+      status: 'report',
+      sim: null,
+      target: 0.25,
+      n: 100
+    });
+    // without the in-limit targets the all-record mean of 1.3 misses
+    expect(line(checkLines(t, meeting()), 'height ÷ limit ≤ 6: mean').status).toBe('miss');
+  });
+});
+
 describe('recordExit', () => {
   it('is 1 with any miss and 0 with passes and reports only', () => {
     const l = (status: CheckLine['status']): CheckLine => ({
@@ -255,9 +321,14 @@ describe('main', () => {
       temps.push(dir);
       const file = join(dir, 'record-targets.json');
       writeFileSync(file, JSON.stringify(targets()));
+      const histories = join(dir, 'project-histories.json');
+      writeFileSync(
+        histories,
+        JSON.stringify({ schema: 1, asOf: 20_000, histories: [hist('H1', 3, 4)] })
+      );
       const out: string[] = [];
       const err: string[] = [];
-      const code = await main([FIXTURE, '--targets', file, '--json'], {
+      const code = await main([FIXTURE, '--targets', file, '--histories', histories, '--json'], {
         out: (l) => out.push(l),
         err: (l) => err.push(l)
       });
@@ -272,6 +343,10 @@ describe('main', () => {
         json.sim.heightRatio.reduce((a: number, b: { n: number }) => a + b.n, 0)
       ).toBeGreaterThan(0);
       expect(code).toBe(recordExit(json.lines));
+      // the height ÷ limit targets come from the histories at or under their limit: one record
+      expect(
+        json.lines.find((l: CheckLine) => l.check === 'height ÷ limit ≤ 4: mean')
+      ).toMatchObject({ status: 'report', target: 0.75, n: 1 });
     },
     RUN_MS
   );
@@ -283,5 +358,10 @@ describe('main', () => {
     expect(await main([FIXTURE, '--targets', '/nonexistent/record-targets.json'], io)).toBe(2);
     expect(err[0]).toMatch(/^record-check: usage/);
     expect(err[1]).toMatch(/^record-check: no record targets at /);
+    const t = join(mkdtempSync(join(tmpdir(), 'record-check-')), 'record-targets.json');
+    temps.push(join(t, '..'));
+    writeFileSync(t, JSON.stringify(targets()));
+    expect(await main([FIXTURE, '--targets', t, '--histories', '/nonexistent/h.json'], io)).toBe(2);
+    expect(err[2]).toMatch(/^record-check: no project histories at /);
   });
 });

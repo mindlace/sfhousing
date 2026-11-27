@@ -340,38 +340,30 @@ stories its start was allowed (`env`), its type (`btype`), its lot's area, its c
 the days it entered `permitIssued`, `construction` and `complete`. `simStats` then computes each
 statistic over the window of those 120 months as `recordTargets` computes it over the records:
 
-| Check                    | Simulated population                                                                                                                                       | Status                                   |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Height ÷ limit by bucket | starts in the window: stories ÷ `env` (uncapped, as Task 5's records), by `LIMIT_BUCKETS`; mean (± 0.10) and share ≥ 0.9 (2 SE)                            | checked where the records' n ≥ 30        |
-| Code limits              | starts in the window: Type V above 6, Type III above 8                                                                                                     | exact: any one misses                    |
-| Type I at 8 to 12        | permits issued in the window (entered `permitIssued`) at 8 to 12 stories                                                                                   | checked (2 SE)                           |
-| Type shares by band      | the same permits by `HEIGHT_BANDS` and type                                                                                                                | report                                   |
-| Stage medians by band    | `permitIssued` (issued to construction) and `construction` (construction to completion): spells entered in the window and completed by its end (ruling F8) | checked (2 SE)                           |
-| Issued to completion     | the two stages summed per project, beside the raw pull's 28.4, 36.8, 36.5, 33.7 and 40.1 months                                                            | report                                   |
-| Homes per project        | permits issued in the window for 10 or more homes, median by band                                                                                          | checked (2 SE)                           |
-| Large lots               | permits issued on lots of 1,500 m² or more with `env` ≥ 13: Type I at 13 or more stories                                                                   | checked (2 SE) where n ≥ 30; report here |
-| Cohorts                  | height ÷ limit, affordable (`kind` 1) and private, and their difference                                                                                    | report                                   |
+| Check                    | Simulated population                                                                                                                                                                                                                                                                                                                                          | Status                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Height ÷ limit by bucket | starts in the window: stories ÷ `env` (uncapped, as Task 5's records), by `LIMIT_BUCKETS`; mean (± 0.10) and share ≥ 0.9 (2 SE) against the records built at or under their limit only (`inLimitHeightRatio`, owner ruling 2026-11-27: the density bonus is a later spec); a report line per bucket gives the share of all its records built over their limit | checked where the in-limit records' n ≥ 30 |
+| Code limits              | starts in the window: Type V above 6, Type III above 8                                                                                                                                                                                                                                                                                                        | exact: any one misses                      |
+| Type I at 8 to 12        | permits issued in the window (entered `permitIssued`) at 8 to 12 stories                                                                                                                                                                                                                                                                                      | checked (2 SE)                             |
+| Type shares by band      | the same permits by `HEIGHT_BANDS` and type                                                                                                                                                                                                                                                                                                                   | report                                     |
+| Stage medians by band    | `permitIssued` (issued to construction) and `construction` (construction to completion): spells entered in the window and completed by its end (ruling F8)                                                                                                                                                                                                    | checked (2 SE)                             |
+| Issued to completion     | the two stages summed per project, beside the raw pull's 28.4, 36.8, 36.5, 33.7 and 40.1 months                                                                                                                                                                                                                                                               | report                                     |
+| Homes per project        | permits issued in the window for 10 or more homes, median by band                                                                                                                                                                                                                                                                                             | checked (2 SE)                             |
+| Large lots               | permits issued on lots of 1,500 m² or more with `env` ≥ 13: Type I at 13 or more stories                                                                                                                                                                                                                                                                      | checked (2 SE) where n ≥ 30; report here   |
+| Cohorts                  | height ÷ limit, affordable (`kind` 1) and private, and their difference                                                                                                                                                                                                                                                                                       | report                                     |
 
-A checked target that the simulation has no project for misses. `checkLines(targets, sim)` and
+The in-limit targets are `recordTargets` run on the histories whose proposed stories are at most their base stories at filing, read from `pipeline/.cache/derived/<v>/project-histories.json` (`--histories <file>` overrides it). A checked target that the simulation has no project for misses. `checkLines(targets, sim)` and
 `recordExit(lines)` are the pure parts its spec tests.
 
 `cap-measure` runs the same runner over the whole window (480 months) with the score series fed
-as the ensemble's plain loop feeds it, so `rows[i].completedNet` is the view's row for row (its spec
-checks this against `openEngine` on fixture-0; on `2026-11-27-3abc9cb0` the 480 current-law rows
-agree exactly). The transit rule is `GAME_TRANSIT_ID` with all four stop types at 805 m; the full
-tree is `fullTree(cal)` with every band of its transit rule set to the cap. The old figures
-(`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
+as the ensemble's plain loop feeds it, so `rows[**Live figures** (build `2026-11-27-49765dbb`, not uploaded; records 2016-11-27 to 2026-11-27).
+Record check: 6 pass, 10 miss, 41 report, exit 1. With only the records at or under their limit, the
+records' height ÷ limit means are 0.903 (n 323), 0.839 (n 52), 0.753 (n 28), 0.568 (n 8) and 0.548
+(n 26) for ≤ 4, ≤ 6, ≤ 8, ≤ 12 and above 12; the share of all records built over their limit is
+0.193, 0.485, 0.364, 0.273 and 0.316. ≤ 8 and above 12 fall under 30 in-limit records and are now
+report lines. The misses are listed in "Known misses" below.
 
-**Live figures** (build `2026-11-27-49765dbb`, Task 13a, not uploaded; records 2016-11-27 to
-2026-11-27). Record check: 6 pass, 14 miss, 32 report, exit 1. Height ÷ limit misses in every
-checked bucket: sim mean 0.749, 0.695, 0.665 and 0.420 against records 1.027, 1.296, 1.145 and 0.904
-(≤ 4, ≤ 6, ≤ 8, above 12), share ≥ 0.9 0.437, 0.194, 0.139 and 0.063 against 0.760, 0.713, 0.568 and
-0.421. The records' means include the 201 projects built over their limit (density bonus), which
-no option can reach; the fit's own in-limit records average 0.883 at ≤ 4. The simulation chooses at
-today's prices, where most lots sit at break-even, so the sharper fitted spread moves little
-(the spread at its bound gave 0.759, 0.709, 0.631 and 0.459 on `2026-11-27-3abc9cb0`). The code
-limits pass (no V above 6, no III above 8 among 423 starts). Type I at 8 to 12: 0.923 (n 13)
-against 0.984 ± 0.032, a miss. Permit-issued medians pass at ≤ 4 and ≤ 7 and miss at ≤ 12 (1.2
+2
 against 8.3 ± 2.7 months, sim n 12); construction misses at ≤ 4 (22.7 against 26.2 ± 1.3) and ≤ 12
 (18.2 against 22.9 ± 2.9, sim n 6), passes at ≤ 7. Homes per project pass at ≤ 4 and miss at ≤ 7
 (30.5 against 57 ± 16.9) and ≤ 12 (66 against 102 ± 18.0, sim n 13). The three ≤ 12 lines passed
@@ -390,6 +382,35 @@ Cap report (`completedNet` 2040 / 2066, old figures in brackets; share of starts
 Current law: 47,218 / 82,765 (47,502 / 79,338); starts 77% V, 12% III, 10% I (n 1,651). Transit at
 13 stories builds 30 fewer homes than at 12 by 2040 (58,499 against 58,529), within noise; every
 other step up builds more.
+
+## Known misses (owner ruling 2026-11-27)
+
+The record check on `2026-11-27-49765dbb` (6 pass, 10 miss, 41 report) misses the lines below. The
+owner ruled on 2026-11-27 that they are accepted for this dataset. The follow-up is the density-bonus
+spec, which lets a project build over its limit.
+
+| Line                                       | Sim                 | Records               | Reason the records support                                                                                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| height ÷ limit ≤ 4: mean                   | 0.749 (n 261)       | 0.903 ± 0.100 (n 323) | today's market: at 2026 prices 508 of the 556 fit records' lots sit at break-even (186 at their own year's prices), where the choice ranks by price and favours small B-priced Type III; even era-priced, the fit's own expected mean is 0.717 against 0.883 in its in-limit records |
+| height ÷ limit ≤ 4: share ≥ 0.9            | 0.437 (n 261)       | 0.703 ± 0.051 (n 323) | as above                                                                                                                                                                                                                                                                             |
+| height ÷ limit ≤ 6: mean                   | 0.695 (n 67)        | 0.839 ± 0.100 (n 52)  | as above; the fit's era-priced expected mean is 0.731                                                                                                                                                                                                                                |
+| height ÷ limit ≤ 6: share ≥ 0.9            | 0.194 (n 67)        | 0.442 ± 0.138 (n 52)  | as above                                                                                                                                                                                                                                                                             |
+| Type I share 8 to 12 stories               | 0.923 (n 13)        | 0.984 ± 0.032 (n 62)  | small sim n: one Type III start among 13                                                                                                                                                                                                                                             |
+| permit issued to construction ≤ 12 stories | 1.166 months (n 12) | 8.279 ± 2.727 (n 41)  | small sim n (passed at n 9 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                 |
+| construction to completion ≤ 4 stories     | 22.7 months (n 95)  | 26.2 ± 1.299 (n 233)  | the height-time step pools ≤ 4 at 23.6 months (`heightTime`); its own fit, not the choice                                                                                                                                                                                            |
+| construction to completion ≤ 12 stories    | 18.2 months (n 6)   | 22.9 ± 2.875 (n 36)   | small sim n (passed at n 4 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                 |
+| homes per project ≤ 7 stories              | 30.5 (n 34)         | 57 ± 16.9 (n 100)     | today's market: smaller Type III and Type V buildings chosen at break-even; the records' Type I share at ≤ 7 stories is 0.511 against the sim's 0.077                                                                                                                                |
+| homes per project ≤ 12 stories             | 66 (n 13)           | 102 ± 18.0 (n 55)     | small sim n (passed at n 11 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                |
+
+Open notes:
+
+- **The cost index's licence.** The DGS California Construction Cost Index page states no terms of
+  use, and the index derives from ENR's Building Cost Index. Only the fit reads it and the dataset
+  carries no index value, but its yearly means are constants in `pipeline/lib/fzp-cal/era-market.ts`,
+  in this public repository.
+- **The margin and the market slope overlap.** With the fitted spread, `choiceMargin` correlates
+  r = -0.857 with the slope's cost share (calibration report section 16), so the start odds may
+  count one change in cost against value twice (spec, Non-goals).
 
 ## Location value (`pipeline/lib/location-value.ts`, `86_location_value.sql`)
 
