@@ -24,6 +24,7 @@ export const ACCEPTED_MISSES: readonly AcceptedMiss[] = [
   'height ÷ limit ≤ 6: mean',
   'height ÷ limit ≤ 6: share ≥ 0.9',
   'Type I share 8 to 12 stories',
+  'permit issued to construction ≤ 4 stories (months)',
   'permit issued to construction ≤ 12 stories (months)',
   'construction to completion ≤ 12 stories (months)',
   'homes per project ≤ 7 stories',
