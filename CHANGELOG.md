@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.8.0](https://github.com/mindlace/sfhousing/compare/v0.7.0...v0.8.0) (2026-11-27)
+
+
+### Features
+
+* **boxes:** better building shapes, part 1 ([#165](https://github.com/mindlace/sfhousing/issues/165)) ([98e13d0](https://github.com/mindlace/sfhousing/commit/98e13d01adfbf11707d16d6b270cc2b589d1009e))
+* car ownership model with parking into start odds ([#153](https://github.com/mindlace/sfhousing/issues/153)) ([be6467d](https://github.com/mindlace/sfhousing/commit/be6467dcb12f8ea89d16a603f99ecd781e8dbcb0))
+* **game:** policy rounds replace the points game ([#167](https://github.com/mindlace/sfhousing/issues/167)) ([947c528](https://github.com/mindlace/sfhousing/commit/947c528364b7afd826536db892b7da718c8d8928))
+* **game:** the incremental loop (runs, the tally, the policy tree, side goals) ([#158](https://github.com/mindlace/sfhousing/issues/158)) ([f8f98b9](https://github.com/mindlace/sfhousing/commit/f8f98b9b2c8912f17a127235c3df7e9a097709de))
+* incremental game with levels, saved games and finite funding ([#145](https://github.com/mindlace/sfhousing/issues/145)) ([5120d54](https://github.com/mindlace/sfhousing/commit/5120d54b15f645421bf0390ffceaef02e5ea7029))
+* **pipeline:** shared download cache and boxes reuse ([#162](https://github.com/mindlace/sfhousing/issues/162)) ([ebbc410](https://github.com/mindlace/sfhousing/commit/ebbc410b13928b849ea3ea40ab2c8587ea6466d7))
+* **sim:** the developer chooses each lot's building ([#166](https://github.com/mindlace/sfhousing/issues/166)) ([28a5610](https://github.com/mindlace/sfhousing/commit/28a5610f79bf53eb7ea8d27cbda1c7a1ca697272))
+
+
+### Bug Fixes
+
+* **calibration:** fit permit-side pooled baselines from 2015-01-01 ([#150](https://github.com/mindlace/sfhousing/issues/150)) ([770955a](https://github.com/mindlace/sfhousing/commit/770955a674591a9732af5479a74767d49fd1ff9b))
+* flake triage, map inset before onready, perf budgets out of e2e ([#147](https://github.com/mindlace/sfhousing/issues/147)) ([04fe023](https://github.com/mindlace/sfhousing/commit/04fe023bf636083e0d4ee62260622c007e8f9e41))
+* freeway land is unpaintable ([#149](https://github.com/mindlace/sfhousing/issues/149)) ([aa24947](https://github.com/mindlace/sfhousing/commit/aa249472a1e47aa61c73e1b575ad422c59c397b4))
+* **funding:** more money never turns an award into a wait ([#154](https://github.com/mindlace/sfhousing/issues/154)) ([083fb7a](https://github.com/mindlace/sfhousing/commit/083fb7aeb3943448e1a816165655c471be485eec))
+* **map:** re-pick the resting pointer when a camera move ends ([#148](https://github.com/mindlace/sfhousing/issues/148)) ([85e08e4](https://github.com/mindlace/sfhousing/commit/85e08e42d4d727146bb9ba0db8f8efe752133560))
+* **pipeline:** cache import lists large directories without a stack overflow ([#163](https://github.com/mindlace/sfhousing/issues/163)) ([821ef74](https://github.com/mindlace/sfhousing/commit/821ef741168b648fbbb296f6375c3724bc9492a7))
+
 ## [0.7.0](https://github.com/mindlace/sfhousing/compare/v0.6.0...v0.7.0) (2026-11-22)
 
 
