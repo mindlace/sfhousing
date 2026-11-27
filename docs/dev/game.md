@@ -512,47 +512,47 @@ It is run before every dataset upload, on the directory that is then uploaded, a
 synthetic numbers and the fixture dataset at an amount of 1; no test holds a figure measured on the
 production dataset.
 
-Result of 2026-11-26 on dataset `2026-11-25-76c90397`, cars on, at a 1-minute load of about 6
-(the fill time is ballpark):
+Result of 2026-11-27 on dataset `2026-11-27-247eaa0b` (the building-choice engine), cars on (the
+fill time is ballpark):
 
 ```
-Dataset 2026-11-25-76c90397
+Dataset 2026-11-27-247eaa0b
 Goal: 82,069 homes
-Every policy: reached Feb 2048
-Current law: reached Oct 2061
+Every policy: reached Aug 2052
+Current law: reached May 2064
 Alone, against current law:
-  Taller near BART and Caltrain: May 2059, 29 months earlier, +4,724 homes by Oct 2066
-  SB 423 clock: Oct 2061, no change, +277 homes by Oct 2066
-  Housing bond: Mar 2061, 7 months earlier, +465 homes by Oct 2066
-  Taller near Muni Metro: Sep 2057, 49 months earlier, +8,805 homes by Oct 2066
-  Benchmark permits: Mar 2061, 7 months earlier, +1,135 homes by Oct 2066
-  General revenue: Jun 2059, 28 months earlier, +2,468 homes by Oct 2066
-  Taller near bus: Mar 2059, 31 months earlier, +3,852 homes by Oct 2066
-  Revolving fund: Oct 2061, no change, +9 homes by Oct 2066
-  Federal support: May 2060, 17 months earlier, +1,697 homes by Oct 2066
-  No discretionary review: Mar 2060, 19 months earlier, +2,510 homes by Oct 2066
-  Public bank: Oct 2061, no change, +0 homes by Oct 2066
-  State money doubled: Oct 2061, no change, +0 homes by Oct 2066
+  Taller near BART and Caltrain: Feb 2063, 15 months earlier, +2,237 homes by Oct 2066
+  SB 423 clock: Apr 2064, 1 month earlier, +314 homes by Oct 2066
+  Housing bond: Oct 2063, 7 months earlier, +1,175 homes by Oct 2066
+  Taller near Muni Metro: Feb 2061, 39 months earlier, +4,093 homes by Oct 2066
+  Benchmark permits: Nov 2063, 6 months earlier, +1,023 homes by Oct 2066
+  General revenue: May 2063, 12 months earlier, +2,402 homes by Oct 2066
+  Taller near bus: Aug 2060, 45 months earlier, +5,375 homes by Oct 2066
+  Revolving fund: May 2064, no change, +2 homes by Oct 2066
+  Federal support: May 2063, 12 months earlier, +1,584 homes by Oct 2066
+  No discretionary review: Mar 2063, 14 months earlier, +2,982 homes by Oct 2066
+  Public bank: Apr 2064, 1 month earlier, +679 homes by Oct 2066
+  State money doubled: May 2064, no change, +0 homes by Oct 2066
 In its round, against the rounds before:
-  Taller near BART and Caltrain: May 2059, 29 months earlier, +4,724 homes by Oct 2066
-  SB 423 clock: Oct 2061, no change, +277 homes by Oct 2066
-  Housing bond: Mar 2061, 7 months earlier, +465 homes by Oct 2066
-  Taller near Muni Metro: Apr 2057, 50 months earlier, +5,164 homes by Oct 2066
-  Benchmark permits: Oct 2060, 8 months earlier, +600 homes by Oct 2066
-  General revenue: Sep 2057, 45 months earlier, +6,834 homes by Oct 2066
-  Taller near bus: Dec 2050, 20 months earlier, +4,414 homes by Oct 2066
-  Revolving fund: Aug 2052, no change, +4 homes by Oct 2066
-  Federal support: Mar 2052, 5 months earlier, +1,099 homes by Oct 2066
-  No discretionary review: Apr 2048, 22 months earlier, +3,560 homes by Oct 2066
-  Public bank: Feb 2050, no change, +0 homes by Oct 2066
-  State money doubled: Feb 2050, no change, +1 homes by Oct 2066
+  Taller near BART and Caltrain: Feb 2063, 15 months earlier, +2,237 homes by Oct 2066
+  SB 423 clock: Apr 2064, 1 month earlier, +314 homes by Oct 2066
+  Housing bond: Oct 2063, 7 months earlier, +1,175 homes by Oct 2066
+  Taller near Muni Metro: Jun 2059, 26 months earlier, +2,645 homes by Oct 2066
+  Benchmark permits: Oct 2060, 10 months earlier, +476 homes by Oct 2066
+  General revenue: Apr 2060, 16 months earlier, +1,442 homes by Oct 2066
+  Taller near bus: Jun 2054, 34 months earlier, +3,179 homes by Oct 2066
+  Revolving fund: Mar 2057, 1 month earlier, +4 homes by Oct 2066
+  Federal support: Sep 2056, 7 months earlier, +120 homes by Oct 2066
+  No discretionary review: Aug 2052, 21 months earlier, +2,761 homes by Oct 2066
+  Public bank: May 2054, no change, +105 homes by Oct 2066
+  State money doubled: May 2054, no change, +0 homes by Oct 2066
 Rounds, all on:
-  1: Jun 2061, 4 months earlier, 88,462 homes by Oct 2066
-  2: Aug 2052, 106 months earlier, 103,514 homes by Oct 2066
-  3: Feb 2050, 30 months earlier, 108,899 homes by Oct 2066
-  4: Feb 2048, 24 months earlier, 112,496 homes by Oct 2066
+  1: Aug 2061, 33 months earlier, 87,722 homes by Oct 2066
+  2: Apr 2057, 52 months earlier, 92,561 homes by Oct 2066
+  3: May 2054, 35 months earlier, 95,818 homes by Oct 2066
+  4: Aug 2052, 21 months earlier, 98,496 homes by Oct 2066
 To judge: nothing
-Filled in 3.0 s (cars on)
+Filled in 2.7 s (cars on)
 ```
 
 ## Words
