@@ -131,7 +131,7 @@ describe('doctor boxes-lock', () => {
       files: [],
       retrievedAt: '2026-10-10T00:00:00.000Z',
       upstreamVersion:
-        'boxes/1 code=aaaaaaaaaaaa config=aaaaaaaaaaaa overture-buildings=aaaaaaaaaaaa ' +
+        'boxes/2 code=aaaaaaaaaaaa config=aaaaaaaaaaaa overture-buildings=aaaaaaaaaaaa ' +
         'overture-building-parts=- usgs-lidar-sf=- datasf-parcels=- datasf-streets=- ' +
         'datasf-neighborhoods=-',
       rowCount: 0,

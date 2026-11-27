@@ -71,6 +71,18 @@ function scaled(p: MultiPoly, f: number, c: [number, number]): MultiPoly {
 const tierScale = (shape: string, t: number): number =>
   shape === 'pyramidal' || shape === 'cone' ? 1 - t : Math.sqrt(1 - t * t);
 
+/**
+ * The top partBoxes draws for a part: heightM; heightM - roof_height / 2 for a non-tiered roof
+ * with a roof height (drawn at mid-roof); the apex for a tiered one. Clamped to heightRangeM.
+ */
+export function partTop(p: Part): number {
+  const h = p.heightM ?? 0;
+  const rh = p.roofHeightM !== null && p.roofHeightM > 0 ? p.roofHeightM : null;
+  const tiered =
+    p.roofShape !== null && (BOXES.partTierShapes as readonly string[]).includes(p.roofShape);
+  return clampH(rh !== null && !tiered ? h - rh / 2 : h);
+}
+
 /** One part's boxes: a plain box, or a block under `partTiers` inset roof tiers. */
 export function partBoxes(bid: string, counted: Part[], kStart: number): RenderBox[] {
   const out: RenderBox[] = [];
@@ -86,10 +98,8 @@ export function partBoxes(bid: string, counted: Part[], kStart: number): RenderB
     const rh = p.roofHeightM !== null && p.roofHeightM > 0 ? p.roofHeightM : null;
     const tiered =
       p.roofShape !== null && (BOXES.partTierShapes as readonly string[]).includes(p.roofShape);
-    if (rh === null) {
-      push(p.shape, base, p.heightM);
-    } else if (!tiered) {
-      push(p.shape, base, p.heightM - rh / 2);
+    if (rh === null || !tiered) {
+      push(p.shape, base, partTop(p));
     } else {
       const eave = p.heightM - rh;
       const n = BOXES.partTiers;

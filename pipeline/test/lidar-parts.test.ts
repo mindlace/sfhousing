@@ -4,6 +4,7 @@ import {
   countedParts,
   partBoxes,
   partCoverage,
+  partTop,
   uncoveredArea,
   type Part
 } from '../lib/lidar/parts.js';
@@ -40,6 +41,20 @@ const tower = (o: Partial<Part> = {}): Part =>
   });
 
 describe('mapped parts', () => {
+  it('partTop is the drawn top', () => {
+    expect(partTop(part('a', rect(0, 0, 10, 10), { heightM: 20 }))).toBe(20);
+    // Salesforce's skillion parts: height 326, roof_height 245, drawn at mid-roof.
+    const skillion = { heightM: 326, roofShape: 'skillion', roofHeightM: 245 };
+    expect(partTop(part('b', rect(0, 0, 10, 10), skillion))).toBe(203.5);
+    expect(partTop(tower())).toBe(60);
+    // Review Focus: roof_height over height clamps like the box.
+    const over = { heightM: 10, roofShape: 'gabled', roofHeightM: 30 };
+    expect(partTop(part('c', rect(0, 0, 10, 10), over))).toBe(2.5);
+    // partBoxes draws exactly partTop for a non-tiered part.
+    const [b] = partBoxes('b1', [part('b', rect(0, 0, 10, 10), skillion)], 0);
+    expect(b.heightM).toBe(203.5);
+  });
+
   it('a plain part', () => {
     const boxes = partBoxes('b14', [part('p14a', rect(132, 5, 138, 25))], 0);
     expect(boxes).toHaveLength(1);

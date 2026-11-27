@@ -583,7 +583,14 @@ const overtureParts = [
     min_height: 20
   }),
   part('p14c', 'b14', null, polygon(rect(132, 5, 134, 7))),
-  part('p14leg', 'b14', 10, polygon(rect(139, 26, 140, 27)))
+  part('p14leg', 'b14', 10, polygon(rect(139, 26, 140, 27))),
+  // bpier is Salesforce in small: the part draws a 20 m skillion over the whole footprint (top 15
+  // at the eave side), under the LiDAR's stepped tower (median 36 m), so the part is drawn too low,
+  // disputed and rejected.
+  part('ppier', 'bpier', 20, polygon(rect(20, -40, 40, -32)), {
+    roof_shape: 'skillion',
+    roof_height: 10
+  })
 ];
 
 // ---- street centerlines (3psu-pn9h; sim data layers) ----
@@ -1107,7 +1114,14 @@ fs.writeFileSync(
           return 52 + 8 * (1 - u);
         }
       },
-      { ring: R(47, 43, 53, 49), top: 4 }
+      { ring: R(47, 43, 53, 49), top: 4 },
+      // bpier, Salesforce in small: a 12 m base and four terraces 24, 36, 48 and 60 m high, each
+      // set back 2 m per side (in x) from the one below, over the whole depth of the footprint.
+      { ring: R(20, -40, 40, -32), top: 12 },
+      { ring: R(22, -40, 38, -32), top: 24 },
+      { ring: R(24, -40, 36, -32), top: 36 },
+      { ring: R(26, -40, 34, -32), top: 48 },
+      { ring: R(28, -40, 32, -32), top: 60 }
     ],
     // A 3 m tree beside b04 whose crown overhangs its roof by 2 m at +5 m (17 m above ground).
     veg: [{ ring: R(36, 12, 40, 16), top: 17 }]
