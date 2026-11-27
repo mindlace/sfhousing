@@ -54,6 +54,8 @@
     isLocked?: (p: Policy) => boolean;
     /** A catalogue policy the player cannot edit yet: its row reads New. */
     isFixed?: (p: Policy) => boolean;
+    /** The pane a row's New and Edit open (PolicyRow). */
+    paneId?: string;
   }
 
   let {
@@ -77,7 +79,8 @@
     stale = false,
     canAdd = true,
     isLocked = () => false,
-    isFixed = () => false
+    isFixed = () => false,
+    paneId = undefined
   }: Props = $props();
   /** Only Public money has pools. */
   const kindLevels = $derived(kind === 'money' ? levels : null);
@@ -188,6 +191,7 @@
         {readonly}
         onselect={(r) => onselect(r)}
         {onedit}
+        {paneId}
       />
     {/each}
   {/if}

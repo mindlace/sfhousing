@@ -819,6 +819,40 @@ describe('SimRoute in a game: taking a win', () => {
     );
   });
 
+  it('New and Edit say whether the pane they open is open, and which pane it is', async () => {
+    const mem = new MemoryStorage();
+    store(mem, offerThrough(EMPTY, 2, fcal, ['transit-rail']));
+    const game = seed(mem, 2, { target: M[K + 6], editable: ['transit-rail'] });
+    await openedLong(game, mem);
+    await openKinds();
+    const pane = () => document.querySelector<HTMLElement>('[data-testid=tl-inspector]')!;
+    const rowOf = (label: string) => page.getByTestId('tl-policy').filter({ hasText: label });
+    const edit = rowOf('Taller near BART and Caltrain').getByTestId('tl-policy-edit');
+    const nu = rowOf('SB 423 clock').getByTestId('tl-policy-new');
+    // Closed: both name the pane, neither is expanded.
+    for (const b of [edit, nu]) {
+      await expect.element(b).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(b).toHaveAttribute('aria-controls', pane().id);
+    }
+    expect(pane().id).not.toBe('');
+    // Edit opens the editor in that pane; focus stays on the button.
+    await edit.click();
+    await expect.element(edit).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(edit).toHaveAttribute('aria-controls', pane().id);
+    expect(pane().querySelector('[data-testid=inspector]')).not.toBeNull();
+    await expect.element(edit).toHaveFocus();
+    await expect.element(nu).toHaveAttribute('aria-expanded', 'false');
+    // New opens the details in the same pane.
+    await nu.click();
+    await expect.element(nu).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(edit).toHaveAttribute('aria-expanded', 'false');
+    expect(pane().querySelector('[data-testid=policy-details]')).not.toBeNull();
+    // The rows and the pane (the page's landmarks are the layout's, not this host's).
+    expect(await violations(page.getByTestId('tl-dock').element())).toEqual([]);
+    await page.getByRole('button', { name: 'Close details' }).click();
+    await expect.element(nu).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('a refused store write changes nothing and the win stands', async () => {
     stubTouchLaptop();
     const mem = new MemoryStorage();

@@ -1,7 +1,8 @@
 <!--
   An open kind's full row for one policy (rule 6): its label and one SpanBar per span. The label is
   the policy's switch, its name, then "New" (a policy the game keeps fixed: its pane shows details)
-  or "Edit" (its editor); both select the policy. Read-only and locked rows have neither: the name
+  or "Edit" (its editor); both select the policy, and say whether the pane shows it
+  (`aria-expanded`) and which pane it is (`aria-controls`, `paneId`). Read-only and locked rows have neither: the name
   only. A policy that is off is dimmed in place; a fixed policy's bars select it and cannot be
   moved. A locked policy's bars are dimmed and inert; `note` is a muted second line under the name.
   Renders a label cell and a lane for the Timeline's grid; below md the label cell has no box of
@@ -40,6 +41,8 @@
     note?: string | null;
     /** A catalogue policy the player cannot edit yet: only its switch works; its row reads New. */
     fixed?: boolean;
+    /** The id of the pane New and Edit open (their `aria-controls`); none when it is not shown. */
+    paneId?: string;
   }
 
   let {
@@ -59,13 +62,16 @@
     stale = false,
     locked = false,
     note = null,
-    fixed = false
+    fixed = false,
+    paneId = undefined
   }: Props = $props();
 
   const level = $derived(levels?.byPolicy.get(policy.id) ?? null);
   /** The switch and the button show: a row that is neither read-only nor locked. */
   const controls = $derived(!readonly && !locked);
   const select = () => onselect({ kind, id: policy.id, span: 0 });
+  /** The pane shows this policy: New's and Edit's `aria-expanded`. Focus stays on the button. */
+  const shown = $derived(selected?.kind === kind && selected.id === policy.id);
   const toggle = () =>
     onedit(
       (d) => setOn(d, kind, policy.id, !policy.on),
@@ -103,6 +109,8 @@
           type="button"
           class="newb"
           aria-label="New: {policy.label}, details"
+          aria-expanded={shown}
+          aria-controls={paneId}
           data-testid="tl-policy-new"
           onclick={select}><span class="new" aria-hidden="true">New</span></button
         >
@@ -111,6 +119,8 @@
           type="button"
           class="editb"
           aria-label="Edit {policy.label}"
+          aria-expanded={shown}
+          aria-controls={paneId}
           data-testid="tl-policy-edit"
           onclick={select}>Edit</button
         >

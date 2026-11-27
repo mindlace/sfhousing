@@ -76,6 +76,8 @@
     pinned?: boolean;
     /** What the game offers: "+" only on a kind that opens; a policy not within is locked. */
     limits?: Limits;
+    /** The pane a policy row's New and Edit open, while it is shown (PolicyRow). */
+    paneId?: string;
   }
 
   let {
@@ -99,7 +101,8 @@
     stale = false,
     pinHeight = $bindable(0),
     pinned = true,
-    limits = OPEN_LIMITS
+    limits = OPEN_LIMITS,
+    paneId = undefined
   }: Props = $props();
 
   const lockedIn = (kind: PolicyKind) => (p: Policy) => !within(kind, p, limits);
@@ -299,6 +302,7 @@
           canAdd={kindOpen(kind, limits)}
           isLocked={lockedIn(kind)}
           isFixed={fixedIn}
+          {paneId}
         />
       {/each}
 
@@ -368,6 +372,7 @@
           canAdd={kindOpen(sheet, limits)}
           isLocked={lockedIn(sheet)}
           isFixed={fixedIn}
+          {paneId}
         />
         <div
           class="line"

@@ -1994,6 +1994,7 @@
           bind:pinHeight
           {pinned}
           limits={g?.limits ?? OPEN_LIMITS}
+          paneId={detailShown ? scoreControls : undefined}
         />
       </div>
 
