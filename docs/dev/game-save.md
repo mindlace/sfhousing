@@ -44,8 +44,8 @@ deletion) call it; nothing else touches `game_save`. It parses a stored body onl
   `handle_tombstone` row has `released_by` equal to the identity: the handle was changed at least
   once.
 - `listGames(db, identityId, now)`: the live rows, newest `saved_at` first, as
-  `{ id, name, nameIsDefault, savedAt, phase, round, rev }` (`round` from the `rung` column,
-  `nameIsDefault` read with `json_extract`);
+  `{ id, name, nameIsDefault, savedAt, phase, round, finished, rev }` (`round` from the `rung`
+  column, `nameIsDefault` and `finished` read from the body with `json_extract`, no column);
   `removed` is the ids removed within `REMOVED_LIST_DAYS` (90) of `now`.
 - `readGame(db, identityId, id)`: `live` with rev and save, `removed`, or null. A body stored with
   a version 2 state (the points build's) reads back upgraded to version 3.

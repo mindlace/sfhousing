@@ -41,7 +41,7 @@
     `/signin?returnTo=${encodeURIComponent(page.url.pathname + page.url.search)}`
   );
   const currentName = $derived(game.saves.find((e) => e.id === game.currentId)?.name ?? '');
-  const stage = $derived(entryStage(game.state.phase, game.state.round));
+  const stage = $derived(entryStage(game.state.phase, game.state.round, game.state.finished));
 
   async function focusLater(id: string): Promise<void> {
     await tick();
@@ -232,7 +232,7 @@
             </button>
           {/if}
           <span class="px-3">
-            {entryStage(entry.phase, entry.round)} · {current
+            {entryStage(entry.phase, entry.round, entry.finished)} · {current
               ? PLAYING
               : playedText(entry.savedAt, new Date())}
           </span>

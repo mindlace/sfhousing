@@ -27,6 +27,7 @@ export function entry(name: string, over: Partial<SaveEntry> = {}): SaveEntry {
     savedAt: new Date().toISOString(), // eslint-disable-line svelte/prefer-svelte-reactivity
     phase: 'opening',
     round: 0,
+    finished: false,
     ...over
   };
 }

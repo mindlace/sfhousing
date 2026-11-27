@@ -54,6 +54,7 @@ export async function listGames(
       id: gameSave.id,
       name: gameSave.name,
       nameIsDefault: sql<number>`json_extract(${gameSave.body}, '$.nameIsDefault')`,
+      finished: sql<number | null>`json_extract(${gameSave.body}, '$.state.finished')`,
       savedAt: gameSave.savedAt,
       phase: gameSave.phase,
       rung: gameSave.rung,
@@ -81,6 +82,7 @@ export async function listGames(
       savedAt: r.savedAt.toISOString(),
       phase: r.phase as GameState['phase'],
       round: r.rung,
+      finished: Boolean(r.finished),
       rev: r.rev
     })),
     removed: removed.map((r) => r.id)

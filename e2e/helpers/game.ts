@@ -43,7 +43,8 @@ export async function seedGame(page: Page, state?: Partial<GameState>): Promise<
         nameIsDefault: false,
         savedAt: at,
         phase: merged.phase,
-        round: merged.round
+        round: merged.round,
+        finished: merged.finished
       }
     ]
   };

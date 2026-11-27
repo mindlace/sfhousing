@@ -143,7 +143,8 @@ function entryOf(save: GameSave): SaveEntry {
     nameIsDefault: save.nameIsDefault,
     savedAt: save.savedAt,
     phase: save.state.phase,
-    round: save.state.round
+    round: save.state.round,
+    finished: save.state.finished
   };
 }
 
@@ -154,7 +155,8 @@ function sameEntry(a: SaveEntry, b: SaveEntry): boolean {
     a.nameIsDefault === b.nameIsDefault &&
     a.savedAt === b.savedAt &&
     a.phase === b.phase &&
-    a.round === b.round
+    a.round === b.round &&
+    a.finished === b.finished
   );
 }
 
@@ -206,8 +208,11 @@ function parseIndex(text: string): { current: string; saves: SaveEntry[]; old: b
     const round = isOld ? e.rung : e.round;
     if (typeof round !== 'number' || !Number.isSafeInteger(round) || round < 0) return null;
     if (isOld) old = true;
+    // An index written before `finished` has none: false, and the entry is rewritten from its
+    // save on the next read.
+    const finished = e.finished === true;
     ids.add(id);
-    saves.push({ id, name, nameIsDefault, savedAt, phase, round });
+    saves.push({ id, name, nameIsDefault, savedAt, phase, round, finished });
   }
   return { current: json.current, saves, old };
 }

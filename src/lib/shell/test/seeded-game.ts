@@ -64,7 +64,8 @@ export function seededGame(
     nameIsDefault: g.nameIsDefault,
     savedAt: g.savedAt,
     phase: g.state.phase,
-    round: g.state.round
+    round: g.state.round,
+    finished: g.state.finished
   }));
   storage.setItem(SAVES_KEY, JSON.stringify({ v: 2, current: games[0].id, saves }));
   if (opts.plan != null) storage.setItem('sfhousing:plan:v1', opts.plan);

@@ -218,8 +218,9 @@ All in `src/lib/game/ui/`; none renders for the open game.
 - **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): rendered in
   place inside the header Menu's panel (`SiteHeader`, after mount, never for the open game; its root
   carries `data-header-keep-open`, so a press on its buttons leaves the Menu open). The current
-  game's name and stage (`entryStage(phase, round)`: "Painting" in the opening, else
-  `roundName(round, false)`), the sync line and the saved games (switch, rename in place,
+  game's name and stage (`entryStage(phase, round, finished)`: "Painting" in the opening, else
+  `roundName(round, finished)`, so a finished game reads "Every policy" there and in its row),
+  the sync line and the saved games (switch, rename in place,
   delete after one question, "New game"). A change that loads another game calls `reloadGame()`
   (`ui/reload.ts`), a full page load of `/`. At `MAX_SAVES` "New game" is `aria-disabled`; a
   refused change shows `FULL_TEXT` or `STORAGE_TEXT`.
@@ -289,8 +290,10 @@ import values only by relative path, because `e2e/helpers/game.ts` loads them un
 | `sfhousing:sim:corrupt:<ISO>`           | The v1 policy text, copied aside when `sfhousing:sim:v2` was absent |
 | `sfhousing:plan:v1`, `sfhousing:sim:v2` | The current game's records, as the pages write them                 |
 
-A `SaveEntry` carries `phase` and `round`. An index the points build wrote has `rung` in its
-entries: it is read as the round and the index is rewritten with `round`. A version 2 save stays as
+A `SaveEntry` carries `phase`, `round` and `finished`. An index the points build wrote has `rung`
+in its entries: it is read as the round and the index is rewritten with `round`. An entry with no
+`finished` (written before it) reads false and is rewritten from its save on the next read, as any
+entry that differs from its save. A version 2 save stays as
 it was stored until the game's next write, which stores it as version 3. Loading removes
 `sfhousing:run:collect` and `sfhousing:run:muted`, the old run's switches, which nothing reads.
 

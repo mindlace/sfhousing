@@ -68,7 +68,8 @@ class FakeStore {
         nameIsDefault: g.nameIsDefault,
         savedAt: g.savedAt,
         phase: g.state.phase,
-        round: g.state.round
+        round: g.state.round,
+        finished: g.state.finished
       }));
   }
 

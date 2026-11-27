@@ -13,8 +13,8 @@ export const OPENING_LINES: readonly string[] = [
 export const START = 'Start';
 
 // The game panel
-export function entryStage(phase: GameState['phase'], round: number): string {
-  return phase === 'opening' ? 'Painting' : roundName(round, false);
+export function entryStage(phase: GameState['phase'], round: number, finished = false): string {
+  return phase === 'opening' ? 'Painting' : roundName(round, finished);
 }
 export const PLAYING = 'Playing';
 export const SAVED_GAMES = 'Saved games';

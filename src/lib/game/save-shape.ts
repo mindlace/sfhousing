@@ -19,6 +19,8 @@ export interface GameSave {
 export type SaveEntry = Pick<GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'> & {
   phase: GameState['phase'];
   round: number;
+  /** The game is finished; an index written before this field reads false until rewritten. */
+  finished: boolean;
 };
 
 type Plain = Record<string, unknown>;

@@ -293,6 +293,7 @@ describe('listGames', () => {
       savedAt: '2026-11-22T12:30:00.000Z',
       phase: 'runs',
       round: 1,
+      finished: false,
       rev: 2
     });
     expect(saves[0].nameIsDefault).toBe(true);
@@ -304,8 +305,17 @@ describe('listGames', () => {
       savedAt: mid.savedAt,
       phase: 'opening',
       round: 0,
+      finished: false,
       rev: 1
     });
+  });
+
+  it('lists a finished game as finished, from its body', async () => {
+    const db = await setup();
+    const done = save(newId(), { state: { ...save().state, round: 4, finished: true } });
+    await putGame(db, 'u1', done, null);
+    const { saves } = await listGames(db, 'u1', new Date());
+    expect(saves[0]).toMatchObject({ id: done.id, round: 4, finished: true });
   });
 
   it('lists removed ids for 90 days and not after, never among saves', async () => {

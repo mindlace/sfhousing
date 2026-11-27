@@ -41,7 +41,8 @@ export function gameWith(
     nameIsDefault: true,
     savedAt: AT,
     phase: s.phase,
-    round: s.round
+    round: s.round,
+    finished: s.finished
   };
   storage.setItem(saveKey(GAME_ID), JSON.stringify(save));
   storage.setItem(SAVES_KEY, JSON.stringify({ v: 2, current: GAME_ID, saves: [entry] }));

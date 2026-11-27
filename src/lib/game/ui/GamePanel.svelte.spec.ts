@@ -95,6 +95,20 @@ describe('GamePanel', () => {
     expect(rows().elements()).toHaveLength(3);
   });
 
+  it('a finished game reads Every policy, in its row and as the current game', async () => {
+    await mount({
+      saves: [
+        entry('Mission', { savedAt: daysAgo(0), phase: 'runs', round: 4, finished: true }),
+        entry('Sunset', { phase: 'runs', round: 4, finished: true, savedAt: daysAgo(1) })
+      ],
+      currentId: 'id-Mission',
+      state: { phase: 'runs', round: 4, finished: true }
+    });
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Every policy');
+    await expect.element(rowOf('Mission')).toHaveTextContent('Every policy · Playing');
+    await expect.element(rowOf('Sunset')).toHaveTextContent('Every policy · Yesterday');
+  });
+
   it("each sync state's words", async () => {
     appPage.url = new URL('http://localhost/?x=1') as never;
     const sync = new FakeSync();

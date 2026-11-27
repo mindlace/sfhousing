@@ -99,7 +99,8 @@ function entryOf(s: GameSave): SaveEntry {
     nameIsDefault: s.nameIsDefault,
     savedAt: s.savedAt,
     phase: s.state.phase,
-    round: s.state.round
+    round: s.state.round,
+    finished: s.state.finished
   };
 }
 
@@ -157,7 +158,8 @@ describe('GameStore construction', () => {
       nameIsDefault: true,
       savedAt: clock.toISOString(),
       phase: 'opening',
-      round: 0
+      round: 0,
+      finished: false
     });
     expect(store.state).toEqual(NEW_GAME);
     expect(store.state).not.toBe(NEW_GAME);
@@ -624,6 +626,19 @@ describe('parseIndex v2', () => {
     expect(store.saves).toEqual([entryOf(g)]);
     expect(stored(s, SAVES_KEY).saves).toEqual([entryOf(g)]);
     expect(stored(s, SAVES_KEY).saves[0]).not.toHaveProperty('rung');
+  });
+
+  it("a finished game's entry says so; an index written before `finished` reads it from the save", () => {
+    const s = new LogStorage();
+    const g = withState({ round: 4, finished: true });
+    seedGames(s, [g], g.id);
+    const { finished, ...rest } = entryOf(g);
+    expect(finished).toBe(true);
+    s.map.set(SAVES_KEY, JSON.stringify({ v: 2, current: g.id, saves: [rest] }));
+    const { store } = make(s);
+    expect(corruptKeys(s)).toEqual([]);
+    expect(store.saves).toEqual([entryOf(g)]);
+    expect(stored(s, SAVES_KEY).saves).toEqual([entryOf(g)]);
   });
 
   it('an old index entry with neither round nor rung is refused', () => {

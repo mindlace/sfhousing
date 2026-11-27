@@ -14,6 +14,8 @@ it('the game panel', () => {
   expect(w.entryStage('opening', 0)).toBe('Painting');
   expect(w.entryStage('runs', 0)).toBe('Current law');
   expect(w.entryStage('runs', 2)).toBe('Round 2');
+  expect(w.entryStage('runs', 4, false)).toBe('Round 4');
+  expect(w.entryStage('runs', 4, true)).toBe('Every policy');
   expect(w.renameName('Game, 4 Mar')).toBe('Rename Game, 4 Mar');
   expect(w.deleteName('Game, 4 Mar')).toBe('Delete Game, 4 Mar');
   expect(w.deleteAsk('Game, 4 Mar')).toBe('Delete Game, 4 Mar?');
