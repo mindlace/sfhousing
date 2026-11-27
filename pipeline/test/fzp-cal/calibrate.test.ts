@@ -113,7 +113,10 @@ function permitRows(hs: ProjectHistory[]): PermitRow[] {
       issued_day: h.entered.permitIssued ?? null,
       construction_day: h.entered.construction ?? null,
       complete_day: h.entered.complete === undefined ? null : h.entered.complete + 20,
-      status_day: null
+      status_day: null,
+      proposed_stories: null,
+      valuation: null,
+      construction_type: null
     }));
 }
 

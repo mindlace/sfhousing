@@ -56,7 +56,10 @@ export const PERMITS_COLUMNS: readonly [keyof PermitOut, string][] = [
   ['issued_day', 'INTEGER'],
   ['construction_day', 'INTEGER'],
   ['complete_day', 'INTEGER'],
-  ['status_day', 'INTEGER']
+  ['status_day', 'INTEGER'],
+  ['proposed_stories', 'INTEGER'],
+  ['valuation', 'DOUBLE'],
+  ['construction_type', 'VARCHAR']
 ];
 
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;

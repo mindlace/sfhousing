@@ -230,7 +230,10 @@ describe('writeProjectRecords', () => {
       ['issued_day', 'INTEGER'],
       ['construction_day', 'INTEGER'],
       ['complete_day', 'INTEGER'],
-      ['status_day', 'INTEGER']
+      ['status_day', 'INTEGER'],
+      ['proposed_stories', 'INTEGER'],
+      ['valuation', 'DOUBLE'],
+      ['construction_type', 'VARCHAR']
     ]);
     expect(PERMITS_COLUMNS.map(([n, t]) => [n, t])).toEqual(
       cols.map((c) => [c.column_name, c.column_type])

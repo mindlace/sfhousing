@@ -51,6 +51,9 @@ export interface AddressRow {
   primary: boolean;
 }
 
+/** DBI `proposed_construction_type`: codes 1 to 5 (or their numerals) as roman numerals. */
+export type ConstructionType = 'I' | 'II' | 'III' | 'IV' | 'V';
+
 export interface Permit {
   number: string;
   /** `permit_type`, trimmed; '' if absent. Types 1/2 are new construction; 3/8 (Ruling L1) are
@@ -73,6 +76,8 @@ export interface Permit {
   completedDateDay: Day | null;
   lastActivityDay: Day | null;
   stories: number | null;
+  /** `proposed_construction_type`; null when absent or not one of the five codes. */
+  constructionType: ConstructionType | null;
   existingUnits: number | null;
   proposedUnits: number | null;
   /**

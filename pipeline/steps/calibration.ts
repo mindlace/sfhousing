@@ -14,6 +14,7 @@ import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
 import { parseFundingFile, type FundingFile } from '../enrichment/funding-schema';
 import { parseMarketFile, type MarketFile } from '../enrichment/market-schema';
 import { BuildError } from '../lib/build-error';
+import { RECORD_TARGETS_JSON, recordTargets } from '../lib/building-records';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
 import { calibrate, type CalOutput } from '../lib/fzp-cal/calibrate';
@@ -52,7 +53,10 @@ export const PERMIT_ROW_COLUMNS: readonly (keyof PermitRow)[] = [
   'issued_day',
   'construction_day',
   'complete_day',
-  'status_day'
+  'status_day',
+  'proposed_stories',
+  'valuation',
+  'construction_type'
 ];
 
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -211,6 +215,9 @@ export async function writeCalibration(o: {
   writeFileSync(jsonPath, a.json);
   mkdirSync(o.derivedDir, { recursive: true });
   writeFileSync(join(o.derivedDir, CALIBRATION_REPORT_MD), a.reportMd);
+  // The record check's targets (building-choice spec, Acceptance): build-internal, never uploaded.
+  const targets = recordTargets(histories.histories, permits, parcels, o.asOf);
+  writeFileSync(join(o.derivedDir, RECORD_TARGETS_JSON), JSON.stringify(targets, null, 2) + '\n');
 
   const v28: InvariantResult = o.cal.backcastGate
     ? { id: 'V28', ...a.backcast }

@@ -125,6 +125,50 @@ not constants read at run time; the Controller's figures stay sourced in
 The spec's table gave 0.75 (tier 4) for block coverage and the single-tower constants for several
 towers; Task 2 fitted the coverage and sourced the several-tower constants, as the spec asked.
 
+## Fits from the permit records
+
+Both permit sources select DBI `proposed_construction_type`; the parse reads the codes `1` to `5`
+(and the numerals) as I to V (`constructionTypeOf`), and `permits.parquet` carries
+`proposed_stories`, `valuation` (Rulings E2, PV1) and `construction_type` per permit.
+
+**Stage time by height band** (`fitHeightTime`, `pipeline/lib/fzp-cal/height-time.ts`, tier 0).
+Bands of proposed stories ≤ 4, 7, 12, 20 and 999 (`HEIGHT_BANDS`, the raw pull's bands). The
+multipliers scale the model's own permit-side stages (ruling F8): `permitIssued`, issued to first
+construction document, and `construction`, first construction document to completion. For each
+stage a band's multiplier is the median of its completed spells over the pooled median of that
+stage; `constructionMonths` is the band's construction median in months (`carryPerHome` reads
+it). Spells are the calibration's (`buildSpells`), entered in the fit window, joined to their
+history's `storiesProposed`; censored spells, exits, histories without stories and spells whose
+start or end the records do not hold (a gap the normalisation imputed) are left out, and a no-FCD
+completion has no spell. A pooled median of 0 days gives multiplier 1. A band with fewer than `sizeMinN` completed spells in
+either stage merges into the band below (the first into the one above), the size model's rule.
+The model has one step, from `asOf`. `filedToIssued` reports the filing-to-issue medians on the
+same bands; no multiplier is fitted for it. With no completed spell at all: one band, multiplier
+1, 0 months, tier 4.
+
+**Cost above 24 stories** (`aboveTopCostRatio`, `pipeline/lib/building-records.ts`, tier 2, weak).
+The median valuation per home of permits for 10 or more homes issued 2015 on above 24 stories,
+over that at 13 to 24; superseded permits are left out. Fewer than 10 permits on either side
+gives 1 (tier 4). On the raw pull (not deduplicated) this is 727k ÷ 365k = 1.99 (n = 15 and 40);
+the spec's 502k ÷ 361k = 1.39 is the same pull on 21+ against 13 to 20 stories. The build fits it
+on `permits.parquet` (linked permits, superseded ones out).
+
+**Record targets** (`recordTargets`, `pipeline/lib/building-records.ts`). The calibration step
+writes `pipeline/.cache/derived/<v>/record-targets.json` (never uploaded) for the record check.
+Its window is the latest ten record years to `asOf`, not before 2015. Each target holds
+`stat`, `n`, `se` and `tol`, and `checked` is false (report only) below n = 30:
+
+| Target                                           | Records                                                                                                                                     | SE and tolerance                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `heightRatio` by limit bucket ≤ 4, 6, 8, 12, 999 | histories first recorded in the window: `storiesProposed ÷ baseStoriesAtFiling` (uncapped; `overLimit` counts r > 1)                        | mean: SD ÷ √n, tolerance 0.10; share ≥ 0.9: binomial, 2 SE |
+| `constructionType`                               | issued permits by height band and type; `recordsOver` counts V above 6 and III above 8; `typeIShare8to12`                                   | binomial √(p(1−p)/n), 2 SE                                 |
+| `stageMonths`                                    | completed `permitIssued` and `construction` spells by height band, in months                                                                | 1.25 × IQR ÷ (1.35 √n), 2 SE                               |
+| `homesPerProject`                                | issued permits for 10 or more homes, median homes by height band                                                                            | as above                                                   |
+| `largeLotTypeI`                                  | issued permits on lots of 1,500 m² or more (summed over the permit's parcels) with a base limit of 13 or more: Type I at 13 or more stories | binomial, 2 SE                                             |
+| `cohort`                                         | `heightRatio` records split by `startCohort`: affordable and private means, `diff` = affordable − private, `se` = √(SEₐ² + SEₚ²)            | report only; Task 8's affordable rule reads it             |
+
+Permit targets read permits issued in the window, not superseded, with stories of at least 1.
+
 ## The codec (`src/lib/data/option-table.ts`, `sfh-options/1`)
 
 `optionTableOf(datasetVersion, rows)` packs one row per scenario row, each `{ options,

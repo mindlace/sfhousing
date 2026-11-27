@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseCalibration } from '../../../src/lib/timelapse/model';
 import { BuildError } from '../../lib/build-error';
+import { RECORD_TARGETS_JSON, type RecordTargets } from '../../lib/building-records';
 import { openDuck } from '../../lib/duck';
 import { readLock } from '../../lib/lock';
 import { FIXTURE_CAL } from '../../lib/fzp-cal/config';
@@ -56,6 +57,15 @@ describe('calibration step on fixture-0', () => {
     expect(counts['calibration.bytes']).toBe(Buffer.byteLength(json));
     expect(existsSync(join(derivedRoot, 'fixture-0', CALIBRATION_REPORT_MD))).toBe(true);
     expect(existsSync(join(outDir, CALIBRATION_REPORT_MD))).toBe(false);
+  });
+
+  it('writes the record targets into the derived cache only', () => {
+    const file = join(derivedRoot, 'fixture-0', RECORD_TARGETS_JSON);
+    const t = JSON.parse(readFileSync(file, 'utf8')) as RecordTargets;
+    expect(t.schema).toBe(1);
+    expect(t.asOf).toBe(JSON.parse(readFileSync(join(outDir, CALIBRATION_JSON), 'utf8')).asOf);
+    expect(t.heightRatio.map((b) => b.upTo)).toEqual([4, 6, 8, 12, 999]);
+    expect(existsSync(join(outDir, RECORD_TARGETS_JSON))).toBe(false);
   });
 
   it('records quality.<id>.fired and .of for every sc.* rule and the method counts', () => {
@@ -105,7 +115,10 @@ describe('calibration step on fixture-0', () => {
         issued_day: 'INTEGER',
         construction_day: 'INTEGER',
         complete_day: 'INTEGER',
-        status_day: 'INTEGER'
+        status_day: 'INTEGER',
+        proposed_stories: 'INTEGER',
+        valuation: 'DOUBLE',
+        construction_type: 'VARCHAR'
       });
     } finally {
       db.close();

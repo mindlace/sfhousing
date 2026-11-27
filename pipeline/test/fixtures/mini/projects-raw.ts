@@ -115,6 +115,8 @@ interface PermitSpec {
   revisedCost?: number;
   units: number;
   stories?: number;
+  /** `proposed_construction_type`: the DBI code, '1' to '5'. */
+  constructionType?: string;
   primary?: boolean;
   street?: [number: string, name: string, suffix: string];
 }
@@ -140,6 +142,7 @@ function permit(o: PermitSpec): RawRow {
   if (o.completed) r.completed_date = ts(o.completed);
   if (o.lastActivity) r.last_permit_activity_date = ts(o.lastActivity);
   if (o.stories !== undefined) r.number_of_proposed_stories = String(o.stories);
+  if (o.constructionType !== undefined) r.proposed_construction_type = o.constructionType;
   r.proposed_units = String(o.units);
   if (o.existing !== undefined) r.existing_units = String(o.existing);
   if (o.estimatedCost !== undefined) r.estimated_cost = `${o.estimatedCost}.0`;
@@ -187,6 +190,7 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       // $3M site permit: Table B 2,160 + 720 days from 2021-02-01, within its statutory time.
       estimatedCost: 3000000,
       units: 24,
+      constructionType: '5',
       stories: 6,
       street: ['100', 'FIXTURE', 'ST']
     }),
@@ -203,6 +207,7 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       // $3M site permit: Table B 2,160 + 720 days from 2021-02-01, within its statutory time.
       estimatedCost: 3000000,
       units: 24,
+      constructionType: '5',
       stories: 6,
       primary: false
     }),
@@ -227,7 +232,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       issued: '2017-01-10',
       fcd: '2017-03-01',
       completed: '2019-09-15',
-      units: 12
+      units: 12,
+      constructionType: '3'
     }),
     // M7.
     permit({
@@ -285,7 +291,8 @@ export const PROJECT_RAW: Record<ProjectSourceId, RawRow[]> = {
       issued: '2015-06-01',
       fcd: '2015-08-01',
       completed: '2017-04-01',
-      units: 40
+      units: 40,
+      constructionType: '1'
     }),
     // M15 (pr.units.capacity, modelled on live 8500988): 5,540 units on 3 stories of a 300 m2 lot
     // exceed 300 x 3 / 10 = 90, so the permit's units are missing.

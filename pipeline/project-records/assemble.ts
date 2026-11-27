@@ -24,7 +24,13 @@ import { PR } from '../lib/quality-rules/pr';
 import { isNewConstructionPermit } from './classify';
 import { buildPhases, isoToDay, median } from './multiphase';
 import { permitCompletionDay, permitDays } from './stages';
-import type { Completion, LinkedProject, PipelineRow, ProjectRecordsInput } from './types';
+import type {
+  Completion,
+  ConstructionType,
+  LinkedProject,
+  PipelineRow,
+  ProjectRecordsInput
+} from './types';
 
 /**
  * Ruling B1: the record ids a PRX case's base-case PRJ may carry, the case without its trailing
@@ -56,6 +62,9 @@ export interface PermitOut {
   construction_day: number | null;
   complete_day: number | null;
   status_day: number | null;
+  proposed_stories: number | null;
+  valuation: number | null;
+  construction_type: ConstructionType | null;
 }
 
 type Source = InFlightProject['sources'][number];
@@ -397,7 +406,10 @@ export function permitRows(
         issued_day: days.issued,
         construction_day: days.construction,
         complete_day: days.complete,
-        status_day: q.statusDay
+        status_day: q.statusDay,
+        proposed_stories: q.stories,
+        valuation: q.valuation,
+        construction_type: q.constructionType
       });
     }
   }

@@ -4,6 +4,7 @@ import type { Lock } from '../../lib/lock';
 import {
   AS_OF_SOURCE_IDS,
   asOfFromLock,
+  constructionTypeOf,
   dayOf,
   docKind,
   isoOf,
@@ -40,6 +41,26 @@ describe('source ids', () => {
       'datasf-dev-pipeline'
     ]);
     for (const id of PROJECT_SOURCE_IDS) expect(DATASET[id]).toBe(DATASF[id].dataset);
+  });
+});
+
+describe('constructionTypeOf', () => {
+  it('reads the DBI codes 1 to 5 and their numerals as roman numerals', () => {
+    expect(['1', '2', '3', '4', '5'].map(constructionTypeOf)).toEqual([
+      'I',
+      'II',
+      'III',
+      'IV',
+      'V'
+    ]);
+    expect(constructionTypeOf('III')).toBe('III');
+    expect(constructionTypeOf(' 5 ')).toBe('V');
+  });
+
+  it('is null for anything else', () => {
+    for (const v of [undefined, null, '', '0', '6', '15', '5A', 'wood frame (5)', 5]) {
+      expect(constructionTypeOf(v)).toBeNull();
+    }
   });
 });
 
@@ -234,6 +255,7 @@ describe('parseAll', () => {
       completedDateDay: null,
       lastActivityDay: null,
       stories: null,
+      constructionType: null,
       existingUnits: null,
       proposedUnits: null,
       valuation: null,
