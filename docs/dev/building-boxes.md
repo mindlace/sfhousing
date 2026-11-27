@@ -31,7 +31,7 @@ Every box of a parcel carries the parcel's `parcelId`, so the `replaced` feature
 Overture parts are mapped by hand and sometimes wrong (a skillion drawn at the wrong height, a part left from a demolished wing). `checkParts` (`pipeline/lib/lidar/dispute.ts`) compares each counted part's drawn top with the LiDAR before the parts are kept:
 
 - A part is checked when it is at least `stepMinAreaM2`, not a tiered roof shape (`partTierShapes`), and still shows at least `stepMinAreaM2` once every taller part is subtracted. Its cells are the raster under that region at part + shift (parts stay unshifted; the mask samples at the registration shift).
-- At least `coverageMin` of those cells must be raised (`raisedHagM`, not vegetation), else the part is not compared. The LiDAR height is their median above the footprint's ground.
+- At least `coverageMin` of those cells must be raised (`raisedHagM`, and not flagged vegetation by the raw flag: the check does not use derive's `isVegCell`, so tall glass flagged by the multi-return rule counts against the share), else the part is not compared. The LiDAR height is their median above the footprint's ground.
 - The part is disputed when that height stands above its top by more than `max(partTolM, partTolFrac × top)`: the part is drawn too low (Salesforce's skillions at 203.5 m over a 270 m roof). LiDAR under the drawn top never disputes it: a lattice, spire or open frame lets the pulses fall through (Sutro's 232 m part reads 67 m).
 - The building's parts are rejected when the disputed parts' union covers `partRejectShare` of the union of all counted parts. A rejected building takes the plain LiDAR derivation and draws no part boxes (none at all when that falls back, so `build` draws today's box); one disputed part among several good ones leaves the parts alone.
 - Anything that cannot be compared is trusted: no registration (`none`), no ground, a tiered or small part, no raised cells.
@@ -108,7 +108,7 @@ The entry's `upstreamVersion` (`boxes/2 code=… config=… overture-buildings=�
 
 One lock per key (`boxes-index/<key>.lock`, created with the directory) lets two worktrees with the same key run one derivation: the second waits (`boxes: waiting for pid <pid> on <host> (<key12>)`), then reuses the result. A lock whose holder is dead on this host, or that cannot be parsed, is removed; one that is never stale (a reused pid, or a holder on another host) is cleared by deleting `boxes-index/<key>.lock` by hand. Both source locks are read again after the wait; when the key changed, `boxes` runs in full. `cache import` writes the record for a lock entry whose files verify, so a machine's first `boxes` after the move reuses the old run.
 
-The boxes code stays under `pipeline/`, inside the dataset-version hash, although `build` never runs it. "Everything under `pipeline/` is hashed" needs no exclusion list; a misfiled exclusion could let code that `build` reads change without a version change, and `upload` would then refuse the rebuilt version (V13) while staging served the old bytes. The cost is that a boxes-only edit needs a dataset upload, which the tuning loop does anyway.
+The boxes code stays under `pipeline/`, inside the dataset-version hash, although `build` never runs it. Everything under `pipeline/` is hashed except `pipeline/test/` (tests and the mini fixture, which live builds never read; `EXCLUDE_PATHS` in `pipeline/lib/version.ts`). The exclusion stays that narrow: a misfiled one could let code that `build` reads change without a version change, and `upload` would then refuse the rebuilt version (V13) while staging served the old bytes. The cost is that a boxes-only edit needs a dataset upload, which the tuning loop does anyway.
 
 ## Derived files
 
@@ -221,7 +221,7 @@ With both rules in place, `taperRoughM` went from 1 to 4. At 1, Salesforce's nea
 
 **Model check.** The model counts are unchanged. The one count that differs, `gross.bytes.file` (1 B), is the deflate of a payload identical apart from the embedded dataset version.
 
-**Known limit: parts drawn too tall.** A part drawn above a solid roof stays trusted. 35 parts buildings have parts drawn more than the tolerance above a LiDAR surface with a raised share of 0.9 or more, covering a quarter or more of their part area. Two examples: Oracle Park, drawn as 60 m prisms over 26 m stands; `83955c81`, drawn at 137 m over a 94 m roof. They draw as on main.
+**Known limit: parts drawn too tall.** A part drawn above a solid roof stays trusted. 35 parts buildings have parts drawn more than the tolerance above a LiDAR surface with a raised share of 0.9 or more, covering a quarter or more of their part area. Two examples: Oracle Park, drawn as 60 m prisms over 26 m stands; `83955c81`, drawn at 137 m over a 94 m roof. They draw as on main. Also a limit: the parts check reads the raw vegetation flag, so a glass tower whose parts are drawn too low and whose seen cells are mostly flagged can fall under `coverageMin` and go unchecked.
 
 ## The spike's frames
 
