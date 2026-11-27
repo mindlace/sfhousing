@@ -15,18 +15,18 @@ describe('seededGame', () => {
     expect(parseGameSave(JSON.parse(storage.getItem(saveKey(game.currentId))!))).not.toBeNull();
     const index = JSON.parse(storage.getItem(SAVES_KEY)!);
     expect(index).toMatchObject({ v: 2, current: game.currentId });
-    expect(index.saves[0]).toMatchObject({ phase: 'opening', rung: 0 });
+    expect(index.saves[0]).toMatchObject({ phase: 'opening', round: 0 });
   });
 
   it('overlays the state asked on NEW_GAME', () => {
-    const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON, units: { home: 40 } } });
+    const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON, round: 2 } });
     expect(game.state).toEqual({
       ...NEW_GAME,
       phase: 'runs',
       firstWinAt: WON,
-      units: { home: 40 }
+      round: 2
     });
-    expect(game.saves[0]).toMatchObject({ phase: 'runs' });
+    expect(game.saves[0]).toMatchObject({ phase: 'runs', round: 2 });
   });
 
   it('holds 12 games when asked, the others new', () => {

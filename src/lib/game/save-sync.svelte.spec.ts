@@ -68,7 +68,7 @@ class FakeStore {
         nameIsDefault: g.nameIsDefault,
         savedAt: g.savedAt,
         phase: g.state.phase,
-        rung: g.state.rung
+        round: g.state.round
       }));
   }
 
@@ -789,7 +789,7 @@ function listBody(listed: readonly Listed[], removed: readonly string[]) {
       nameIsDefault: save.nameIsDefault,
       savedAt: save.savedAt,
       phase: save.state.phase,
-      rung: save.state.rung,
+      round: save.state.round,
       rev
     })),
     removed

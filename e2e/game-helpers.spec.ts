@@ -46,11 +46,11 @@ async function load(page: Page): Promise<Probe> {
 type Saved = {
   v: number;
   id: string;
-  state: { phase: string; rung: number; firstWinAt: string | null; units: { home?: number } };
+  state: { phase: string; round: number; firstWinAt: string | null };
 };
 
 function seededParts(p: Probe): {
-  index: { v: number; current: string; saves: { id: string; phase: string; rung: number }[] };
+  index: { v: number; current: string; saves: { id: string; phase: string; round: number }[] };
   save: Saved;
 } {
   const index = JSON.parse(p[SAVES_KEY]);
@@ -65,7 +65,7 @@ test('with no helper, nothing is stored', async ({ page }) => {
   expect(Object.keys(p).filter((k) => k.startsWith(saveKey('')))).toEqual([]);
 });
 
-test('seedGame(page) stores one v2 save in the opening', async ({ page }) => {
+test('seedGame(page) stores one save in the opening', async ({ page }) => {
   await seedGame(page);
   const p = await load(page);
   expect(p[E2E_GAME_KEY]).toBe('1');
@@ -77,18 +77,18 @@ test('seedGame(page) stores one v2 save in the opening', async ({ page }) => {
   expect(save.v).toBe(2);
   expect(save.id).toBe(index.current);
   expect(save.state.phase).toBe('opening');
-  expect(save.state.rung).toBe(0);
+  expect(save.state.round).toBe(0);
   expect(save.state.firstWinAt).toBeNull();
 });
 
 test('seedGame with a state in the runs loads as current', async ({ page }) => {
-  await seedGame(page, { phase: 'runs', units: { home: 500 } });
+  await seedGame(page, { phase: 'runs', round: 2 });
   const { index, save } = seededParts(await load(page));
   expect(index.saves).toHaveLength(1);
   expect(index.current).toBe(save.id);
   expect(index.saves[0].phase).toBe('runs');
   expect(save.state.phase).toBe('runs');
-  expect(save.state.units.home).toBe(500);
+  expect(save.state.round).toBe(2);
   expect(typeof save.state.firstWinAt).toBe('string');
   await page.goto('/about');
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');

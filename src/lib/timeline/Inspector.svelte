@@ -8,9 +8,9 @@
   - a policy: its switch, Move up / Move down and Remove (rule 13), When (WhenEditor) and What
     (WhatEditor, today's editors on the selected span through `spanLens`). A refused edit's
     reason shows in the alert line.
-  `limits` (what is bought): "+" offers only what they allow, adds fitted to them, and under closed
-  limits a given measure's What is `PolicySummary`; its switch, order, Remove and When edit as
-  today.
+  `limits` (what the game offers): "+" offers only what they allow, and a catalogue policy the
+  player cannot edit yet (`isFixed`) has `PolicySummary` as its What; its switch, order, Remove and
+  When edit as today.
   Read-only (rule 17): When as text, What as `PolicySummary`; nothing edits. Selecting another
   policy, opening "+" or closing discards an unfinished funding draft and says so (rule 15). Close
   and Escape call `onclose` (the page focuses the selected bar) and then clear the selection.
@@ -18,7 +18,7 @@
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
-  import { isGiven, OPEN_LIMITS, type Limits } from '$lib/game/limits';
+  import { isFixed, OPEN_LIMITS, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { marketLevel } from '$lib/sim/scenario/market';
@@ -289,8 +289,7 @@
       r = addPolicy(store.policy, choice, {
         w,
         month: playheadMonth,
-        cal: calibration,
-        limits
+        cal: calibration
       });
     } catch (e) {
       if (e instanceof AddLimitError) {
@@ -488,7 +487,7 @@
           {catalog}
           {drafts}
           {playheadDay}
-          readonly={readonly || (!limits.open && isGiven(policy))}
+          readonly={readonly || isFixed(policy, limits)}
           {limits}
           {announce}
           onremove={removeThis}

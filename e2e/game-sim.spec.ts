@@ -1,5 +1,5 @@
 // The game on the simulation (game-sim): a game's page is the simulation tool, its lanes held to
-// what is bought, and the published view outside the game. Runs against the VITE_E2E build on
+// the rounds offered, and the published view outside the game. Runs against the VITE_E2E build on
 // fixture-0 with the goal amount 1; every wait is on the page (the tool's dock) or
 // `window.__sfhFzp`.
 import {
@@ -19,14 +19,15 @@ type FzpWin = Win & { __sfhFzp?: SfhFzpDebug };
 
 const BOND = 'A housing bond';
 
-// ---- the locked lanes ---------------------------------------------------------------------------
+// ---- the game's limits --------------------------------------------------------------------------
 
-test('the tool offers no Public money until bought', async ({ page }) => {
-  await seedRuns(page, { phase: 'runs', runs: 1, bought: { 'stop-rail': 1 } });
+test('the tool offers no Public money before round 1', async ({ page }) => {
+  await seedRuns(page, { phase: 'runs', round: 0 });
   await gotoHydrated(page, '/');
   await waitSim(page);
   const money = page.getByTestId('tl-kind-money');
-  await expect(money.getByTestId('tl-locked-lane')).toHaveText('Opens in the tree');
+  await expect(money).toBeAttached();
+  await expect(money.getByTestId('tl-locked-lane')).toHaveCount(0);
   await expect(money.locator('button.plus')).toHaveCount(0);
 });
 

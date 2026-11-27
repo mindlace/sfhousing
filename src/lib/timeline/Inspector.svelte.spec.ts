@@ -7,9 +7,11 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatMonthYear } from '$lib/fzp/format';
-import type { Limits } from '$lib/game/limits';
+import { FREE_MEASURES, type Limits } from '$lib/game/limits';
 import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import { fundingPresets } from '$lib/sim-page/funding-presets';
+import { DEFAULT_BANDS } from '$lib/sim-page/policy';
 import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
 import type { PolicyStore } from '$lib/sim-page/policy-store.svelte';
 import { BOND_POLICY, fundingCalibration, policyWith } from '$lib/sim-page/test/funding';
@@ -21,14 +23,7 @@ import { TERMS_HINT } from './money-copy';
 import { PRESET_PER_POLICY } from './lens';
 import type { Policy, SimPolicy4 } from './policy4';
 import { FIXED_LABEL, FIXED_NOTE, formatEdge } from './rows';
-import {
-  movePolicy,
-  policyOf,
-  removePolicy,
-  setOn,
-  type SpanRef,
-  type TimelineWindow
-} from './spans';
+import { movePolicy, removePolicy, setOn, type SpanRef, type TimelineWindow } from './spans';
 import { limitsWith } from './test/limits';
 import { upgradePolicy } from './upgrade';
 import InspectorHost from './test/InspectorHost.svelte';
@@ -492,64 +487,63 @@ describe('Inspector', () => {
 });
 
 describe('Inspector under limits', () => {
-  const early = limitsWith({
-    stops: new Set(['metro']),
-    bands: 1,
-    stories: 8,
-    reachM: 402,
-    measures: new Set(['housing-bond'])
+  /** Round 1 of a game: its three policies offered, none editable yet. */
+  const round1 = limitsWith({
+    offered: new Set(['transit-rail', 'sb423-clock', 'housing-bond']),
+    stops: new Set(['regionalRail']),
+    money: true
   });
   const labels = () =>
     [...document.querySelectorAll('[data-add-menu] button')].map((b) => b.textContent?.trim());
+  const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
+  const bondMade = () =>
+    addPolicy(
+      EMPTY,
+      { kind: 'money', what: 'preset', preset: 'housing-bond' },
+      { w, month: 13, cal }
+    );
 
-  it('"+" offers per limits', async () => {
-    setup({ doc: { schema: 4, kinds: { zoning: [], permitting: [], money: [] } }, limits: early });
+  it('"+" on Zoning offers the protections only before the end', async () => {
+    setup({ doc: EMPTY, limits: round1 });
     await page.getByRole('button', { name: 'Add zoning' }).click();
     await expect.element(page.getByRole('group', { name: 'Add to Zoning' })).toBeVisible();
     expect(labels()).toEqual([
-      'Transit rule',
       'Protect rent-controlled buildings',
       'Protect historic buildings',
       'Protect buildings newer than 30 years'
     ]);
   });
 
-  it('a transit rule added under limits is fitted to them', async () => {
-    const { store } = setup({
-      doc: { schema: 4, kinds: { zoning: [], permitting: [], money: [] } },
-      limits: early
-    });
+  it('a finished game offers a transit rule at the editor defaults', async () => {
+    const { store } = setup({ doc: EMPTY, limits: limitsWith({ whole: true }) });
     await page.getByRole('button', { name: 'Add zoning' }).click();
     await page.getByRole('button', { name: 'Transit rule' }).click();
     const added = store.policy.kinds.zoning[0];
-    expect(added.where).toEqual({ tag: 'transit', stopTypes: ['metro'] });
-    expect(added.spans[0].what).toEqual({ tag: 'bands', bands: [{ maxM: 402, stories: 6 }] });
+    expect(added.where.tag).toBe('transit');
+    expect(added.spans[0].what).toEqual({ tag: 'bands', bands: DEFAULT_BANDS });
   });
 
-  it("a given measure's What is the summary under closed limits", async () => {
-    const made = addPolicy(
-      { schema: 4, kinds: { zoning: [], permitting: [], money: [] } },
-      { kind: 'money', what: 'preset', preset: 'housing-bond' },
-      { w, month: 13, cal }
-    );
-    setup({ doc: made.doc, initial: made.ref, limits: early });
+  it('a catalogue policy not yet editable: What is the summary, the switch works', async () => {
+    const made = bondMade();
+    const { store } = setup({ doc: made.doc, initial: made.ref, limits: round1 });
     await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
     expect(editor()!.querySelector('[data-funding-editor]')).toBeNull();
     await expect.element(page.getByText('Public money', { exact: false }).first()).toBeVisible();
-  });
-
-  it('the On switch works on a bought policy', async () => {
-    const { store } = setup({
-      initial: { kind: 'zoning', id: 'z1', span: 0 },
-      limits: early
-    });
     await page.getByRole('switch', { name: 'On' }).click();
-    expect(policyOf(store.policy, 'zoning', 'z1')!.on).toBe(false);
+    expect(store.policy.kinds.money.find((p) => p.id === made.ref.id)!.on).toBe(false);
   });
 
-  it('a routes policy offers the bought presets and no custom controls', async () => {
-    const bought = limitsWith({ presets: new Set(['noDiscretionary']), custom: false });
-    setup({ initial: { kind: 'permitting', id: 'p1', span: 0 }, limits: bought });
+  it('once editable, its What edits', async () => {
+    const made = bondMade();
+    const editable = limitsWith({ ...round1, editable: new Set(['housing-bond']) });
+    setup({ doc: made.doc, initial: made.ref, limits: editable });
+    await expect
+      .poll(() => editor()?.querySelector('[data-funding-editor]') ?? null)
+      .not.toBeNull();
+  });
+
+  it('a routes policy in a game offers only its own preset, with custom controls', async () => {
+    setup({ initial: { kind: 'permitting', id: 'p1', span: 0 }, limits: round1 });
     const box = editor()!;
     await expect
       .poll(() =>
@@ -557,26 +551,19 @@ describe('Inspector under limits', () => {
           o.textContent?.trim()
         )
       )
-      .toEqual(['observed', 'noDiscretionary'].map((id) => PRESETS.find((p) => p.id === id)!.name));
-    expect(box.querySelectorAll('input[type="number"]')).toHaveLength(0);
-    expect(
-      [...box.querySelectorAll('button')].some((b) => /^Revert/.test(b.textContent?.trim() ?? ''))
-    ).toBe(false);
-    expect(box.textContent).toContain('Discretionary share:');
+      .toEqual([PRESETS.find((p) => p.id === 'observed')!.name]);
   });
 
-  it('a transit layer holds to the bought bands', async () => {
-    setup({ initial: { kind: 'zoning', id: 'z1', span: 0 }, limits: early });
-    // One band bought: "Add band" is off, not disabled.
+  it('a transit layer in a game may have every band', async () => {
+    setup({ initial: { kind: 'zoning', id: 'z1', span: 0 }, limits: round1 });
     const addBand = page.getByRole('button', { name: /^Add\s+Band$/ });
     await expect.element(addBand).toBeVisible();
-    expect(addBand.element().getAttribute('aria-disabled')).toBe('true');
-    expect(addBand.element().hasAttribute('disabled')).toBe(false);
+    expect(addBand.element().getAttribute('aria-disabled')).not.toBe('true');
   });
 });
 
 describe('Inspector with given measures', () => {
-  const givenLimits = limitsWith({ measures: new Set(['housing-bond']) });
+  const givenLimits = limitsWith({ offered: new Set(['housing-bond']), money: true });
   // The housing bond as `addPolicy` makes it, then a neighbour below it on the money row.
   const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
   const made = addPolicy(
@@ -644,13 +631,17 @@ describe('Inspector with given measures', () => {
     expect(measure(store)!.preset).toBe('housing-bond');
   });
 
-  it("'+' on Public money lists given measures only", async () => {
+  it("'+' on Public money lists the free measures only before the end", async () => {
     setup({ doc: EMPTY, limits: givenLimits });
     await page.getByRole('button', { name: 'Add money', exact: true }).click();
     const group = page.getByRole('group', { name: 'Add to Public money' });
     await expect.element(group).toBeVisible();
-    await expect.element(group.getByRole('button', { name: 'A housing bond' })).toBeVisible();
+    const free = fundingPresets(cal)
+      .filter((p) => p.available && FREE_MEASURES.includes(p.id))
+      .map((p) => p.label);
+    expect(free.length).toBeGreaterThan(0);
     const names = menuNames();
+    expect(names).toEqual(free);
     expect(names).not.toContain('Your own pool');
     expect(names).not.toContain('City funding scale');
     expect(names).not.toContain('Market terms');

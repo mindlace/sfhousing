@@ -169,8 +169,8 @@
     snapshot={false}
     {announce}
     presetLocked={policy.spans.length > 1 ? PRESET_PER_POLICY : null}
-    presets={limits.open ? null : limits.presets}
-    custom={limits.open || limits.custom}
+    presets={limits.open || limits.whole ? null : new Set(policy.preset ? [policy.preset] : [])}
+    custom={true}
   />
 {:else if fundOnly !== null && hasMoney(calibration)}
   <FundingTab

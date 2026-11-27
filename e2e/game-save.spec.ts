@@ -26,7 +26,7 @@ type Entry = {
   name: string;
   savedAt: string;
   phase: 'opening' | 'runs';
-  rung: number;
+  round: number;
 };
 type Listed = {
   handle: string;
@@ -119,13 +119,13 @@ test('the first save makes the account', async ({ page, context }) => {
   expect(held.current).toBe(id);
   const entry = held.saves.find((s) => s.id === id);
   expect(entry?.phase).toBe('runs');
-  expect(entry?.rung).toBe(0);
+  expect(entry?.round).toBe(0);
   expect((await context.cookies()).map((c) => c.name)).toContain('better-auth.session_token');
 
   const list = await listOf(page);
   expect(list.saves.map((s) => ({ id: s.id, rev: s.rev }))).toEqual([{ id, rev: 1 }]);
   expect(list.saves[0].phase).toBe('runs');
-  expect(list.saves[0].rung).toBe(0);
+  expect(list.saves[0].round).toBe(0);
   expect(list.handleClaimed).toBe(false);
   expect(list.removed).toEqual([]);
 });
@@ -140,11 +140,11 @@ test('a second device signed into the account gets the saved game', async ({ pag
     const got = held.saves.find((s) => s.id === id);
     expect(got?.name).toBe('Seeded game');
     expect(got?.phase).toBe('runs');
-    expect(got?.rung).toBe(0);
+    expect(got?.round).toBe(0);
     expect(held.saves.find((s) => s.id === second.own)?.phase).toBe('opening');
     const listed = (await listOf(second.page)).saves;
-    expect(listed.find((s) => s.id === id)).toMatchObject({ phase: 'runs', rung: 0 });
-    expect(listed.find((s) => s.id === second.own)).toMatchObject({ phase: 'opening', rung: 0 });
+    expect(listed.find((s) => s.id === id)).toMatchObject({ phase: 'runs', round: 0 });
+    expect(listed.find((s) => s.id === second.own)).toMatchObject({ phase: 'opening', round: 0 });
   } finally {
     await second.close();
   }
@@ -180,11 +180,11 @@ test('a conflict keeps both versions', async ({ page, browser }) => {
       expect.arrayContaining(['Alpha', 'Beta (this device)'])
     );
     for (const name of ['Alpha', 'Beta (this device)']) {
-      expect(listed.find((s) => s.name === name)).toMatchObject({ phase: 'runs', rung: 0 });
+      expect(listed.find((s) => s.name === name)).toMatchObject({ phase: 'runs', round: 0 });
     }
     const copy = (await savesOf(b)).saves.find((s) => s.name === 'Beta (this device)');
     expect(copy?.phase).toBe('runs');
-    expect(copy?.rung).toBe(0);
+    expect(copy?.round).toBe(0);
   } finally {
     await second.close();
   }

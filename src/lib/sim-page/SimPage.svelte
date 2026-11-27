@@ -34,6 +34,7 @@
   import type { ParcelId } from '$lib/data/parcel';
   import { e2eGoalAmount } from '$lib/game/e2e';
   import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
+  import { offerThrough } from '$lib/game/offer';
   import type { GameStore } from '$lib/game/store.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
@@ -254,8 +255,14 @@
   let mounted = false;
   let detach: (() => void) | null = null;
 
+  /** Resets the store to `p`; in a game, with every policy the game offers that `p` lacks added
+   *  off (no undo step). */
   function load(p: SimPolicy4): void {
-    store.reset(p);
+    const offered = untrack(() => {
+      const g = game && !game.open ? game : null;
+      return g && cal ? offerThrough(p, g.state.round, cal, g.state.editable) : p;
+    });
+    store.reset(offered);
     // The runnable document of `p`, as `run` holds it, so the sync effect sees no change.
     const r = run;
     synced = r;
@@ -478,8 +485,7 @@
       r = addPolicy(store.policy, choice, {
         w: { asOf: c.asOf, months: WINDOW_MONTHS },
         month: viewMonthOf(c.asOf, day),
-        cal: c,
-        limits
+        cal: c
       });
     } catch (e) {
       // A funding limit (only off policies count: starters show with nothing in force). The "+"
@@ -599,8 +605,7 @@
             {
               w: { asOf: c.asOf, months: WINDOW_MONTHS },
               month: viewMonthOf(c.asOf, day),
-              cal: c,
-              limits
+              cal: c
             }
           );
           added.ref = r.ref;

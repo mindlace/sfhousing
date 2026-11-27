@@ -103,14 +103,3 @@ test('the game panel open', async ({ page }) => {
   await expect(await openGamePanel(page)).toBeVisible();
   await checkState(page);
 });
-
-test('the side goals open', async ({ page }) => {
-  await seedRuns(page);
-  await gotoHydrated(page, '/');
-  await waitSim(page);
-  const headline = page.getByTestId('goal-headline-button');
-  await headline.click();
-  await expect(headline).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByTestId('side-goals')).toBeVisible();
-  await checkState(page);
-});

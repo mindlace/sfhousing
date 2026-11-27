@@ -39,7 +39,7 @@ import {
   type Win
 } from './helpers/sharing';
 import { newVisitor } from './helpers/game';
-import { widestGameHeader, widestHeaderText } from './helpers/header-text';
+import { WIDEST_PINNED, widestGameHeader, widestHeaderText } from './helpers/header-text';
 import { seedRuns, waitSim } from './helpers/play';
 import { touchLaptop } from './helpers/pointer';
 import { addPolicy, holdPolicy, installPolicyHold, releasePolicy, waitFilled } from './helpers/run';
@@ -1085,7 +1085,7 @@ test.describe('account entry', () => {
 
 test.describe("the game's header on the simulation", () => {
   for (const width of [375, 768, 1024, 1280]) {
-    test(`${width} px with the widest unit count and goal: nothing overflows or overlaps`, async ({
+    test(`${width} px with the widest pinned goal: nothing overflows or overlaps`, async ({
       page,
       isMobile
     }) => {
@@ -1096,11 +1096,11 @@ test.describe("the game's header on the simulation", () => {
       await page.goto('/');
       await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
       await waitSim(page);
-      const headline = page.getByTestId('goal-headline-button');
+      const headline = page.getByTestId('goal-headline');
       await expect(headline).toBeVisible();
       await expect(page.getByTestId('game-panel')).toBeAttached();
       await widestGameHeader(page);
-      await expect(headline).toContainText('82,069 of 82,069 homes by Sep 2066');
+      await expect(page.getByTestId('goal-line1')).toHaveText(WIDEST_PINNED.line1);
       if (width === 375) await expectPhoneHeaderFits(page);
       else await expectHeaderRowFits(page);
     });

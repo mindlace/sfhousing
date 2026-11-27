@@ -1,4 +1,4 @@
-// A game store in a given state for the timeline's tests, read from one v2 save in storage.
+// A game store in a given state for the timeline's tests, read from one save in storage.
 import type { GameSave, SaveEntry } from '$lib/game/save-shape';
 import { SAVES_KEY, saveKey } from '$lib/game/saves';
 import { NEW_GAME, type GameState } from '$lib/game/state';
@@ -41,7 +41,7 @@ export function gameWith(
     nameIsDefault: true,
     savedAt: AT,
     phase: s.phase,
-    rung: s.rung
+    round: s.round
   };
   storage.setItem(saveKey(GAME_ID), JSON.stringify(save));
   storage.setItem(SAVES_KEY, JSON.stringify({ v: 2, current: GAME_ID, saves: [entry] }));

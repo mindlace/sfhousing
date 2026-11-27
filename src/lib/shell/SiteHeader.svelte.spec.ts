@@ -1,4 +1,7 @@
 import { createRawSnippet, mount, tick, unmount } from 'svelte';
+import { dayFromUtc } from '$lib/fzp/time';
+import { PENDING } from '$lib/game/rounds';
+import { pinnedWords } from '$lib/game/ui/round-words';
 import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -852,7 +855,7 @@ describe('SiteHeader', () => {
     it('the Menu button is named Menu and has no dot, whatever the game holds', async () => {
       await page.viewport(800, 800);
       const { game } = seededGame({
-        state: { phase: 'runs', firstWinAt: WON, units: { home: 500 } }
+        state: { phase: 'runs', firstWinAt: WON, round: 2 }
       });
       render(GameHeaderHost, { game, routeId: '/' });
       await expect.element(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
@@ -879,12 +882,15 @@ describe('SiteHeader', () => {
     });
 
     const HEADLINE = {
-      homes: 61400,
-      amount: 82069,
-      deadline: 'Dec 2055',
-      unlocks: null,
-      met: false,
-      side: []
+      words: pinnedWords(PENDING, {
+        amount: 82069,
+        target: dayFromUtc(2055, 12, 1),
+        legal: dayFromUtc(2066, 9, 30),
+        round: 1,
+        finished: false,
+        next: 3
+      }),
+      fill: 0.75
     };
     for (const width of [375, 1280])
       it(`at ${width}px the header is positioned, the pinned box is not, and both GoalHeadline root nodes sit in it`, async () => {
@@ -898,15 +904,7 @@ describe('SiteHeader', () => {
         expect(page.getByTestId('goal-live').element().parentElement).toBe(slot);
         expect(getComputedStyle(banner).position).toBe('relative');
         expect(getComputedStyle(slot).position).toBe('static');
-        await page.getByTestId('goal-headline-button').click();
-        const pop = page.getByTestId('side-goals');
-        await expect.element(pop).toBeVisible();
-        expect((pop.element() as HTMLElement).offsetParent).toBe(banner);
-        const p = pop.element().getBoundingClientRect();
-        const b = banner.getBoundingClientRect();
-        expect(p.top).toBeGreaterThanOrEqual(b.bottom);
-        expect(p.left).toBeGreaterThanOrEqual(b.left + 16 - 0.5);
-        expect(p.right).toBeLessThanOrEqual(b.right - 16 + 0.5);
+        expect(page.getByTestId('side-goals').elements()).toHaveLength(0);
       });
 
     it("the account entry reads @handle from the layout's user first", async () => {

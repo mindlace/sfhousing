@@ -8,12 +8,12 @@ import { seedGame, seedGoalAmount } from './game';
 import { openHeaderMenu } from './sharing';
 
 /**
- * Before the first load: the goal amount 1 and a game seeded with `state` (default: in the runs
- * with one run settled).
+ * Before the first load: the goal amount 1 and a game seeded with `state` (default: in the runs,
+ * round 1).
  */
 export async function seedRuns(
   page: Page,
-  state: Partial<GameState> = { phase: 'runs', runs: 1 }
+  state: Partial<GameState> = { phase: 'runs', round: 1 }
 ): Promise<void> {
   await seedGoalAmount(page, 1);
   await seedGame(page, state);

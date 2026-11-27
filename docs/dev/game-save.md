@@ -23,12 +23,13 @@ browser.
 | `rev`         | 1 on the first store, one more on every stored change                   |
 | `name`        | A copy of `save.name`                                                   |
 | `phase`       | A copy of `save.state.phase`                                            |
-| `rung`        | A copy of `save.state.rung`                                             |
+| `rung`        | A copy of `save.state.round` (the column keeps its old name)            |
 | `body`        | The `GameSave` as JSON; `''` once removed                               |
 | `saved_at`    | The save's own `savedAt`                                                |
 | `removed_at`  | Set when removed; null while live                                       |
 
-- Two generated migrations define `phase` and `rung`.
+- Two generated migrations define `phase` and `rung`. No migration came with the rounds: the `rung`
+  column holds the round, and `listGames` answers it as `round`.
 - A removal clears `body`, sets `removed_at` and keeps the rev. The row stays so other devices
   learn of the removal; removed rows are deleted only with their account.
 - The server never reads inside `plan` or `policy`.
@@ -43,9 +44,11 @@ deletion) call it; nothing else touches `game_save`. It parses a stored body onl
   `handle_tombstone` row has `released_by` equal to the identity: the handle was changed at least
   once.
 - `listGames(db, identityId, now)`: the live rows, newest `saved_at` first, as
-  `{ id, name, nameIsDefault, savedAt, phase, rung, rev }` (`nameIsDefault` read with `json_extract`);
+  `{ id, name, nameIsDefault, savedAt, phase, round, rev }` (`round` from the `rung` column,
+  `nameIsDefault` read with `json_extract`);
   `removed` is the ids removed within `REMOVED_LIST_DAYS` (90) of `now`.
-- `readGame(db, identityId, id)`: `live` with rev and save, `removed`, or null.
+- `readGame(db, identityId, id)`: `live` with rev and save, `removed`, or null. A body stored with
+  a version 2 state (the points build's) reads back upgraded to version 3.
 - `putGame(db, identityId, save, baseRev)`:
   - An id the account never held is stored at rev 1, whatever `baseRev` says, while the account
     has fewer than 12 live rows; a 13th new id is `too_many`.
@@ -84,7 +87,9 @@ never sent the save.
 3. The body as text over `MAX_SAVE_BYTES` bytes of UTF-8: 413, empty body.
 4. Not JSON, not an object, a `baseRev` that is neither null nor a positive integer, a `save`
    that `parseGameSave` refuses, or a `save.id` other than the path's id: 422
-   `{ error: 'invalid' }`.
+   `{ error: 'invalid' }`. A save whose state is version 2 (an old build's browser) parses upgraded
+   (`upgradeV2`, [game.md](game.md#version-2-games)) and is stored as version 3, its plan and
+   policy text unchanged.
 5. No `locals.user` and the `sfh_known` cookie: 401 `{ error: 'sign_in' }`.
 6. No `locals.user` and `save.state.firstWinAt` null: 422 `{ error: 'no_win' }`.
 7. No `locals.user`: `mintPseudonymousSession(event)` makes the anonymous account and sets its
@@ -307,7 +312,7 @@ The games are in `localStorage` first in every state; no state blocks play or bu
 `e2e/game-save.spec.ts` runs the real path, with no seam of its own:
 
 - `seedGame(page, { phase: 'runs' })` (`e2e/helpers/game.ts`) switches the real game on and stores
-  a v2 game in the runs phase, with `firstWinAt` set and never sent, so the sync sends it at attach
+  a game in the runs phase, with `firstWinAt` set and never sent, so the sync sends it at attach
   on the first load and the `PUT` mints the account. Rate limits always allow under
   `ENVIRONMENT=development`.
 - A spec changes a stored game by writing its `saveKey(id)` value and its `SAVES_KEY` entry with
@@ -318,6 +323,13 @@ The games are in `localStorage` first in every state; no state blocks play or bu
   `/api/game` requests, set up before the action that causes them; never on time.
 - Any spec that seeds a game past the opening sends it 2 seconds after load and makes an
   account, unless the test ends first.
+
+## The state's versions
+
+The envelope (`GameSave.v`) is 2; the state inside is version 3. A version 2 state is upgraded
+wherever it is parsed: the browser's store, `PUT /api/game` and a stored body read back. A null
+`target` stands for the legal deadline, `defaultGoal(asOf).deadline`, the window's end: that is
+how "beat the legal deadline" is stored before the first win.
 
 ## Five-level records
 

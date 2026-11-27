@@ -63,7 +63,7 @@ export function layerTop(r: ZoningRule): number {
 /** A range whose floor wins if a saved rule left it upside down. */
 const range = (min: number, max: number) => ({ min, max: Math.max(min, max) });
 
-/** What the bought limits let the editor offer (game-sim: limits). */
+/** What the limits let the editor offer. */
 export interface TransitCap {
   stops: ReadonlySet<StopType>;
   bands: number;
@@ -79,15 +79,10 @@ export const OPEN_CAP: TransitCap = Object.freeze({
   reachM: OPEN_REACH_M
 });
 
-/** The cap a Limits sets: open limits give OPEN_CAP, else each count is held to the editor's top. */
+/** The cap a Limits sets: no game or a finished one gives OPEN_CAP; else the offered stop types. */
 export function capOf(l: Limits): TransitCap {
-  if (l.open) return OPEN_CAP;
-  return {
-    stops: l.stops,
-    bands: Math.min(l.bands, MAX_BANDS),
-    stories: Math.min(l.stories, STORIES_MAX),
-    reachM: Math.min(l.reachM, OPEN_REACH_M)
-  };
+  if (l.open || l.whole) return OPEN_CAP;
+  return { stops: l.stops, bands: MAX_BANDS, stories: STORIES_MAX, reachM: OPEN_REACH_M };
 }
 
 /** `cap` with its reach held to the shortest maximum of the rule's stop types. */

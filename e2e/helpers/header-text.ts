@@ -2,25 +2,23 @@
 // tests (layout.spec.ts and the specs of the game's screens).
 import type { Page } from '@playwright/test';
 
+/** The pinned goal's widest words: line 1 of a pending round, line 2 before a round's offer. */
+export const WIDEST_PINNED = {
+  line1: '82,069 homes before Sep 2066',
+  line2: 'Beat it: 3 new policies'
+} as const;
+
 /**
- * Writes the game header's widest string: "82,069 of 82,069 homes by Sep 2066" into the goal
- * headline's drawn line 1. Text only, so a
- * second call leaves the page as the first did.
+ * Writes the pinned goal's widest words into its two lines. Text only, so a second call leaves the
+ * page as the first did.
  */
 export async function widestGameHeader(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const line = document.querySelector(
-      '[data-testid="goal-headline-button"] > span[aria-hidden="true"]'
-    );
-    if (line) {
-      // As GoalHeadline draws it: the word "homes" in its own span, which is sr-only below sm.
-      const word = line.querySelector('span');
-      if (word) {
-        word.textContent = 'homes';
-        line.replaceChildren('82,069 of 82,069 ', word, ' by Sep 2066');
-      } else line.textContent = '82,069 of 82,069 homes by Sep 2066';
-    }
-  });
+  await page.evaluate((w) => {
+    const line1 = document.querySelector('[data-testid="goal-line1"]');
+    if (line1) line1.textContent = w.line1;
+    const line2 = document.querySelector('[data-testid="goal-line2"]');
+    if (line2) line2.textContent = w.line2;
+  }, WIDEST_PINNED);
 }
 
 /**

@@ -165,13 +165,12 @@
   import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
   import { keyTally } from './key';
   import SimKey from './SimKey.svelte';
-  import { NODES } from '$lib/game/catalogue/nodes';
-  import { RUNGS, goalAt, ladder } from '$lib/game/ladder';
+  import { ROUNDS, roundEntries } from '$lib/game/catalogue/rounds';
   import { OPEN_LIMITS } from '$lib/game/limits';
-  import { sideShown, type SideGoal } from '$lib/game/side-goals';
+  import { PENDING } from '$lib/game/rounds';
   import type { GameStore } from '$lib/game/store.svelte';
   import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
-  import { goalUnlocks } from './game-copy';
+  import { pinnedWords } from '$lib/game/ui/round-words';
   import type { CameraFrame } from '$lib/map/types';
 
   interface Props {
@@ -215,15 +214,14 @@
      */
     run?: SimPolicy4;
     /**
-     * The game: the goal in play (its rung's), the header's goal headline in place of the score,
+     * The game: the goal in play (its target's), the header's goal headline in place of the score,
      * no goal notice, and the limits the timeline holds to. The open game (`game.open`) is no
      * game: today's page. Default null.
      */
     game?: GameStore | null;
     /**
-     * The goal's amount. In a game, over `goalAt` of the rung in play (the `goal` seam is not
-     * read); without one, over the default goal (the `goal` seam wins). Default null: the
-     * default's.
+     * The goal's amount. In a game, over the game's goal (the `goal` seam is not read); without
+     * one, over the default goal (the `goal` seam wins). Default null: the default's.
      */
     goalAmount?: number | null;
     /** Edit mode: the camera the map opens on; undefined gives today's camera. */
@@ -419,16 +417,22 @@
   /** The game in play; the open game is no game (G2). */
   const g = $derived(game && !game.open ? game : null);
   /**
-   * The page's goal. In a game, the rung in play's (`goalAmount` its amount when given; the seam
-   * is not read). Without one, the seam, else the default goal built from the dataset's date,
-   * with `goalAmount` as its amount when given.
+   * The page's goal. In a game, the default goal with the target as its deadline (the legal
+   * deadline while there is none) and `goalAmount` as its amount when given; the seam is not
+   * read. Without one, the seam, else the default goal built from the dataset's date, with
+   * `goalAmount` as its amount when given.
    */
-  const goal = $derived(
-    g
-      ? goalAt(asOf, g.state.rung, goalAmount ?? undefined)
-      : (goalSeam ??
-          (goalAmount !== null ? { ...defaultGoal(asOf), amount: goalAmount } : defaultGoal(asOf)))
-  );
+  const goal = $derived.by(() => {
+    const base = defaultGoal(asOf);
+    if (g) {
+      return {
+        ...base,
+        deadline: g.state.target ?? base.deadline,
+        amount: goalAmount ?? base.amount
+      };
+    }
+    return goalSeam ?? (goalAmount !== null ? { ...base, amount: goalAmount } : base);
+  });
   /** The document the worker runs: `run`, else the one on show. */
   const runDoc = $derived(run ?? policy);
   const current = $derived(session?.view ?? null);
@@ -721,45 +725,26 @@
 
   // ---- the game's goal headline (game-sim #sec-design-goal, #tbl-goal-props) ----
 
-  type SideEntry = { goal: SideGoal; value: number; target: number; met: boolean };
   /**
-   * GoalHeadline's props in a game; null without a game. The homes are the view on show's at the
-   * playhead's month (null with no view or that month not filled). The side goals are read on the
-   * view on show at the deadline's month, with the last run's take when it was on the rung in
-   * play; none with no view or that month not filled.
+   * GoalHeadline's props in a game; null without a game. The words are the pending state's (the
+   * result states come with the round's verdict); the bar is the homes at the playhead's month
+   * over the amount (empty with no view or that month not filled).
    */
   const goalProps = $derived.by(() => {
     if (!g) return null;
     const s = g.state;
-    const rung = s.rung;
-    const last = s.last !== null && s.last.rung === rung ? s.last : null;
-    const sideTake = last
-      ? { dropped: last.dropped, collected: last.collected }
-      : { dropped: {}, collected: {} };
     const view = shownView;
-    const side: SideEntry[] = [];
-    if (view) {
-      const i = indexOfDay(view.months, goal.deadline);
-      if (i <= view.filledThrough) {
-        for (const sg of sideShown(s)) {
-          const r = sg.read({ view, index: i, take: sideTake, inForce });
-          if (r !== null) side.push({ goal: sg, ...r, met: r.value >= r.target });
-        }
-      }
-    }
     const i = atToday ? TODAY : index;
     const homes = view && i <= view.filledThrough ? goal.measure.valueAt(view, i) : null;
-    return {
-      homes,
+    const words = pinnedWords(PENDING, {
       amount: goal.amount,
-      deadline: ladder(asOf)[rung].label,
-      unlocks:
-        rung + 1 < RUNGS
-          ? goalUnlocks(NODES.filter((n) => n.ring === rung + 1).length, true)
-          : null,
-      met: s.met.some((e) => e.rung === rung),
-      side
-    };
+      target: s.target,
+      legal: defaultGoal(asOf).deadline,
+      round: s.round,
+      finished: s.finished,
+      next: s.round < ROUNDS ? roundEntries(s.round + 1).length : 0
+    });
+    return { words, fill: homes === null || goal.amount <= 0 ? 0 : homes / goal.amount };
   });
   // The held document goes once the numbers on show are current again.
   $effect(() => {

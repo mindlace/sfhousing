@@ -54,9 +54,13 @@ describe('transit-edit caps', () => {
       reachM: OPEN_REACH_M
     });
     expect(capOf(OPEN_LIMITS)).toBe(OPEN_CAP);
-    expect(
-      capOf(limitsWith({ stops: new Set(['metro']), bands: 5, stories: 8, reachM: 5000 }))
-    ).toEqual({ stops: new Set(['metro']), bands: 3, stories: 8, reachM: OPEN_REACH_M });
+    expect(capOf(limitsWith({ whole: true }))).toBe(OPEN_CAP);
+    expect(capOf(limitsWith({ stops: new Set(['metro']) }))).toEqual({
+      stops: new Set(['metro']),
+      bands: MAX_BANDS,
+      stories: STORIES_MAX,
+      reachM: OPEN_REACH_M
+    });
   });
 
   it('reach is a walking distance per class of stop', () => {

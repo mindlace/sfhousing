@@ -68,7 +68,7 @@ describe('GET /api/game', () => {
       name: 'Live',
       rev: 1,
       phase: 'opening',
-      rung: 0
+      round: 0
     });
     expect(body.removed).toEqual([gone]);
   });

@@ -2,6 +2,8 @@
 // judged only on the months the player has seen.
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
 import type { Day } from '$lib/timelapse/time';
+import { CATALOGUE, POLICY_KEYS, ROUNDS, isPolicyKey } from './catalogue/rounds';
+import type { GameState } from './state';
 
 export type Verdict =
   | { tag: 'pending' }
@@ -70,4 +72,45 @@ export function judge(s: Seen): Verdict {
     return { tag: 'late', goalMonth: null };
   }
   return PENDING;
+}
+
+/** Known keys, each once, sorted. */
+const sortedKeys = (keys: Iterable<string>): string[] =>
+  [...new Set([...keys].filter(isPolicyKey))].sort();
+
+const sameList = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** Unknown or duplicate editable keys dropped (sorted), round clamped to ROUNDS; `s` itself
+ *  when nothing changes. Replaces fitGame. */
+export function fitState(s: GameState): GameState {
+  const editable = sortedKeys(s.editable);
+  const round = Math.min(s.round, ROUNDS);
+  if (round === s.round && sameList(editable, s.editable)) return s;
+  return { ...s, round, editable };
+}
+
+/** Taking a win: target = goalMonth ?? target; wins + { round, goalMonth, beat: target, at,
+ *  datasetVersion }; editable gains every key in `on` that is offered; below ROUNDS round + 1,
+ *  at ROUNDS finished = true with every key editable; already finished: target, wins only. */
+export function takeWin(
+  s: GameState,
+  w: { goalMonth: Day | null; on: ReadonlySet<string>; datasetVersion: string; at: string }
+): GameState {
+  const win = {
+    round: s.round,
+    goalMonth: w.goalMonth,
+    beat: s.target,
+    at: w.at,
+    datasetVersion: w.datasetVersion
+  };
+  const next = { ...s, target: w.goalMonth ?? s.target, wins: [...s.wins, win] };
+  if (s.finished) return next;
+  const offered = new Set<string>([
+    ...CATALOGUE.filter((e) => e.round <= s.round).map((e) => e.key),
+    ...s.editable
+  ]);
+  if (s.round >= ROUNDS) return { ...next, finished: true, editable: sortedKeys(POLICY_KEYS) };
+  const gained = [...w.on].filter((k) => offered.has(k));
+  return { ...next, round: s.round + 1, editable: sortedKeys([...s.editable, ...gained]) };
 }

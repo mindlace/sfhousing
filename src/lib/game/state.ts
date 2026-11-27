@@ -1,50 +1,47 @@
-// G1: the game's state and the frozen new game.
+// The game's state (version 3) and the frozen new game.
 import type { Day } from '$lib/timelapse/time';
-import type { RunResult } from './run-result';
 
-export type UnitKind = 'home';
-export const UNIT_KINDS: readonly UnitKind[] = ['home'];
-export type Units = Partial<Record<UnitKind, number>>;
-export type NodeId = string;
-
-export interface MetRung {
-  rung: number;
-  reachedOn: Day;
-  datasetVersion: string;
+export interface Win {
+  /** The round the win was taken in (0: the baseline). */
+  round: number;
+  goalMonth: Day | null;
+  /** The target it beat; null: none. */
+  beat: Day | null;
   at: string;
+  datasetVersion: string;
 }
 
 export interface GameState {
-  v: 2;
+  v: 3;
   phase: 'opening' | 'runs';
   firstWinAt: string | null;
-  bought: Record<NodeId, number>;
-  units: Units;
-  rung: number;
-  met: MetRung[];
-  side: Record<string, string>;
-  runs: number;
-  last: RunResult | null;
+  /** Rounds offered so far, 0 (the baseline) to ROUNDS. */
+  round: number;
+  /** The first day of the month to beat; null: none yet. */
+  target: Day | null;
+  /** Catalogue keys the player can edit, sorted; fitState drops unknown ones. */
+  editable: string[];
+  wins: Win[];
+  finished: boolean;
+  /** Upgraded from version 2 with a run played: transit rules outside the catalogue run. */
+  own: boolean;
 }
 
 export const NEW_GAME: GameState = freeze({
-  v: 2,
+  v: 3,
   phase: 'opening',
   firstWinAt: null,
-  bought: {},
-  units: {},
-  rung: 0,
-  met: [],
-  side: {},
-  runs: 0,
-  last: null
+  round: 0,
+  target: null,
+  editable: [],
+  wins: [],
+  finished: false,
+  own: false
 });
 
-/** Object.freeze on the state and on its bought, units, met and side. */
+/** Object.freeze on the state and on its editable and wins. */
 function freeze(s: GameState): GameState {
-  Object.freeze(s.bought);
-  Object.freeze(s.units);
-  Object.freeze(s.met);
-  Object.freeze(s.side);
+  Object.freeze(s.editable);
+  Object.freeze(s.wins);
   return Object.freeze(s);
 }

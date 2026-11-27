@@ -18,6 +18,7 @@ import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
 import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import { clampBbox } from '$lib/sim-page/lid-request';
+import { offerThrough } from '$lib/game/offer';
 import { openGame, type GameStore } from '$lib/game/store.svelte';
 import { stubTouchLaptop } from '$lib/paint/test/pointer-stub';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
@@ -111,9 +112,11 @@ const historic: Policy = {
   spans: [{ from: monthFirstDay(asOf, 2), to: null, what: { tag: 'protect', years: null } }]
 };
 
-/** A game in its runs with `bought` (default the SB 423 clock: Permitting's "+" offers it). */
-const inRuns = (mem: Storage, bought: Record<string, number> = { 'sb423-clock': 1 }) =>
-  gameWith({ phase: 'runs', runs: 1, bought }, { storage: mem });
+/**
+ * A finished game at round 0: every lever but painted zoning (Permitting's "+" offers the SB 423
+ * clock), and no catalogue policy added on load, so each test reads its document as stored.
+ */
+const inRuns = (mem: Storage) => gameWith({ phase: 'runs', finished: true }, { storage: mem });
 
 /** The page is the simulation tool: the bottom pane is up. */
 async function inTool() {
@@ -185,13 +188,13 @@ describe('SimRoute in a game', () => {
   it("Publish sends runnable's document; autosave keeps the whole one", async () => {
     const mem = new MemoryStorage();
     const painted = addPolicy(EMPTY, { kind: 'zoning', what: 'paint' }, ctx).doc.kinds.zoning[0];
-    // A protection (free once a stop type is bought) keeps the runnable document from being empty.
+    // A protection (free once a stop type is offered) keeps the runnable document from being empty.
     const whole: SimPolicy4 = {
       schema: 4,
       kinds: { zoning: [painted, historic], permitting: [{ ...clock, on: false }], money: [] }
     };
     store(mem, whole);
-    const game = inRuns(mem, { 'sb423-clock': 1, 'stop-rail': 1 });
+    const game = inRuns(mem);
     const spy = vi.fn(
       async () =>
         new Response(JSON.stringify({ id: 'AbCdEfGh' }), {
@@ -201,7 +204,7 @@ describe('SimRoute in a game', () => {
     );
     vi.stubGlobal('fetch', spy);
     await opened(game, mem);
-    // The worker runs the runnable document: no painted area, the bought clock as it stands.
+    // The worker runs the runnable document: no painted area, the clock as it stands.
     const run = w().lastOf('openTimeline')!.policy;
     expect(run.kinds.zoning.map((p) => p.id)).toEqual(['historic']);
     expect(run.kinds.permitting.map((p) => [p.id, p.on])).toEqual([[clock.id, false]]);
@@ -255,10 +258,10 @@ describe('SimRoute in a game', () => {
     expect(document.querySelector('[data-testid=palette-strip]')).toBeNull();
   });
 
-  for (const runs of [0, 1]) {
-    it(`a game in its runs (${runs} settled) lands in the simulation tool`, async () => {
+  for (const round of [0, 1]) {
+    it(`a game in round ${round} lands in the simulation tool`, async () => {
       const mem = new MemoryStorage();
-      await opened(gameWith({ phase: 'runs', runs }, { storage: mem }), mem);
+      await opened(gameWith({ phase: 'runs', round }, { storage: mem }), mem);
       await expect.element(page.getByTestId('tl-dock')).toBeVisible();
       await expect.element(page.getByTestId('tl-play')).toBeVisible();
       expect(document.querySelector('[data-testid=game-tree-pane]')).toBeNull();
@@ -270,6 +273,26 @@ describe('SimRoute in a game', () => {
       await expect.poll(() => debug().playing).toBe(true);
     });
   }
+
+  it('in a game the document loads with every policy offered so far, off, and no undo step', async () => {
+    const mem = new MemoryStorage();
+    store(mem, { schema: 4, kinds: { zoning: [historic], permitting: [], money: [] } });
+    await opened(gameWith({ phase: 'runs', round: 1 }, { storage: mem }), mem);
+    await inTool();
+    const want = offerThrough(
+      { schema: 4, kinds: { zoning: [historic], permitting: [], money: [] } },
+      1,
+      cal
+    );
+    expect(want.kinds.zoning.map((p) => p.id)).toEqual(['historic', 'transit-rail']);
+    await expect.poll(() => debug().policy).toEqual(want);
+    expect(debug().policy.kinds.permitting.every((p) => !p.on)).toBe(true);
+    expect(debug().policy.kinds.permitting.map((p) => p.label)).toEqual(['SB 423 clock']);
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await tick();
+    expect(debug().policy).toEqual(want);
+  });
 
   it('a game in the opening renders nothing', async () => {
     const storage = new MemoryStorage();
@@ -302,7 +325,9 @@ describe('SimRoute in a game', () => {
 
   it("an edit the worker rejects keeps the policies the game doesn't run", async () => {
     const mem = new MemoryStorage();
-    store(mem, { schema: 4, kinds: { zoning: [historic], permitting: [], money: [] } });
+    // Painted zoning never runs in a game, even a finished one.
+    const painted = addPolicy(EMPTY, { kind: 'zoning', what: 'paint' }, ctx).doc.kinds.zoning[0];
+    store(mem, { schema: 4, kinds: { zoning: [painted], permitting: [], money: [] } });
     await opened(inRuns(mem), mem);
     await inTool();
     await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
@@ -311,9 +336,9 @@ describe('SimRoute in a game', () => {
     expect(w().lastOf('setPolicy')!.policy.kinds.zoning).toEqual([]);
     w().emit(errorMsg(2, 'bad-request'));
     await expect.poll(() => debug().policy.kinds.permitting).toEqual([]);
-    expect(debug().policy.kinds.zoning.map((p) => p.id)).toEqual(['historic']);
+    expect(debug().policy.kinds.zoning.map((p) => p.id)).toEqual([painted.id]);
     await expect.element(saveState()).toHaveAttribute('data-save-status', 'saved');
-    expect(storedPolicy(mem).kinds.zoning.map((p) => p.id)).toEqual(['historic']);
+    expect(storedPolicy(mem).kinds.zoning.map((p) => p.id)).toEqual([painted.id]);
     expect(storedPolicy(mem).kinds.permitting).toEqual([]);
   });
 
@@ -404,7 +429,7 @@ describe('SimRoute in a game', () => {
     );
     const mem = new MemoryStorage();
     store(mem, made.doc);
-    const game = inRuns(mem, { 'housing-bond': 1 });
+    const game = inRuns(mem);
     await opened(game, mem, { calibration: fcal });
     await inTool();
     await page
@@ -468,7 +493,7 @@ describe('SimRoute in a game: the tool', () => {
 
   it("a game's map view is read at each moveend: lids are asked and the limits show", async () => {
     const mem = new MemoryStorage();
-    mount(gameWith({ phase: 'runs', runs: 0 }, { storage: mem }), mem);
+    mount(gameWith({ phase: 'runs' }, { storage: mem }), mem);
     await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
     await mapReady();
     w().emit(compiledMsg(1, LONG));

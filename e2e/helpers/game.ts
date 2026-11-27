@@ -7,14 +7,18 @@ import type { GameSave } from '../../src/lib/game/save-shape';
 
 const seeded = new WeakSet<Page>();
 
-/** Before the page loads, switch the real game on and store a v2 game: the new game with `state` over it. */
+/** The policy record key (`SIM_KEY4` of `src/lib/timeline/sim-doc4`). */
+const POLICY_RECORD = 'sfhousing:sim:v2';
+
+/** Before the page loads, switch the real game on and store a game: the new game with `state` over
+ *  it (a 'runs' state gets a `firstWinAt`). */
 export async function seedGame(page: Page, state?: Partial<GameState>): Promise<void> {
   if (seeded.has(page)) throw new Error('seedGame: this page already has a game');
   seeded.add(page);
 
   const id = newId();
   const at = new Date().toISOString();
-  const merged: GameState = { ...NEW_GAME, ...state, v: 2 };
+  const merged: GameState = { ...NEW_GAME, ...state, v: 3 };
   if (state?.firstWinAt === undefined && merged.phase === 'runs') merged.firstWinAt = at;
 
   const save: GameSave = {
@@ -37,11 +41,58 @@ export async function seedGame(page: Page, state?: Partial<GameState>): Promise<
         nameIsDefault: false,
         savedAt: at,
         phase: merged.phase,
-        rung: merged.rung
+        round: merged.round
       }
     ]
   };
+  await store(page, id, JSON.stringify(save), JSON.stringify(index), null);
+}
 
+/**
+ * Before the page loads, switch the real game on and store a raw version 2 save as the old build
+ * wrote it (its index entry carries `rung`), with `policy` as its policy record when given: the
+ * upgrade journey.
+ */
+export async function seedV2Game(
+  page: Page,
+  v2: Record<string, unknown>,
+  policy?: string
+): Promise<void> {
+  if (seeded.has(page)) throw new Error('seedV2Game: this page already has a game');
+  seeded.add(page);
+
+  const id = newId();
+  const at = new Date().toISOString();
+  const save = {
+    v: 2,
+    id,
+    name: 'Old game',
+    nameIsDefault: false,
+    state: v2,
+    plan: null,
+    policy: policy ?? null,
+    savedAt: at
+  };
+  const entry = {
+    id,
+    name: 'Old game',
+    nameIsDefault: false,
+    savedAt: at,
+    phase: v2.phase,
+    rung: v2.rung
+  };
+  const index = { v: 2, current: id, saves: [entry] };
+  await store(page, id, JSON.stringify(save), JSON.stringify(index), policy ?? null);
+}
+
+/** Stores the game switch, the save and the index (and the policy record) before load. */
+async function store(
+  page: Page,
+  id: string,
+  save: string,
+  index: string,
+  policy: string | null
+): Promise<void> {
   await page.addInitScript(
     (a) => {
       try {
@@ -49,6 +100,7 @@ export async function seedGame(page: Page, state?: Partial<GameState>): Promise<
         if (localStorage.getItem(a.savesKey) === null) {
           localStorage.setItem(a.key, a.save);
           localStorage.setItem(a.savesKey, a.index);
+          if (a.policy !== null) localStorage.setItem(a.policyKey, a.policy);
         }
       } catch {
         // storage refused: write nothing more, so the page still loads
@@ -58,8 +110,10 @@ export async function seedGame(page: Page, state?: Partial<GameState>): Promise<
       gameKey: E2E_GAME_KEY,
       savesKey: SAVES_KEY,
       key: saveKey(id),
-      save: JSON.stringify(save),
-      index: JSON.stringify(index)
+      save,
+      index,
+      policyKey: POLICY_RECORD,
+      policy
     }
   );
 }

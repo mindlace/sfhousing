@@ -80,7 +80,7 @@ export async function listGames(
       nameIsDefault: Boolean(r.nameIsDefault),
       savedAt: r.savedAt.toISOString(),
       phase: r.phase as GameState['phase'],
-      rung: r.rung,
+      round: r.rung,
       rev: r.rev
     })),
     removed: removed.map((r) => r.id)
@@ -124,7 +124,7 @@ export async function putGame(
     // The guards live in the write: no row under this id, and fewer than MAX_SAVES live rows.
     const inserted = await db.all<{ rev: number }>(sql`
       INSERT INTO game_save (identity_id, id, rev, name, phase, rung, body, saved_at, removed_at)
-      SELECT ${identityId}, ${save.id}, 1, ${save.name}, ${save.state.phase}, ${save.state.rung}, ${body},
+      SELECT ${identityId}, ${save.id}, 1, ${save.name}, ${save.state.phase}, ${save.state.round}, ${body},
         ${savedAt.getTime()}, NULL
       WHERE NOT EXISTS (
           SELECT 1 FROM game_save WHERE identity_id = ${identityId} AND id = ${save.id}
@@ -147,7 +147,7 @@ export async function putGame(
       body,
       name: save.name,
       phase: save.state.phase,
-      rung: save.state.rung,
+      rung: save.state.round,
       savedAt
     })
     .where(and(rowKey(identityId, save.id), eq(gameSave.rev, baseRev), isNull(gameSave.removedAt)))

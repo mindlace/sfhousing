@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FREE_MEASURES, OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
 import { dateMeasure, fundingPresets } from '$lib/sim-page/funding-presets';
-import { PRESETS } from '$lib/sim-page/timing';
-import type { StopType } from '$lib/sim/levers/brushes';
+import { DEFAULT_BANDS } from '$lib/sim-page/policy';
 import { limitsWith } from './test/limits';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
@@ -11,7 +10,7 @@ import { monthFirstDay } from '$lib/sim/world/months';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Pool } from '$lib/timelapse/types';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
-import { addChoices, addPolicy, fittedLayer, kindOpen, redateMoved, type AddChoice } from './add';
+import { addChoices, addPolicy, kindOpen, redateMoved, type AddChoice } from './add';
 import { CUSTOM_TIMING_LABEL } from './lens';
 import { parsePolicy4 } from './parse4';
 import { DEFAULT_POLICY4, type Policy, type PolicyKind, type SimPolicy4 } from './policy4';
@@ -240,11 +239,13 @@ describe('addPolicy fixes', () => {
 });
 
 describe('addChoices under limits', () => {
-  const early = limitsWith({ stops: new Set(['metro']), bands: 1, stories: 4, reachM: 402 });
-  const P = PRESETS.find((p) => p.available && p.id !== 'observed')!.id;
-  const presetName = (id: string) => PRESETS.find((p) => p.id === id)!.name;
-  const M = fundingPresets(cal).find((p) => p.available)!.id;
-  const fundingLabel = (id: string) => fundingPresets(cal).find((p) => p.id === id)!.label;
+  /** Round 1 of a game: regional rail and money offered, nothing editable. */
+  const round1 = limitsWith({
+    offered: new Set(['transit-rail', 'sb423-clock', 'housing-bond']),
+    stops: new Set(['regionalRail']),
+    money: true
+  });
+  const whole = limitsWith({ whole: true });
   const freeLabels = () =>
     fundingPresets(cal)
       .filter((p) => p.available && FREE_MEASURES.includes(p.id))
@@ -254,11 +255,11 @@ describe('addChoices under limits', () => {
 
   it('kindOpen', () => {
     for (const k of KINDS) expect(kindOpen(k, OPEN_LIMITS)).toBe(true);
+    for (const k of KINDS) expect(kindOpen(k, whole)).toBe(true);
     for (const k of KINDS) expect(kindOpen(k, limitsWith({}))).toBe(false);
-    expect(kindOpen('zoning', early)).toBe(true);
-    expect(kindOpen('permitting', limitsWith({ presets: new Set([P]) }))).toBe(true);
-    expect(kindOpen('permitting', limitsWith({ custom: true }))).toBe(true);
-    expect(kindOpen('money', limitsWith({ measures: new Set([M]) }))).toBe(true);
+    expect(KINDS.map((k) => kindOpen(k, round1))).toEqual([true, false, true]);
+    expect(kindOpen('zoning', limitsWith({ stops: new Set(['metro']) }))).toBe(true);
+    expect(kindOpen('money', limitsWith({ money: true }))).toBe(true);
   });
 
   it('a closed kind offers nothing', () => {
@@ -274,77 +275,47 @@ describe('addChoices under limits', () => {
     expect(labels('money')).toContain('Your own pool');
   });
 
-  it('zoning: a fitted transit rule and the protections, never a painted area', () => {
-    expect(labels('zoning', early)).toEqual([
+  it('zoning: the protections before the end; the transit rule once whole; never a painted area', () => {
+    expect(labels('zoning', round1)).toEqual([
+      'Protect rent-controlled buildings',
+      'Protect historic buildings',
+      'Protect buildings newer than 30 years'
+    ]);
+    expect(labels('zoning', whole)).toEqual([
       'Transit rule',
       'Protect rent-controlled buildings',
       'Protect historic buildings',
       'Protect buildings newer than 30 years'
     ]);
-    expect(labels('zoning', { ...early, bands: 0 })).not.toContain('Transit rule');
-    expect(labels('zoning', { ...early, stories: 0 })).not.toContain('Transit rule');
-    expect(labels('zoning', { ...early, reachM: 0 })).not.toContain('Transit rule');
-    expect(labels('zoning', { ...early, bands: 0 })).toContain('Protect historic buildings');
-    expect(labels('zoning', limitsWith({}))).toEqual([]);
   });
 
-  it('permitting: bought presets, custom only while custom', () => {
-    const l = limitsWith({ presets: new Set([P, 'observed']) });
-    expect(labels('permitting', l)).toEqual([presetName(P)]);
-    expect(labels('permitting', { ...l, custom: true })).toEqual([
-      presetName(P),
-      CUSTOM_TIMING_LABEL
-    ]);
+  it('permitting: presets and custom once whole', () => {
+    expect(labels('permitting', round1)).toEqual([]);
+    expect(labels('permitting', whole)).toEqual(labels('permitting', OPEN_LIMITS));
+    expect(labels('permitting', whole)).toContain(CUSTOM_TIMING_LABEL);
   });
 
-  it('money: bought measures, then the two free ones; never own pool, scale or terms', () => {
-    const got = labels('money', limitsWith({ measures: new Set([M]) }));
-    expect(got[0]).toBe(fundingLabel(M));
-    expect(got).toEqual(expect.arrayContaining(freeLabels()));
-    expect(new Set(got).size).toBe(got.length);
+  it('money: the free measures before the end; everything once whole', () => {
+    expect(labels('money', round1)).toEqual(freeLabels());
     for (const no of ['Your own pool', 'City funding scale', 'Market terms'])
-      expect(got).not.toContain(no);
+      expect(labels('money', round1)).not.toContain(no);
+    expect(labels('money', whole)).toEqual(labels('money', OPEN_LIMITS));
   });
 
-  it('a new rule starts at the two default bands, never at the maximum', () => {
-    const rails = new Set<StopType>(['regionalRail']);
-    expect(
-      fittedLayer(limitsWith({ stops: rails, bands: 3, reachM: 1200, stories: 80 })).bands
-    ).toEqual([
-      { maxM: 402, stories: 6 },
-      { maxM: 805, stories: 4 }
-    ]);
-    expect(
-      fittedLayer(limitsWith({ stops: rails, bands: 1, reachM: 402, stories: 4 })).bands
-    ).toEqual([{ maxM: 402, stories: 4 }]);
-    const buses = new Set<StopType>(['rapidBus']);
-    expect(
-      fittedLayer(limitsWith({ stops: buses, bands: 3, reachM: 1200, stories: 80 })).bands
-    ).toEqual([
-      { maxM: 402, stories: 6 },
-      { maxM: 800, stories: 4 }
-    ]);
-  });
-
-  it('fittedLayer fits the limits and the policy it adds runs', () => {
-    const l = limitsWith({
-      stops: new Set(['metro', 'regionalRail']),
-      bands: 1,
-      stories: 4,
-      reachM: 402
-    });
-    const r = fittedLayer(l);
-    expect(r).toMatchObject({
-      kind: 'transit',
-      stopTypes: ['regionalRail', 'metro'],
-      bands: [{ maxM: 402, stories: 4 }]
-    });
+  it('a transit rule added in a finished game starts at the default bands and runs', () => {
     const { doc, ref } = addPolicy(
       DEFAULT_POLICY4,
       { kind: 'zoning', what: 'transit' },
-      { w, month: 1, cal, limits: l }
+      {
+        w,
+        month: 1,
+        cal
+      }
     );
-    expect(within('zoning', policyOf(doc, 'zoning', ref.id)!, l)).toBe(true);
+    const p = policyOf(doc, 'zoning', ref.id)!;
+    expect(p.spans[0].what).toEqual({ tag: 'bands', bands: DEFAULT_BANDS });
+    expect(within('zoning', p, whole)).toBe(true);
+    expect(within('zoning', p, round1)).toBe(false);
   });
 });
 

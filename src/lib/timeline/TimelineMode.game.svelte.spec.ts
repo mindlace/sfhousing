@@ -15,22 +15,9 @@ import { formatShortMonthYear } from '$lib/fzp/format';
 import { callsOf, stub } from '$lib/fzp/test/sim-map-stub';
 import type { CameraFrame } from '$lib/map/types';
 import { dayFromUtc, utcParts } from '$lib/fzp/time';
-import { NODES } from '$lib/game/catalogue/nodes';
-import { RUNGS, goalAt, ladder } from '$lib/game/ladder';
-import { formatCount } from '$lib/scoreboard/format';
-import { SIDE_TUNING } from '$lib/game/catalogue/tuning';
-import { SIDE_GOALS } from '$lib/game/side-goals';
+import { PENDING } from '$lib/game/rounds';
 import type { GameStore } from '$lib/game/store.svelte';
-import { runResult } from '$lib/game/ui/test/fixtures';
-import {
-  GOAL_MET,
-  LAST_GOAL,
-  NO_SIDE_GOALS,
-  goalLine,
-  progressText,
-  sideMetText,
-  unlocksText
-} from '$lib/game/ui/words';
+import { pinnedWords, type PinnedCtx } from '$lib/game/ui/round-words';
 import { TODAY, defaultGoal } from '$lib/goal/goal';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
@@ -39,7 +26,6 @@ import type { ScoreStatics, TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import type { AddChoice } from './add';
-import { LOCKED_LANE, goalUnlocks } from './game-copy';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
 import type { Lots } from './session.svelte';
 import { playheadAt } from './results';
@@ -66,15 +52,21 @@ const LONG: ScoreStatics = {
   months: monthsTo(WINDOW_MONTHS)
 };
 const fmt = formatShortMonthYear;
-/** "Collect N% of the homes in a run"'s target, as the catalogue tunes it (80 of 100 meets it). */
-const SHARE_TARGET = SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.read({
-  view: null as never, // the share reads the take only
-  index: 0,
-  take: { dropped: { home: 1 }, collected: {} },
-  inForce: false
-})!.target;
 /** The default amount: the goal in play's amount without `goalAmount`. */
 const AMOUNT = defaultGoal(asOf).amount;
+/** The legal deadline: the goal's deadline while a game has no target. */
+const LEGAL = defaultGoal(asOf).deadline;
+/** The pinned goal's pending words in a game. */
+const words = (c: Partial<PinnedCtx> = {}) =>
+  pinnedWords(PENDING, {
+    amount: AMOUNT,
+    target: null,
+    legal: LEGAL,
+    round: 0,
+    finished: false,
+    next: 3,
+    ...c
+  });
 
 const protect = (years: number): Policy => ({
   id: 'a',
@@ -146,12 +138,6 @@ function setup(over: Over = {}) {
   };
 }
 
-/** The worker exists and was asked to open. */
-async function opening() {
-  await expect.poll(() => workers.length).toBeGreaterThan(0);
-  await expect.poll(() => w().lastOf('openTimeline')).toBeTruthy();
-}
-
 /** Opened and compiled at rev 1, filled through `through` (default the statics' last month). */
 async function opened(over: Over = {}, statics: ScoreStatics = LONG, through?: number) {
   const s = setup(over);
@@ -202,21 +188,24 @@ afterEach(() => {
 });
 
 describe('TimelineMode in a game: the goal and the header', () => {
-  it("the pinned item is GoalHeadline, its homes the view's at today", async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }) }, LONG);
+  const line1 = () => page.getByTestId('goal-line1');
+  const bar = () => page.getByTestId('goal-bar');
+  /** The bar's data-fill for `homes` of the amount. */
+  const pct = (homes: number, amount = AMOUNT) => String(Math.floor((homes / amount) * 100));
+
+  it("the pinned item is GoalHeadline, its bar the view's homes at today", async () => {
+    await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
     const banner = page.getByRole('banner');
     await expect.element(banner.getByTestId('goal-headline')).toBeVisible();
     const slot = page.getByTestId('goal-headline').element().parentElement!; // SiteHeader's pinned box
     expect(slot.parentElement).toBe(banner.element());
     expect(page.getByTestId('goal-live').element().parentElement).toBe(slot); // both root nodes
-    expect(getComputedStyle(banner.element()).position).toBe('relative');
-    expect(getComputedStyle(slot).position).toBe('static');
     expect(document.querySelector('[data-testid=score-bar]')).toBeNull();
     expect(document.querySelector('[data-testid=tl-goal-notice]')).toBeNull();
-    const homes = goalAt(asOf, 0).measure.valueAt(longView(), TODAY);
-    await expect
-      .element(page.getByTestId('goal-headline-button'))
-      .toHaveTextContent(goalLine(homes, AMOUNT, ladder(asOf)[0].label));
+    await expect.element(line1()).toHaveTextContent(words().line1);
+    await expect.element(line2()).toHaveTextContent(words().line2);
+    const homes = defaultGoal(asOf).measure.valueAt(longView(), TODAY);
+    await expect.element(bar()).toHaveAttribute('data-fill', pct(homes));
   });
 
   it('the opening phase shows GoalHeadline too', async () => {
@@ -225,126 +214,42 @@ describe('TimelineMode in a game: the goal and the header', () => {
     expect(none('score-bar')).toBeNull();
   });
 
-  it("the headline reads the playhead's month, whatever the last run", async () => {
-    const last = runResult({ rung: 0, homes: 1234 });
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, last }) }, LONG);
+  it("the bar reads the playhead's month", async () => {
+    await opened({ game: gameWith({ phase: 'runs', round: 1 }) }, LONG);
     (slider().element() as HTMLElement).focus();
     await userEvent.keyboard('{Home}' + '{ArrowRight}'.repeat(3));
     await expect.poll(() => debug().day).toBe(MONTHS[3]);
     const { index, atToday } = playheadAt(LONG.months, asOf, MONTHS[3]);
-    const homes = goalAt(asOf, 0).measure.valueAt(longView(), atToday ? TODAY : index);
+    const homes = defaultGoal(asOf).measure.valueAt(longView(), atToday ? TODAY : index);
     expect(homes).toBeGreaterThan(LONG.baseline.units);
+    await expect.element(bar()).toHaveAttribute('data-fill', pct(homes));
+  });
+
+  it('the goal is the target, with goalAmount', async () => {
+    const target = dayFromUtc(2055, 12, 1);
+    await opened({ game: gameWith({ phase: 'runs', round: 2, target }), goalAmount: 5000 }, LONG);
     await expect
-      .element(page.getByTestId('goal-headline-button'))
-      .toHaveTextContent(goalLine(homes, AMOUNT, ladder(asOf)[0].label));
-    expect(headline().element().textContent).not.toContain('1,234');
+      .element(line1())
+      .toHaveTextContent(words({ amount: 5000, target, round: 2 }).line1);
+    expect(line1().element().textContent).toContain(`before ${fmt(target)}`);
   });
 
-  it('the goal is goalAt of the rung, with goalAmount', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, rung: 1 }), goalAmount: 5000 }, LONG);
-    await expect.element(headline()).toHaveTextContent(ladder(asOf)[1].label);
-    await expect
-      .element(headline())
-      .toHaveTextContent(`of 5,000 homes by ${ladder(asOf)[1].label}`);
+  it('with no target the goal is the legal deadline', async () => {
+    await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
+    await expect.element(line1()).toHaveTextContent(`by ${fmt(LEGAL)}`);
   });
 
-  it("unlocks names the next ring's levers and an earlier goal; the last rung has none", async () => {
-    const ring1 = NODES.filter((n) => n.ring === 1).length;
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1 }) }, LONG);
-    await expect.element(line2()).toHaveTextContent(unlocksText(goalUnlocks(ring1, true)));
-    await unmount(s);
+  it("line 2 names the next round's policies, then every policy, then your best", async () => {
+    const s1 = await opened({ game: gameWith({ phase: 'runs', round: 1 }) }, LONG);
+    await expect.element(line2()).toHaveTextContent(words({ round: 1, next: 3 }).line2);
+    await unmount(s1);
 
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, rung: RUNGS - 1 }) }, LONG);
-    await expect.element(line2()).toHaveTextContent(LAST_GOAL);
-  });
+    const s4 = await opened({ game: gameWith({ phase: 'runs', round: 4 }) }, LONG);
+    await expect.element(line2()).toHaveTextContent(words({ round: 4, next: 0 }).line2);
+    await unmount(s4);
 
-  it('met is a met entry for the rung in play', async () => {
-    const met = [
-      { rung: 0, reachedOn: MONTHS[8], datasetVersion: 'fixture-0', at: '2026-11-25T00:00:00.000Z' }
-    ];
-    const s = await opened({ game: gameWith({ phase: 'runs', runs: 1, met }) }, LONG);
-    await expect.element(line2()).toHaveTextContent(GOAL_MET);
-    expect(page.getByTestId('goal-box').element().getAttribute('data-met')).toBe('true');
-    await unmount(s);
-
-    // Met at rung 0, playing rung 1: not met.
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, rung: 1, met }) }, LONG);
-    await expect.element(headline()).toBeVisible();
-    expect(line2().element().textContent).not.toContain(GOAL_MET);
-    expect(page.getByTestId('goal-box').element().hasAttribute('data-met')).toBe(false);
-  });
-
-  it("side goals read the last run's take on the rung in play at the deadline's month", async () => {
-    const last = runResult({ rung: 0, dropped: { home: 100 }, collected: { home: 80 } });
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, last }) }, LONG);
-    // "Collect N% of the homes in a run": 80 of 100 collected is met.
-    await expect.element(line2()).toHaveTextContent(sideMetText(1));
-    await page.getByTestId('goal-headline-button').click();
-    const share = page
-      .getByTestId('side-goals')
-      .getByTestId('side-goal')
-      .filter({
-        hasText: SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.label
-      });
-    await expect.element(share).toHaveTextContent(progressText(80, SHARE_TARGET));
-    await expect.element(share).toHaveAttribute('data-met', 'true');
-  });
-
-  it('a last run on another rung gives a take of zero: the share goal is left out', async () => {
-    const last = runResult({ rung: 1, dropped: { home: 100 }, collected: { home: 80 } });
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, last }) }, LONG);
-    await expect.element(headline()).toBeVisible();
-    await page.getByTestId('goal-headline-button').click();
-    await expect.element(page.getByTestId('side-goals')).toBeVisible();
-    const label = SIDE_GOALS.find((g) => g.id === 'collect-share-1')!.label;
-    expect(page.getByTestId('side-goal').filter({ hasText: label }).elements()).toHaveLength(0);
-    expect(line2().element().textContent).not.toContain(sideMetText(1));
-  });
-
-  it("side goals are empty while the deadline's month is not filled", async () => {
-    const last = runResult({ rung: 0, dropped: { home: 100 }, collected: { home: 80 } });
-    await opened({ game: gameWith({ phase: 'runs', runs: 1, last }) }, LONG, LAST);
-    await expect.element(headline()).toBeVisible();
-    await page.getByTestId('goal-headline-button').click();
-    await expect.element(page.getByTestId('side-goals')).toHaveTextContent(NO_SIDE_GOALS);
-  });
-
-  describe('a side goal that reads the policy effect (ruling conductor-11)', () => {
-    const EFFECT_ID = 'policy-homes-1';
-    const effectGoal = SIDE_GOALS.find((g) => g.id === EFFECT_ID)!;
-    /** Every month's plan effect is at least the goal's target, so only inForce decides. */
-    const BASE = SIDE_TUNING[EFFECT_ID].target + 1;
-    const row = () =>
-      page.getByTestId('side-goals').getByTestId('side-goal').filter({ hasText: effectGoal.label });
-
-    /** Opened and filled through the window with the effect at or above the target. */
-    async function openedWithEffect(over: Over) {
-      const s = setup(over);
-      await opening();
-      emit(compiledMsg(1, LONG));
-      emit(filledMsg(1, 0, LONG.lastIndex + 1, { base: BASE }));
-      await expect.poll(() => debug().filledThrough).toBe(LONG.lastIndex);
-      return s;
-    }
-
-    it('with no policy in force the headline reads 0 for it', async () => {
-      const game = gameWith({ phase: 'runs', runs: 1, last: runResult({ rung: 0 }) });
-      await openedWithEffect({ game });
-      await page.getByTestId('goal-headline-button').click();
-      await expect.element(row()).toHaveTextContent(progressText(0, SIDE_TUNING[EFFECT_ID].target));
-      expect(row().element().hasAttribute('data-met')).toBe(false);
-    });
-
-    it('with a policy in force the headline reads the plan effect', async () => {
-      const game = gameWith({ phase: 'runs', runs: 1, last: runResult({ rung: 0 }) });
-      await openedWithEffect({ game, initialPolicy: mk(protect(5)), initialRun: mk(protect(5)) });
-      await page.getByTestId('goal-headline-button').click();
-      await expect.element(row()).toHaveAttribute('data-met', 'true');
-      expect(row().element().textContent).toMatch(
-        new RegExp(`(^|\\s)(\\d[\\d,]*) of ${formatCount(SIDE_TUNING[EFFECT_ID].target)}`)
-      );
-      expect(row().element().textContent).not.toMatch(/(^|\s)0 of /);
-    });
+    await opened({ game: gameWith({ phase: 'runs', round: 4, finished: true }) }, LONG);
+    await expect.element(line2()).toHaveTextContent(words({ finished: true }).line2);
   });
 
   it('there is no goal notice in a game, where the page without one has one', async () => {
@@ -353,7 +258,7 @@ describe('TimelineMode in a game: the goal and the header', () => {
     await expect.element(page.getByTestId('tl-goal-notice')).toBeInTheDocument();
     await unmount(plain);
 
-    await opened({ game: gameWith({ phase: 'runs', runs: 1 }) }, LONG);
+    await opened({ game: gameWith({ phase: 'runs', round: 1 }) }, LONG);
     await toEnd();
     await tick();
     expect(none('tl-goal-notice')).toBeNull();
@@ -369,7 +274,7 @@ describe('TimelineMode in a game: the goal and the header', () => {
 
     await opened(
       {
-        game: gameWith({ phase: 'runs', runs: 1 }),
+        game: gameWith({ phase: 'runs', round: 1 }),
         withInspector: true,
         inspectorOpen: false,
         onstarter
@@ -380,12 +285,18 @@ describe('TimelineMode in a game: the goal and the header', () => {
     expect(page.getByTestId('tl-activity').getByText('Try one:').elements()).toHaveLength(0);
   });
 
-  it("the timeline holds to the game's limits: nothing bought, the lanes are locked", async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 1 }) }, LONG);
-    await expect.poll(() => page.getByTestId('tl-locked-lane').elements().length).toBe(3);
-    for (const el of page.getByTestId('tl-locked-lane').elements()) {
-      expect(el.textContent).toBe(LOCKED_LANE);
-    }
+  it("the timeline holds to the game's limits: no locked lane; '+' only where a round opens it", async () => {
+    const plus = (kind: string) =>
+      document.querySelector(`[data-testid="tl-kind-${kind}"] .plus`) !== null;
+    const s0 = await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
+    await expect.element(page.getByTestId('tl-kind-zoning')).toBeInTheDocument();
+    expect(none('tl-locked-lane')).toBeNull();
+    expect([plus('zoning'), plus('permitting'), plus('money')]).toEqual([false, false, false]);
+    await unmount(s0);
+
+    await opened({ game: gameWith({ phase: 'runs', round: 1 }) }, LONG);
+    await expect.element(page.getByTestId('tl-kind-zoning')).toBeInTheDocument();
+    expect([plus('zoning'), plus('permitting'), plus('money')]).toEqual([true, false, true]);
   });
 });
 
@@ -398,9 +309,9 @@ describe('TimelineMode in a game: one screen, the simulation tool', () => {
     expect(gameWith().currentId).toBe(GAME_ID);
   });
 
-  for (const runs of [0, 1]) {
-    it(`a game in its runs (${runs} settled) mounts the tool at once: dock, Playhead, chart, speeds`, async () => {
-      await opened({ game: gameWith({ phase: 'runs', runs }) }, LONG);
+  for (const round of [0, 1]) {
+    it(`a game in round ${round} mounts the tool at once: dock, Playhead, chart, speeds`, async () => {
+      await opened({ game: gameWith({ phase: 'runs', round }) }, LONG);
       await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
       expect(none('tl-ruler')).not.toBeNull();
       expect(none('chart-svg')).not.toBeNull();
@@ -431,7 +342,7 @@ describe('TimelineMode in a game: one screen, the simulation tool', () => {
   }
 
   it('Space plays and pauses in a game', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }) }, LONG);
+    await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
     await expect.element(page.getByTestId('tl-play')).toBeInTheDocument();
     (document.activeElement as HTMLElement | null)?.blur();
     expect(debug().playing).toBe(false);
@@ -442,7 +353,7 @@ describe('TimelineMode in a game: one screen, the simulation tool', () => {
   });
 
   it('a moveend asks for the viewport in a game', async () => {
-    await opened({ game: gameWith({ phase: 'runs', runs: 0 }) }, LONG);
+    await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
     await expect.poll(() => callsOf('getMap').length).toBeGreaterThan(0);
     const before = w().all('prefetch').length;
     stub.map.fire('moveend');

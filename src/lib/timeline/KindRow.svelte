@@ -2,14 +2,13 @@
   A kind's row (rules 5, 6, 7). Closed: a label with the count and a "+", and a miniature, one thin
   bar per policy over its spans. Open: the label row as a heading, then the kind's fixed row and a
   full row per policy; no miniature. Renders cells for the Timeline's two-column grid.
-  Locked (`locked`, the lane's words): no "+" and no miniature; the lane shows the words, open or
-  closed, and every policy row is locked. Unlocked, a policy `isLocked` picks is locked and says
-  NOT_BOUGHT under its name.
+  The "+" shows only when `canAdd` (the kind opens in the game). A policy `isLocked` picks is
+  dimmed and inert and says NOT_IN_GAME under its name.
 -->
 <script lang="ts">
   import type { Day } from '$lib/timelapse/time';
   import FixedRow from './FixedRow.svelte';
-  import { NOT_BOUGHT } from './game-copy';
+  import { NOT_IN_GAME } from './copy';
   import Lane from './Lane.svelte';
   import PolicyRow from './PolicyRow.svelte';
   import type { LevelSet } from './pool-level';
@@ -48,9 +47,9 @@
     reached?: Day;
     /** The levels are held numbers: they dim. */
     stale?: boolean;
-    /** The lane's lock text; null: the kind is not locked. */
-    locked?: string | null;
-    /** In an unlocked kind, a policy that does not run. */
+    /** "+" can add to this kind. */
+    canAdd?: boolean;
+    /** A policy that does not run in this game. */
     isLocked?: (p: Policy) => boolean;
   }
 
@@ -73,7 +72,7 @@
     day = asOf,
     reached = day,
     stale = false,
-    locked = null,
+    canAdd = true,
     isLocked = () => false
   }: Props = $props();
   /** Only Public money has pools. */
@@ -81,9 +80,8 @@
 
   const label = $derived(KIND_LABEL[kind]);
   /** A closed, empty, editable kind says in its lane what "+" adds; the "+" takes those words. */
-  const words = $derived(!open && policies.length === 0 && !readonly && locked === null);
+  const words = $derived(!open && policies.length === 0 && !readonly && canAdd);
   const countId = $props.id();
-  const laneId = `${countId}-lock`;
   let plus = $state<HTMLButtonElement>();
   const step = $derived(Math.min(7, 24 / Math.max(policies.length, 1)));
   const fixedSelected = $derived(
@@ -91,18 +89,13 @@
   );
 </script>
 
-<div
-  class="kind-row contents"
-  class:open
-  class:locked={locked !== null}
-  data-testid="tl-kind-{kind}"
->
+<div class="kind-row contents" class:open data-testid="tl-kind-{kind}">
   <div class="lab kind">
     <button
       type="button"
       class="toggle"
       aria-expanded={expanded ?? open}
-      aria-describedby={locked === null ? countId : `${countId} ${laneId}`}
+      aria-describedby={countId}
       onclick={ontoggle}
     >
       <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" class:turned={open}>
@@ -110,7 +103,7 @@
       </svg>{label}
     </button>
     <span class="count" id={countId} data-testid="tl-count">{policies.length}</span>
-    {#if !readonly && locked === null}
+    {#if !readonly && canAdd}
       <button
         bind:this={plus}
         type="button"
@@ -123,9 +116,7 @@
     {/if}
   </div>
   <Lane>
-    {#if locked !== null}
-      <span class="lock-words" data-testid="tl-locked-lane" id={laneId}>{locked}</span>
-    {:else if words}
+    {#if words}
       <!-- The "+" in words, for the pointer: the "+", named by these words while they show, is
            the keyboard and assistive path, so this is hidden from both (one stop per action). A
            press never focuses it (no mousedown default): it focuses the "+" and presses as the
@@ -174,10 +165,10 @@
       {stale}
     />
     {#each policies as p (p.id)}
-      {@const pLocked = locked !== null || isLocked(p)}
+      {@const pLocked = isLocked(p)}
       <PolicyRow
         locked={pLocked}
-        note={locked === null && pLocked ? NOT_BOUGHT : null}
+        note={pLocked ? NOT_IN_GAME : null}
         levels={kindLevels}
         {day}
         {reached}
@@ -272,21 +263,10 @@
     color: var(--color-ink);
     text-decoration: underline;
   }
-  /* A locked kind's words, open or closed. */
-  .lock-words {
-    position: absolute;
-    inset: 3px auto 3px 12px;
-    display: inline-flex;
-    align-items: center;
-    color: var(--color-ink-muted);
-    font-size: 13px;
-    white-space: nowrap;
-  }
   /* Below md the label is a line of its own (Timeline); an open kind's own lane holds nothing
-     (its rows follow), so it is not drawn under the heading line. A locked kind's lane keeps
-     its words. */
+     (its rows follow), so it is not drawn under the heading line. */
   @media (max-width: 767.98px) {
-    .kind-row.open:not(.locked) > :global([data-testid='tl-lane']) {
+    .kind-row.open > :global([data-testid='tl-lane']) {
       display: none;
     }
   }
@@ -322,8 +302,7 @@
       background: var(--color-surface-dark);
     }
     .count,
-    .empty,
-    .lock-words {
+    .empty {
       color: var(--color-ink-dark-muted);
     }
     .empty:hover {

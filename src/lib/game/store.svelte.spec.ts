@@ -5,12 +5,10 @@ import { PLAN_KEY } from '$lib/sharing/storage';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { SIM_KEY } from '$lib/sim-page/sim-doc';
 import { SIM_KEY4 } from '$lib/timeline/sim-doc4';
-import { NODES } from './catalogue/nodes';
-import { RUNGS, fitGame, takeNext as nextRung } from './ladder';
+import { POLICY_KEYS, ROUNDS } from './catalogue/rounds';
 import { OPEN_LIMITS, limitsOf } from './limits';
-import { settle as settleRun, type RunResult } from './run-result';
-import type { GameSave, SaveEntry } from './save-shape';
-import { buy as buyNode, treeView } from './tree';
+import { fitState, takeWin } from './rounds';
+import { parseGameState, type GameSave, type SaveEntry } from './save-shape';
 import { MAX_SAVES, SAVES_KEY, saveKey } from './saves';
 import { NEW_GAME, type GameState } from './state';
 import { GameStore, openGame } from './store.svelte';
@@ -101,7 +99,7 @@ function entryOf(s: GameSave): SaveEntry {
     nameIsDefault: s.nameIsDefault,
     savedAt: s.savedAt,
     phase: s.state.phase,
-    rung: s.state.rung
+    round: s.state.round
   };
 }
 
@@ -159,11 +157,11 @@ describe('GameStore construction', () => {
       nameIsDefault: true,
       savedAt: clock.toISOString(),
       phase: 'opening',
-      rung: 0
+      round: 0
     });
     expect(store.state).toEqual(NEW_GAME);
     expect(store.state).not.toBe(NEW_GAME);
-    expect(store.state.bought).not.toBe(NEW_GAME.bought);
+    expect(store.state.editable).not.toBe(NEW_GAME.editable);
     expect(s.writes).toEqual(['set sfhousing:save:' + id, 'set sfhousing:saves:v1']);
     expect(stored(s, SAVES_KEY)).toEqual({ v: 2, current: id, saves: [entry] });
     expect(stored(s, saveKey(id))).toEqual({
@@ -200,7 +198,7 @@ describe('GameStore construction', () => {
     const { store } = make(null);
     expect(store.saves).toHaveLength(1);
     expect(store.saves[0].phase).toBe('opening');
-    expect(store.saves[0].rung).toBe(0);
+    expect(store.saves[0].round).toBe(0);
     expect(store.saves[0].name).toBe('Game, 22 Nov');
     expect(store.state).toEqual(NEW_GAME);
     expect(store.read(store.currentId)?.plan).toBeNull();
@@ -414,7 +412,7 @@ describe('GameStore construction', () => {
 
   it('a valid, consistent index writes nothing', () => {
     const s = new LogStorage();
-    const a = withState({ rung: 2 });
+    const a = withState({ round: 2 });
     const b = fresh();
     seedGames(s, [a, b], a.id);
     const { store } = make(s);
@@ -564,8 +562,8 @@ describe('five-level records (P15)', () => {
 describe('parseIndex v2', () => {
   it.each([
     ['a bad phase', { phase: 'won' }],
-    ['a negative rung', { rung: -1 }],
-    ['a fractional rung', { rung: 1.5 }]
+    ['a negative round', { round: -1 }],
+    ['a fractional round', { round: 1.5 }]
   ])('refuses %s: the index text goes to a corrupt key', (_name, bad) => {
     const s = new LogStorage();
     const g = save();
@@ -597,7 +595,7 @@ describe('parseIndex v2', () => {
     expect(stored(one, SAVES_KEY).v).toBe(2);
   });
 
-  it('an entry that differs from its save in phase or rung is rewritten from the save', () => {
+  it('an entry that differs from its save in phase or round is rewritten from the save', () => {
     const s = new LogStorage();
     const g = save();
     seedGames(s, [g], g.id);
@@ -606,21 +604,142 @@ describe('parseIndex v2', () => {
       JSON.stringify({
         v: 2,
         current: g.id,
-        saves: [{ ...entryOf(g), phase: 'opening', rung: 1 }]
+        saves: [{ ...entryOf(g), phase: 'opening', round: 1 }]
       })
     );
     make(s);
     expect(stored(s, SAVES_KEY).saves[0]).toEqual(entryOf(g));
+  });
+
+  it('an index the old build wrote (entries with rung) loads and is rewritten with round', () => {
+    const s = new LogStorage();
+    const g = withState({ round: 2 });
+    seedGames(s, [g], g.id);
+    const { round, ...rest } = entryOf(g);
+    expect(round).toBe(2);
+    const oldIndex = JSON.stringify({ v: 2, current: g.id, saves: [{ ...rest, rung: 1 }] });
+    s.map.set(SAVES_KEY, oldIndex);
+    const { store } = make(s);
+    expect(corruptKeys(s)).toEqual([]);
+    expect(store.saves).toEqual([entryOf(g)]);
+    expect(stored(s, SAVES_KEY).saves).toEqual([entryOf(g)]);
+    expect(stored(s, SAVES_KEY).saves[0]).not.toHaveProperty('rung');
+  });
+
+  it('an old index entry with neither round nor rung is refused', () => {
+    const s = new LogStorage();
+    const g = save();
+    seedGames(s, [g], g.id);
+    const rest: Record<string, unknown> = { ...entryOf(g) };
+    delete rest.round;
+    const bad = JSON.stringify({ v: 2, current: g.id, saves: [rest] });
+    s.map.set(SAVES_KEY, bad);
+    make(s);
+    expect(s.getItem(corrupt())).toBe(bad);
+  });
+});
+
+/** A version 2 save as the old build wrote it, with a run played and rung 0 met. */
+function v2Save(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    v: 2,
+    id: newId(),
+    name: 'Old game',
+    nameIsDefault: false,
+    state: {
+      v: 2,
+      phase: 'runs',
+      firstWinAt: WON_AT,
+      bought: { 'sb423-clock': 1, 'stop-rail': 1 },
+      units: { home: 40 },
+      rung: 1,
+      met: [{ rung: 0, reachedOn: 33000, datasetVersion: 'fixture-0', at: WON_AT }],
+      side: {},
+      runs: 2,
+      last: null
+    },
+    plan: null,
+    policy: '{"schema":4}',
+    savedAt: '2026-10-01T00:00:00.000Z',
+    ...over
+  };
+}
+
+describe("the old run's switches", () => {
+  it('loading removes sfhousing:run:collect and sfhousing:run:muted', () => {
+    const s = new LogStorage();
+    const g = save();
+    seedGames(s, [g], g.id);
+    seed(s, { 'sfhousing:run:collect': 'true', 'sfhousing:run:muted': 'false' });
+    make(s);
+    expect(s.writes).toEqual(['remove sfhousing:run:collect', 'remove sfhousing:run:muted']);
+    expect(s.getItem('sfhousing:run:collect')).toBeNull();
+    expect(s.getItem('sfhousing:run:muted')).toBeNull();
+  });
+});
+
+describe('version 2 saves', () => {
+  it('a stored version 2 save loads as version 3 and is never moved aside', () => {
+    const s = new LogStorage();
+    const old = v2Save();
+    const id = old.id as string;
+    s.map.set(saveKey(id), JSON.stringify(old));
+    s.map.set(
+      SAVES_KEY,
+      JSON.stringify({
+        v: 2,
+        current: id,
+        saves: [
+          {
+            id,
+            name: 'Old game',
+            nameIsDefault: false,
+            savedAt: old.savedAt,
+            phase: 'runs',
+            rung: 1
+          }
+        ]
+      })
+    );
+    const { store } = make(s);
+    expect(corruptKeys(s)).toEqual([]);
+    expect(store.currentId).toBe(id);
+    expect(store.state).toMatchObject({
+      v: 3,
+      round: 2,
+      editable: ['sb423-clock'],
+      own: true
+    });
+    expect(store.saves[0]).toMatchObject({ id, round: 2 });
+    expect(stored(s, SAVES_KEY).saves[0]).toMatchObject({ id, round: 2 });
+    expect(s.getItem(saveKey(id))).toBe(JSON.stringify(old));
+    store.touched();
+    expect(stored(s, saveKey(id)).state.v).toBe(3);
+  });
+
+  it('a version 2 save found without an index is recovered as version 3', () => {
+    const s = new LogStorage();
+    const old = v2Save();
+    s.map.set(saveKey(old.id as string), JSON.stringify(old));
+    s.map.set(SAVES_KEY, 'not json');
+    const { store } = make(s);
+    expect(corruptKeys(s)).toEqual([corrupt()]);
+    expect(store.read(old.id as string)?.state.v).toBe(3);
+  });
+
+  it('adopt upgrades a version 2 save from the account', () => {
+    const { store } = over([save()]);
+    const old = v2Save();
+    expect(store.adopt([old as unknown as GameSave])).toEqual({ ok: true });
+    expect(store.read(old.id as string)?.state).toMatchObject({ v: 3, round: 2 });
   });
 });
 
 describe('fitting saves to the catalogue', () => {
   const unfit = () =>
     withState({
-      bought: { 'no-such-node': 1, [NODES[0].id]: NODES[0].levels.length + 1 },
-      side: { 'no-such-goal': WON_AT },
-      rung: RUNGS,
-      met: []
+      editable: ['no-such-key', 'sb423-clock', 'sb423-clock'],
+      round: 9
     });
 
   it('loads fitted; the key keeps the unfitted text until the next touched()', () => {
@@ -628,11 +747,11 @@ describe('fitting saves to the catalogue', () => {
     const g = unfit();
     seedGames(s, [g], g.id);
     const { store } = make(s);
-    expect(store.state).toEqual(fitGame(g.state));
-    expect(store.state).not.toEqual(g.state);
+    expect(store.state).toEqual(fitState(g.state));
+    expect(store.state).toMatchObject({ round: ROUNDS, editable: ['sb423-clock'] });
     expect(s.getItem(saveKey(g.id))).toBe(JSON.stringify(g));
     store.touched();
-    expect(stored(s, saveKey(g.id)).state).toEqual(fitGame(g.state));
+    expect(stored(s, saveKey(g.id)).state).toEqual(fitState(g.state));
   });
 
   it('keeps savedAt and calls no sync method at construction', () => {
@@ -644,12 +763,12 @@ describe('fitting saves to the catalogue', () => {
     expect(sync.calls).toEqual([]);
   });
 
-  it('the index entry carries the fitted rung', () => {
+  it('the index entry carries the fitted round', () => {
     const s = new LogStorage();
     const g = unfit();
     seedGames(s, [g], g.id);
     make(s);
-    expect(stored(s, SAVES_KEY).saves[0].rung).toBe(RUNGS - 1);
+    expect(stored(s, SAVES_KEY).saves[0].round).toBe(ROUNDS);
     expect(s.getItem(saveKey(g.id))).toBe(JSON.stringify(g));
   });
 
@@ -661,13 +780,13 @@ describe('fitting saves to the catalogue', () => {
     expect(s.writes).toEqual([]);
   });
 
-  it('adopt of a save with a node the catalogue lacks stores and shows the fitted state', () => {
+  it('adopt of a save with a key the catalogue lacks stores and shows the fitted state', () => {
     const a = save();
     const g = unfit();
     const { s, store } = over([a]);
     expect(store.adopt([g])).toEqual({ ok: true });
-    expect(stored(s, saveKey(g.id)).state).toEqual(fitGame(g.state));
-    expect(store.read(g.id)?.state).toEqual(fitGame(g.state));
+    expect(stored(s, saveKey(g.id)).state).toEqual(fitState(g.state));
+    expect(store.read(g.id)?.state).toEqual(fitState(g.state));
   });
 
   it('adopt of the current id shows the fitted state', () => {
@@ -675,8 +794,8 @@ describe('fitting saves to the catalogue', () => {
     const { store } = over([a]);
     const g = { ...unfit(), id: a.id };
     expect(store.adopt([g])).toEqual({ ok: true });
-    expect(store.state).toEqual(fitGame(g.state));
-    expect(store.saves[0].rung).toBe(RUNGS - 1);
+    expect(store.state).toEqual(fitState(g.state));
+    expect(store.saves[0].round).toBe(ROUNDS);
   });
 
   it('adopt skips a v1 save', () => {
@@ -700,7 +819,7 @@ describe('GameStore.read', () => {
     const other = store.read(b.id) as GameSave;
     expect(other).toEqual(b);
     other.name = 'changed';
-    other.state.rung = 3;
+    other.state.round = 3;
     expect(store.read(b.id)).toEqual(b);
 
     expect(store.read(a.id)).toEqual({
@@ -744,7 +863,7 @@ describe('GameStore.read', () => {
 
 describe('what the store shows', () => {
   it('state is the current save state; limits is limitsOf(state)', () => {
-    const g = withState({ bought: { [NODES[0].id]: 1 } });
+    const g = withState({ round: 2, editable: ['sb423-clock'] });
     const { store } = over([g]);
     expect(store.state).toEqual(g.state);
     expect(store.limits).toEqual(limitsOf(g.state));
@@ -764,25 +883,25 @@ describe('what the store shows', () => {
 });
 
 describe('the open game and its context', () => {
-  it('openGame: every node at its last level, the last rung, a met entry per rung, no units', () => {
+  it('openGame: the last round, finished, every key editable, own', () => {
     const store = openGame();
-    expect(store.state.bought).toEqual(
-      Object.fromEntries(NODES.map((n) => [n.id, n.levels.length]))
-    );
-    expect(store.state).toMatchObject({
+    expect(store.state).toEqual({
+      ...NEW_GAME,
       phase: 'runs',
-      rung: RUNGS - 1,
-      units: {},
-      firstWinAt: null
+      firstWinAt: '1970-01-01T00:00:00.000Z',
+      round: ROUNDS,
+      finished: true,
+      editable: [...POLICY_KEYS],
+      own: true
     });
-    expect(store.state.met.map((m) => m.rung)).toEqual([...Array(RUNGS).keys()]);
+    expect(parseGameState(JSON.parse(JSON.stringify(store.state)))).toEqual(store.state);
     expect(store.limits).toBe(OPEN_LIMITS);
     expect(store.open).toBe(true);
     expect(store.sync.state).toBe('local');
     expect(store.sync.account).toBeNull();
     expect(store.saves).toHaveLength(1);
     expect(store.saves[0].name).toBe('Game');
-    expect(store.saves[0]).toMatchObject({ phase: 'runs', rung: RUNGS - 1 });
+    expect(store.saves[0]).toMatchObject({ phase: 'runs', round: ROUNDS });
     expect(openGame()).not.toBe(store);
   });
 
@@ -961,7 +1080,7 @@ describe('GameStore.newGame and switchTo', () => {
     const b = save({
       plan: 'b plan',
       policy: 'b policy',
-      state: { ...save().state, rung: 2 },
+      state: { ...save().state, round: 2 },
       savedAt: '2026-10-05T00:00:00.000Z'
     });
     const { s, store, sync } = over([a, b]);
@@ -1192,7 +1311,7 @@ describe('GameStore.remove', () => {
     const b = save({ savedAt: '2026-10-05T00:00:00.000Z' });
     const c = save({
       plan: 'c plan',
-      state: { ...save().state, rung: 3 },
+      state: { ...save().state, round: 3 },
       savedAt: '2026-10-07T00:00:00.000Z'
     });
     const { s, store, sync } = over([a, b, c]);
@@ -1481,7 +1600,7 @@ describe('GameStore.adopt and rekey', () => {
     const b2 = {
       ...b,
       name: 'B renamed',
-      state: { ...b.state, rung: 2 },
+      state: { ...b.state, round: 2 },
       savedAt: '2026-10-07T00:00:00.000Z'
     };
     const bad = { ...save(), id: 'not-an-id' };
@@ -1506,7 +1625,7 @@ describe('GameStore.adopt and rekey', () => {
   it('adopt of the current id replaces state and writes its records', () => {
     const a = save();
     const { s, store, sync } = over([a], { ...RECORDS, [OLD_POLICY]: 'v1 text' });
-    const a2 = { ...a, state: { ...a.state, rung: 2 }, plan: 'acct plan', policy: 'acct policy' };
+    const a2 = { ...a, state: { ...a.state, round: 2 }, plan: 'acct plan', policy: 'acct policy' };
     expect(store.adopt([a2])).toEqual({ ok: true });
     expect(s.writes).toEqual([
       'set ' + saveKey(a.id),
@@ -1559,7 +1678,12 @@ describe('GameStore.adopt and rekey', () => {
       store.beforeLeave(() => s.setItem(POLICY_RECORD, LATER));
       const state = store.state;
       const saves = store.saves;
-      const a2 = { ...a, state: { ...a.state, rung: 2 }, plan: 'acct plan', policy: 'acct policy' };
+      const a2 = {
+        ...a,
+        state: { ...a.state, round: 2 },
+        plan: 'acct plan',
+        policy: 'acct policy'
+      };
       expect(store.adopt([a2])).toEqual({ ok: false, reason: 'changed' });
       expect(s.writes).toEqual(['set ' + POLICY_RECORD]);
       expect(s.getItem(POLICY_RECORD)).toBe(LATER);
@@ -1589,7 +1713,12 @@ describe('GameStore.adopt and rekey', () => {
       const { s, store, sync } = over([a]);
       const calls: string[] = [];
       store.beforeLeave(() => calls.push('flush'));
-      const a2 = { ...a, state: { ...a.state, rung: 2 }, plan: 'acct plan', policy: 'acct policy' };
+      const a2 = {
+        ...a,
+        state: { ...a.state, round: 2 },
+        plan: 'acct plan',
+        policy: 'acct policy'
+      };
       expect(store.adopt([a2])).toEqual({ ok: true });
       expect(calls).toEqual(['flush']);
       expect(s.getItem(PLAN_RECORD)).toBe('acct plan');
@@ -1626,7 +1755,7 @@ describe('GameStore.adopt and rekey', () => {
   it('adopt of the current id removes sfhousing:sim:v1, copying it aside when v2 was absent', () => {
     const a = save();
     const { s, store, sync } = over([a], { [PLAN_RECORD]: PLAN, [OLD_POLICY]: 'v1 text' });
-    const a2 = { ...a, state: { ...a.state, rung: 2 }, plan: 'acct plan', policy: 'acct policy' };
+    const a2 = { ...a, state: { ...a.state, round: 2 }, plan: 'acct plan', policy: 'acct policy' };
     expect(store.adopt([a2])).toEqual({ ok: true });
     const aside = 'sfhousing:sim:corrupt:' + NOW;
     expect(s.writes).toEqual([
@@ -1738,28 +1867,11 @@ describe('memory mode and the open game', () => {
   });
 });
 
-const RESULT: RunResult = {
-  rung: 0,
-  amount: 1000,
-  datasetVersion: 'fixture-0',
-  at: NOW,
-  lump: null,
-  side: [],
-  homes: 1200,
-  reachedOn: 20000,
-  waitingMoney: null,
-  stages: {
-    preApplication: 0,
-    filed: 0,
-    entitled: 0,
-    permitFiled: 0,
-    permitIssued: 0,
-    construction: 0
-  },
-  dropped: { home: 5 },
-  collected: { home: 5 }
+const WIN = {
+  goalMonth: 33000,
+  on: new Set(['transit-rail']),
+  datasetVersion: 'fixture-0'
 };
-const RICH = { home: 1_000_000_000 };
 
 describe('GameStore.startRuns', () => {
   it('answers storage and writes nothing while firstWinAt is null', () => {
@@ -1798,125 +1910,45 @@ describe('GameStore.startRuns', () => {
   });
 });
 
-describe('GameStore.buy', () => {
-  it('passes G3 refusals through with no write', () => {
-    const g = withState({ units: {} });
+describe('GameStore.takeWin', () => {
+  it('writes takeWin of rounds.ts, calls changed, leaves the records', () => {
+    const g = withState({ round: 1 });
     const { s, store, sync } = over([g]);
-    expect(store.buy('no-such-node')).toEqual({ ok: false, reason: 'unknown' });
-    const short = treeView(store.state).find((v) => v.state === 'short')!;
-    expect(store.buy(short.node.id)).toEqual({ ok: false, reason: 'short' });
-    expect(s.writes).toEqual([]);
-    expect(sync.calls).toEqual([]);
-  });
-
-  it('an accepted purchase writes bought and units, calls changed, leaves the records', () => {
-    const g = withState({ units: RICH });
-    const { s, store, sync } = over([g]);
-    const v = treeView(g.state).find((x) => x.state === 'ready')!;
-    const want = buyNode(g.state, v.node.id);
-    expect(store.buy(v.node.id)).toEqual(want);
-    if (!want.ok) throw new Error('fixture: node not buyable');
-    expect(store.state).toEqual(want.state);
-    expect(stored(s, saveKey(g.id)).state).toMatchObject({
-      bought: want.state.bought,
-      units: want.state.units
-    });
+    expect(store.takeWin(WIN)).toEqual({ ok: true });
+    const want = takeWin(g.state, { ...WIN, at: NOW });
+    expect(store.state).toEqual(want);
+    expect(store.state).toMatchObject({ round: 2, target: 33000, editable: ['transit-rail'] });
+    expect(stored(s, saveKey(g.id)).state).toEqual(want);
+    expect(stored(s, SAVES_KEY).saves[0].round).toBe(2);
     expect(s.writes.filter((w) => w.endsWith(PLAN_RECORD) || w.endsWith(POLICY_RECORD))).toEqual(
       []
     );
-    expect(s.getItem(PLAN_RECORD)).toBe(PLAN);
-    expect(s.getItem(POLICY_RECORD)).toBe(POLICY);
     expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
   });
 
-  it('a refused write answers short with memory unchanged', () => {
-    const g = withState({ units: RICH });
+  it('a refused write answers storage with memory unchanged', () => {
+    const g = withState({ round: 1 });
     const { s, store, sync } = over([g]);
-    const readyId = treeView(g.state).find((x) => x.state === 'ready')!.node.id;
     s.failAt = 1;
-    expect(store.buy(readyId)).toEqual({ ok: false, reason: 'short' });
+    expect(store.takeWin(WIN)).toEqual({ ok: false, reason: 'storage' });
     expect(store.state).toEqual(g.state);
     expect(sync.calls).toEqual([]);
   });
 
   it('a refused index write puts the save key back', () => {
-    const g = withState({ units: RICH });
+    const g = withState({ round: 1 });
     const { s, store } = over([g]);
-    const readyId = treeView(g.state).find((x) => x.state === 'ready')!.node.id;
     const before = s.getItem(saveKey(g.id));
     s.failAt = 2;
-    expect(store.buy(readyId)).toEqual({ ok: false, reason: 'short' });
+    expect(store.takeWin(WIN)).toEqual({ ok: false, reason: 'storage' });
     expect(s.getItem(saveKey(g.id))).toBe(before);
     expect(store.state).toEqual(g.state);
   });
-});
 
-describe('GameStore.settle', () => {
-  it('writes settle(state, r) and calls changed', () => {
-    const g = withState({});
-    const { store, sync } = over([g]);
-    expect(store.settle(RESULT)).toEqual({ ok: true });
-    expect(store.state).toEqual(settleRun(g.state, RESULT));
-    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
-  });
-
-  it('the same r again writes nothing and answers ok', () => {
-    const g = withState({});
-    const { s, store, sync } = over([g]);
-    store.settle(RESULT);
-    s.reset();
-    expect(store.settle(RESULT)).toEqual({ ok: true });
-    expect(s.writes).toEqual([]);
-    expect(sync.calls).toHaveLength(1);
-  });
-
-  it('a refused write answers storage; the same r later settles once', () => {
-    const g = withState({});
-    const { s, store } = over([g]);
-    s.failAt = 1;
-    expect(store.settle(RESULT)).toEqual({ ok: false, reason: 'storage' });
-    expect(store.state).toEqual(g.state);
-    s.failAt = null;
-    s.reset();
-    expect(store.settle(RESULT)).toEqual({ ok: true });
-    expect(store.settle(RESULT)).toEqual({ ok: true });
-    expect(store.state).toEqual(settleRun(g.state, RESULT));
-    expect(store.state.runs).toBe(g.state.runs + 1);
-  });
-});
-
-describe('GameStore.takeNext', () => {
-  it('writes when the rung moves', () => {
-    expect(RUNGS).toBeGreaterThan(1);
-    const g = withState({
-      rung: 0,
-      met: [{ rung: 0, reachedOn: 20000, datasetVersion: 'fixture-0', at: WON_AT }]
-    });
-    const { store, sync } = over([g]);
-    expect(store.takeNext()).toEqual({ ok: true });
-    expect(store.state).toEqual(nextRung(g.state));
-    expect(store.state.rung).toBe(1);
-    expect(sync.calls).toEqual([{ kind: 'changed', id: g.id }]);
-  });
-
-  it('writes nothing when the rung does not move', () => {
-    const g = withState({ rung: 0, met: [] });
-    const { s, store, sync } = over([g]);
-    expect(store.takeNext()).toEqual({ ok: true });
-    expect(s.writes).toEqual([]);
-    expect(sync.calls).toEqual([]);
-  });
-
-  it('a refused write answers storage with memory unchanged', () => {
-    const g = withState({
-      rung: 0,
-      met: [{ rung: 0, reachedOn: 20000, datasetVersion: 'fixture-0', at: WON_AT }]
-    });
-    const { s, store, sync } = over([g]);
-    s.failAt = 1;
-    expect(store.takeNext()).toEqual({ ok: false, reason: 'storage' });
-    expect(store.state).toEqual(g.state);
-    expect(sync.calls).toEqual([]);
+  it('has no tree member', () => {
+    const { store } = make(null);
+    const members = store as unknown as Record<string, unknown>;
+    for (const name of ['buy', 'settle', 'takeNext']) expect(members[name]).toBeUndefined();
   });
 });
 
@@ -1929,12 +1961,8 @@ describe('the open game writes nothing', () => {
     store.touched();
     store.rename(store.currentId, 'Mine');
     expect(store.startRuns()).toEqual({ ok: true });
-    expect(store.settle(RESULT)).toEqual({ ok: true });
-    expect(store.takeNext()).toEqual({ ok: true });
-    expect(store.buy(NODES[0].id)).toEqual({ ok: false, reason: 'done' });
-    expect(store.buy('no-such-node')).toEqual({ ok: false, reason: 'unknown' });
+    expect(store.takeWin(WIN)).toEqual({ ok: true });
     expect(store.state).toBe(before);
-    expect(store.state.firstWinAt).toBeNull();
     expect(store.saves[0].name).toBe('Game');
     expect(changed).not.toHaveBeenCalled();
     const refused = { ok: false, reason: 'storage' };

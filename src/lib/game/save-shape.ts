@@ -1,10 +1,10 @@
-// G1: the saved game and its parser. Value imports are relative; $lib only as types.
-import type { Stage } from '$lib/timelapse/types';
+// The saved game and its parser. Value imports are relative; $lib only as types.
 import { isValidId } from '../ids/base58';
-import type { RunResult } from './run-result';
 import { SAVE_NAME_MAX } from './saves';
-import { UNIT_KINDS, type GameState, type MetRung, type Units } from './state';
+import type { GameState, Win } from './state';
+import { upgradeV2 } from './upgrade';
 
+/** The envelope. Its version stays 2: only the state inside moved to version 3. */
 export interface GameSave {
   v: 2;
   id: string;
@@ -16,8 +16,10 @@ export interface GameSave {
   savedAt: string;
 }
 
-export type SaveEntry = Pick<GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'> &
-  Pick<GameState, 'phase' | 'rung'>;
+export type SaveEntry = Pick<GameSave, 'id' | 'name' | 'nameIsDefault' | 'savedAt'> & {
+  phase: GameState['phase'];
+  round: number;
+};
 
 type Plain = Record<string, unknown>;
 const isPlain = (x: unknown): x is Plain =>
@@ -25,134 +27,56 @@ const isPlain = (x: unknown): x is Plain =>
 const isTime = (x: unknown): x is string => typeof x === 'string' && Number.isFinite(Date.parse(x));
 const isWhole = (x: unknown, min: number): x is number =>
   typeof x === 'number' && Number.isSafeInteger(x) && x >= min;
+const isDay = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x);
 const isText = (x: unknown): x is string => typeof x === 'string' && x !== '';
-const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 
-const OPEN_STAGES = [
-  'preApplication',
-  'filed',
-  'entitled',
-  'permitFiled',
-  'permitIssued',
-  'construction'
-] as const satisfies readonly Exclude<Stage, 'complete'>[];
-
-/** Every value a whole number of 0 or more; only UNIT_KINDS kept. */
-function parseUnits(x: unknown): Units | null {
+function parseWin(x: unknown): Win | null {
   if (!isPlain(x)) return null;
-  for (const v of Object.values(x)) if (!isWhole(v, 0)) return null;
-  const out: Units = {};
-  for (const k of UNIT_KINDS) if (Object.hasOwn(x, k)) out[k] = x[k] as number;
-  return out;
+  const { round, goalMonth, beat, at, datasetVersion } = x;
+  if (!isWhole(round, 0)) return null;
+  if (goalMonth !== null && !isDay(goalMonth)) return null;
+  if (beat !== null && !isDay(beat)) return null;
+  if (!isTime(at) || !isText(datasetVersion)) return null;
+  return { round, goalMonth, beat, at, datasetVersion };
 }
 
-function parseMet(x: unknown): MetRung | null {
-  if (!isPlain(x)) return null;
-  const { rung, reachedOn, datasetVersion, at } = x;
-  if (!isWhole(rung, 0) || !isWhole(reachedOn, 0)) return null;
-  if (!isText(datasetVersion) || !isTime(at)) return null;
-  return { rung, reachedOn, datasetVersion, at };
-}
-
-export function parseRunResult(x: unknown): RunResult | null {
-  if (!isPlain(x)) return null;
-  const { rung, amount, datasetVersion, at, homes, reachedOn, waitingMoney } = x;
-  if (!isWhole(rung, 0) || !isWhole(amount, 1)) return null;
-  if (!isText(datasetVersion) || !isTime(at)) return null;
-  if (!isNum(homes)) return null;
-  if (reachedOn !== null && !isWhole(reachedOn, 0)) return null;
-  if (waitingMoney !== null && !isNum(waitingMoney)) return null;
-  if (!isPlain(x.stages)) return null;
-  const stages = {} as RunResult['stages'];
-  for (const s of OPEN_STAGES) {
-    const v = x.stages[s];
-    if (!isNum(v)) return null;
-    stages[s] = v;
-  }
-  const dropped = parseUnits(x.dropped);
-  const collected = parseUnits(x.collected);
-  if (!dropped || !collected) return null;
-  let lump: Units | null = null;
-  if (x.lump !== null) {
-    lump = parseUnits(x.lump);
-    if (!lump) return null;
-  }
-  if (!Array.isArray(x.side)) return null;
-  const side: RunResult['side'] = [];
-  for (const e of x.side) {
-    if (!isPlain(e) || !isText(e.id)) return null;
-    const reward = parseUnits(e.reward);
-    if (!reward) return null;
-    side.push({ id: e.id, reward });
-  }
-  return {
-    rung,
-    amount,
-    datasetVersion,
-    at,
-    homes,
-    reachedOn,
-    stages,
-    waitingMoney,
-    dropped,
-    collected,
-    lump,
-    side
-  };
-}
-
+/** A version 3 state, strictly; a version 2 state through upgradeV2; else null. */
 export function parseGameState(x: unknown): GameState | null {
-  // 1. A plain object at version 2 (P15).
-  if (!isPlain(x) || x.v !== 2) return null;
-  const { phase, firstWinAt, rung, runs } = x;
-  // 2. The phase.
+  if (!isPlain(x)) return null;
+  if (x.v === 2) return upgradeV2(x);
+  if (x.v !== 3) return null;
+  const { phase, firstWinAt, round, target, finished, own } = x;
   if (phase !== 'opening' && phase !== 'runs') return null;
-  // 3. The first win: null or a time.
   if (firstWinAt !== null && !isTime(firstWinAt)) return null;
-  // 4. Bought: a plain object of whole numbers of 1 or more.
-  if (!isPlain(x.bought)) return null;
-  for (const v of Object.values(x.bought)) if (!isWhole(v, 1)) return null;
-  // 5. Units.
-  const units = parseUnits(x.units);
-  if (!units) return null;
-  // 6. The rung in play.
-  if (!isWhole(rung, 0)) return null;
-  // 7. Met rungs: each valid, strictly ascending by rung.
-  if (!Array.isArray(x.met)) return null;
-  const met: MetRung[] = [];
-  for (const e of x.met) {
-    const m = parseMet(e);
-    if (!m || (met.length > 0 && m.rung <= met[met.length - 1].rung)) return null;
-    met.push(m);
+  if (!isWhole(round, 0)) return null;
+  if (target !== null && !isDay(target)) return null;
+  if (!Array.isArray(x.editable) || !x.editable.every(isText)) return null;
+  if (!Array.isArray(x.wins)) return null;
+  const wins: Win[] = [];
+  for (const e of x.wins) {
+    const w = parseWin(e);
+    if (!w) return null;
+    wins.push(w);
   }
-  // 8. Side goals met: a plain object of times.
-  if (!isPlain(x.side)) return null;
-  for (const v of Object.values(x.side)) if (!isTime(v)) return null;
-  // 9. Runs.
-  if (!isWhole(runs, 0)) return null;
-  // 10. The last result: null or a valid result.
-  let last: RunResult | null = null;
-  if (x.last !== null) {
-    last = parseRunResult(x.last);
-    if (!last) return null;
-  }
-  // 11. The phase agrees with the rest.
+  if (typeof finished !== 'boolean' || typeof own !== 'boolean') return null;
+  // The phase agrees with the rest.
   if (phase === 'runs' && firstWinAt === null) return null;
-  if (phase === 'opening' && (runs !== 0 || rung !== 0 || met.length > 0 || last !== null)) {
+  if (
+    phase === 'opening' &&
+    (round !== 0 || target !== null || wins.length > 0 || x.editable.length > 0 || finished)
+  ) {
     return null;
   }
-  // 12. Rebuilt from the known fields.
   return {
-    v: 2,
+    v: 3,
     phase,
     firstWinAt,
-    bought: { ...(x.bought as Record<string, number>) },
-    units,
-    rung,
-    met,
-    side: { ...(x.side as Record<string, string>) },
-    runs,
-    last
+    round,
+    target,
+    editable: [...(x.editable as string[])],
+    wins,
+    finished,
+    own
   };
 }
 

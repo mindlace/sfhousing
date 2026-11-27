@@ -8,18 +8,10 @@
  */
 import { FREE_MEASURES, OPEN_LIMITS, isGiven, type Limits } from '$lib/game/limits';
 import type { LimitKind } from '$lib/sim-page/funding-copy';
-import {
-  DEFAULT_BANDS,
-  DEFAULT_POLICY,
-  type SimPolicy,
-  type TransitBand,
-  type ZoningRule
-} from '$lib/sim-page/policy';
+import { DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
 import { addPreset, dateMeasure, fundingPresets, nextAddedId } from '$lib/sim-page/funding-presets';
 import { PRESETS, resolvePreset, timingLabel, type PresetId } from '$lib/sim-page/timing';
-import { newLayer, reachMaxM } from '$lib/sim-page/transit-edit';
-import { newOpId } from '$lib/brush/ids';
-import { STOP_TYPES } from '$lib/sim/levers/brushes';
+import { newLayer } from '$lib/sim-page/transit-edit';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
 import { monthFirstDay } from '$lib/sim/world/months';
@@ -73,34 +65,17 @@ const PROTECT_LABELS: Record<Category, string> = {
 const hasMoney = (cal: Calibration): boolean =>
   cal.market !== undefined && cal.baselineFunding !== undefined;
 
-/** "+" opens on this kind: anything in it can be bought or is free. */
+/** "+" opens on this kind: something in it can be added. */
 export function kindOpen(kind: PolicyKind, limits: Limits): boolean {
-  if (limits.open) return true;
+  const all = limits.open || limits.whole;
   switch (kind) {
     case 'zoning':
-      return limits.stops.size > 0;
+      return all || limits.stops.size > 0;
     case 'permitting':
-      return limits.presets.size > 0 || limits.custom;
+      return all;
     case 'money':
-      return limits.measures.size > 0;
+      return all || limits.money;
   }
-}
-
-/**
- * A transit rule for "+" in a game: SB 79's two bands (DEFAULT_BANDS), each held to the limits'
- * reach and stories and the class maximum; a band that no longer reaches past the one inside it
- * is dropped.
- */
-export function fittedLayer(limits: Limits): ZoningRule {
-  const stopTypes = STOP_TYPES.filter((t) => limits.stops.has(t));
-  const reach = Math.min(limits.reachM, reachMaxM(stopTypes));
-  const bands: TransitBand[] = [];
-  for (const b of DEFAULT_BANDS) {
-    const maxM = Math.min(b.maxM, reach);
-    if (maxM <= (bands.at(-1)?.maxM ?? 0)) continue;
-    bands.push({ maxM, stories: Math.min(b.stories, limits.stories) });
-  }
-  return { id: newOpId(), kind: 'transit', stopTypes, bands };
 }
 
 export function addChoices(
@@ -114,9 +89,9 @@ export function addChoices(
     case 'zoning': {
       const has = (c: Category) =>
         doc.kinds.zoning.some((p) => p.where.tag === 'category' && p.where.category === c);
-      const fits = limits.open || (limits.bands >= 1 && limits.stories >= 1 && limits.reachM >= 1);
+      const all = limits.open || limits.whole;
       return [
-        ...(fits ? [{ choice: { kind, what: 'transit' as const }, label: 'Transit rule' }] : []),
+        ...(all ? [{ choice: { kind, what: 'transit' as const }, label: 'Transit rule' }] : []),
         ...(limits.open
           ? [{ choice: { kind, what: 'paint' as const }, label: 'Painted area' }]
           : []),
@@ -131,35 +106,23 @@ export function addChoices(
     case 'permitting':
       return [
         // Observed timing is the fixed row, not an addition.
-        ...PRESETS.filter(
-          (p) => p.available && p.id !== 'observed' && (limits.open || limits.presets.has(p.id))
-        ).map((p) => ({
+        ...PRESETS.filter((p) => p.available && p.id !== 'observed').map((p) => ({
           choice: { kind, what: 'preset' as const, preset: p.id },
           label: p.name
         })),
-        ...(limits.custom
-          ? [{ choice: { kind, what: 'custom' as const }, label: CUSTOM_TIMING_LABEL }]
-          : [])
+        { choice: { kind, what: 'custom' as const }, label: CUSTOM_TIMING_LABEL }
       ];
     case 'money': {
       if (!hasMoney(cal)) return [];
-      // Bought measures first, then the free ones (call 16); kindOpen made `measures` non-empty.
+      // In a game before the end, only the free measures; kindOpen made `money` true.
       const given = fundingPresets(cal)
         .filter((p) => p.available)
-        .filter((p) => limits.open || limits.measures.has(p.id))
+        .filter((p) => limits.open || limits.whole || FREE_MEASURES.includes(p.id))
         .map((p) => ({
           choice: { kind, what: 'preset' as const, preset: p.id },
           label: p.label
         }));
-      if (!limits.open) {
-        const free = fundingPresets(cal)
-          .filter((p) => p.available && FREE_MEASURES.includes(p.id) && !limits.measures.has(p.id))
-          .map((p) => ({
-            choice: { kind, what: 'preset' as const, preset: p.id },
-            label: p.label
-          }));
-        return [...given, ...free];
-      }
+      if (!limits.open && !limits.whole) return given;
       return [
         ...given,
         { choice: { kind, what: 'ownPool' }, label: 'Your own pool' },
@@ -205,13 +168,13 @@ function direct(
 }
 
 /** The new policies for `choice`, ids not yet renamed and spans not yet dated. */
-function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration, limits: Limits): Policy[] {
+function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration): Policy[] {
   const p3: SimPolicy = structuredClone(DEFAULT_POLICY);
   const upgraded = () => upgradePolicy(p3, cal.asOf).kinds[choice.kind];
   switch (choice.kind) {
     case 'zoning':
       if (choice.what === 'transit') {
-        p3.rules = [limits.open ? newLayer() : fittedLayer(limits)];
+        p3.rules = [newLayer()];
         return upgraded();
       }
       if (choice.what === 'paint')
@@ -285,7 +248,7 @@ function created(doc: SimPolicy4, choice: AddChoice, cal: Calibration, limits: L
 export function addPolicy(
   doc: SimPolicy4,
   choice: AddChoice,
-  ctx: { w: TimelineWindow; month: number; cal: Calibration; limits?: Limits }
+  ctx: { w: TimelineWindow; month: number; cal: Calibration }
 ): { doc: SimPolicy4; ref: SpanRef } {
   const month = Math.min(ctx.w.months, Math.max(1, Math.round(ctx.month)));
   const from = monthFirstDay(ctx.w.asOf, month);
@@ -296,7 +259,7 @@ export function addPolicy(
     used.add(id);
     return id;
   };
-  const dated = created(doc, choice, ctx.cal, ctx.limits ?? OPEN_LIMITS).map((p) => ({
+  const dated = created(doc, choice, ctx.cal).map((p) => ({
     ...p,
     id: idFor(p.id),
     spans: p.spans.map((s) => ({ ...s, from, to: null }))

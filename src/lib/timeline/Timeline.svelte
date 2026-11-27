@@ -20,7 +20,6 @@
   import type { ChartLens } from './chart-lens';
   import { kindOpen } from './add';
   import FixedRow from './FixedRow.svelte';
-  import { LOCKED_LANE } from './game-copy';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
   import type { Policy, PolicyKind, SimPolicy4 } from './policy4';
@@ -75,7 +74,7 @@
      * that the page's box scrolls. Default true.
      */
     pinned?: boolean;
-    /** What is bought: a kind not open is locked, as is a policy not within. Default: all open. */
+    /** What the game offers: "+" only on a kind that opens; a policy not within is locked. */
     limits?: Limits;
   }
 
@@ -103,8 +102,6 @@
     limits = OPEN_LIMITS
   }: Props = $props();
 
-  /** A locked kind's lane words; null while the kind is open. */
-  const lockOf = (kind: PolicyKind): string | null => (kindOpen(kind, limits) ? null : LOCKED_LANE);
   const lockedIn = (kind: PolicyKind) => (p: Policy) => !within(kind, p, limits);
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
@@ -298,7 +295,7 @@
           day={playheadDay}
           {reached}
           {stale}
-          locked={lockOf(kind)}
+          canAdd={kindOpen(kind, limits)}
           isLocked={lockedIn(kind)}
         />
       {/each}
@@ -366,7 +363,7 @@
           day={playheadDay}
           {reached}
           {stale}
-          locked={lockOf(sheet)}
+          canAdd={kindOpen(sheet, limits)}
           isLocked={lockedIn(sheet)}
         />
         <div

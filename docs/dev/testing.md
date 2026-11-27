@@ -104,7 +104,7 @@ Signoff's `test:e2e` step runs `npm run test:e2e`, every project; no workflow ru
 The game's rules are in [game.md](game.md), saved games in [game-save.md](game-save.md).
 
 - With `VITE_E2E=1` a page with no `sfhousing:e2e:game` key (`E2E_GAME_KEY`, `src/lib/game/e2e.ts`) gets the open game: the simulation at `/`, every control, nothing locked, nothing stored. A spec that calls neither helper below sees it.
-- `e2e/helpers/game.ts`, each called before the page loads: `seedGame(page, state?)` switches the real game on and stores a game; `newVisitor(page)` switches the real game on with nothing stored, the opening; `seedGoalAmount(page, amount)` sets the goal's amount (`sfhousing:e2e:goal`). A spec that plays the game calls `seedGoalAmount`: the fixture cannot reach 82,069 homes.
+- `e2e/helpers/game.ts`, each called before the page loads: `seedGame(page, state?)` switches the real game on and stores a game over `NEW_GAME` (version 3; a `'runs'` state gets a `firstWinAt`); `seedV2Game(page, v2, policy?)` stores a raw version 2 save as the points build wrote it, for the upgrade journey; `newVisitor(page)` switches the real game on with nothing stored, the opening; `seedGoalAmount(page, amount)` sets the goal's amount (`sfhousing:e2e:goal`). A spec that plays the game calls `seedGoalAmount`: the fixture cannot reach 82,069 homes.
 - `e2e/helpers/play.ts` seeds and waits with every wait a state in the page or in storage (`seedRuns`, `waitSim`, `waitSaved`); the table is in [game.md](game.md), "The e2e seams".
 - A spec knows a game's page is the simulation tool when `tl-dock` shows (`waitSim`).
 - A component test with no provider gets the open game from `useGame()` (`openGame()`, `src/lib/game/store.svelte.ts`).
