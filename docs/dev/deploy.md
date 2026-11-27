@@ -24,6 +24,8 @@ There is no automated staging-to-prod interlock (as in planafoot): do not merge 
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
+A tab left open across a deploy that moves the game's state to a new version (version 3, the policy rounds) can read back, from its account, a game it cannot parse until it reloads.
+
 `wrangler.jsonc` holds two Durable Object migrations, the same in both environments, applied by the deploy with no manual step. `v1-sim-object` created the class `SimObject` (`new_sqlite_classes`). `v2-delete-sim-object` deletes it and its stored data (`deleted_classes`); the Worker binds no Durable Object. A migration tag is never edited or reused.
 
 ### Contributors (fork PRs)

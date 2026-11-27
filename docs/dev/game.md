@@ -26,7 +26,7 @@ and saved games live in `src/lib/game/`:
 | `e2e.ts`                             | The e2e seam's readers                                                                     |
 
 Syncing saved games to an account is [game-save.md](game-save.md). The page's shell, autosave and
-workshop are [sim-page.md](sim-page.md); the timeline and its worker messages are
+the simulation are [sim-page.md](sim-page.md); the timeline and its worker messages are
 [timeline-ui.md](timeline-ui.md); the map's interfaces are [map-interfaces.md](map-interfaces.md).
 
 ## The page
@@ -111,7 +111,9 @@ on), then the store reset to `offerThrough(document, round, cal, editable)` of t
 undo step, so Undo and Redo are cleared and no earlier step can remove an offered policy), the
 autosave flushed, and the explainers (`GiftDialog`) opened on `giftItems(before, after)`. After the
 last Accept focus goes to `goal-headline-button`. The pinned goal stays pending until the next
-change. When the store refuses the write nothing changes: the document, the history and the held
+change. After a reload the same unchanged forecast reads late ("Not earlier") once the target is
+seen: the win set the target to its goal month, so the goal month equals the target and is not
+earlier. Both are by design. When the store refuses the write nothing changes: the document, the history and the held
 win stay, and the gift can be pressed again. When `giftItems` is empty (the game was finished
 before) no dialog opens (a `GiftDialog` with no items renders nothing) and focus goes to
 `goal-headline-button`, as after the last Accept: the pressed gift is gone with the win. The undo
@@ -161,7 +163,7 @@ otherwise painted zoning never runs in a game, a protection runs once a stop typ
 transit rule outside the catalogue runs when whole or own, other timings when whole, and money
 outside the catalogue when whole, or when it is a `FREE_MEASURES` preset (`state-off`,
 `federal-credits-off`, `isGiven`) and money is offered. `runnable(doc, limits)` keeps the policies
-that do, and returns `doc` itself when none goes. The workshop shows the whole document, and the
+that do, and returns `doc` itself when none goes. The simulation shows the whole document, and the
 worker runs and Publish sends the runnable one.
 
 `isFixed(policy, limits)`: a catalogue policy the player cannot edit yet (not open, not whole, its

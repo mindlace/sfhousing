@@ -39,12 +39,12 @@ take no hover, and show `cursor: not-allowed`. A button that must say why it is 
 
 ## Surfaces
 
-| Surface                | Use                                                                                                                | Look                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| `SURFACE_POP`          | Menus, panels, pop-overs (the key's panels, the palette strip's pop-overs, Shortcuts, the "Autosave off" pop-over) | rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm |
-| `SURFACE_TIP`          | An explanation's tooltip (`Explain`)                                                                               | as `SURFACE_POP` with rounded, px-2 py-1, shadow-md            |
-| `SURFACE_DIALOG`       | A modal dialog (Publish)                                                                                           | rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop |
-| `SURFACE_DIALOG_FLUSH` | A dialog that pads its own regions (About this model)                                                              | `SURFACE_DIALOG` without the padding                           |
+| Surface                | Use                                                                                                                                                 | Look                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `SURFACE_POP`          | Menus, panels, pop-overs (the key's panels, the palette strip's pop-overs, Shortcuts, the "Autosave off" pop-over, the header's Menu panel from lg) | rounded-lg, line border, surface, ink, shadow-lg, p-2, text-sm |
+| `SURFACE_TIP`          | An explanation's tooltip (`Explain`)                                                                                                                | as `SURFACE_POP` with rounded, px-2 py-1, shadow-md            |
+| `SURFACE_DIALOG`       | A modal dialog (Publish)                                                                                                                            | rounded-lg, surface, ink, shadow-xl, p-4, a 40% black backdrop |
+| `SURFACE_DIALOG_FLUSH` | A dialog that pads its own regions (About this model)                                                                                               | `SURFACE_DIALOG` without the padding                           |
 
 In dark every surface is `surface-dark` with `ink-dark` text; a dialog also takes a `line-dark`
 border to set it off from the dimmed page. Pop-overs and dialogs declare `color-scheme: dark` in
