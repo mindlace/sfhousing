@@ -101,7 +101,7 @@ autosave flushed, and the explainers (`GiftDialog`) opened on `giftItems(before,
 last Accept focus goes to `goal-headline-button`. The pinned goal stays pending until the next
 change. When the store refuses the write nothing changes: the document, the history and the held
 win stay, and the gift can be pressed again. When `giftItems` is empty (the game was finished
-before) no dialog opens and focus stays where it was.
+before) no dialog opens (a `GiftDialog` with no items renders nothing) and focus goes to `goal-headline-button`, as after the last Accept: the pressed gift is gone with the win. The undo handler for a rejected run restores its document through `offerThrough` with the game's current state, so the offered policies are never lost.
 
 ## Version 2 games
 

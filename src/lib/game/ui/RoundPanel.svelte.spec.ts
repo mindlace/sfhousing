@@ -33,6 +33,14 @@ describe('RoundPanel', () => {
     expect(page.getByTestId('round-panel').element().querySelectorAll(FOCUSABLE)).toHaveLength(0);
   });
 
+  it('two equal lines both show', async () => {
+    await render(RoundPanel, {
+      props: { data: { title: 'Round 1', items: ['Same', 'Same'], earlier: ['Twice', 'Twice'] } }
+    });
+    await expect.element(page.getByTestId('round-panel')).toBeVisible();
+    expect(page.getByRole('listitem').elements()).toHaveLength(4);
+  });
+
   it('leaves out an empty list and an empty Earlier', async () => {
     await render(RoundPanel, {
       props: { data: { title: 'Every policy', items: [], earlier: [] } }

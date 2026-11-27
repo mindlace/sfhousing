@@ -655,7 +655,8 @@ describe('SimRoute in a game: taking a win', () => {
     await expect.element(undoButton()).toBeDisabled();
     (document.activeElement as HTMLElement | null)?.blur();
     await userEvent.keyboard('{Control>}z{/Control}');
-    await tick();
+    // The key was handled and did nothing: the history is still empty and the policies stay.
+    await expect.element(undoButton()).toBeDisabled();
     expect(policies(debug().policy)).toHaveLength(3);
     const before = structuredClone($state.snapshot(game.state));
 
@@ -699,6 +700,8 @@ describe('SimRoute in a game: taking a win', () => {
     await expect.element(dialog()).toBeVisible();
     expect(game.state.round).toBe(2);
     expect(game.state.editable).toEqual(['transit-rail']);
+    const saved = game.read(game.currentId)!;
+    expect(saved.state.editable).toEqual(['transit-rail']);
     await acceptAll(3);
     expect(isFixed(railOf(), game.limits)).toBe(false);
     const rest = policies(debug().policy).filter((p) => p.id !== 'transit-rail');
@@ -709,17 +712,20 @@ describe('SimRoute in a game: taking a win', () => {
   });
 
   it('a refused store write changes nothing and the win stands', async () => {
+    stubTouchLaptop();
     const mem = new MemoryStorage();
     const game = seed(mem, 0);
     await openedLong(game, mem);
     await seeWin();
     const before = structuredClone($state.snapshot(game.state));
     const doc = debug().policy;
+    const canUndo = (undoButton().element() as HTMLButtonElement).disabled;
     const refuse = vi.spyOn(game, 'takeWin').mockReturnValue({ ok: false, reason: 'storage' });
     await gift().click();
     expect(refuse).toHaveBeenCalledTimes(1);
     expect($state.snapshot(game.state)).toEqual(before);
     expect(debug().policy).toEqual(doc);
+    expect((undoButton().element() as HTMLButtonElement).disabled).toBe(canUndo);
     expect(document.querySelector('[data-testid=gift-dialog]')).toBeNull();
     await expect.element(gift()).toBeVisible();
     expect(page.getByTestId('goal-headline').element().getAttribute('data-state')).toBe('win');
@@ -729,16 +735,47 @@ describe('SimRoute in a game: taking a win', () => {
     expect(game.state.round).toBe(1);
   });
 
-  it('a win in a finished game opens no dialog and leaves focus where it was', async () => {
+  it('a win in a finished game opens no dialog and focus goes to the goal', async () => {
     const mem = new MemoryStorage();
     const game = seed(mem, 4, { finished: true, target: M[K + 6] });
     await openedLong(game, mem);
     await seeWin();
-    const focused = gift().element();
-    focused.focus();
     await gift().click();
     expect(game.state.finished).toBe(true);
     expect(game.state.target).toBe(M[K]);
     expect(document.querySelector('[data-testid=gift-dialog]')).toBeNull();
+    await expect.element(page.getByTestId('goal-headline-button')).toHaveFocus();
+  });
+
+  it('a rejected next run after the gift keeps the offered policies', async () => {
+    const mem = new MemoryStorage();
+    const game = seed(mem, 0);
+    await openedLong(game, mem);
+    await seeWin();
+    await gift().click();
+    await acceptAll(3);
+    // The first run after the win is the offered document's: the worker rejects it.
+    let asked = 0;
+    await expect
+      .poll(() => {
+        for (const q of w().all('resolveBrush').slice(asked)) {
+          w().emit({
+            type: 'brushLots',
+            reqId: q.reqId,
+            result: { ok: true, lots: [], points: new Float64Array() }
+          });
+          asked++;
+        }
+        return w().lastOf('setPolicy')?.rev ?? 0;
+      })
+      .toBe(2);
+    w().emit(errorMsg(2, 'bad-request'));
+    // The restored document is a new change: the next run is asked for, and the policies stay.
+    await expect.poll(() => w().all('setPolicy').length).toBeGreaterThan(1);
+    expect(policies(debug().policy).map((p) => p.label)).toEqual([
+      'Taller near BART and Caltrain',
+      'SB 423 clock',
+      'Housing bond'
+    ]);
   });
 });

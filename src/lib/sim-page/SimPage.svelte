@@ -273,6 +273,12 @@
     sync.open(r);
   }
 
+  /** In a game, `p` with every policy the game offers now that it lacks, added off. */
+  function offeredIn(p: SimPolicy4): SimPolicy4 {
+    const g = game && !game.open ? game : null;
+    return g && cal ? offerThrough(p, g.state.round, cal, g.state.editable) : p;
+  }
+
   /** The explainers after a gift, one per new policy; null: none open. */
   let gift = $state.raw<GiftItem[] | null>(null);
 
@@ -292,12 +298,18 @@
     leave();
     const items = giftItems(before, g.state);
     if (items.length > 0) gift = items;
+    // The pressed gift is gone with the win: no explainer, focus goes to the goal as after one.
+    else focusGoal();
     return true;
   }
 
   /** The explainers are accepted: focus goes to the pinned goal. */
   function giftClosed(): void {
     gift = null;
+    focusGoal();
+  }
+
+  function focusGoal(): void {
     void tick().then(() =>
       document.querySelector<HTMLElement>('[data-testid=goal-headline-button]')?.focus()
     );
@@ -1302,7 +1314,7 @@
   onlotsretry={() => sync.failed.forEach((k) => sync.retry(k))}
   {readonly}
   onedit={(change, label) => store.apply(change, label)}
-  onundoto={(p) => store.undoTo(wholeOf.get(p) ?? p, 'Reverted a change')}
+  onundoto={(p) => store.undoTo(offeredIn(wholeOf.get(p) ?? p), 'Reverted a change')}
   {selected}
   onselect={select}
   onadd={startAdd}

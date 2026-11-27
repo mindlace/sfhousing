@@ -116,8 +116,8 @@ describe('AboutMeanings', () => {
         'Allocation, which asks for them by January 2031.'
     );
     expect(t).toContain(
-      'When the goal must be met. The first is the end of the 40-year window; each later one is ' +
-        'five or more years earlier. Taking the next one is your choice.'
+      'When the goal must be met. It starts as the end of the 40-year window; each win moves it ' +
+        'to the month your forecast reached the goal.'
     );
     expect(t).not.toContain('Units');
     expect(t).not.toContain('To beat');

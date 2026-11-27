@@ -87,6 +87,13 @@ describe('GiftDialog', () => {
     await expect.element(step()).toHaveTextContent('1 of 1');
   });
 
+  it('with no items it renders nothing and does not open', async () => {
+    const onclose = vi.fn();
+    await render(GiftDialog, { props: { items: [], onclose } });
+    expect(document.querySelector('[data-testid=gift-dialog]')).toBeNull();
+    expect(document.querySelector('dialog:modal')).toBeNull();
+  });
+
   it('passes axe in light and dark', async () => {
     await mount();
     for (const value of ['light', 'dark'] as const) {

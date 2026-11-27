@@ -19,10 +19,10 @@
   const headingId = $props.id();
   let dialog = $state<HTMLDialogElement | null>(null);
   let at = $state(0);
-  const item = $derived(items[Math.min(at, items.length - 1)]);
+  const item = $derived(items.length === 0 ? null : items[Math.min(at, items.length - 1)]);
 
   $effect(() => {
-    if (dialog && !dialog.open) dialog.showModal();
+    if (dialog && !dialog.open && items.length > 0) dialog.showModal();
   });
 
   function accept(): void {
@@ -53,36 +53,41 @@
   }
 </script>
 
-<dialog
-  bind:this={dialog}
-  data-testid="gift-dialog"
-  aria-labelledby={headingId}
-  oncancel={(e) => {
-    e.preventDefault();
-    accept();
-  }}
-  {onclose}
-  {onkeydown}
-  class="m-auto w-[calc(100vw-2rem)] max-w-md {SURFACE_DIALOG}"
->
-  <div aria-live="polite" class="space-y-2">
-    <p data-testid="gift-step" class="text-xs font-medium text-ink-muted dark:text-ink-dark-muted">
-      {at + 1} of {items.length}
-    </p>
-    <h2 id={headingId} class="text-lg font-semibold">{item.title}</h2>
-    <p class="text-sm">{item.line}</p>
-    {#if item.rules !== ''}
-      <p data-testid="gift-rules" class="text-sm font-medium">{item.rules}</p>
-    {/if}
-  </div>
-  <div class="mt-4 flex justify-end">
-    <!-- svelte-ignore a11y_autofocus -->
-    <button
-      type="button"
-      data-testid="gift-accept"
-      class={BUTTON_PRIMARY}
-      autofocus
-      onclick={accept}>Accept</button
-    >
-  </div>
-</dialog>
+{#if item}
+  <dialog
+    bind:this={dialog}
+    data-testid="gift-dialog"
+    aria-labelledby={headingId}
+    oncancel={(e) => {
+      e.preventDefault();
+      accept();
+    }}
+    {onclose}
+    {onkeydown}
+    class="m-auto w-[calc(100vw-2rem)] max-w-md {SURFACE_DIALOG}"
+  >
+    <div aria-live="polite" class="space-y-2">
+      <p
+        data-testid="gift-step"
+        class="text-xs font-medium text-ink-muted dark:text-ink-dark-muted"
+      >
+        {at + 1} of {items.length}
+      </p>
+      <h2 id={headingId} class="text-lg font-semibold">{item.title}</h2>
+      <p class="text-sm">{item.line}</p>
+      {#if item.rules !== ''}
+        <p data-testid="gift-rules" class="text-sm font-medium">{item.rules}</p>
+      {/if}
+    </div>
+    <div class="mt-4 flex justify-end">
+      <!-- svelte-ignore a11y_autofocus -->
+      <button
+        type="button"
+        data-testid="gift-accept"
+        class={BUTTON_PRIMARY}
+        autofocus
+        onclick={accept}>Accept</button
+      >
+    </div>
+  </dialog>
+{/if}

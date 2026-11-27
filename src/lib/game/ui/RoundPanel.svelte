@@ -17,7 +17,7 @@
   <h2 class="font-semibold">{data.title}</h2>
   {#if data.items.length > 0}
     <ul class="list-disc space-y-0.5 pl-4">
-      {#each data.items as item (item)}
+      {#each data.items as item, i (i)}
         <li>{item}</li>
       {/each}
     </ul>
@@ -25,7 +25,7 @@
   {#if data.earlier.length > 0}
     <h3 class="font-semibold">Earlier</h3>
     <ul class="list-disc space-y-0.5 pl-4">
-      {#each data.earlier as line (line)}
+      {#each data.earlier as line, i (i)}
         <li>{line}</li>
       {/each}
     </ul>

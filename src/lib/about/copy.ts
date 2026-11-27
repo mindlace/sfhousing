@@ -72,8 +72,8 @@ export const MEANINGS: readonly {
   {
     term: 'The deadline',
     body:
-      `When the goal must be met. The first is the end of the ${WINDOW_MONTHS / 12}-year ` +
-      'window; each later one is five or more years earlier. Taking the next one is your choice.'
+      `When the goal must be met. It starts as the end of the ${WINDOW_MONTHS / 12}-year ` +
+      'window; each win moves it to the month your forecast reached the goal.'
   }
 ];
 

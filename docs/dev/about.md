@@ -31,7 +31,7 @@ never copied; "Room for N homes" reads `ROOM_MEANS` (`src/lib/paint/details.ts`)
 shortcuts table is `SHORTCUTS` (`src/lib/brush/shortcuts.ts`), the list Paint's Shortcuts button
 shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/shortcuts.ts`).
 Keyboard shortcuts live here only on the simulation: its header has no Shortcuts button. The
-tables are Painting, Timeline and Run (`RUN_SHORTCUTS`, the keys that move the collecting ring).
+tables are Painting and Timeline.
 
 Part 1 ends with the term "The deadline" (`MEANINGS`). Using it's The game section
 (id `about-levels`) is `GAME_STEPS` (an ordered list) then `GAME_NOTES` (paragraphs); Saved games

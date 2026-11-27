@@ -1,12 +1,13 @@
 <!--
   The site header. There are no steps: the name is the way home. The bar holds the name, the round
-  (plain text, after mount, for a game in its runs; never the open game), the page's status, the pinned item (centred in the bar from lg when both sides fit; a side that does not
-  pushes it off centre, never clips; below sm it leads the bar and grows to the Menu, the status
-  after it), and, from lg, the page's actions, then the Menu button (a hamburger named "Menu", never
-  a dot) at every width. The Menu's panel (under the header; from lg a pop-over at the right, below
-  lg full width) holds, in order: the site name and the round (below sm, on a page that pins an item:
-  Paint, /sim, /p/:id), the actions (below lg only), the game panel (saved games, New game, the sync line; after
-  mount, never for the open game), the account entry (Sign in, or @handle; Sign in shows only while
+  (plain text, after mount, for a game in its runs; never the open game), the page's status, the
+  pinned item (centred in the bar from lg when both sides fit; a side that does not pushes it off
+  centre, never clips; below sm it leads the bar and grows to the Menu, the status after it), and,
+  from lg, the page's actions, then the Menu button (a hamburger named "Menu", never a dot) at
+  every width. The Menu's panel (under the header; from lg a pop-over at the right, below lg full
+  width) holds, in order: the site name and the round (below sm, on a page that pins an item: Paint,
+  /sim, /p/:id), the actions (below lg only), the game panel (saved games, New game, the sync line;
+  after mount, never for the open game), the account entry (Sign in, or @handle; Sign in shows only while
   a sign-in method is in effect, `signInAvailable`) and About (on every route: the map pages have no
   footer). The status is the page's one status cell, never in the Menu: left of the pinned item,
   except below sm with one, where it sits between the pinned item and the Menu, after it in the DOM
