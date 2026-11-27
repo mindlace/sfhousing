@@ -73,6 +73,7 @@ import { calibrationReport } from './report';
 import { datasf } from './provenance';
 import { revisionModel } from './revision';
 import { shippedStep } from './shipped-step';
+import { ERA_COST_INDEX, ERA_VALUE_INDEX, eraPrices, eraRatios } from './era-market';
 import {
   buildSpells,
   gapImputeTally,
@@ -218,7 +219,12 @@ export function choiceModelOf(
   o: { affordableLeftOut?: number } = {}
 ): ChoiceModel {
   const window: [string, string] = [PLANNING_START, isoOf(asOf)];
-  const sources = [datasf('planningProjects'), datasf('permits')];
+  const sources = [
+    datasf('planningProjects'),
+    datasf('permits'),
+    ...ERA_VALUE_INDEX.provenance.sources,
+    ...ERA_COST_INDEX.provenance.sources
+  ];
   const fitted = spread.n >= cal.sizeMinN && Number.isFinite(spread.choiceSpread);
   const bound = fitted && atSearchBound(spread);
   const records =
@@ -228,8 +234,12 @@ export function choiceModelOf(
     `${o.affordableLeftOut ?? 0} in the affordable cohort left out (they choose by rule A)`;
   const method =
     `maximum likelihood of each record's built stories under the market choice among its ` +
-    `lot's options allowed at its base stories at filing (choose.ts choiceRow, the shipped ` +
-    `step), golden-section on ln choiceSpread in [${SPREAD_RANGE.join(', ')}]; ${records}; ` +
+    `lot's options allowed at its base stories at filing (choose.ts choiceRow), each record ` +
+    `priced at the market of the year it was first recorded: the shipped step's value per home ` +
+    `times the FHFA San Francisco County house price index and its cost per home times the ` +
+    `DGS California Construction Cost Index, each relative to ${isoOf(asOf).slice(0, 4)} (an ` +
+    `index held at its last year past it; era-market.ts); golden-section on ln choiceSpread in ` +
+    `[${SPREAD_RANGE.join(', ')}]; ${records}; ` +
     `log-likelihood ${g(spread.logLik)}; ` +
     "locationValue is today's for every record (the panel options carry no past value), " +
     "an index against each roll year's median, so it assumes neighbourhoods kept their rank";
@@ -327,11 +337,15 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   const aff = affordableRule(targets.cohort);
   const recs = await choiceRecords(p.norm, input.panel, input.panelOptions, lotArea, asOf);
   const market = marketRecords(recs.records, aff.rule);
+  // Each record at its own year's market (era-market.ts): the shipped step scaled by value and
+  // cost indices relative to asOf's year. The shipped simulation keeps the one shipped step.
+  const shipYear = Number(isoOf(asOf).slice(0, 4));
   const spread = fitChoiceSpread(
     market.records,
     step.prices,
     step.heightTime.steps[0].value,
-    step.heightTime.upTo
+    step.heightTime.upTo,
+    (year) => eraPrices(step.prices, eraRatios(year, shipYear))
   );
   const choice = choiceModelOf(step, spread, aff, targets.cohort, input.locationValue, cal, asOf, {
     affordableLeftOut: market.affordable

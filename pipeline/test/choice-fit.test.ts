@@ -25,6 +25,7 @@ import {
   type ChoiceRecord
 } from '../lib/fzp-cal/choice-fit';
 import { choiceOutcomes } from '../lib/fzp-cal/invariants';
+import { eraPrices } from '../lib/fzp-cal/era-market';
 import { choiceModelOf, choiceSpreadWarning } from '../lib/fzp-cal/calibrate';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import type { ShippedStep } from '../lib/fzp-cal/shipped-step';
@@ -73,6 +74,37 @@ describe('fitChoiceSpread', () => {
     expect(fit.excludedOver).toBe(0);
     expect(Number.isFinite(fit.logLik)).toBe(true);
     expect(Math.abs(fit.choiceSpread - 0.3)).toBeLessThan(0.1);
+  });
+
+  it("prices a record from an earlier year with that year's ratio", () => {
+    const [early, late] = drawRecords(2, 0.3, 11);
+    const ratio = { value: 0.9, cost: 0.7 };
+    const pricesFor = (year: number) =>
+      year === 2016 ? eraPrices(shippedPrices(), ratio) : shippedPrices();
+    const both = fitChoiceSpread(
+      [
+        { ...early, year: 2016 },
+        { ...late, year: 2026 }
+      ],
+      shippedPrices(),
+      time,
+      heightTime.upTo,
+      pricesFor
+    );
+    const earlyAlone = fitChoiceSpread(
+      [early],
+      eraPrices(shippedPrices(), ratio),
+      time,
+      heightTime.upTo
+    );
+    const lateAlone = fitChoiceSpread([late], shippedPrices(), time, heightTime.upTo);
+    expect(both.n).toBe(2);
+    both.profile.forEach((p, i) => {
+      expect(p.logLik).toBeCloseTo(earlyAlone.profile[i].logLik + lateAlone.profile[i].logLik, 9);
+    });
+    // at the shipped prices the early record scores differently: the ratio was applied
+    const shipped = fitChoiceSpread([early], shippedPrices(), time, heightTime.upTo);
+    expect(shipped.profile[2].logLik).not.toBeCloseTo(earlyAlone.profile[2].logLik, 6);
   });
 
   it('excludes a record over its limit and counts it', () => {
@@ -206,7 +238,8 @@ describe('choiceRecords', () => {
         stories: 6,
         existing: 2,
         cap: null,
-        cohort: 'private'
+        cohort: 'private',
+        year: 2018
       },
       {
         options: optionsOf(panelTable, 1),
@@ -215,7 +248,8 @@ describe('choiceRecords', () => {
         stories: 8,
         existing: 2,
         cap: null,
-        cohort: 'affordable'
+        cohort: 'affordable',
+        year: 2019
       }
     ]);
   });

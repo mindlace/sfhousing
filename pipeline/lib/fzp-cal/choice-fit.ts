@@ -49,6 +49,8 @@ export interface ChoiceRecord {
   cap?: number | null;
   /** The start cohort of the record's project (affordable-cohort.ts); absent counts as market. */
   cohort?: StartCohort;
+  /** The calendar year the record was first recorded: the market it is priced at, when given. */
+  year?: number;
 }
 
 export interface ChoiceSpreadFit {
@@ -89,13 +91,16 @@ const FIT_ONLY: Provenance = {
  * SPREAD_RANGE. A record's likelihood is the market rule's probability of the options at its built
  * stories among the options allowed at its limit; a record whose built stories no gaining option
  * has takes the gaining options at the nearest stories (ties to the lower). With no record, the
- * spread is NaN and the log-likelihood 0.
+ * spread is NaN and the log-likelihood 0. With `pricesFor`, a record with a `year` is priced at
+ * `pricesFor(year)` (its own year's market, era-market.ts), as one dated step of the model's price
+ * series; a record without one, and every record without `pricesFor`, at `prices`.
  */
 export function fitChoiceSpread(
   records: readonly ChoiceRecord[],
   prices: PriceStep,
   time: HeightTimeStep,
-  upTo: number[]
+  upTo: number[],
+  pricesFor?: (year: number) => PriceStep
 ): ChoiceSpreadFit {
   let excludedOver = 0;
   let noOption = 0;
@@ -110,8 +115,20 @@ export function fitChoiceSpread(
     'choice-fit',
     kept.map((r) => ({ options: r.options, locationValue: r.locationValue }))
   );
+  // One dated price step per record year (from = the year's index in `years`), the shipped
+  // prices at step 0 for records without a year; one height-time step throughout.
+  const years = pricesFor
+    ? [...new Set(kept.flatMap((r) => (r.year === undefined ? [] : [r.year])))].sort(
+        (a, b) => a - b
+      )
+    : [];
+  const stepOf = (r: ChoiceRecord): number =>
+    pricesFor && r.year !== undefined ? years.indexOf(r.year) + 1 : 0;
   const m: ChoiceModel = {
-    prices: [{ from: 0, value: prices }],
+    prices: [
+      { from: 0, value: prices },
+      ...years.map((y, i) => ({ from: i + 1, value: pricesFor!(y) }))
+    ],
     choiceSpread: 1,
     affordableRule: 'market',
     provenance: {
@@ -127,7 +144,14 @@ export function fitChoiceSpread(
   const ctx = choiceCtxOf(t, m, ht);
 
   // Per record: its allowed count and the row positions of the options at its matched stories.
-  const lots: { lot: number; n: number; cap: number | null; existing: number; at: number[] }[] = [];
+  const lots: {
+    lot: number;
+    step: number;
+    n: number;
+    cap: number | null;
+    existing: number;
+    at: number[];
+  }[] = [];
   kept.forEach((r, lot) => {
     const n = allowedCount(t, lot, r.limit);
     const existing = r.existing ?? 0;
@@ -154,7 +178,7 @@ export function fitChoiceSpread(
         at.push(k);
       }
     }
-    lots.push({ lot, n, cap, existing, at });
+    lots.push({ lot, step: stepOf(r), n, cap, existing, at });
   });
 
   let width = 0;
@@ -164,7 +188,7 @@ export function fitChoiceSpread(
     const at: ChoiceCtx = { ...ctx, m: { ...m, choiceSpread: spread } };
     let sum = 0;
     for (const l of lots) {
-      choiceRow(at, 0, l.lot, l.n, l.cap, l.existing, 'market', cum);
+      choiceRow(at, l.step, l.lot, l.n, l.cap, l.existing, 'market', cum);
       let p = 0;
       for (const k of l.at) p += cum[k] - (k > 0 ? cum[k - 1] : 0);
       sum += log(Math.max(p, P_FLOOR));
@@ -290,7 +314,7 @@ export async function choiceRecords(
   const years = [...panel.years].sort((a, b) => a - b);
   const wanted = new Map<
     number,
-    { parcel: ParcelId; stories: number; limit: number; cohort: StartCohort }[]
+    { parcel: ParcelId; stories: number; limit: number; cohort: StartCohort; year: number }[]
   >();
   let measured = 0;
   for (const h of [...norm].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
@@ -309,7 +333,8 @@ export async function choiceRecords(
       parcel: primaryParcel(h.parcelIds, lotArea),
       stories,
       limit,
-      cohort: startCohort(h.src.planningProposed)
+      cohort: startCohort(h.src.planningProposed),
+      year: y
     });
     wanted.set(year, list);
   }
@@ -329,7 +354,8 @@ export async function choiceRecords(
         stories: w.stories,
         existing: c.existingUnits,
         cap: c.baseCap,
-        cohort: w.cohort
+        cohort: w.cohort,
+        year: w.year
       });
     }
   }

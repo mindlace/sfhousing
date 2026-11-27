@@ -185,8 +185,9 @@ no longer writes it and `parseCalibration` ignores a `size` key an older file ca
 
 **Choice spread** (`fitChoiceSpread`, `pipeline/lib/fzp-cal/choice-fit.ts`, tier 2). Maximum
 likelihood of each record's built stories under the market choice among its lot's options
-allowed at its base stories at filing, scored through `choiceRow` itself (preflight F13), on the
-shipped step; golden-section search on ln choiceSpread in [0.001, 100]. Records
+allowed at its base stories at filing, scored through `choiceRow` itself (preflight F13), each
+record at its own year's market (see "Each record at its own year's market" below);
+golden-section search on ln choiceSpread in [0.001, 100]. Records
 (`choiceRecords`): histories first recorded from 2015-01-01 to `asOf` with proposed and base
 stories at filing of at least 1, on their largest parcel's panel row of the first record's roll
 year, with that year's existing homes and base cap. A record over its limit is left out and
@@ -200,6 +201,29 @@ assumes neighbourhoods kept their rank. Under `sizeMinN` records the spread is 1
 at break-even (choiceValue = breakEvenValue), options differ little in residual and the
 likelihood is flat above a few tenths, so the records fix only a lower bound. A fit at the upper
 bound says so in its provenance.
+
+**Each record at its own year's market** (`pipeline/lib/fzp-cal/era-market.ts`; owner ruling
+2026-11-26). A record first recorded in year y is priced at the shipped step with every anchor's
+value per home times V(y) ÷ V(ship) and cost per home times C(y) ÷ C(ship), where ship is
+`asOf`'s year (`eraPrices`, `eraRatios`). The carrying cost follows the cost; the cost ratio
+above the top anchor is kept. Each record year is one dated step of the fit's price series, so
+the fit scores records through the same `choiceRow` on the step of their year. An index is held
+at its nearest covered year outside its years (the value index has no 2026, so 2026 records take
+2025's value). Only the fit reads these indices: the shipped simulation keeps today's one step,
+and no index value is written to the dataset.
+
+| Index       | Source                                                                                                                                                                                                                                  | Years                                    | Licence                                                                               | Tier                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
+| V(y), value | FHFA House Price Index for counties, all-transactions, annual, San Francisco County (06075), column F; read 2026-11-26 (<https://www.fhfa.gov/hpi/download/annual/hpi_at_county.csv>)                                                   | 2007 to 2025                             | U.S. government work, public domain                                                   | 1 (its use for new apartments: an inference) |
+| C(y), cost  | DGS California Construction Cost Index (the average of ENR's Building Cost Index for San Francisco and Los Angeles), mean of the monthly values per year; read 2026-11-26 (DGS RESD page "DGS California Construction Cost Index CCCI") | 2007 to 2026 (2026: January to November) | not stated on the page; built from ENR data, so used for the fit only and not shipped | 1                                            |
+
+The assessor roll was tried first for the value index (evidence order: per record before
+official aggregates): the median value per square foot of buildings of 5 or more homes on their
+first roll after completion, by roll year. It rises from 173 to 712 dollars a square foot from
+roll year 2015 to 2025 (5 to 37 buildings a year), about four times, against the FHFA index's
+1.34 times; no sales series shows that rise, so a new building's first assessment does not track
+its market by year, and the roll is not used here (it still gives `locationValue`, an index
+against each roll year's own median).
 
 **The affordable rule** (`affordableRule`). 'most-homes' (rule A) exactly when the affordable
 cohort's mean built height ÷ limit exceeds the private mean by more than 2 SE of the difference
