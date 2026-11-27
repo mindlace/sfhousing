@@ -4,7 +4,7 @@ import { dayFromUtc, monthStart } from '../fzp/time';
 import type { Day } from '$lib/timelapse/time';
 import { NEW_GAME, type GameState, type Win } from './state';
 
-/** The version 2 ladder's years (the last LADDER_YEARS, catalogue/ladder-years.ts:4). */
+/** The version 2 ladder's years (the points build's last four deadline years). */
 export const V2_LADDER_YEARS: readonly number[] = Object.freeze([2060, 2055, 2045, 2040]);
 
 /** The last round, ROUNDS of catalogue/rounds.ts (the version 2 ladder's last rung). */

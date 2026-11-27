@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## What This Is
 
-SF Housing: a free, open-source educational game on a map of San Francisco. A new game opens with the brush: paint zoning until there is room for the homes goal, then press Start. From then on the page is the simulation tool for the whole game: the map in 3D, the timeline, Play and Pause, limited to the policies offered so far: twelve real policies arrive three a round over four rounds, and each win sets an earlier month to beat. Plans (`/p`) and policies (`/s`) are published as before. SvelteKit 2 + Svelte 5 (runes) + Tailwind 4 on a single Cloudflare Worker. Code is MIT; the data is open (ODbL / PDDL).
+SF Housing: a free, open-source educational game on a map of San Francisco. A new game opens with the brush: paint zoning until there is room for the homes goal, then press Start. From then on the page is the simulation tool for the whole game: the map in 3D, the timeline, Play and Pause, limited to the policies offered so far. Seeing current law's goal month is the first win. Each win is taken by opening the gift, which offers three of twelve real policies (three a round over four rounds), fixed until you have won with them and editable after. The target is your own best month: each win sets an earlier one to beat. After the last round every lever is open. Plans (`/p`) and policies (`/s`) are published as before. SvelteKit 2 + Svelte 5 (runes) + Tailwind 4 on a single Cloudflare Worker. Code is MIT; the data is open (ODbL / PDDL).
 
 ## Setup
 

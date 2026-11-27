@@ -168,7 +168,8 @@ export class TimelineController {
   private lastRevision = -1;
   private cells = new Map<string, Cell>();
   private queue: Slice[] = [];
-  /** Cells installed since construction (cumulative; the sim-timeline bench and the debug snapshot read it). */
+  /** Cells installed since construction (cumulative; the sim-timeline bench and the debug
+   * snapshot read it). */
   private installs = 0;
   private overlay: Layer[] = [];
   private rafHandle: number | null = null;
