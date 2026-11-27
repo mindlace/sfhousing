@@ -181,13 +181,11 @@ describe('comparisonOf (rule 22)', () => {
     const p = f.view.parcels;
     const q = twin.parcels;
     expect(p.count).toBe(q.count);
-    for (const col of ['envelopeStories', 'hostable', 'localProgram', 'yield'] as const) {
+    for (const col of ['envelopeStories', 'hostable', 'localProgram', 'fzpCap'] as const) {
       expect(Array.from(p[col] as ArrayLike<number>)).toEqual(
         Array.from(q[col] as ArrayLike<number>)
       );
     }
-    expect(Array.from(p.potentialRatio.fzp)).toEqual(Array.from(q.potentialRatio.fzp));
-    expect(Array.from(p.storiesGap.fzp)).toEqual(Array.from(q.storiesGap.fzp));
     expect(f.calibration).toEqual(twin.calibration);
     expect(f.market).toBe(twin.market?.[0].logOdds ?? 0);
     const want = buildFinance(c.input.finance, DEFAULT_LEVERS.finance, c.input.asOf)!;

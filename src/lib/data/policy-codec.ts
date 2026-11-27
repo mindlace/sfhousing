@@ -1,8 +1,9 @@
-// Wire format "sfh-policy/1": per-lot policy inputs for the /sim data layers, one row per parcel in
+// Wire format "sfh-policy/2": per-lot policy inputs for the /sim data layers, one row per parcel in
 // parcels.bin order. Pure TS and worker-safe. The pipeline writes it; the worker reads it. It sits
 // on the shared column-file layout (column-file.ts) and mirrors scenario-codec.ts, which it does
-// not touch. The decoder is bound to the parcels.bin it was built for by count, datasetVersion,
-// fillLevels and idsHash.
+// not touch. The decoder is bound to the parcels.bin it was built for by count, datasetVersion
+// and idsHash. Major 2 (building-choice) drops the fill-level yields and the FZP cap (parcels.bin
+// carries it): a layer's homes are its lots' option rows at its stories and cap.
 import type { Provenance } from '../timelapse/types';
 import type { ScenarioParcels } from './scenario-codec';
 import {
@@ -13,7 +14,7 @@ import {
   type ColType
 } from './column-file';
 
-export const POLICY_FORMAT = 'sfh-policy/1';
+export const POLICY_FORMAT = 'sfh-policy/2';
 export const NULL_CAP = 0xffff;
 export const HISTORIC_CODES = ['', 'A', 'A*', 'B', 'C'] as const; // '' = no status row
 /** Ruling 4 (spec round 2): historic protection covers A and A*. */
@@ -42,30 +43,26 @@ export type Sb79Status = (typeof SB79_STATUSES)[number];
 export type S207Status = (typeof S207_STATUSES)[number];
 
 export interface PolicyParcels {
-  format: 'sfh-policy/1';
+  format: 'sfh-policy/2';
   datasetVersion: string;
   count: number;
   idsHash: number;
-  fillLevels: number[];
   currentLawRule: 'fzp+s207.11';
   tierSource: 'mtc' | 'gtfs';
   useDistricts: string[]; // sc_zoning codes ('' = none), sorted
   provenance: Record<'useDistrict' | 'historic' | 'exemptions' | 'sb79' | 'currentLaw', Provenance>;
   useDistrict: Uint16Array; // index into useDistricts
   historic: Uint8Array; // index into HISTORIC_CODES
-  fzpYieldCap: Uint16Array; // the cap parcels.bin `yield` used; NULL_CAP = none
   todTier: Uint8Array; // 0 none, 1, 2: the tier of the standard used
   todBand: Uint8Array; // index into TOD_BANDS
   sb79Status: Uint8Array; // index into SB79_STATUSES
   sb79Stories: Uint8Array; // 0 unless 'applies'
   sb79Cap: Uint16Array; // statute du/ac × acres; NULL_CAP unless 'applies'
-  sb79Yield: Uint16Array; // count × F, capped by sb79Cap; each 0 or ≥ MIN_UNITS
   s207Status: Uint8Array; // index into S207_STATUSES
   currentStories: Uint8Array;
   currentCap: Uint16Array; // NULL_CAP = no cap
-  currentYield: Uint16Array; // count × F
-  hostableSb79: Uint8Array; // flags bit 0
-  hostableCurrent: Uint8Array; // flags bit 1
+  hostableSb79: Uint8Array; // flags bit 0: 'applies' (an option there gains MIN_UNITS homes or more)
+  hostableCurrent: Uint8Array; // flags bit 1: eligible, ≥ 1 story and an option there gains a home
   currentFromS207: Uint8Array; // flags bit 2
   exemptPermanent: Uint8Array; // flags bit 3: Ord. 082-26 §3 table
   exemptTemporary: Uint8Array; // flags bit 4: Ord. 082-26 §4 table
@@ -80,7 +77,7 @@ const fail = (msg: string): never => {
 };
 
 const MAGIC = 'SFHP';
-const MAJOR = 1;
+const MAJOR = 2;
 const PROVENANCE_KEYS = ['useDistrict', 'historic', 'exemptions', 'sb79', 'currentLaw'] as const;
 // flags bits 0-5 in order; bits 6-7 are reserved and must be 0.
 const FLAG_ARRAYS = [
@@ -97,7 +94,6 @@ const HEADER_KEYS = [
   'datasetVersion',
   'count',
   'idsHash',
-  'fillLevels',
   'currentLawRule',
   'tierSource',
   'useDistricts',
@@ -107,11 +103,10 @@ const HEADER_KEYS = [
   's207Statuses',
   'provenance'
 ] as const;
-/** Columns in file order. `perFill`: F values per row instead of one. */
-const COLUMNS: { name: string; type: ColType; perFill?: true }[] = [
+/** Columns in file order. */
+const COLUMNS: { name: string; type: ColType }[] = [
   { name: 'useDistrict', type: 'u16' },
   { name: 'historic', type: 'u8' },
-  { name: 'fzpYieldCap', type: 'u16' },
   { name: 'todTier', type: 'u8' },
   { name: 'todBand', type: 'u8' },
   { name: 'sb79Status', type: 'u8' },
@@ -120,9 +115,7 @@ const COLUMNS: { name: string; type: ColType; perFill?: true }[] = [
   { name: 's207Status', type: 'u8' },
   { name: 'flags', type: 'u8' },
   { name: 'currentStories', type: 'u8' },
-  { name: 'currentCap', type: 'u16' },
-  { name: 'sb79Yield', type: 'u16', perFill: true },
-  { name: 'currentYield', type: 'u16', perFill: true }
+  { name: 'currentCap', type: 'u16' }
 ];
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -134,7 +127,6 @@ const sameList = (a: unknown, b: readonly unknown[]) =>
 /** Shared by encode and decode: lengths, 0/1 flags, dictionary indices, sorted districts, historicProtected. */
 function checkColumns(p: PolicyParcels): void {
   const n = p.count;
-  const F = p.fillLevels.length;
   const len = (name: string, a: ArrayLike<number>, want: number) => {
     if (a.length !== want) fail(`${name} has ${a.length} values, want ${want}`);
   };
@@ -145,7 +137,6 @@ function checkColumns(p: PolicyParcels): void {
   const single = [
     'useDistrict',
     'historic',
-    'fzpYieldCap',
     'todTier',
     'todBand',
     'sb79Status',
@@ -157,8 +148,6 @@ function checkColumns(p: PolicyParcels): void {
     ...FLAG_ARRAYS
   ] as const;
   for (const k of single) len(k, p[k], n);
-  len('sb79Yield', p.sb79Yield, n * F);
-  len('currentYield', p.currentYield, n * F);
   for (const k of FLAG_ARRAYS)
     for (let i = 0; i < n; i++) if (p[k][i] > 1) fail(`${k}[${i}] = ${p[k][i]} is not 0 or 1`);
   index('useDistrict', p.useDistrict, p.useDistricts.length);
@@ -187,7 +176,6 @@ export function encodePolicyPayload(p: PolicyParcels): Uint8Array {
     datasetVersion: p.datasetVersion,
     count: n,
     idsHash: p.idsHash,
-    fillLevels: p.fillLevels,
     currentLawRule: p.currentLawRule,
     tierSource: p.tierSource,
     useDistricts: p.useDistricts,
@@ -207,7 +195,7 @@ export function encodePolicyPayload(p: PolicyParcels): Uint8Array {
   );
 } // deterministic
 
-type Bound = Pick<ScenarioParcels, 'count' | 'id' | 'datasetVersion' | 'fillLevels'>;
+type Bound = Pick<ScenarioParcels, 'count' | 'id' | 'datasetVersion'>;
 
 export function decodePolicyPayload(bytes: Uint8Array, parcels: Bound): PolicyParcels {
   const file = openColumnFile(
@@ -230,8 +218,6 @@ export function decodePolicyPayload(bytes: Uint8Array, parcels: Bound): PolicyPa
     fail(`count ${n} is not parcels.bin's ${parcels.count}`);
   if (!isInt(hd.idsHash)) fail('idsHash is not an integer');
   if (hd.idsHash !== idsHash(parcels.id)) fail('idsHash differs: built for another parcels.bin');
-  if (!sameList(hd.fillLevels, parcels.fillLevels)) fail('fillLevels differ from parcels.bin');
-  const F = parcels.fillLevels.length;
   if (hd.currentLawRule !== 'fzp+s207.11')
     fail(`unknown currentLawRule ${String(hd.currentLawRule)}`);
   if (hd.tierSource !== 'mtc' && hd.tierSource !== 'gtfs')
@@ -255,7 +241,7 @@ export function decodePolicyPayload(bytes: Uint8Array, parcels: Bound): PolicyPa
   }
 
   const u8 = (name: string) => file.read(name, 'u8', n) as Uint8Array;
-  const u16 = (name: string, len = n) => file.read(name, 'u16', len) as Uint16Array;
+  const u16 = (name: string) => file.read(name, 'u16', n) as Uint16Array;
   const flags = u8('flags');
   for (let i = 0; i < n; i++)
     if (flags[i] & FLAGS_RESERVED) fail(`flags[${i}] = ${flags[i]} sets a reserved bit`);
@@ -265,24 +251,20 @@ export function decodePolicyPayload(bytes: Uint8Array, parcels: Bound): PolicyPa
     datasetVersion: hd.datasetVersion as string,
     count: n,
     idsHash: hd.idsHash as number,
-    fillLevels: [...parcels.fillLevels],
     currentLawRule: 'fzp+s207.11',
     tierSource: hd.tierSource as 'mtc' | 'gtfs',
     useDistricts: useDistricts as string[],
     provenance,
     useDistrict: u16('useDistrict'),
     historic: u8('historic'),
-    fzpYieldCap: u16('fzpYieldCap'),
     todTier: u8('todTier'),
     todBand: u8('todBand'),
     sb79Status: u8('sb79Status'),
     sb79Stories: u8('sb79Stories'),
     sb79Cap: u16('sb79Cap'),
-    sb79Yield: u16('sb79Yield', n * F),
     s207Status: u8('s207Status'),
     currentStories: u8('currentStories'),
     currentCap: u16('currentCap'),
-    currentYield: u16('currentYield', n * F),
     hostableSb79: bit(0),
     hostableCurrent: bit(1),
     currentFromS207: bit(2),

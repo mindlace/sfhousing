@@ -1,5 +1,6 @@
 // The policy step (writePolicy, 82_policy.sql) on the mini database: use district, historic status,
-// exemptions and the FZP yield cap, in parcels.bin row order (the helpers.ts pattern).
+// exemptions and the SB 79 and current-law layers on the options, in parcels.bin row order (the
+// helpers.ts pattern).
 import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,7 @@ import {
   S207_STATUSES,
   type PolicyParcels
 } from '../../src/lib/data/policy-codec';
+import { optionsOfRow, topHomesAt, type OptionTops } from '../../src/lib/data/envelope-row';
 import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import type { Duck } from '../lib/duck';
 import { readLock } from '../lib/lock';
@@ -22,6 +24,7 @@ import { asOfFromLock } from '../project-records/parse';
 import { readParcelRecords } from '../steps/chunks';
 import { unitsFor } from '../lib/sb79';
 import { MUNI_TIER2_STOP_IDS } from '../sb79-config';
+import { candidateTops } from '../steps/options';
 import { readPolicyBin, writePolicy } from '../steps/policy';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { MINI, miniDuck } from './helpers';
@@ -46,6 +49,8 @@ let pol: PolicyParcels;
 let counts: Record<string, number>;
 let buildCounts: Record<string, number>;
 let zoning: Map<string, string>;
+let tops: OptionTops;
+const optionsOf = (i: number) => optionsOfRow(tops, i);
 
 beforeAll(async () => {
   db = await miniDuck();
@@ -55,7 +60,7 @@ beforeAll(async () => {
   const root = mkdtempSync(join(tmpdir(), 'sfh-policy-step-'));
   const outDir = join(root, 'out');
   buildCounts = {};
-  await writeScenario({
+  const scenario = await writeScenario({
     db,
     outDir,
     derivedDir: join(root, 'derived'),
@@ -65,6 +70,7 @@ beforeAll(async () => {
     report: new Report(),
     buildCounts
   });
+  tops = candidateTops(scenario.candidates.lots);
   // The transit step's output, as build writes it before the policy step.
   mkdirSync(outDir, { recursive: true });
   copyFileSync(join(MINI, 'golden', 'transit.json'), join(outDir, 'transit.json'));
@@ -74,7 +80,8 @@ beforeAll(async () => {
     datasetVersion: 'fixture-0',
     records,
     capDay,
-    buildCounts
+    buildCounts,
+    options: tops
   }));
   s = readParcelsBin(join(outDir, PARCELS_BIN));
   pol = readPolicyBin(join(outDir, POLICY_BIN), s);
@@ -124,13 +131,11 @@ describe('writePolicy on the mini fixture', () => {
   });
 
   const s207 = (id: string) => S207_STATUSES[pol.s207Status[row(id)]];
-  const F = () => s.fillLevels.length;
   const current = (id: string) => {
     const i = row(id);
     return {
       stories: pol.currentStories[i],
       cap: pol.currentCap[i],
-      yield: Array.from(pol.currentYield.subarray(i * F(), (i + 1) * F())),
       hostable: pol.hostableCurrent[i],
       fromS207: pol.currentFromS207[i]
     };
@@ -139,12 +144,14 @@ describe('writePolicy on the mini fixture', () => {
     const i = row(id);
     return {
       stories: s.envelopeStories[i],
-      cap: pol.fzpYieldCap[i],
-      yield: Array.from(s.yield.subarray(i * F(), (i + 1) * F())),
+      cap: s.fzpCap[i],
       hostable: s.hostable[i],
       fromS207: 0
     };
   };
+  /** Row i's most homes within the layer's stories and cap (rule A, the step's options). */
+  const topOf = (i: number, stories: number, cap: number) =>
+    topHomesAt(optionsOf(i), stories, cap === NULL_CAP ? null : cap, s.existingUnits[i]);
 
   it('raises lot 17 (RH-2, 30 ft, tier 1 half band) to 40 ft under §207.11', () => {
     expect(s207(LOT[17])).toBe('applies');
@@ -159,7 +166,7 @@ describe('writePolicy on the mini fixture', () => {
   it('applies §207.11 on lot 18: its RM-1 cap is below half the adjacent tier 1 density', () => {
     // Planning's (b)(8): 0.5 × 160 du/ac on 300 m² is 6 homes; RM-1 permits 4.
     const i = row(LOT[18]);
-    expect(pol.fzpYieldCap[i]).toBeLessThan(unitsFor(80, s.lotAreaM2[i], 1, 'round'));
+    expect(s.fzpCap[i]).toBeLessThan(unitsFor(80, s.lotAreaM2[i], 1, 'round'));
     expect(s207(LOT[18])).toBe('applies');
     expect(current(LOT[18]).cap).toBe(unitsFor(160, s.lotAreaM2[i], 0.5, 'round'));
     expect(current(LOT[18]).fromS207).toBe(1);
@@ -189,11 +196,11 @@ describe('writePolicy on the mini fixture', () => {
     expect(counts['policy.s207.not-eligible']).toBe(8);
     expect(counts['policy.s207.base_ft_mismatch']).toBe(0);
     expect(counts['policy.current.from_s207']).toBe(2);
-    expect(counts['policy.current.yield_mismatch']).toBe(0);
+    expect(counts['policy.current.fzp_mismatch']).toBe(0);
     let net = 0;
     for (let k = 0; k < pol.count; k++)
       if (pol.hostableCurrent[k])
-        net += Math.max(0, pol.currentYield[(k + 1) * F() - 1] - s.existingUnits[k]);
+        net += Math.max(0, topOf(k, pol.currentStories[k], pol.currentCap[k]) - s.existingUnits[k]);
     expect(counts['policy.current.net_capacity']).toBe(net);
   });
 
@@ -236,8 +243,6 @@ describe('writePolicy on the mini fixture', () => {
       if (applies) continue;
       expect(pol.sb79Stories[i], s.id[i]).toBe(0);
       expect(pol.sb79Cap[i], s.id[i]).toBe(NULL_CAP);
-      for (let k = 0; k < s.fillLevels.length; k++)
-        expect(pol.sb79Yield[i * s.fillLevels.length + k]).toBe(0);
     }
   });
 
@@ -260,17 +265,24 @@ describe('writePolicy on the mini fixture', () => {
     );
   });
 
-  it('has no FZP yield cap on Local Program rows', () => {
+  it("reads parcels.bin's FZP cap: none on Local Program rows", () => {
     let lp = 0;
     for (let i = 0; i < s.count; i++)
       if (s.localProgram[i]) {
         lp++;
-        expect(pol.fzpYieldCap[i], s.id[i]).toBe(NULL_CAP);
+        expect(s.fzpCap[i], s.id[i]).toBe(NULL_CAP);
       }
     expect(lp).toBeGreaterThan(0);
     // Off the Local Program the cap is the zoning's: lot 18 is RM-1 outside R-4.
     expect(s.localProgram[row(LOT[18])]).toBe(0);
-    expect(pol.fzpYieldCap[row(LOT[18])]).not.toBe(NULL_CAP);
+    expect(s.fzpCap[row(LOT[18])]).not.toBe(NULL_CAP);
+  });
+
+  it('gives every SB 79 applies row an option of at least MIN_UNITS within its envelope', () => {
+    for (let i = 0; i < pol.count; i++) {
+      if (SB79_STATUSES[pol.sb79Status[i]] !== 'applies') continue;
+      expect(topOf(i, pol.sb79Stories[i], pol.sb79Cap[i]), s.id[i]).toBeGreaterThanOrEqual(5);
+    }
   });
 
   it('reports sd.historic.no-row and sd.exempt.unmatched', () => {

@@ -1,24 +1,18 @@
-// Wire format "sfh-scenario/1" (scenario-data spec §4.8): `scenarios/fzp/parcels.bin`. Pure TS,
-// worker-safe: its value imports are the generator's constants-only module and policy-codec's
-// NULL_CAP. The pipeline writes
-// it and the timelapse worker reads it. The declarations below the imports are step 0 and fixed,
-// except what spec §2 authorises (RA1, IA-8): `existingFloorAreaM2`, `scenarioRecordFrom`,
+// Wire format "sfh-scenario/2" (scenario-data spec §4.8; building-choice: the fill-level yields
+// gave way to the option rows of options.bin and the FZP cap column): `scenarios/fzp/parcels.bin`.
+// Pure TS, worker-safe: its one value import is the generator's constants-only module. The
+// pipeline writes it and the timelapse worker reads it. The declarations below the imports are
+// step 0 and fixed, except what spec §2 authorises (RA1, IA-8), the building-choice change and: `existingFloorAreaM2`, `scenarioRecordFrom`,
 // `scenarioRecordOf` and the mask comment; and, by the T11 option 1 ruling (scenario eligibility,
 // T14 sd.landuse.none-with-units), the `eligible` flag (flags bit 5), which `scenarioRecordFrom`
 // and `scenarioRecordOf` now also replace, and the flags comment.
 import type { FeatureId, Provenance } from '../timelapse/types';
 import type { ParcelId, ParcelRecord } from './parcel';
 import type { Envelope } from '../plan/types';
-import { NULL_CAP } from './policy-codec';
 // 3.1 m, the generator's floor-to-floor height (tier 3); constants only, so no generator code.
 import { FTF_M } from '../generator/constants';
 
-export const SCENARIO_FORMAT = 'sfh-scenario/1';
-/** T4b fill levels; F = FILL_LEVELS.length = 5. stage-calibration imports this constant. */
-export const FILL_LEVELS = [0.25, 0.5, 0.75, 0.9, 1] as const;
-/** The T4b proposal rule, shared so the pipeline and the worker round identically. */
-export const fillStories = (fill: number, maxStories: number) =>
-  Math.max(1, Math.round(fill * maxStories));
+export const SCENARIO_FORMAT = 'sfh-scenario/2';
 export const LAND_USE_CLASSES = [
   'residential',
   'mixed',
@@ -31,16 +25,15 @@ export type LandUseClass = (typeof LAND_USE_CLASSES)[number];
 
 /** Decoded T11 (T5's `ScenarioParcels`). Struct of arrays; row i is one parcel; rows sorted by (cellId, id). */
 export interface ScenarioParcels {
-  format: 'sfh-scenario/1';
+  format: 'sfh-scenario/2';
   datasetVersion: string;
   scenario: 'fzp';
   rollYear: number; // latest closed_roll_year the features come from
   count: number;
-  fillLevels: number[];
   cells: { cellId: string; start: number; count: number }[];
   districts: string[]; // normalised height strings; '' = no district
   provenance: Record<
-    'envelope' | 'localProgram' | 'features' | 'existingUnits' | 'yield',
+    'envelope' | 'localProgram' | 'features' | 'existingUnits' | 'cap',
     Provenance
   >;
   id: string[];
@@ -51,9 +44,9 @@ export interface ScenarioParcels {
   envelopeStories: Uint8Array; // T11 envelope.maxStories (0 = no envelope)
   baseStories: Uint8Array;
   localProgram: Uint8Array; // 0/1
-  hostable: Uint8Array; // 0/1: may receive a simulated project
+  hostable: Uint8Array; // 0/1: eligible, ≥ 1 story, an option there tops the homes now (no cap)
   // 0/1: scenario eligibility (flags bit 5); can differ from the chunk's eligible
-  // (sd.landuse.none-with-units). It is the value the yields and the hostable flags used: the chunk
+  // (sd.landuse.none-with-units). It is the value the options and the hostable flags used: the chunk
   // record's `eligible`, or, for a parcel with no land-use record (`landUse` 'NONE'), assessor
   // units > 0 on the latest roll.
   eligible: Uint8Array;
@@ -66,28 +59,24 @@ export interface ScenarioParcels {
   imputed: Uint8Array;
   baseCap: Uint16Array; // T11 base-zoning density cap in units; 0xFFFF = null (no cap)
   existingUnits: Uint16Array; // latest roll, post-T14
-  existingFloorAreaM2: Uint32Array; // whole m²: the value the yields used (RA1, IA-8)
+  existingFloorAreaM2: Uint32Array; // whole m²: the value the options used (RA1, IA-8)
   existingStories: Uint8Array;
   lotAreaM2: Uint32Array;
   yearBuilt: Uint16Array;
   improvementShare: Float32Array;
   rentControlLikely: Uint8Array;
   landUseClass: Uint8Array; // index into LAND_USE_CLASSES
-  hostableBase: Uint8Array; // 0/1: T11 hostable_base (eligible, baseStories ≥ 1, uncapped base yield at full fill > 0)
-  // The unit cap the FZP envelope's options are clipped by (NULL_CAP = none); a view's cap in the
-  // fzp slot. Not on the wire yet: decode gives NULL_CAP and the loader binds policy.bin's
-  // `fzpYieldCap` (the same cap), until parcels.bin carries the column.
+  hostableBase: Uint8Array; // 0/1: T11 hostable_base, the same rule at baseStories
+  // The unit cap the FZP envelope's options are clipped by (NULL_CAP = none): none on a Local
+  // Program parcel, the density cap on the build's snapshot day elsewhere. A view's cap in the fzp
+  // slot.
   fzpCap: Uint16Array;
-  baseYield: Uint16Array; // count × F: gross units at each fill level of the base envelope, density-capped
-  yield: Uint16Array; // count × F, row-major: yield[i * F + k]
-  potentialRatio: { fzp: Float32Array; base: Float32Array }; // derived at decode
-  storiesGap: { fzp: Int16Array; base: Int16Array }; // derived at decode
 }
 // Payload layout (little-endian): "SFHS" | u16 major | u16 reserved | u32 headerLen H | header
 // JSON (H bytes, zero-padded so the columns start on a multiple of 8) | columns. Column offsets
 // in the header are absolute from the payload start, each a multiple of 8.
 const MAGIC = [0x53, 0x46, 0x48, 0x53]; // "SFHS"
-const MAJOR = 1;
+const MAJOR = 2;
 const PRELUDE = 12;
 const SHARE_SCALE = 200; // improvementShare u8 = round(share × 200): the tier-4 quantisation grid, spec §4.8 (AC 11)
 const DEG_SCALE = 1e7; // label points as i32 degrees × 1e7, spec §4.8
@@ -102,7 +91,7 @@ const RANGE: Record<ColType, [number, number]> = {
   u32: [0, 0xffffffff]
 };
 /** Columns in file order. `per`: values per row ('id' = the concatenated suffix bytes). */
-const COLUMNS: { name: string; type: ColType; per: 1 | 'F' | 'id' }[] = [
+const COLUMNS: { name: string; type: ColType; per: 1 | 'id' }[] = [
   { name: 'idPrefix', type: 'u8', per: 1 },
   { name: 'idSuffixLen', type: 'u8', per: 1 },
   { name: 'idSuffix', type: 'u8', per: 'id' },
@@ -122,8 +111,7 @@ const COLUMNS: { name: string; type: ColType; per: 1 | 'F' | 'id' }[] = [
   { name: 'improvementShare', type: 'u8', per: 1 },
   { name: 'landUseClass', type: 'u8', per: 1 },
   { name: 'baseCap', type: 'u16', per: 1 },
-  { name: 'baseYield', type: 'u16', per: 'F' },
-  { name: 'yield', type: 'u16', per: 'F' }
+  { name: 'fzpCap', type: 'u16', per: 1 }
 ];
 // flags bits, spec §4.8: bit 0 localProgram, bit 1 rentControlLikely, bit 2 hostable, bit 3 split,
 // bit 4 hostableBase, bit 5 eligible (scenario eligibility); bits 6–7 are 0.
@@ -138,14 +126,13 @@ const FLAG_BITS = [
 /** Reserved bits, spec §4.8: `flags` bits 6-7 and `imputed` bit 7 must be 0. */
 const FLAGS_RESERVED = 0xff & ~((1 << FLAG_BITS.length) - 1);
 const IMPUTED_RESERVED = 0x80;
-const PROVENANCE_KEYS = ['envelope', 'localProgram', 'features', 'existingUnits', 'yield'] as const;
+const PROVENANCE_KEYS = ['envelope', 'localProgram', 'features', 'existingUnits', 'cap'] as const;
 const HEADER_KEYS = [
   'format',
   'datasetVersion',
   'scenario',
   'rollYear',
   'count',
-  'fillLevels',
   'cells',
   'districts',
   'landUseClasses',
@@ -168,16 +155,6 @@ function inRange(a: ArrayLike<number>, name: string, size: number): void {
 function noReserved(a: ArrayLike<number>, name: string, reserved: number): void {
   for (let i = 0; i < a.length; i++)
     if (a[i] & reserved) fail(`${name}[${i}] = ${a[i]} sets reserved bits`);
-}
-
-function checkFillLevels(f: unknown): number[] {
-  if (!Array.isArray(f) || f.length === 0 || !f.every((v) => typeof v === 'number'))
-    fail('fillLevels is not a non-empty number array');
-  const levels = f as number[];
-  for (let k = 1; k < levels.length; k++)
-    if (!(levels[k] > levels[k - 1])) fail(`fillLevels not ascending at ${k}`);
-  if (levels[levels.length - 1] !== 1) fail('fillLevels does not end at 1');
-  return levels;
 }
 
 function put(
@@ -210,8 +187,6 @@ function get(dv: DataView, type: ColType, offset: number, i: number): number {
 export function encodeScenarioPayload(p: ScenarioParcels): Uint8Array {
   const n = p.count;
   if (!isInt(n)) fail(`count ${n} is not a non-negative integer`);
-  const fillLevels = checkFillLevels(p.fillLevels);
-  const F = fillLevels.length;
   if (p.id.length !== n) fail(`id has ${p.id.length} entries, want ${n}`);
   inRange(p.cell, 'cell', p.cells.length);
   inRange(p.district, 'district', p.districts.length);
@@ -280,8 +255,7 @@ export function encodeScenarioPayload(p: ScenarioParcels): Uint8Array {
     improvementShare: share,
     landUseClass: p.landUseClass,
     baseCap: p.baseCap,
-    baseYield: p.baseYield,
-    yield: p.yield
+    fzpCap: p.fzpCap
   };
 
   // Lay the columns out relative to the column section, then find the section start: the
@@ -290,7 +264,7 @@ export function encodeScenarioPayload(p: ScenarioParcels): Uint8Array {
   const rel: number[] = [];
   let end = 0;
   for (const c of COLUMNS) {
-    const want = c.per === 'id' ? suffix.length : c.per === 'F' ? n * F : n;
+    const want = c.per === 'id' ? suffix.length : n;
     if (values[c.name].length !== want)
       fail(`${c.name} has ${values[c.name].length} values, want ${want}`);
     end = align8(end);
@@ -305,7 +279,6 @@ export function encodeScenarioPayload(p: ScenarioParcels): Uint8Array {
         scenario: p.scenario,
         rollYear: p.rollYear,
         count: n,
-        fillLevels,
         cells: p.cells.map((c) => ({ cellId: c.cellId, start: c.start, count: c.count })),
         districts: p.districts,
         landUseClasses: LAND_USE_CLASSES,
@@ -341,7 +314,7 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
   if (MAGIC.some((m, k) => bytes[k] !== m)) fail('bad magic: not an sfh-scenario payload');
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const major = dv.getUint16(4, true);
-  if (major !== MAJOR) fail(`unsupported major version ${major}`);
+  if (major !== MAJOR) fail(`unsupported major ${major} (this decoder reads major ${MAJOR})`);
   const H = dv.getUint32(8, true);
   if (PRELUDE + H > bytes.length) fail(`header length ${H} runs past the payload`);
   let h: unknown;
@@ -361,8 +334,6 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
   if (!isInt(hd.rollYear)) fail('rollYear is not an integer');
   if (!isInt(hd.count)) fail('count is not a non-negative integer');
   const n = hd.count as number;
-  const fillLevels = checkFillLevels(hd.fillLevels);
-  const F = fillLevels.length;
 
   if (!Array.isArray(hd.cells)) fail('cells is not an array');
   let next = 0;
@@ -419,7 +390,7 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     if (c.per === 'id') {
       want = 0;
       for (let i = 0; i < n; i++) want += get(dv, 'u8', col.idSuffixLen, i);
-    } else want = (c.per === 'F' ? n * F : n) * SIZE[c.type];
+    } else want = n * SIZE[c.type];
     if (byteLength !== want) fail(`column ${c.name} is ${byteLength} bytes, want ${want}`);
     col[c.name] = offset;
     free = offset + byteLength;
@@ -483,18 +454,6 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
   const baseStories = read(Uint8Array, 'baseStories');
   const existingUnits = read(Uint16Array, 'existingUnits');
   const existingStories = read(Uint8Array, 'existingStories');
-  const baseYield = read(Uint16Array, 'baseYield', n * F);
-  const yieldCol = read(Uint16Array, 'yield', n * F);
-  const ratio = (y: Uint16Array) => {
-    const a = new Float32Array(n);
-    for (let i = 0; i < n; i++) a[i] = y[i * F + F - 1] / Math.max(existingUnits[i], 1);
-    return a;
-  };
-  const gap = (s: Uint8Array) => {
-    const a = new Int16Array(n);
-    for (let i = 0; i < n; i++) a[i] = s[i] - existingStories[i];
-    return a;
-  };
 
   return {
     format: SCENARIO_FORMAT,
@@ -502,7 +461,6 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     scenario: 'fzp',
     rollYear: hd.rollYear as number,
     count: n,
-    fillLevels,
     cells,
     districts: districts as string[],
     provenance,
@@ -528,11 +486,7 @@ export function decodeScenarioPayload(bytes: Uint8Array): ScenarioParcels {
     rentControlLikely: flag(1),
     landUseClass,
     hostableBase: flag(4),
-    fzpCap: new Uint16Array(n).fill(NULL_CAP),
-    baseYield,
-    yield: yieldCol,
-    potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },
-    storiesGap: { fzp: gap(envelopeStories), base: gap(baseStories) }
+    fzpCap: read(Uint16Array, 'fzpCap')
   };
 } // sync; throws ScenarioFormatError
 
@@ -584,22 +538,20 @@ export interface ChoiceFeatures {
 }
 
 /**
- * Feature `f` of row i. The three choice features come from `choice` (the choice row at the
- * view's cap, the run time's per cost step); without it `potentialRatio` and `storiesGap` read
- * the decoded columns and `choiceMargin` throws.
+ * Feature `f` of row i. The three choice features come from `choice`, the lot's choice row at its
+ * envelope and cap (`choiceFeatures`, the run time's per cost step); the others from the columns.
  */
 export function featureValue(
   p: ScenarioParcels,
   i: number,
   f: FeatureId,
-  env: 'fzp' | 'base',
-  choice?: ChoiceFeatures
+  choice: ChoiceFeatures
 ): number {
   switch (f) {
     case 'potentialRatio':
-      return choice ? choice.potentialRatio : p.potentialRatio[env][i];
     case 'storiesGap':
-      return choice ? choice.storiesGap : p.storiesGap[env][i];
+    case 'choiceMargin':
+      return choice[f];
     case 'existingUnits':
     case 'lotAreaM2':
     case 'yearBuilt':
@@ -607,8 +559,6 @@ export function featureValue(
     case 'rentControlLikely':
     case 'landUseClass':
       return p[f][i];
-    case 'choiceMargin':
-      return choice ? choice.choiceMargin : fail('choiceMargin needs the choice row');
     default:
       return fail(`unknown feature ${String(f satisfies never)}`);
   }

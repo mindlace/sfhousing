@@ -2,8 +2,7 @@
 // network, distance bands, zone classes, the tallest standard within reach and the per-lot row,
 // capped at the statute density. Every parameter is in pipeline/sb79-config.ts with its cite.
 import type { Sb79Status } from '../../src/lib/data/policy-codec';
-import { FILL_LEVELS, fillStories } from '../../src/lib/data/scenario-codec';
-import { capScenarioYield } from '../../src/lib/data/scenario-yield';
+import { topHomesAt, type OptionSize } from '../../src/lib/data/envelope-row';
 import type { TransitNetwork } from '../../src/lib/data/transit';
 import {
   BAND_MAX_M,
@@ -151,10 +150,11 @@ export function rentControlExcluded(rentControlLikely: boolean, existingUnits: n
 /**
  * One lot under SB 79 as written. Statuses in precedence order: `outside` (no stop within ½
  * mile), `not-eligible` (not scenario-eligible), `zone` (excluded or unlisted zoning),
- * `rent-control` (rentControlExcluded), then the statute envelope: `storiesFromFt(heightFt)` stories and a cap of
- * `unitsFor(duPerAcre, lotAreaM2)`, each fill level's yield capped (capScenarioYield) and zeroed
- * below MIN_UNITS; a zero top yield is `min-units`, else `applies`. Every status but `applies`
- * has 0 stories, a null cap and zero yields. `uncappedTop` is the full-fill gross before the cap.
+ * `rent-control` (rentControlExcluded), then the statute envelope: `storiesFromFt(heightFt)`
+ * stories and a cap of `unitsFor(duPerAcre, lotAreaM2)`. `top` is the most homes among the lot's
+ * `options` at or below those stories after the cap (`topHomesAt`, rule A); under MIN_UNITS it is
+ * `min-units`, else `applies`. Every status but `applies` has 0 stories, a null cap and top 0.
+ * `uncappedTop` is the same most homes before the cap.
  */
 export function sb79Row(a: {
   best: { tier: Sb79Tier; band: TodBand } | null;
@@ -163,19 +163,19 @@ export function sb79Row(a: {
   rentControlLikely: boolean;
   lotAreaM2: number;
   existingUnits: number;
-  grossAt: (stories: number) => number;
+  options: readonly OptionSize[];
 }): {
   status: Sb79Status;
   stories: number;
   cap: number | null;
-  yield: number[];
+  top: number;
   uncappedTop: number;
 } {
   const none = (status: Sb79Status, uncappedTop = 0) => ({
     status,
     stories: 0,
     cap: null,
-    yield: FILL_LEVELS.map(() => 0),
+    top: 0,
     uncappedTop
   });
   if (a.best === null) return none('outside');
@@ -185,11 +185,8 @@ export function sb79Row(a: {
   const std = STANDARDS[a.best.tier][a.best.band];
   const stories = storiesFromFt(std.heightFt);
   const cap = unitsFor(std.duPerAcre, a.lotAreaM2);
-  const yields = FILL_LEVELS.map((f) => {
-    const y = capScenarioYield(a.grossAt(fillStories(f, stories)), cap, a.existingUnits);
-    return y < MIN_UNITS ? 0 : y;
-  });
-  const uncappedTop = a.grossAt(fillStories(FILL_LEVELS[FILL_LEVELS.length - 1], stories));
-  if (yields[yields.length - 1] < MIN_UNITS) return none('min-units', uncappedTop);
-  return { status: 'applies', stories, cap, yield: yields, uncappedTop };
+  const top = topHomesAt(a.options, stories, cap, a.existingUnits);
+  const uncappedTop = topHomesAt(a.options, stories, null, 0);
+  if (top < MIN_UNITS) return none('min-units', uncappedTop);
+  return { status: 'applies', stories, cap, top, uncappedTop };
 }

@@ -406,7 +406,7 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
         const choice = featuresOf(e, existing, p.existingStories[i]);
         let finite = true;
         for (const term of model.terms) {
-          const v = featureValue(p, i, term.feature, 'fzp', choice);
+          const v = featureValue(p, i, term.feature, choice);
           if (!Number.isFinite(v)) {
             // a lot counts once, at whichever step its feature is non-finite
             if (!counted) {

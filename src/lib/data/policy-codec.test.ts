@@ -37,7 +37,7 @@ function columnAt(name: string): number {
   return h.columns.find((c: { name: string }) => c.name === name).offset;
 }
 
-describe('sfh-policy/1 codec', () => {
+describe('sfh-policy/2 codec', () => {
   it('round-trips the tiny policy file byte-identically', () => {
     const d = decodePolicyPayload(bytes, tiny);
     expect(encodePolicyPayload(d)).toEqual(bytes);
@@ -50,7 +50,7 @@ describe('sfh-policy/1 codec', () => {
     expect(new Set(d.s207Status).size).toBe(tiny.count);
     expect(S207_STATUSES.length).toBeGreaterThan(tiny.count);
     expect(d.currentFromS207).toContain(1);
-    expect(d.fzpYieldCap).toContain(NULL_CAP);
+    expect(d.currentCap).toContain(NULL_CAP);
     expect(d.exemptPermanent).toContain(1);
     expect(d.exemptTemporary).toContain(1);
     const hist = Array.from(d.historic, (k) => HISTORIC_CODES[k]);
@@ -73,9 +73,6 @@ describe('sfh-policy/1 codec', () => {
     ).toThrow(/idsHash/);
     expect(() => decodePolicyPayload(bytes, { ...tiny, datasetVersion: 'fixture-9' })).toThrow(
       /datasetVersion/
-    );
-    expect(() => decodePolicyPayload(bytes, { ...tiny, fillLevels: [0.5, 1] })).toThrow(
-      /fillLevels/
     );
   });
 
@@ -109,8 +106,8 @@ describe('sfh-policy/1 codec', () => {
     magic[0] = 0x58;
     expect(() => decodePolicyPayload(magic, tiny)).toThrow(/bad magic/);
     const major = bytes.slice();
-    major[4] = 2;
-    expect(() => decodePolicyPayload(major, tiny)).toThrow(/major version/);
+    major[4] = 1; // the fill-level format
+    expect(() => decodePolicyPayload(major, tiny)).toThrow(/unsupported major version 1/);
     expect(() =>
       decodePolicyPayload(
         patchHeader((h) => (h.format = 'sfh-policy/9')),
@@ -166,8 +163,8 @@ describe('sfh-policy/1 codec', () => {
     expect(() => encodePolicyPayload(with_({ sb79Cap: new Uint16Array(2) }))).toThrow(
       PolicyFormatError
     );
-    expect(() => encodePolicyPayload(with_({ sb79Yield: new Uint16Array(3) }))).toThrow(
-      /sb79Yield/
+    expect(() => encodePolicyPayload(with_({ currentCap: new Uint16Array(3) }))).toThrow(
+      /currentCap/
     );
     expect(() =>
       encodePolicyPayload(with_({ hostableSb79: Uint8Array.of(2, 0, 0, 0, 0, 0) }))

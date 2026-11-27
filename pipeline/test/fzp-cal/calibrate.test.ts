@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { FILL_LEVELS, type ScenarioParcels } from '../../../src/lib/data/scenario-codec';
+import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
 import { parseCalibration } from '../../../src/lib/timelapse/model';
 import type { InFlightProject } from '../../../src/lib/timelapse/projects';
 import {
@@ -167,7 +167,6 @@ beforeAll(async () => {
     options: readOptionsBin(FIXTURE_OPTIONS),
     panelOptions: optionTableOf('test-0', []),
     locationValue: LOCATION_VALUE,
-    fillLevels: FILL_LEVELS,
     datasetVersion: 'test-0',
     market: { file: marketFile, path: 'market.json' },
     funding: fundingFile,
@@ -187,7 +186,6 @@ describe('calibrate', () => {
       'initiation',
       'pathwayForNew',
       'ppaShare',
-      'size',
       'revision',
       'streamlinedForLocalProgram',
       'phaseGap',
@@ -415,8 +413,7 @@ describe('calibrate', () => {
     const hostable = [...parcels.hostable.keys()].filter((i) => parcels.hostable[i] === 1);
     expect(app.hostable).toEqual(hostable.filter((i) => parcels.id[i] !== parcels.id[0]));
     const i = hostable[0];
-    const cap =
-      parcels.localProgram[i] === 1 || parcels.baseCap[i] === 0xffff ? null : parcels.baseCap[i];
+    const cap = parcels.fzpCap[i] === 0xffff ? null : parcels.fzpCap[i];
     const want = choiceFeatures(
       ctx,
       0,

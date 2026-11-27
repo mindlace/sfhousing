@@ -91,7 +91,6 @@ const idsOf = (t: PolicyTimeline, n = W) => monthsOf(n).map((m) => t.frameAt(m).
 function scanRows(a: ZoningView, b: ZoningView): number[] {
   const p = a.parcels;
   const q = b.parcels;
-  const F = p.fillLevels.length;
   const out: number[] = [];
   for (let i = 0; i < p.count; i++) {
     let d = false;
@@ -99,12 +98,10 @@ function scanRows(a: ZoningView, b: ZoningView): number[] {
       [p.envelopeStories, q.envelopeStories],
       [p.hostable, q.hostable],
       [p.localProgram, q.localProgram],
-      [p.potentialRatio.fzp, q.potentialRatio.fzp],
-      [p.storiesGap.fzp, q.storiesGap.fzp],
+      [p.fzpCap, q.fzpCap],
       [a.pre.logit, b.pre.logit]
     ];
     for (const [x, y] of cols) if (!Object.is(x[i], y[i])) d = true;
-    for (let f = 0; f < F; f++) if (p.yield[i * F + f] !== q.yield[i * F + f]) d = true;
     if (d) out.push(i);
   }
   return out;

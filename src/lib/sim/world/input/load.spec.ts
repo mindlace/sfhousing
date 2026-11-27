@@ -386,7 +386,7 @@ describe('loadSimInput on the mini city: policy.bin and the projects', () => {
     const policy = miniPolicy(miniCity());
     expect(r.policy.count).toBe(r.fzp.parcels.count);
     expect(r.policy.sb79Status).toEqual(policy.sb79Status);
-    expect(r.fzp.parcels.fzpCap).toEqual(policy.fzpYieldCap);
+    expect(r.fzp.parcels.fzpCap).toEqual(miniCity().parcels.fzpCap);
     expect(r.fzp.options).toBe(r.options);
     expect(r.options.count).toBe(r.fzp.parcels.count);
     expect(r.twin.options).toBe(r.options);

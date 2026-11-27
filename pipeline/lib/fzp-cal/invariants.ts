@@ -190,16 +190,13 @@ export function choiceOutcomes(cal: Pick<Calibration, 'asOf' | 'choice' | 'heigh
 }
 
 /**
- * V25: `json` (the file's text, `fileBytes` its size) parses, `size.fillLevels` equals
- * `fillLevels` element for element (ruling A2: `parseCalibration` checks F only internally),
- * `asOf` equals the T3 (`projectsAsOf`) and T4d (`historiesAsOf`) snapshot days when given, the
+ * V25: `json` (the file's text, `fileBytes` its size) parses, `asOf` equals the T3 (`projectsAsOf`) and T4d (`historiesAsOf`) snapshot days when given, the
  * file is at most 256 KB, and `fundingOutcomes(cal, live)` and `choiceOutcomes(cal)` find no
  * problem.
  */
 export function checkV25(
   json: string,
   fileBytes: number,
-  fillLevels: readonly number[],
   projectsAsOf: Day | undefined,
   historiesAsOf?: Day,
   live = false
@@ -211,12 +208,6 @@ export function checkV25(
   const parsed = parseCalibrationText(json);
   if ('error' in parsed) return [`does not parse: ${parsed.error}`, ...problems];
   const { cal } = parsed;
-  const got = cal.size.fillLevels;
-  if (got.length !== fillLevels.length || got.some((x, i) => x !== fillLevels[i])) {
-    problems.push(
-      `size.fillLevels [${got.join(', ')}] differ from FILL_LEVELS [${fillLevels.join(', ')}]`
-    );
-  }
   if (projectsAsOf !== undefined && cal.asOf !== projectsAsOf) {
     problems.push(`asOf ${cal.asOf} differs from projects.json asOf ${projectsAsOf}`);
   }

@@ -53,7 +53,7 @@ const isRowColumn = (v: unknown): v is RowColumn =>
   Array.isArray(v) || (ArrayBuffer.isView(v) && !(v instanceof DataView));
 
 /** The lookup tables of `ScenarioParcels`: indexed by something other than the lot row. */
-const LOOKUPS = new Set(['cells', 'districts', 'fillLevels', 'provenance']);
+const LOOKUPS = new Set(['cells', 'districts', 'provenance']);
 
 /**
  * `parcels` with row i taken from row `perm[i]`: every per-row column (every array but the lookup

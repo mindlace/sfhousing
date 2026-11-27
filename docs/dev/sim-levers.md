@@ -17,7 +17,7 @@ The engine behind the simulation (plan 2 of 5; FZP-only since the sim runs plan 
 | `compare`                 | `'preFzp'`                        | Twin: `'preFzp'` zoning, or `'fzp'` (FZP as written)                      |
 | `finance`                 | empty `FinanceLevers`             | Funding levers: baseline scale, added pools and programmes, typed terms   |
 
-Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LEVERS` is FZP as written compared with pre-FZP zoning. Construction and completion are locked: no timer edits them. There is no stock blend, no current law and no law switch: the plan always starts from FZP as written (`fzpYieldCap`) for the whole window.
+Stories are integers from 0 to 255 (one byte in the packed columns). `DEFAULT_LEVERS` is FZP as written compared with pre-FZP zoning. Construction and completion are locked: no timer edits them. There is no stock blend, no current law and no law switch: the plan always starts from FZP as written (`parcels.bin`'s `fzpCap`) for the whole window.
 
 The page's `SimPolicy` (`src/lib/sim-page/policy.ts`, schema 3) compiles to these levers in `compileLevers`: its zoning rules become `rules` (a transit rule one edit per band), its custom paint becomes `paint` in stroke order (an erase removing earlier paint), its category protections `protect`, its `funding` is copied into `finance`, and `compare` is `'preFzp'` for the default policy and `'fzp'` for any other ([sim-page.md](sim-page.md), "The recipe and its compile rules").
 

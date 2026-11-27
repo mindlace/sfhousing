@@ -27,17 +27,12 @@ const miniFiles = () => {
 const miniInput = (): SimInput => buildSimInput(miniFiles());
 
 describe('baseZoning view (§4.4.8)', () => {
-  it('swaps envelope, cap, yield, hostable and the feature variants onto the base columns', () => {
+  it('swaps envelope, cap and hostable onto the base columns', () => {
     const p = miniInput().parcels;
     const { parcels: v } = baseZoning(miniCalibration(), p);
     expect(v.envelopeStories).toBe(p.baseStories);
     expect(v.fzpCap).toBe(p.baseCap);
-    expect(v.yield).toBe(p.baseYield);
     expect(v.hostable).toBe(p.hostableBase);
-    expect(v.potentialRatio.fzp).toBe(p.potentialRatio.base);
-    expect(v.storiesGap.fzp).toBe(p.storiesGap.base);
-    expect(v.potentialRatio.base).toBe(p.potentialRatio.base);
-    expect(v.storiesGap.base).toBe(p.storiesGap.base);
   });
 
   it('turns the Local Program off with a fresh zero column; the source is untouched', () => {

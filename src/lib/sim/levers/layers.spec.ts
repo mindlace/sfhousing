@@ -36,7 +36,7 @@ describe('stockTable', () => {
     const t = stockTable(c, 'fzp');
     expect(t.count).toBe(c.parcels.count);
     expect(Array.from(t.stories)).toEqual(Array.from(c.parcels.envelopeStories));
-    expect(Array.from(t.cap)).toEqual(Array.from(c.policy.fzpYieldCap));
+    expect(Array.from(t.cap)).toEqual(Array.from(c.parcels.fzpCap));
     expect(Array.from(t.hostable)).toEqual(Array.from(c.parcels.hostable));
   });
   it('base reads the base columns', () => {

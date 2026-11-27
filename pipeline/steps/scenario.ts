@@ -1,23 +1,23 @@
-// Scenario build step (scenario-data spec §4.4-§4.8, §4.10): runs the scenario SQL, computes the
-// base-envelope yields of every panel row with the shared generator, writes the T13 parcel panel
-// (`scenario_panel`, parcel-panel.parquet) and lineage (parcel-lineage.parquet) to the derived
-// cache, and assembles, encodes and writes the T11 file `scenarios/fzp/parcels.bin`.
+// Scenario build step (scenario-data spec §4.4-§4.8, §4.10; building-choice): runs the scenario
+// SQL, generates the candidate building options of every T11 row and panel key (options.ts), writes
+// the T13 parcel panel (`scenario_panel`, parcel-panel.parquet) and lineage
+// (parcel-lineage.parquet) to the derived cache, and assembles, encodes and writes the T11 file
+// `scenarios/fzp/parcels.bin`. A lot hosts where an option at or below its envelope has more
+// homes than it has now; its homes at any envelope and cap are its options' (rule A).
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import { ROAD_LIKE_REASONS, type ParcelRecord } from '../../src/lib/data/parcel';
 import { ringsAreaM2 } from '../../src/lib/data/parcel-chunk';
 import {
-  FILL_LEVELS,
   LAND_USE_CLASSES,
   SCENARIO_FORMAT,
   encodeScenarioPayload,
-  fillStories,
-  scenarioRecordFrom,
   scenarioRecordOf,
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
-import { capScenarioYield, scenarioYield } from '../../src/lib/data/scenario-yield';
+import { fnv1a32 } from '../../src/lib/generator';
+import { candidatesOf } from '../../src/lib/sim/choice/options';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { Provenance } from '../../src/lib/timelapse/types';
 import { SQL_VARS } from '../config';
@@ -31,7 +31,7 @@ import {
   isSpecNamedNoCap
 } from '../lib/density-caps';
 import { clipYieldLoss, clipYieldRow, type ClipYieldRow } from '../lib/land-report';
-import { createTableFromRows, type CellValue, type Duck } from '../lib/duck';
+import { createTableFromRows, type Duck } from '../lib/duck';
 import type { HeightDistrict } from '../lib/heights';
 import { localProgramEnvelope } from '../lib/local-program';
 import { recordQuality, recordSqlQuality } from '../lib/quality';
@@ -46,16 +46,20 @@ import {
 } from '../lib/road-lots';
 import { PARCELS_BIN, readParcelsBin } from '../lib/scenario-files';
 import { readClippedOriginals } from './chunks';
-import { candidateRows, sliceRows, type CandidateJob, type ScenarioCandidates } from './options';
+import {
+  candidateRows,
+  rowTopHomes,
+  sliceRows,
+  type CandidateJob,
+  type CandidateRows,
+  type ScenarioCandidates
+} from './options';
 import { runScenarioSql } from './scenario-sql';
 
 export { PARCELS_BIN, readParcelsBin };
 /** The golden's canonical dump of the decoded T11 payload (spec §4.11). */
 export const SCENARIO_DUMP = 'scenarios/fzp/parcels.decoded.json';
 
-const F = FILL_LEVELS.length;
-/** u16 column ceiling (codec width, spec §4.8): a larger yield is clamped and counted. */
-const U16_MAX = 0xffff;
 /** T11 `baseCap` sentinel for "no cap" (spec §2 internal types). */
 const NULL_CAP = 0xffff;
 /**
@@ -128,28 +132,30 @@ interface FeatureRow {
 
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
 
+/** One distinct panel input: its sc_features key, its eligibility and its option row. */
+interface PanelKey {
+  row: FeatureRow;
+  eligible: boolean;
+  optionRow: number;
+}
+
 /**
- * Panel base yields (spec §4.7): `scenarioYield(scenarioRecordFrom(rec, that year's values),
- * base_stories, base_density_cap)` for every sc_features row, memoised on the inputs (the floor
- * area is the integer m² value), streamed one roll year at a time. Each is the uncapped gross
- * (`scenarioYield(…, null)`, kept as `base_gross` for `hostable_base`, partner ruling option c)
- * capped by `capScenarioYield`. That year's values include the scenario eligibility on that
- * year's units (`eligible`, sd.landuse.none-with-units), a function of the memo key's parcel and
- * units. Writes sc_base_yield (one row per distinct input; `option_row` is the row of its candidate
- * inputs in the options step's panel-options.bin) and returns its size, the number of sc_features
- * rows (panel parcel-years) the rule makes eligible and the panel's candidate jobs, one per
- * distinct (mapblklot, units, floor area, stories), in `option_row` order.
+ * The panel's distinct inputs (spec §4.7), streamed one roll year at a time: one key per distinct
+ * (mapblklot, units, floor area, stories, base stories, base cap) of sc_features, with the scenario
+ * eligibility on that year's units (`eligible`, sd.landuse.none-with-units), and the panel's
+ * candidate jobs, one per distinct (mapblklot, units, floor area, stories), in `optionRow` order
+ * (`optionRow` is the row of a key's candidate inputs in the options step's panel-options.bin).
+ * Also counts the sc_features rows (panel parcel-years) the eligibility rule makes eligible.
  */
-async function writeBaseYields(
+async function panelKeys(
   db: Duck,
   recById: Map<string, ParcelRecord>
-): Promise<{ memoSize: number; noneWithUnits: number; panelJobs: CandidateJob[] }> {
+): Promise<{ keys: PanelKey[]; noneWithUnits: number; panelJobs: CandidateJob[] }> {
   const years = await db.all<{ y: number }>(
     'SELECT DISTINCT roll_year y FROM sc_features ORDER BY y'
   );
-  const memo = new Map<string, CellValue[]>();
-  // The panel's option rows (options step): one per distinct candidate input, the memo key without
-  // the base stories and cap, which the candidates do not read.
+  const seen = new Set<string>();
+  const keys: PanelKey[] = [];
   const optionRow = new Map<string, number>();
   const panelJobs: CandidateJob[] = [];
   let noneWithUnits = 0;
@@ -173,7 +179,8 @@ async function writeBaseYields(
       if (!rec) throw new Error(`scenario: panel parcel ${r.mapblklot} has no chunk record`);
       const eligible = scenarioEligible(rec, r.existing_units);
       if (eligible && !rec.eligible) noneWithUnits++;
-      if (memo.has(key)) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
       const jobKey = [
         r.mapblklot,
         r.existing_units,
@@ -193,27 +200,20 @@ async function writeBaseYields(
           prune: true
         });
       }
-      const view = scenarioRecordFrom(rec, {
-        existingUnits: r.existing_units,
-        existingFloorAreaM2: r.existing_floor_area_m2,
-        existingStories: r.existing_stories,
-        eligible
-      });
-      const gross = scenarioYield(view, r.base_stories, null);
-      memo.set(key, [
-        r.mapblklot,
-        r.existing_units,
-        r.existing_floor_area_m2,
-        r.existing_stories,
-        r.base_stories,
-        r.base_density_cap,
-        capScenarioYield(gross, r.base_density_cap, r.existing_units),
-        gross,
-        eligible,
-        row
-      ]);
+      keys.push({ row: r, eligible, optionRow: row });
     }
   }
+  return { keys, noneWithUnits, panelJobs };
+}
+
+/**
+ * sc_base_yield, one row per panel key (`panelKeys`): `base_yield` is the most homes among the
+ * key's options at or below `base_stories` after `base_density_cap` (rule A; 0 with no envelope),
+ * and `hostable_base` is the key's eligibility, a base envelope of at least one story and an
+ * option there with more homes than the parcel has now, before the cap: the density cap shapes
+ * `base_yield` but never the at-risk set (partner ruling, option c).
+ */
+async function writeBaseYields(db: Duck, keys: PanelKey[], panel: CandidateRows): Promise<void> {
   await createTableFromRows(
     db,
     'sc_base_yield',
@@ -225,25 +225,33 @@ async function writeBaseYields(
       ['base_stories', 'INTEGER'],
       ['base_density_cap', 'INTEGER'],
       ['base_yield', 'INTEGER'],
-      ['base_gross', 'INTEGER'],
-      ['eligible', 'BOOLEAN'],
+      ['hostable_base', 'BOOLEAN'],
       ['option_row', 'INTEGER']
     ],
-    [...memo.values()]
+    keys.map(({ row: r, eligible, optionRow }) => {
+      const s = r.base_stories;
+      const units = r.existing_units;
+      return [
+        r.mapblklot,
+        units,
+        r.existing_floor_area_m2,
+        r.existing_stories,
+        s,
+        r.base_density_cap,
+        s === 0 ? 0 : rowTopHomes(panel, optionRow, s, r.base_density_cap, units),
+        eligible && s >= 1 && rowTopHomes(panel, optionRow, s, null, 0) > units,
+        optionRow
+      ];
+    })
   );
-  return { memoSize: memo.size, noneWithUnits, panelJobs };
 }
 
 /**
- * T13 panel, spec §4.6: exactly the T13 row's contract columns, in its order, sorted by
- * (mapblklot, roll_year). potential_ratio_base is FLOAT, rounded as T11's Float32
- * `potentialRatio.base`. hostable_base reads the uncapped base gross, so the density cap shapes
- * base_yield but never the at-risk set (partner ruling, option c): gross > 0 is "more homes than
- * existingUnits", since the generator gives none otherwise. Its eligibility is the scenario
- * eligibility on that roll year's units (sc_base_yield.eligible, sd.landuse.none-with-units).
- * option_row is the parcel-year's row in panel-options.bin: the calibration takes potentialRatio,
- * storiesGap and choiceMargin from the choice on it (potential_ratio_base and stories_gap_base
- * stay for V18 until the yields go).
+ * T13 panel, spec §4.6: the T13 row's contract columns, in its order, sorted by (mapblklot,
+ * roll_year). base_yield and hostable_base are sc_base_yield's (`writeBaseYields`): the density
+ * cap shapes base_yield but never the at-risk set. option_row is the parcel-year's row in
+ * panel-options.bin: the calibration takes potentialRatio, storiesGap and choiceMargin from the
+ * choice on it.
  */
 const PANEL_SQL = `
 CREATE OR REPLACE TABLE scenario_panel AS
@@ -252,10 +260,7 @@ SELECT f.mapblklot, f.roll_year, f.lien_day,
        f.use_code, f.land_use_class::INTEGER AS land_use_class, f.zoning_code,
        f.base_stories, f.base_density_cap, y.base_yield,
        f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
-       (y.base_yield / greatest(f.existing_units, 1))::FLOAT AS potential_ratio_base,
-       (f.base_stories - f.existing_stories)::INTEGER AS stories_gap_base,
-       (y.eligible AND f.base_stories >= 1 AND y.base_gross > 0) AS hostable_base,
-       y.option_row
+       y.hostable_base, y.option_row
 FROM sc_features f
 JOIN sc_base_yield y
   ON y.mapblklot = f.mapblklot AND y.existing_units = f.existing_units
@@ -276,8 +281,6 @@ export interface V18Row {
   land_use_class: number;
   imputed: number;
   base_density_cap: number | null;
-  potential_ratio_base: number;
-  stories_gap_base: number;
   hostable_base: boolean;
 }
 
@@ -294,21 +297,18 @@ export type V18Panel = Pick<
   | 'landUseClass'
   | 'imputed'
   | 'baseCap'
-  | 'potentialRatio'
-  | 'storiesGap'
   | 'hostableBase'
 >;
 
 /**
  * V18's per-parcel comparison of T11 row `i` with the parcel's latest-year panel row (coordinator
- * ruling 2026-10-18). The panel's base cap is the cap on its lien day (2025-01-01 for the 2025
- * roll) and T11's on 2026-01-11 (spec §4.4); between them Ord. 292-24 (2025-01-19) changed the
- * RM/RC maximum, so the two caps can differ, each correct for its own date. Where they differ
- * (`capPeriodDiffers`), the features derived from the base cap (`potentialRatio.base`, from the
- * capped base yield) are not compared; every other feature, the mask and `hostableBase` (which
- * reads no cap) are compared on every parcel. On freeway land (`freewayLand`, the curated catalog) T11
- * applies the rule and the panel does not (calibration describes the past market), so T11's
- * base-yield features must be the rule's instead: `hostableBase` 0 and `potentialRatio.base` 0.
+ * ruling 2026-10-18): every feature, the floor area, the mask and `hostableBase`. The panel's base
+ * cap is the cap on its lien day (2025-01-01 for the 2025 roll) and T11's on 2026-01-11 (spec
+ * §4.4); between them Ord. 292-24 (2025-01-19) changed the RM/RC maximum, so the two caps can
+ * differ, each correct for its own date (`capPeriodDiffers`, counted). No compared value reads
+ * the cap (`hostableBase` is cap-free), so they are compared on every parcel. On freeway land
+ * (`freewayLand`, the curated catalog) T11 applies the rule and the panel does not (calibration
+ * describes the past market), so T11's `hostableBase` must be 0 instead.
  */
 export function v18Compare(
   t: V18Panel,
@@ -328,17 +328,22 @@ export function v18Compare(
     t.rentControlLikely[i] === (r.rent_control_likely ? 1 : 0) &&
     t.landUseClass[i] === r.land_use_class &&
     t.imputed[i] === r.imputed &&
-    t.storiesGap.base[i] === r.stories_gap_base &&
-    (freewayLand
-      ? t.potentialRatio.base[i] === 0 && t.hostableBase[i] === 0
-      : (capPeriodDiffers || t.potentialRatio.base[i] === r.potential_ratio_base) &&
-        t.hostableBase[i] === (r.hostable_base ? 1 : 0));
+    t.hostableBase[i] === (freewayLand ? 0 : r.hostable_base ? 1 : 0);
   return { capPeriodDiffers, mismatch: !same };
 }
 
-/** The latest-year panel row of a parcel with the exclusion inputs from sc_features. */
-interface LatestRow extends V18Row {
+/** The latest-year sc_features row of a parcel with the exclusion inputs. */
+interface LatestRow {
   mapblklot: string;
+  existing_units: number;
+  existing_floor_area_m2: number;
+  existing_stories: number;
+  lot_area_m2: number;
+  year_built: number;
+  improvement_share: number;
+  rent_control_likely: boolean;
+  land_use_class: number;
+  imputed: number;
   zoning_code: string | null;
   noncondo_units: number;
   hotel: boolean;
@@ -426,16 +431,18 @@ function provenance(capDay: Day, rollYear: number): ScenarioParcels['provenance'
         'copies the latest earlier year, its bit 3 included (2 / 2, bit 5). A parcel without a ' +
         'latest-year row has 0 (the no-row default, 4 / 4, imputed 95).'
     ),
-    yield: p(
+    cap: p(
       3,
-      'Units by fill level',
+      'Unit caps and hostable lots',
       [SRC.height, SRC.roll, SRC.attrs],
-      'Gross units from the project’s typology generator (src/lib/generator, mode max, seed ' +
-        'fnv1a32(id)), replacement typologies only, at max(1, round(fill × stories)) for each ' +
-        'FILL_LEVELS fill (a tier-4 quantisation grid). FZP yields have no density cap on ' +
-        `Local Program parcels and the cap on ${capDate} elsewhere; base yields use the base ` +
-        `height and the pre-FZP cap (${preFzp}). Ineligible parcels (open space, or no city ` +
-        'land-use record and no homes on the roll) have 0: a parcel without a land-use record ' +
+      'A lot’s homes at an envelope are those of its building options (src/lib/sim/choice/' +
+        'options.ts on the lot’s record, seed fnv1a32(id)) at or below the envelope’s stories, ' +
+        'each clipped by the unit cap; a cap at or below the existing homes allows none. The FZP ' +
+        `cap is none on Local Program parcels and the cap on ${capDate} elsewhere; the base cap ` +
+        `is the pre-FZP cap (${preFzp}). A lot is hostable when it is eligible, its envelope has ` +
+        'at least one story and an option there has more homes than the lot has now, before the ' +
+        'cap. Ineligible parcels (open space, or no city ' +
+        'land-use record and no homes on the roll) have no option: a parcel without a land-use record ' +
         'is eligible when the roll shows homes on it (sd.landuse.none-with-units, 4 / 4), in ' +
         `the panel on each roll year's homes. Freeway land ` +
         '(pipeline/enrichment/freeway-land.json: vacant or public parcels under or ' +
@@ -465,7 +472,6 @@ export function scenarioDump(p: ScenarioParcels): unknown {
     scenario: p.scenario,
     rollYear: p.rollYear,
     count: p.count,
-    fillLevels: [...p.fillLevels],
     cells: p.cells.map((c) => ({ cellId: c.cellId, start: c.start, count: c.count })),
     districts: [...p.districts],
     provenance: {
@@ -473,7 +479,7 @@ export function scenarioDump(p: ScenarioParcels): unknown {
       localProgram: prov(p.provenance.localProgram),
       features: prov(p.provenance.features),
       existingUnits: prov(p.provenance.existingUnits),
-      yield: prov(p.provenance.yield)
+      cap: prov(p.provenance.cap)
     },
     id: [...p.id],
     labelPoint: a(p.labelPoint),
@@ -496,10 +502,7 @@ export function scenarioDump(p: ScenarioParcels): unknown {
     rentControlLikely: a(p.rentControlLikely),
     landUseClass: a(p.landUseClass),
     hostableBase: a(p.hostableBase),
-    baseYield: a(p.baseYield),
-    yield: a(p.yield),
-    potentialRatio: { fzp: a(p.potentialRatio.fzp), base: a(p.potentialRatio.base) },
-    storiesGap: { fzp: a(p.storiesGap.fzp), base: a(p.storiesGap.base) }
+    fzpCap: a(p.fzpCap)
   };
 }
 
@@ -543,14 +546,15 @@ export async function writeScenario(a: {
   freewayLand?: FreewayLandFile | null;
   /**
    * Generate the candidate options (options.ts `candidateRows`) of every parcels.bin row and panel
-   * key on `workers` threads (0: this thread) from the chunks under `outDir/parcels/`, before
-   * parcels.bin is written, and return them for the options step. Absent: no candidates.
+   * key on `workers` threads (0: this thread) from the chunks under `outDir/parcels/`. Absent:
+   * in this thread on `records` (no chunks need be written). The hostable flags, the panel's
+   * base_yield and hostable_base, and the options step all read them.
    */
   candidates?: { workers: number; batch?: number };
 }): Promise<{
   counts: Record<string, number>;
   warnings: string[];
-  candidates: ScenarioCandidates | null;
+  candidates: ScenarioCandidates;
 }> {
   const { db, report } = a;
   const warnings: string[] = [];
@@ -560,35 +564,14 @@ export async function writeScenario(a: {
   }
   const recById = new Map(a.records.map(({ rec }) => [rec.id, rec]));
 
-  // ---- T13 panel and lineage ----
+  // ---- Panel keys (the panel is written once the candidates are in) ----
   const {
-    memoSize,
+    keys: panelKeyRows,
     noneWithUnits: panelNoneWithUnits,
     panelJobs
-  } = await report.time('scenario.base_yield', () => writeBaseYields(db, recById));
-  await db.run(PANEL_SQL);
-  const [{ panel, feat, years, latest }] = await db.all<{
-    panel: number;
-    feat: number;
-    years: number;
-    latest: number | null;
-  }>(
-    `SELECT (SELECT count(*) FROM scenario_panel) AS panel, (SELECT count(*) FROM sc_features) AS feat,
-            (SELECT count(DISTINCT roll_year) FROM scenario_panel) AS years,
-            (SELECT max(roll_year) FROM scenario_panel) AS latest`
-  );
-  if (panel !== feat) throw new Error(`scenario: ${panel} panel rows but ${feat} feature rows`);
-  mkdirSync(a.derivedDir, { recursive: true });
-  const panelFile = join(a.derivedDir, 'parcel-panel.parquet');
-  const lineageFile = join(a.derivedDir, 'parcel-lineage.parquet');
-  for (const f of [panelFile, lineageFile]) rmSync(f, { force: true });
-  await db.run(
-    `COPY (SELECT * FROM scenario_panel ORDER BY mapblklot, roll_year)
-     TO ${sqlStr(panelFile)} (FORMAT parquet)`
-  );
-  await db.run(
-    `COPY (SELECT * FROM parcel_lineage ORDER BY blklot, retired_mapblklot, date_rec_drop)
-     TO ${sqlStr(lineageFile)} (FORMAT parquet)`
+  } = await report.time('scenario.panel_keys', () => panelKeys(db, recById));
+  const [{ latest }] = await db.all<{ latest: number | null }>(
+    'SELECT max(roll_year) AS latest FROM sc_features'
   );
 
   // ---- T11 rows ----
@@ -596,12 +579,10 @@ export async function writeScenario(a: {
   const t11 = await (async () => {
     const rollYear = latest ?? 0;
     const latestRows = await db.all<LatestRow>(
-      `SELECT p.mapblklot, p.existing_units, p.existing_stories, p.year_built, p.lot_area_m2,
-              p.improvement_share, p.rent_control_likely, p.land_use_class, p.imputed,
-              p.potential_ratio_base, p.stories_gap_base, p.hostable_base,
-              p.base_density_cap, p.zoning_code, f.existing_floor_area_m2, f.noncondo_units, f.hotel, f.status_n
-       FROM scenario_panel p JOIN sc_features f USING (mapblklot, roll_year)
-       WHERE p.roll_year = ${rollYear} ORDER BY p.mapblklot`
+      `SELECT mapblklot, existing_units, existing_stories, year_built, lot_area_m2,
+              improvement_share, rent_control_likely, land_use_class::INTEGER AS land_use_class,
+              imputed, zoning_code, existing_floor_area_m2, noncondo_units, hotel, status_n
+       FROM sc_features WHERE roll_year = ${rollYear} ORDER BY mapblklot`
     );
     const latestById = new Map(latestRows.map((r) => [r.mapblklot, r]));
     const districts = await db.all<DistrictRow>(
@@ -639,7 +620,6 @@ export async function writeScenario(a: {
     scenario: 'fzp',
     rollYear: t11.rollYear,
     count: n,
-    fillLevels: [...FILL_LEVELS],
     cells,
     districts: districtNames,
     provenance: provenance(a.capDay, t11.rollYear),
@@ -656,8 +636,7 @@ export async function writeScenario(a: {
     split: new Uint8Array(n),
     imputed: new Uint8Array(n),
     baseCap: new Uint16Array(n),
-    // in memory only until parcels.bin carries it (the run time binds policy.bin's fzpYieldCap)
-    fzpCap: new Uint16Array(n).fill(NULL_CAP),
+    fzpCap: new Uint16Array(n),
     existingUnits: new Uint16Array(n),
     existingFloorAreaM2: new Uint32Array(n),
     existingStories: new Uint8Array(n),
@@ -666,11 +645,7 @@ export async function writeScenario(a: {
     improvementShare: new Float32Array(n),
     rentControlLikely: new Uint8Array(n),
     landUseClass: new Uint8Array(n),
-    hostableBase: new Uint8Array(n),
-    baseYield: new Uint16Array(n * F),
-    yield: new Uint16Array(n * F),
-    potentialRatio: { fzp: new Float32Array(n), base: new Float32Array(n) },
-    storiesGap: { fzp: new Int16Array(n), base: new Int16Array(n) }
+    hostableBase: new Uint8Array(n)
   };
 
   const c: Record<string, number> = {};
@@ -690,9 +665,7 @@ export async function writeScenario(a: {
     'density_cap.rule.unlisted',
     ...MASK_COUNTS.map(([, key]) => `imputed.${key}`),
     'units.total',
-    'yield.fzp_net_total',
-    'yield.clamped',
-    'yield.nonlp_base_mismatch',
+    'capacity.fzp_net_total',
     'freeway_land.lots',
     'freeway_land.net_removed',
     'road_like.lots',
@@ -757,19 +730,22 @@ export async function writeScenario(a: {
   };
   /** Parcels per tier-4 cap rule, hostable or not, for the unverified-districts warning. */
   const capRuleAll = { split: 0, genericNc: 0 };
-  const nonmonotone: string[] = [];
-  const zeroHostable: string[] = [];
-  let envelopeEligible = 0;
-  /** Uncapped full-fill yields (FZP and base envelope) per row, for the hostable mismatch counts. */
-  const grossTop = new Uint32Array(n);
-  const grossBaseTop = new Uint32Array(n);
-  const eligibleRow = new Uint8Array(n);
-
-  const u16 = (v: number) => {
-    if (v <= U16_MAX) return v;
-    inc('yield.clamped');
-    return U16_MAX;
-  };
+  /** Per row, what the hostable pass after the candidates reads. */
+  const rowState: {
+    eligible: boolean;
+    onFreeway: boolean;
+    road: ReturnType<typeof roadLots.get>;
+    d: DistrictRow;
+    lotAreaM2: number;
+    existingUnits: number;
+    env: ReturnType<typeof localProgramEnvelope>;
+    baseCap: number | null;
+    fzpYieldCap: number | null;
+    /** The candidate job of the row as if eligible (freeway land, the road-lots review), or -1. */
+    unruledJob: number;
+  }[] = [];
+  /** Extra candidate jobs: freeway-land and road-review rows as if eligible (`netWithout`). */
+  const unruledJobs: CandidateJob[] = [];
 
   rows.forEach(({ rec, cellId }, i) => {
     // Typed arrays wrap silently, so every integer column is range-checked before it is stored.
@@ -885,73 +861,120 @@ export async function writeScenario(a: {
     else inc(`density_cap.${d.zoning_code}`);
     if (baseCap !== fzpCap) inc('density_cap.fzp_differs');
 
-    // Yields (spec §4.7) on the record the worker rebuilds from row i (IA-8): each distinct
-    // story count generated once, then capped per variant.
-    const view = scenarioRecordOf(p, i, rec);
-    const gross = new Map<number, number>();
-    const grossAt = (stories: number) => {
-      let g = gross.get(stories);
-      if (g === undefined) {
-        g = scenarioYield(view, stories, null);
-        gross.set(stories, g);
-      }
-      return g;
-    };
     const fzpYieldCap = fzpYieldCapOf(d.zoning_code, lotAreaM2, d.r4, env.localProgram, a.capDay);
-    p.fzpCap[i] = fzpYieldCap === null ? NULL_CAP : fzpYieldCap;
-    for (let k = 0; k < F; k++) {
-      const fill = FILL_LEVELS[k];
-      p.yield[i * F + k] =
-        env.envelopeStories === 0
-          ? 0
-          : u16(
-              capScenarioYield(
-                grossAt(fillStories(fill, env.envelopeStories)),
-                fzpYieldCap,
-                existingUnits
-              )
-            );
-      p.baseYield[i * F + k] =
-        env.baseStories === 0
-          ? 0
-          : u16(
-              capScenarioYield(grossAt(fillStories(fill, env.baseStories)), baseCap, existingUnits)
-            );
-    }
-    const top = p.yield[i * F + F - 1];
-    const baseTop = p.baseYield[i * F + F - 1];
-    // Hostable flags on the uncapped full-fill yields (partner ruling, option c): the density cap
-    // shapes `yield`/`baseYield` but never which parcels may host a project, so a cap change (the
-    // 2022-11-27 fourplex ordinance) cannot flip them. On Local Program parcels the FZP yield is
-    // already uncapped.
-    const full = FILL_LEVELS[F - 1];
-    grossTop[i] = env.envelopeStories === 0 ? 0 : grossAt(fillStories(full, env.envelopeStories));
-    grossBaseTop[i] = env.baseStories === 0 ? 0 : grossAt(fillStories(full, env.baseStories));
-    eligibleRow[i] = p.eligible[i];
-    p.hostable[i] = eligible && env.envelopeStories >= 1 && grossTop[i] > 0 ? 1 : 0;
-    p.hostableBase[i] = eligible && env.baseStories >= 1 && grossBaseTop[i] > 0 ? 1 : 0;
-    p.potentialRatio.fzp[i] = top / Math.max(existingUnits, 1);
-    p.potentialRatio.base[i] = baseTop / Math.max(existingUnits, 1);
-    p.storiesGap.fzp[i] = env.envelopeStories - existingStories;
-    p.storiesGap.base[i] = env.baseStories - existingStories;
-    if (p.hostable[i]) inc('hostable');
-    // What the row would host without a rule (the hostable test above, on `eligibleWithout`): null
-    // when it would not be hostable, else its static net capacity at the capped FZP full-fill
-    // yield, max(0, yield − existing homes).
-    const netWithout = (eligibleWithout: boolean): number | null => {
-      if (!eligibleWithout || env.envelopeStories < 1) return null;
-      const unruled = scenarioRecordFrom(rec, {
+    p.fzpCap[i] = fzpYieldCap === null ? NULL_CAP : fit('fzpCap', fzpYieldCap, NULL_CAP - 1);
+    // Freeway land and the road-lots review: the row as if eligible, for `netWithout`.
+    let unruledJob = -1;
+    if (onFreeway || roadReviewNet.has(rec.id)) {
+      unruledJob = unruledJobs.length;
+      unruledJobs.push({
+        id: rec.id,
         existingUnits,
         existingFloorAreaM2: floorArea,
         existingStories,
         eligible: true
       });
-      const g = scenarioYield(unruled, fillStories(full, env.envelopeStories), null);
-      if (g === 0) return null;
-      return Math.max(0, capScenarioYield(g, fzpYieldCap, existingUnits) - existingUnits);
+    }
+    rowState.push({
+      eligible,
+      onFreeway,
+      road,
+      d,
+      lotAreaM2,
+      existingUnits,
+      env,
+      baseCap,
+      fzpYieldCap,
+      unruledJob
+    });
+  });
+
+  // ---- Candidate options: every row, panel key and unruled row (options.ts) ----
+  const lotJobs: CandidateJob[] = p.id.map((id, i) => ({
+    id,
+    existingUnits: p.existingUnits[i],
+    existingFloorAreaM2: p.existingFloorAreaM2[i],
+    existingStories: p.existingStories[i],
+    eligible: p.eligible[i] === 1
+  }));
+  const pool = a.candidates ?? { workers: 0 };
+  const all = await report.time('scenario.candidates', () =>
+    candidateRows(a.outDir, [...lotJobs, ...panelJobs, ...unruledJobs], pool.workers, {
+      batch: pool.batch,
+      records: a.candidates ? undefined : recById
+    })
+  );
+  const P = panelJobs.length;
+  const candidates: ScenarioCandidates = {
+    lotIds: [...p.id],
+    lots: sliceRows(all, 0, n),
+    panel: sliceRows(all, n, n + P),
+    panelKeys: panelJobs
+  };
+  const unruled = sliceRows(all, n + P, n + P + unruledJobs.length);
+
+  // ---- T13 panel and lineage ----
+  await report.time('scenario.base_yield', () =>
+    writeBaseYields(db, panelKeyRows, candidates.panel)
+  );
+  await db.run(PANEL_SQL);
+  const [{ panel, feat, years }] = await db.all<{
+    panel: number;
+    feat: number;
+    years: number;
+  }>(
+    `SELECT (SELECT count(*) FROM scenario_panel) AS panel, (SELECT count(*) FROM sc_features) AS feat,
+            (SELECT count(DISTINCT roll_year) FROM scenario_panel) AS years`
+  );
+  if (panel !== feat) throw new Error(`scenario: ${panel} panel rows but ${feat} feature rows`);
+  mkdirSync(a.derivedDir, { recursive: true });
+  const panelFile = join(a.derivedDir, 'parcel-panel.parquet');
+  const lineageFile = join(a.derivedDir, 'parcel-lineage.parquet');
+  for (const f of [panelFile, lineageFile]) rmSync(f, { force: true });
+  await db.run(
+    `COPY (SELECT * FROM scenario_panel ORDER BY mapblklot, roll_year)
+     TO ${sqlStr(panelFile)} (FORMAT parquet)`
+  );
+  await db.run(
+    `COPY (SELECT * FROM parcel_lineage ORDER BY blklot, retired_mapblklot, date_rec_drop)
+     TO ${sqlStr(lineageFile)} (FORMAT parquet)`
+  );
+
+  // ---- T11 hostable flags and the counts that read them ----
+  /** Per row, the most homes at or below the envelope before any cap (the hostable test). */
+  const grossTop = new Uint32Array(n);
+  const grossBaseTop = new Uint32Array(n);
+  rows.forEach(({ rec }, i) => {
+    const s = rowState[i];
+    const { eligible, env, existingUnits, d, lotAreaM2, baseCap, fzpYieldCap, road } = s;
+    // Hostable flags before the caps (partner ruling, option c): the density cap shapes the homes
+    // but never which parcels may host a project, so a cap change (the 2022-11-27 fourplex
+    // ordinance) cannot flip them. The run time applies the cap (rule A).
+    const lots = candidates.lots;
+    grossTop[i] =
+      env.envelopeStories === 0 ? 0 : rowTopHomes(lots, i, env.envelopeStories, null, 0);
+    grossBaseTop[i] = env.baseStories === 0 ? 0 : rowTopHomes(lots, i, env.baseStories, null, 0);
+    p.hostable[i] = eligible && env.envelopeStories >= 1 && grossTop[i] > existingUnits ? 1 : 0;
+    p.hostableBase[i] = eligible && env.baseStories >= 1 && grossBaseTop[i] > existingUnits ? 1 : 0;
+    if (p.hostable[i]) inc('hostable');
+    // What the row would host without a rule (the hostable test above, on `eligibleWithout`): null
+    // when it would not be hostable, else its static net capacity by rule A, max(0, the most homes
+    // after the FZP cap − existing homes).
+    const netWithout = (eligibleWithout: boolean): number | null => {
+      if (!eligibleWithout || env.envelopeStories < 1 || s.unruledJob < 0) return null;
+      const g = rowTopHomes(unruled, s.unruledJob, env.envelopeStories, null, 0);
+      if (g <= existingUnits) return null;
+      const top = rowTopHomes(
+        unruled,
+        s.unruledJob,
+        env.envelopeStories,
+        fzpYieldCap,
+        existingUnits
+      );
+      return Math.max(0, top - existingUnits);
     };
     // Freeway land: scenarioEligible without the flag.
-    if (onFreeway) {
+    if (s.onFreeway) {
       const net = netWithout(scenarioEligible(rec, existingUnits));
       if (net !== null) {
         inc('freeway_land.net_removed', net);
@@ -966,7 +989,7 @@ export async function writeScenario(a: {
             scenarioEligible(
               { ...rec, eligible: road.eligibleWithout, roadLike: undefined },
               existingUnits,
-              onFreeway
+              s.onFreeway
             )
           )
         : netWithout(eligible);
@@ -978,27 +1001,9 @@ export async function writeScenario(a: {
         inc(`road_like.net_removed.${road.reason}`, net);
       }
     }
-    // sd.yield.zero-hostable (observation, tier 4): of scenario-eligible parcels with an envelope.
-    if (eligible && env.envelopeStories >= 1) {
-      envelopeEligible++;
-      if (top === 0) zeroHostable.push(rec.id);
-    }
-    if (p.hostable[i] && env.localProgram)
-      inc('yield.fzp_net_total', Math.max(0, top - existingUnits));
-    // sd.yield.nonmonotone (observation, tier 4): yield[k] < yield[k−1] for some k.
-    for (let k = 1; k < F; k++) {
-      if (p.yield[i * F + k] < p.yield[i * F + k - 1]) {
-        nonmonotone.push(rec.id);
-        break;
-      }
-    }
-    if (!env.localProgram && baseCap === fzpCap) {
-      for (let k = 0; k < F; k++) {
-        if (p.baseYield[i * F + k] !== p.yield[i * F + k]) {
-          inc('yield.nonlp_base_mismatch');
-          break;
-        }
-      }
+    if (p.hostable[i] && env.localProgram) {
+      const top = rowTopHomes(lots, i, env.envelopeStories, fzpYieldCap, existingUnits);
+      inc('capacity.fzp_net_total', Math.max(0, top - existingUnits));
     }
 
     // The tier-4 cap rules (main ruling 4c): sd.zoning.split-code and sd.zoning.generic-nc fire
@@ -1081,32 +1086,10 @@ export async function writeScenario(a: {
   );
   c['scenario.parcels'] = n;
   c['scenario.panel.years'] = years;
-  c['scenario.panel.base_yield_memo'] = memoSize;
+  c['scenario.panel.base_yield_memo'] = panelKeyRows.length;
   // sd.landuse.none-with-units on the panel: parcel-years eligible by the rule (reported here; the
   // rule's fired/of is on T11).
   c['scenario.panel.landuse_none_with_units'] = panelNoneWithUnits;
-
-  // ---- Candidate options (options step): every row and panel key, on the worker pool ----
-  let candidates: ScenarioCandidates | null = null;
-  if (a.candidates) {
-    const opts = a.candidates;
-    const lotJobs: CandidateJob[] = p.id.map((id, i) => ({
-      id,
-      existingUnits: p.existingUnits[i],
-      existingFloorAreaM2: p.existingFloorAreaM2[i],
-      existingStories: p.existingStories[i],
-      eligible: p.eligible[i] === 1
-    }));
-    const all = await report.time('scenario.candidates', () =>
-      candidateRows(a.outDir, [...lotJobs, ...panelJobs], opts.workers, { batch: opts.batch })
-    );
-    candidates = {
-      lotIds: [...p.id],
-      lots: sliceRows(all, 0, n),
-      panel: sliceRows(all, n, n + panelJobs.length),
-      panelKeys: panelJobs
-    };
-  }
 
   // ---- File: encode, deflate, write, then decode what was written ----
   const payload = encodeScenarioPayload(p);
@@ -1120,12 +1103,18 @@ export async function writeScenario(a: {
   const decoded = readParcelsBin(file);
   report.timings['scenario.t11'] = Math.round(performance.now() - t0);
 
-  // V18: the decoded T11 features (base variant), floor area, mask and hostableBase equal the
-  // latest-year panel row; the base-cap features only where the two base caps agree (v18Compare).
-  // Parcels whose caps differ by period are counted, in all and by zoning code.
+  // V18: the decoded T11 features, floor area, mask and hostableBase equal the latest-year panel
+  // row (v18Compare). Parcels whose caps differ by period are counted, in all and by zoning code.
+  const v18Rows = await db.all<V18Row & { mapblklot: string; zoning_code: string | null }>(
+    `SELECT p.mapblklot, p.existing_units, p.existing_stories, p.year_built, p.lot_area_m2,
+            p.improvement_share, p.rent_control_likely, p.land_use_class, p.imputed,
+            p.base_density_cap, p.hostable_base, p.zoning_code, f.existing_floor_area_m2
+     FROM scenario_panel p JOIN sc_features f USING (mapblklot, roll_year)
+     WHERE p.roll_year = ${t11.rollYear} ORDER BY p.mapblklot`
+  );
   let mismatch = 0;
   c['scenario.v18.cap_period_differs'] = 0;
-  for (const r of t11.latestById.values()) {
+  for (const r of v18Rows) {
     const i = decoded.index.get(r.mapblklot);
     if (i === undefined) {
       mismatch++;
@@ -1155,13 +1144,15 @@ export async function writeScenario(a: {
   if (preFzp.length !== decoded.count) baseCapMismatch += Math.abs(decoded.count - preFzp.length);
   c['scenario.v18.basecap_mismatch'] = baseCapMismatch;
 
-  // V17: the decoded hostable flags against this step's own uncapped full-fill yields, which the
-  // payload does not carry (it ships the capped yields only).
+  // V17: the decoded hostable flags against this step's own option tops before the caps, which the
+  // payload does not carry.
   let hostableMismatch = 0;
   let hostableBaseMismatch = 0;
   for (let i = 0; i < n; i++) {
-    const h = eligibleRow[i] && decoded.envelopeStories[i] >= 1 && grossTop[i] > 0;
-    const hb = eligibleRow[i] && decoded.baseStories[i] >= 1 && grossBaseTop[i] > 0;
+    const ok = decoded.eligible[i] === 1;
+    const units = decoded.existingUnits[i];
+    const h = ok && decoded.envelopeStories[i] >= 1 && grossTop[i] > units;
+    const hb = ok && decoded.baseStories[i] >= 1 && grossBaseTop[i] > units;
     if (decoded.hostable[i] !== (h ? 1 : 0)) hostableMismatch++;
     if (decoded.hostableBase[i] !== (hb ? 1 : 0)) hostableBaseMismatch++;
   }
@@ -1224,26 +1215,29 @@ export async function writeScenario(a: {
     );
   }
   // sd.parcels.clip-yield-loss: a clipped lot that keeps nearly all its area should keep its
-  // yield. Its top-fill yield on the original outline is generated on the same record, with the
-  // original rings and their area.
+  // homes. The most homes of its options at or below the envelope (before the cap) on the original
+  // outline come from the same record, with the original rings and their area.
   const clipRows: ClipYieldRow[] = [];
   for (const [id, o] of await readClippedOriginals(db)) {
     const i = p.index.get(id);
     if (i === undefined) continue;
     const view = scenarioRecordOf(p, i, rows[i].rec);
-    const full = FILL_LEVELS[F - 1];
+    const env = p.envelopeStories[i];
     clipRows.push(
       clipYieldRow({
         id,
         keptShare: o.keptShare,
         clippedTop: grossTop[i],
-        envelopeStories: p.envelopeStories[i],
-        originalTopAt: () =>
-          scenarioYield(
+        envelopeStories: env,
+        originalTopAt: () => {
+          const opts = candidatesOf(
             { ...view, polygon: o.polygon, areaM2: ringsAreaM2(o.polygon) },
-            fillStories(full, p.envelopeStories[i]),
-            null
-          )
+            fnv1a32(id)
+          );
+          let top = 0;
+          for (const op of opts) if (op.stories <= env) top = Math.max(top, op.homes);
+          return top;
+        }
       })
     );
   }
@@ -1295,16 +1289,6 @@ export async function writeScenario(a: {
     fired: zoning.missing.length,
     of: hostable,
     sample: zoning.missing
-  });
-  recordQuality(a.buildCounts, 'sd.yield.nonmonotone', {
-    fired: nonmonotone.length,
-    of: n,
-    sample: nonmonotone
-  });
-  recordQuality(a.buildCounts, 'sd.yield.zero-hostable', {
-    fired: zeroHostable.length,
-    of: envelopeEligible,
-    sample: zeroHostable
   });
 
   const sqlCounts = await db.all<{ key: string; value: number }>(

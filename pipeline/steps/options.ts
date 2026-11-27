@@ -16,6 +16,7 @@ import {
   optionTableOf,
   type OptionTable
 } from '../../src/lib/data/option-table';
+import type { OptionTops } from '../../src/lib/data/envelope-row';
 import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { scenarioRecordFrom } from '../../src/lib/data/scenario-codec';
@@ -27,6 +28,7 @@ import {
   pruneByCost,
   pruneOptions
 } from '../../src/lib/sim/choice/options';
+import { capHomes } from '../../src/lib/sim/choice/choose';
 import { BUILDING_FORMS, BUILDING_TYPES, type Option } from '../../src/lib/sim/choice/types';
 import type { ShippedStep } from '../lib/fzp-cal/shipped-step';
 import { OPTIONS_BIN } from '../lib/scenario-files';
@@ -131,6 +133,42 @@ export function candidatesForJob(
   return { packed: pack(out), district: isDistrictLot(rec) };
 }
 
+/**
+ * The most homes after `cap` (`capHomes`) among job `i`'s options at or below `stories`, 0 when
+ * none (envelope-row.ts `topHomesAt`, without building the options).
+ */
+export function rowTopHomes(
+  c: CandidateRows,
+  i: number,
+  stories: number,
+  cap: number | null,
+  existingUnits: number
+): number {
+  let top = 0;
+  for (let at = c.offset[i]; at < c.offset[i + 1]; at++) {
+    const b = PACK * at;
+    if (c.packed[b + 2] > stories) continue;
+    top = Math.max(top, capHomes(c.packed[b + 4], cap, existingUnits));
+  }
+  return top;
+}
+
+/**
+ * The candidates' stories and homes per job in CSR form (envelope-row.ts `OptionTops`), homes
+ * clamped to 65,535 as options.bin stores them: the most homes at or below any story limit and cap
+ * equal those of the job's options.bin row, whose pruning keeps every row's best option.
+ */
+export function candidateTops(c: CandidateRows): OptionTops {
+  const total = c.offset[c.count];
+  const stories = new Uint32Array(total);
+  const homes = new Uint32Array(total);
+  for (let at = 0; at < total; at++) {
+    stories[at] = c.packed[PACK * at + 2];
+    homes[at] = Math.min(HOMES_MAX, c.packed[PACK * at + 4]);
+  }
+  return { offset: c.offset, stories, homes };
+}
+
 /** Job `i`'s options. */
 export function candidateRow(c: CandidateRows, i: number): Option[] {
   const out: Option[] = [];
@@ -195,11 +233,16 @@ export interface OptionsWorkerOpts {
   onWorker?: (w: Worker) => void;
   /** Test only: this worker throws at once and the others block until terminated. */
   failWorker?: number;
+  /**
+   * With 0 workers: the chunk records to run the jobs on instead of decoding `outDir`'s chunks
+   * (the scenario step's in-memory records, for a run without written chunks).
+   */
+  records?: ReadonlyMap<ParcelId, ParcelRecord>;
 }
 
 /**
  * The candidates of `jobs` on `workers` threads that each decode `outDir`'s chunks; with 0
- * workers, in this thread on the same chunk records. When any worker fails, every worker is
+ * workers, in this thread on the same chunk records (or `opts.records`). When any worker fails, every worker is
  * terminated before the error is rethrown.
  */
 export async function candidateRows(
@@ -212,7 +255,7 @@ export async function candidateRows(
   const rows: Uint32Array[] = new Array(count);
   const district = new Uint8Array(count);
   if (workers <= 0) {
-    const records = loadChunkRecords(outDir);
+    const records = opts.records ?? loadChunkRecords(outDir);
     jobs.forEach((job, i) => {
       const r = candidatesForJob(records, job);
       rows[i] = r.packed;

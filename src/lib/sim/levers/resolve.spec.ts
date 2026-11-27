@@ -38,11 +38,11 @@ function protecting(c: LayerCtx, ids: string[]) {
   return { ...DEFAULT_LEVERS.protect, historic: true };
 }
 
-/** The first mini-city row with an FZP yield cap that hosts. */
+/** The first mini-city row with an FZP cap that hosts. */
 const CAPPED = (() => {
   const c = ctx();
   for (let i = 0; i < c.parcels.count; i++)
-    if (c.policy.fzpYieldCap[i] !== NULL_CAP && c.parcels.hostable[i] === 1) return i;
+    if (c.parcels.fzpCap[i] !== NULL_CAP && c.parcels.hostable[i] === 1) return i;
   throw new Error('the mini city has no capped hostable row');
 })();
 

@@ -54,8 +54,8 @@ mean cost per home without carrying. An empty row gives `Infinity`, 0 and 0.
 
 ## The choice rule (`src/lib/sim/choice/choose.ts`)
 
-For an option on a lot, with its homes after the unit cap (`optionHomes`, `capScenarioYield`'s
-rule) and its `costPerHome`, `valuePerHome` and `carryPerHome` at the cost step:
+For an option on a lot, with its homes after the unit cap (`optionHomes`, `capHomes`: clipped
+to the cap, none when the cap is at or below the homes there now) and its `costPerHome`, `valuePerHome` and `carryPerHome` at the cost step:
 
 ```
 residualLandValue(o, v) = homes × (v × valuePerHome − costPerHome − carryPerHome)
@@ -141,7 +141,8 @@ it). Spells are the calibration's (`buildSpells`), entered in the fit window, jo
 history's `storiesProposed`; censored spells, exits, histories without stories and spells whose
 start or end the records do not hold (a gap the normalisation imputed) are left out, and a no-FCD
 completion has no spell. A pooled median of 0 days gives multiplier 1. A band with fewer than `sizeMinN` completed spells in
-either stage merges into the band below (the first into the one above), the size model's rule.
+either stage merges into the band below (the first into the one above), the rule the retired
+fill-level size model used.
 The model has one step, from `asOf`. `filedToIssued` reports the filing-to-issue medians on the
 same bands; no multiplier is fitted for it. With no completed spell at all: one band, multiplier
 1, 0 months, tier 4.
@@ -178,8 +179,9 @@ The calibration step (`pipeline/lib/fzp-cal/calibrate.ts`) writes `calibration.c
 `shipped-step.ts`, the same one the options step's cost-pruned report prices on). It reads
 `scenarios/fzp/options.bin`, `<derivedDir>/panel-options.bin` and the location value's
 provenance; `scenario_panel.option_row` points each panel parcel-year into panel-options.bin.
-`calibration.size` and `size.ts` stay until the pipeline stops writing them (Task 9b); the run time
-no longer reads them.
+The fill-level size model (`calibration.size`, `size.ts`) is retired (Task 9b): the calibration
+no longer writes it and `parseCalibration` ignores a `size` key an older file carries.
+`calibration.method.sizeOverEnvelope` counts the choice records over their limit.
 
 **Choice spread** (`fitChoiceSpread`, `pipeline/lib/fzp-cal/choice-fit.ts`, tier 2). Maximum
 likelihood of each record's built stories under the market choice among its lot's options
@@ -218,9 +220,9 @@ break-even whose best-per-dollar option is allowed has margin exactly 0.
 
 The world engine reads `options.bin` (`SimInput.options`, loaded and checked against parcels.bin
 by `loadSimInput`) and `calibration.choice` and `heightTime` (`buildSimInput` refuses a
-calibration without them). A view's cap per lot is `ScenarioParcels.fzpCap` (`NULL_CAP` none):
-until parcels.bin carries it (Task 9b), decode gives none and the loader binds policy.bin's
-`fzpYieldCap`; `baseZoning` sets it to `baseCap`, a lever view to its table's cap.
+calibration without them). A view's cap per lot is `ScenarioParcels.fzpCap` (`NULL_CAP` none), the
+parcels.bin column (`sfh-scenario/2`); `baseZoning` sets it to `baseCap`, a lever view to its
+table's cap.
 
 - **Precompute** (`precomputeOf`, `world/input/build.ts`). The choice context is
   `choiceCtxOf(options, choice, heightTime)`; its steps are the union of the price and
@@ -256,9 +258,15 @@ until parcels.bin carries it (Task 9b), decode gives none and the loader binds p
   prototype of the lot's most likely option (`byStep[choiceStep].best`); all three still price
   through `prototypeFor`'s binning.
 
-Not yet switched (Task 9b): parcels.bin and policy.bin keep their yield columns and
-`potentialRatio`/`storiesGap` (the world no longer reads them), and gross.bin is still built
-and named in the manifest.
+**The formats** (Task 9b). parcels.bin (`sfh-scenario/2`) carries `fzpCap` and no fill-level
+yields, `potentialRatio` or `storiesGap`; policy.bin (`sfh-policy/2`) no yields and no FZP cap;
+gross.bin is gone. Each decoder refuses the major before. The pipeline's hostable flags, the
+panel's `base_yield` and `hostable_base`, the SB 79 and current-law layers and V17, V32 and V33
+read the option rows (`envelope-row.ts` `topHomesAt` and `envelopeRow`). The hostable flags stay
+cap-free (partner ruling, option c): a lot hosts where an option at or below its envelope has
+more homes than now; the run time's view applies the cap (rule A). The massing drawn for a start
+is still the typology generator's, so its homes can differ from the option's (a known gap: on
+the mini city 641 of 918 allowed options draw another home count and 27 of 945 draw none).
 
 **The margin and the market slope.** Both read cost against value, so they can count one change
 twice once costs move over time (spec, Non-goals). The report (section 16) gives the Pearson

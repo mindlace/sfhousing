@@ -26,7 +26,6 @@ import { runSql } from '../lib/sql';
 import {
   CARS_BIN,
   CAR_ZONES_JSON,
-  GROSS_BIN,
   OPTIONS_BIN,
   PARCELS_BIN,
   POLICY_BIN,
@@ -48,8 +47,7 @@ import { readFundingFile, readPermits, writeCalibration } from './calibration';
 import { carsStep } from './cars';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
-import { writeGross } from './gross';
-import { writeOptions } from './options';
+import { readOptionsBin, writeOptions } from './options';
 import { buildManifest, writeManifest } from './manifest';
 import { writePolicy } from './policy';
 import { PERMITS_PARQUET, writeProjectRecords } from './projects';
@@ -297,22 +295,12 @@ export async function build(
         report,
         buildCounts: counts,
         freewayLand,
-        // The candidate options of every row and panel key, for the options step below (in
-        // parallel off fixture builds, as the gross table).
+        // The candidate options of every row and panel key, for the hostable flags, the panel and
+        // the options step below (in parallel off fixture builds).
         candidates: { workers: fixtureMode ? 0 : Math.max(1, availableParallelism() - 1) }
       })
     );
     report.warnings.push(...scenario.warnings);
-    // The gross table: after the scenario step (it reads parcels.bin and the chunks), in parallel
-    // off fixture builds (the fixture's few rows build faster than workers start).
-    const gross = await report.time('gross', () =>
-      writeGross({
-        outDir,
-        datasetVersion,
-        workers: fixtureMode ? 0 : Math.max(1, availableParallelism() - 1)
-      })
-    );
-    report.warnings.push(...gross.warnings);
     // Project-records spec §4.9: after the scenario step (it reads parcel_lineage and
     // scenario_panel), before the manifest and the invariants.
     const projects = await report.time('projects', () =>
@@ -338,7 +326,6 @@ export async function build(
     let lvProvenance: Provenance | undefined;
     const options = await report.time('options', async () => {
       const candidates = scenario.candidates;
-      if (!candidates) throw new BuildError('scenario step returned no candidates');
       const lv = await locationValueByLot(db);
       lvProvenance = lv.provenance;
       const step = shippedStep({
@@ -425,7 +412,16 @@ export async function build(
     // Sim data layers: after the scenario step (it reads parcels.bin, sc_zoning and sc_district)
     // and transit, before the quality report. Its T14 rules go into the same counts.
     const policy = await report.time('policy', () =>
-      writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
+      writePolicy({
+        db,
+        outDir,
+        datasetVersion,
+        records,
+        capDay: asOf,
+        buildCounts: counts,
+        // the options step's file, written above
+        options: readOptionsBin(join(outDir, OPTIONS_BIN))
+      })
     );
     report.warnings.push(...policy.warnings);
     // The basemap archive's raw path: the build copies it to basemap.pmtiles.
@@ -465,7 +461,6 @@ export async function build(
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
-      gross: existsSync(join(outDir, GROSS_BIN)),
       options: existsSync(join(outDir, OPTIONS_BIN)),
       cars: existsSync(join(outDir, CARS_BIN)) && existsSync(join(outDir, CAR_ZONES_JSON)),
       warn: (w) => report.warnings.push(w)
@@ -481,7 +476,6 @@ export async function build(
       ...transit.counts,
       ...cars.counts,
       ...scenario.counts,
-      ...gross.counts,
       ...options.counts,
       ...policy.counts,
       ...renderBoxes.counts,

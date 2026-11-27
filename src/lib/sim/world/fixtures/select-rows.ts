@@ -1,7 +1,7 @@
 // Test support: a copy of a ScenarioParcels (and of its option table) with some of its rows, in a
 // given order, under given ids. Browser-safe.
 import { optionTableOf, type OptionTable } from '$lib/data/option-table';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { BUILDING_FORMS, BUILDING_TYPES, type Option } from '$lib/sim/choice/types';
 
 /** A copy of `t` with rows `rows` of the source, in that order (as `selectRows` takes them). */
@@ -23,8 +23,6 @@ export function selectOptionRows(t: OptionTable, rows: readonly number[]): Optio
     })
   );
 }
-
-const F = FILL_LEVELS.length;
 
 /**
  * A copy of `p` with rows `rows` of the source (in that order) and the given ids: duplicating a
@@ -82,11 +80,7 @@ export function selectRows(
     rentControlLikely: pick(p.rentControlLikely, 1),
     landUseClass: pick(p.landUseClass, 1),
     hostableBase: pick(p.hostableBase, 1),
-    fzpCap: pick(p.fzpCap, 1),
-    baseYield: pick(p.baseYield, F),
-    yield: pick(p.yield, F),
-    potentialRatio: { fzp: pick(p.potentialRatio.fzp, 1), base: pick(p.potentialRatio.base, 1) },
-    storiesGap: { fzp: pick(p.storiesGap.fzp, 1), base: pick(p.storiesGap.base, 1) }
+    fzpCap: pick(p.fzpCap, 1)
   };
   // a column added to ScenarioParcels later and not listed above would keep the source's length
   // through `...p` and misalign every row: make that loud

@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseManifest } from '$lib/data/manifest';
-import {
-  FILL_LEVELS,
-  featureValue,
-  fillStories,
-  readScenarioParcels,
-  scenarioRecordOf,
-  type ScenarioParcels
-} from '$lib/data/scenario-codec';
-import { capScenarioYield, scenarioYield } from '$lib/data/scenario-yield';
+import { featureValue, readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { assembleSite } from '$lib/generator/assemble';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import { exp, log } from '$lib/timelapse/math';
@@ -38,7 +30,6 @@ import {
   MINI_CAPPED_ID,
   MINI_CELLS,
   MINI_CROSS_CELL_PAIR,
-  MINI_HOSTABLE_NOT_BASE_ID,
   MINI_INELIGIBLE_ID,
   MINI_LP_ID,
   MINI_NONE_WITH_UNITS_ID,
@@ -66,7 +57,6 @@ import {
 } from './build';
 import { P, draw, simEntity } from '../rules/rng';
 
-const F = FILL_LEVELS.length;
 const NO_CAP = 0xffff;
 const miniCalibration = (): Calibration =>
   parseCalibration(structuredClone(miniCalibrationJson) as unknown);
@@ -96,11 +86,10 @@ const featuresAt = (input: Input, i: number, c = 0) => {
   );
   const f = {} as Record<FeatureId, number>;
   for (const t of input.calibration.initiation.terms)
-    f[t.feature] = featureValue(p, i, t.feature, 'fzp', choice);
+    f[t.feature] = featureValue(p, i, t.feature, choice);
   return f;
 };
 const row = (p: ScenarioParcels, id: string) => p.index.get(id)!;
-const yieldsOf = (p: ScenarioParcels, i: number) => Array.from(p.yield.subarray(i * F, i * F + F));
 
 describe('mini city fixture', () => {
   it('parcels.bin decodes to the 60 mini rows, column for column', async () => {
@@ -108,9 +97,7 @@ describe('mini city fixture', () => {
     const { parcels } = miniCity();
     expect(decoded.count).toBe(60);
     expect(decoded.id).toEqual(parcels.id);
-    // the FZP cap is not on the wire: the loader binds policy.bin's
-    expect(decoded.fzpCap.every((c) => c === NO_CAP)).toBe(true);
-    expect(decoded).toEqual({ ...parcels, fzpCap: decoded.fzpCap });
+    expect(decoded).toEqual(parcels);
   });
 
   it('has 15 rows in each of 4 cells, sorted by (cellId, id), matching the manifest', () => {
@@ -144,18 +131,16 @@ describe('mini city fixture', () => {
     const at = (id: string) => row(p, id);
     expect(p.localProgram.includes(0) && p.localProgram.includes(1)).toBe(true);
     expect(p.localProgram[at(MINI_LP_ID)]).toBe(1);
-    // hostable vs hostableBase
-    expect(p.hostable[at(MINI_HOSTABLE_NOT_BASE_ID)]).toBe(1);
-    expect(p.hostableBase[at(MINI_HOSTABLE_NOT_BASE_ID)]).toBe(0);
     // a density-capped parcel and an uncapped one
     const capped = at(MINI_CAPPED_ID);
     expect(p.baseCap[capped]).toBe(3);
-    expect(p.yield[capped * F + F - 1]).toBe(3);
+    expect(p.fzpCap[capped]).toBe(3);
     expect(p.baseCap[at(MINI_LP_ID)]).toBe(NO_CAP);
-    // hostable, yet no level gains a home
+    expect(p.fzpCap[at(MINI_LP_ID)]).toBe(NO_CAP);
+    // hostable, yet capped at or below its existing homes: no option gains after the cap
     const noGain = at(MINI_NO_GAIN_ID);
     expect(p.hostable[noGain]).toBe(1);
-    expect(p.yield[noGain * F + F - 1]).toBeLessThanOrEqual(p.existingUnits[noGain]);
+    expect(p.fzpCap[noGain]).toBeLessThanOrEqual(p.existingUnits[noGain]);
     // not hostable: no envelope, ineligible
     expect(p.hostable[at(MINI_NO_ENVELOPE_ID)]).toBe(0);
     expect(p.envelopeStories[at(MINI_NO_ENVELOPE_ID)]).toBe(0);
@@ -177,23 +162,22 @@ describe('mini city fixture', () => {
     );
   });
 
-  it('yields and hostable flags follow the pipeline rule on the scenario record', () => {
-    const { parcels: p, records } = miniCity();
+  it('hostable flags follow the pipeline rule on the options, before the caps', () => {
+    const city = miniCity();
+    const { parcels: p } = city;
+    const t = miniOptions(city);
+    const gains = (i: number, stories: number) => {
+      for (let j = t.offset[i]; j < t.offset[i + 1]; j++)
+        if (t.stories[j] <= stories && t.homes[j] > p.existingUnits[i]) return true;
+      return false;
+    };
     for (let i = 0; i < p.count; i++) {
-      const view = scenarioRecordOf(p, i, records.get(p.id[i])!);
-      const cap = p.baseCap[i] === NO_CAP ? null : p.baseCap[i];
-      const gross = (s: number) => (s === 0 ? 0 : scenarioYield(view, s, null));
-      const at = (s: number, c: number | null) =>
-        FILL_LEVELS.map((f) =>
-          s === 0 ? 0 : capScenarioYield(gross(fillStories(f, s)), c, p.existingUnits[i])
-        );
       const env = p.envelopeStories[i];
       const base = p.baseStories[i];
-      expect(yieldsOf(p, i)).toEqual(at(env, p.localProgram[i] ? null : cap));
-      expect(Array.from(p.baseYield.subarray(i * F, i * F + F))).toEqual(at(base, cap));
       const ok = p.eligible[i] === 1;
-      expect(p.hostable[i]).toBe(ok && env >= 1 && gross(env) > 0 ? 1 : 0);
-      expect(p.hostableBase[i]).toBe(ok && base >= 1 && gross(base) > 0 ? 1 : 0);
+      expect(p.fzpCap[i]).toBe(p.localProgram[i] ? NO_CAP : p.baseCap[i]);
+      expect(p.hostable[i]).toBe(ok && env >= 1 && gains(i, env) ? 1 : 0);
+      expect(p.hostableBase[i]).toBe(ok && base >= 1 && gains(i, base) ? 1 : 0);
     }
   });
 });

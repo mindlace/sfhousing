@@ -78,7 +78,6 @@ export interface Calibration {
   initiation: InitiationModel;
   pathwayForNew: Record<Pathway, number> & { provenance: Provenance };
   ppaShare: Record<Pathway, number> & { provenance: Provenance }; // share of new projects that start at preApplication
-  size: SizeModel;
   revision: RevisionModel;
   streamlinedForLocalProgram: Provenance; // tier 2: Local Program projects use the streamlined tables
   phaseGap: { days: number[]; provenance: Provenance }; // days: empirical gaps between successive phases' permitFiled
@@ -132,17 +131,6 @@ export interface InitiationModel {
     feature: FeatureId;
     bins: number[]; // ascending edges; categorical features use category index
     coef: number[]; // one per bin
-  }[];
-  provenance: Provenance;
-}
-
-// T4b: size.
-
-export interface SizeModel {
-  fillLevels: number[]; // ascending fractions of envelope stories; last = 1; length F matches T11 yield
-  byEnvelope: {
-    maxStoriesUpTo: number;
-    probs: number[]; // length F, sums to 1
   }[];
   provenance: Provenance;
 }

@@ -36,7 +36,7 @@ The engine's funded starts ([finance-engine.md](finance-engine.md)) have their o
   `LEGACY_UNCAPPED_DOLLARS` that no test reaches; a certain affordable stack, a market loan, a
   market guarantee, one `off` span; `withFederalYearly` caps any finance's `federal` pool) and
   `world/fixtures/tiny-queue.ts` (`tinyQueue()`, a five-lot city with hand-set hazards and
-  yields for exact queue cases; `tinyStack()`, a baseline-shaped affordable stack with an optional
+  options for exact queue cases; `tinyStack()`, a baseline-shaped affordable stack with an optional
   bond and optional federal inflows). Under the fallback award (rule 16 as amended, 2026-11-25) an
   application waits only when every pool of its bundle is short, so a test about the waiting line
   makes every pool short (empty, late or capped federal and state money), not one. All values are

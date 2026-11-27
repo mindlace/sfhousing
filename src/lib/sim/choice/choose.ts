@@ -9,7 +9,6 @@
 // between options already allowed.
 import type { OptionTable } from '../../data/option-table';
 import { NULL_CAP } from '../../data/policy-codec';
-import { capScenarioYield } from '../../data/scenario-yield';
 import type { Day } from '../../timelapse/types';
 import { carryPerHome, costPerHome, valuePerHome } from './pricing';
 import {
@@ -147,9 +146,19 @@ export function allowedCount(t: OptionTable, lot: number, stories: number): numb
   return lo - from;
 }
 
-/** Option j's homes after the unit cap, by capScenarioYield's rule (0 when cap <= existing). */
+/**
+ * Homes after a unit cap: a set `cap` clips the homes, then gives 0 when `cap <= existing` (the
+ * lot's homes may not fall, so no building is allowed there).
+ */
+export function capHomes(homes: number, cap: number | null, existing: number): number {
+  if (cap === null) return homes;
+  if (cap <= existing) return 0;
+  return Math.min(homes, cap);
+}
+
+/** Option j's homes after the unit cap (`capHomes`). */
 export function optionHomes(t: OptionTable, j: number, cap: number | null, existing: number) {
-  return capScenarioYield(t.homes[j], cap, existing);
+  return capHomes(t.homes[j], cap, existing);
 }
 
 /**

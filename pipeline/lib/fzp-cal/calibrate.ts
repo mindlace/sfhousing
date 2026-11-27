@@ -72,7 +72,6 @@ import { calibrationReport } from './report';
 import { datasf } from './provenance';
 import { revisionModel } from './revision';
 import { shippedStep } from './shipped-step';
-import { sizeModel } from './size';
 import {
   buildSpells,
   gapImputeTally,
@@ -99,7 +98,6 @@ export interface CalInput {
   panelOptions: OptionTable;
   /** The location value's provenance (locationValueByLot). */
   locationValue: Provenance;
-  fillLevels: readonly number[];
   datasetVersion: string;
   /** the parsed `pipeline/enrichment/market.json` and its path (for error messages) */
   market: { file: MarketFile; path: string };
@@ -142,8 +140,8 @@ const NULL_CAP = 0xffff;
  * The FZP application of the initiation model: T11's FZP-variant features, with potentialRatio,
  * storiesGap and choiceMargin from the choice among the row's options allowed at its envelope
  * (building-choice spec, "Start odds refit"), and the hostable parcels that no in-flight project
- * occupies (spec §4.6). The cap is none on Local Program parcels and the base cap elsewhere, the
- * FZP yields' rule until the options carry their own FZP cap.
+ * occupies (spec §4.6). The cap is parcels.bin's `fzpCap` (none on Local Program parcels, the
+ * cap on the build's snapshot day elsewhere).
  */
 export function fzpApplication(
   parcels: ScenarioParcels,
@@ -164,8 +162,7 @@ export function fzpApplication(
   return {
     features(i) {
       const f = {} as Record<FeatureId, number>;
-      const local = parcels.localProgram[i] === 1;
-      const cap = local || parcels.baseCap[i] === NULL_CAP ? null : parcels.baseCap[i];
+      const cap = parcels.fzpCap[i] === NULL_CAP ? null : parcels.fzpCap[i];
       const n = allowedCount(choice.t, i, parcels.envelopeStories[i]);
       const c = choiceFeatures(
         choice,
@@ -180,7 +177,7 @@ export function fzpApplication(
         f[id] =
           id === 'potentialRatio' || id === 'storiesGap' || id === 'choiceMargin'
             ? c[id]
-            : featureValue(parcels, i, id, 'fzp');
+            : featureValue(parcels, i, id, c);
       }
       return f;
     },
@@ -379,7 +376,6 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     (s) => s.pathway === 'streamlined' && s.e + s.x >= planningStart
   ).length;
   const localProgram = streamlinedForLocalProgram(streamlinedSpells, asOf, lpDiag);
-  const size = sizeModel(p.norm, asOf, cal, input.fillLevels);
   const rev = revisionModel(p.norm, asOf, cal);
   const gaps = phaseGap(permits, asOf, cal);
 
@@ -390,7 +386,6 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     initiation: init.model,
     pathwayForNew: forNew,
     ppaShare: ppa,
-    size: size.size,
     revision: rev.revision,
     streamlinedForLocalProgram: localProgram,
     phaseGap: gaps.phaseGap,
@@ -429,7 +424,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'calibration.window.preRoll': preRollCount(p.norm),
     'calibration.method.permitOnlyPre2015': n.method.permitOnlyPre2015.fired,
     'calibration.method.ppaPooled': fit.ppaPooled,
-    'calibration.method.sizeOverEnvelope': size.overEnvelope.fired,
+    'calibration.method.sizeOverEnvelope': spread.excludedOver,
     'calibration.choice.records': spread.n,
     'calibration.choice.excludedOver': spread.excludedOver,
     'calibration.choice.noOption': spread.noOption,
@@ -487,7 +482,10 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     perStage: n.perStage,
     purge: { tally: p.tally, windows: p.windows, exits: p.exits },
     permitOnlyPre2015: n.method.permitOnlyPre2015,
-    sizeOverEnvelope: size.overEnvelope,
+    sizeOverEnvelope: {
+      fired: spread.excludedOver,
+      of: spread.n + spread.excludedOver + spread.noOption
+    },
     choice: {
       spread,
       measured: recs.measured,

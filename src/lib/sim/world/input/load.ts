@@ -27,7 +27,7 @@ export type LoadErrorCode =
 
 /**
  * `policy` and `options` are null when the manifest has no usable `scenarios.fzp.policy` or
- * `scenarios.fzp.options` (the load then answers `scenario-missing`: the FZP cap is policy.bin's
+ * `scenarios.fzp.options` (the load then answers `scenario-missing`: the levers read policy.bin
  * and every start chooses among options.bin's buildings). Older datasets also name
  * `scenarios.fzp.frontage` and `scenarios.fzp.gross`; nothing reads them. `cars` (cars.bin, the car
  * model's zones and start households) and `carZones` (their outlines, fetched by the page, never
@@ -222,8 +222,8 @@ class Stopped {}
  * and precomputes both with `deps.warn`. `projects.asOf ≥ horizon` is the caller's check.
  *
  * `policy.bin` and `options.bin` are always fetched: no `urls.policy` or `urls.options` gives
- * `scenario-missing` before any fetch. policy.bin is decoded after parcels.bin and bound to it, and
- * its `fzpYieldCap` becomes the parcels' `fzpCap`; options.bin is decoded and checked against
+ * `scenario-missing` before any fetch. policy.bin is decoded after parcels.bin and bound to it;
+ * options.bin is decoded and checked against
  * parcels.bin (`optionTableProblem`). A decode error or a mismatch gives `scenario-invalid`. With
  * `opts.cars`
  * (the /sim timeline host) and `urls.cars`, `cars.bin` is a sixth, inflated and decoded against
@@ -328,8 +328,6 @@ export async function loadSimInput(
     return invalid('policy.bin', messageOf(e));
   }
   if (cancelled()) return CANCELLED;
-  // The FZP cap the options are clipped by: policy.bin's, until parcels.bin carries it.
-  parcels = { ...parcels, fzpCap: policy.fzpYieldCap };
 
   let options: OptionTable;
   try {

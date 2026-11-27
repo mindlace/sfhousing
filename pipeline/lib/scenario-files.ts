@@ -1,15 +1,13 @@
 // Scenario file paths (scenario-data spec §4.8) and the parcels.bin reader, kept free of the DuckDB
-// step so the invariant checker and the gross workers can import them cheaply.
+// step so the invariant checker and the options workers can import them cheaply.
 import { readFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import { decodeScenarioPayload, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
 
 /** The T11 file, relative to the dataset's out dir. */
 export const PARCELS_BIN = 'scenarios/fzp/parcels.bin';
-/** sfh-policy/1 per-lot policy inputs, in parcels.bin row order (sim data layers). */
+/** sfh-policy/2 per-lot policy inputs, in parcels.bin row order (sim data layers). */
 export const POLICY_BIN = 'scenarios/fzp/policy.bin';
-/** sfh-gross/1 per-lot gross units by story count, in parcels.bin row order (pipeline/steps/gross.ts). */
-export const GROSS_BIN = 'scenarios/fzp/gross.bin';
 /** sfh-options/1 per-lot building options and location value, in parcels.bin row order (steps/options.ts). */
 export const OPTIONS_BIN = 'scenarios/fzp/options.bin';
 

@@ -2,15 +2,14 @@
 // chunks and a manifest. Browser-safe (the cross-engine golden runs in Chromium): no `node:`
 // imports; the deflated `parcels.bin` bytes come from the Node-only `mini-bin.ts`.
 //
-// Fixture values only (tier 4, made up for the timelapse-sim tests): not data. The `yield`,
-// `baseYield`, `hostable` and `hostableBase` columns in DERIVED were produced by the pipeline
-// rule (pipeline/steps/scenario.ts: `scenarioYield` on `scenarioRecordOf(p, i, rec)` per fill
-// level, capped by `baseCap` except the FZP yield of a Local Program parcel; hostable flags on
-// the uncapped full-fill gross) and are re-checked against the generator in input.spec.ts.
+// Fixture values only (tier 4, made up for the timelapse-sim tests): not data. The `hostable` and
+// `hostableBase` flags in DERIVED follow the pipeline's rule (pipeline/steps/scenario.ts: eligible,
+// at least one story, and some option of mini-options.ts at or below the envelope has more homes
+// than the lot now, before any cap) and are re-checked against the options in build.spec.ts.
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import { decodeParcelChunk, encodeParcelChunk } from '$lib/data/parcel-chunk';
-import { FILL_LEVELS, type ScenarioParcels } from '$lib/data/scenario-codec';
+import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import { lRing, rectRing, ringArea, type Ring } from '$lib/generator/fixtures/geom';
 import type { Provenance } from '$lib/timelapse/types';
 
@@ -31,14 +30,12 @@ export const MINI_SCENARIO_URLS = {
 
 /** Local Program parcel, 40-X, the scenario-tiny codec row's id. */
 export const MINI_LP_ID = '0026T001A';
-/** Hostable but density-capped below its existing units: every yield is 0 (no size level). */
+/** Hostable but density-capped at or below its existing units: no option gains after the cap. */
 export const MINI_NO_GAIN_ID = '0026T005';
 /** Non-LP parcel whose base cap (3) binds below the generator's gross. */
 export const MINI_CAPPED_ID = '0026T006';
 /** Outside every height district: envelope 0, not hostable. */
 export const MINI_NO_ENVELOPE_ID = '0026T008';
-/** LP parcel (8 existing units) that is hostable under FZP but not `hostableBase`. */
-export const MINI_HOSTABLE_NOT_BASE_ID = '2999A012';
 /** Chunk land use 'NONE' (chunk `eligible` false) but assessor units > 0: scenario-eligible. */
 export const MINI_NONE_WITH_UNITS_ID = '0026T015';
 /** Neighbours across two cells (2999A019 in 50_26, 2999A020 in 51_26). */
@@ -147,69 +144,69 @@ const ROWS: Row[] = [
   { id: '8711023C', cell: 3, slot: 14, shape: 'std', district: 0, units: 0, stories: 0, floor: 77, built: 1990, share200: 200, luc: 3 }
 ];
 
-/** Generator-derived columns per id: FZP yield, base yield (both length F), hostable, hostableBase. */
+/** Generator-derived flags per id: hostable, hostableBase. */
 // prettier-ignore
-const DERIVED: Record<ParcelId, [number[], number[], 0 | 1, 0 | 1]> = {
-  '0026T001A': [[0, 3, 9, 9, 9], [0, 0, 3, 7, 7], 1, 1],
-  '0026T002': [[0, 3, 9, 9, 9], [0, 0, 3, 7, 7], 1, 1],
-  '0026T003': [[2, 3, 9, 9, 9], [2, 3, 9, 9, 9], 1, 1],
-  '0026T004': [[0, 3, 9, 9, 9], [0, 3, 9, 9, 9], 1, 1],
-  '0026T005': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 1, 1],
-  '0026T006': [[0, 0, 3, 3, 3], [0, 0, 3, 3, 3], 1, 1],
-  '0026T007': [[4, 48, 69, 76, 83], [4, 4, 48, 48, 58], 1, 1],
-  '0026T008': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 0],
-  '0026T009': [[0, 0, 0, 7, 7], [0, 0, 0, 7, 7], 1, 1],
-  '0026T010': [[2, 3, 9, 9, 9], [1, 2, 3, 7, 7], 1, 1],
-  '0026T011': [[4, 11, 11, 11, 11], [0, 4, 11, 11, 11], 1, 1],
-  '0026T012': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '0026T013': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 0],
-  '0026T014': [[0, 0, 9, 9, 9], [0, 0, 0, 7, 7], 1, 1],
-  '0026T015': [[38, 82, 106, 114, 114], [0, 38, 70, 82, 82], 1, 1],
-  '2999A001': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '2999A002': [[0, 3, 9, 9, 9], [0, 0, 3, 7, 7], 1, 1],
-  '2999A003': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 0],
-  '2999A004': [[0, 0, 2, 2, 2], [0, 0, 2, 2, 2], 1, 1],
-  '2999A005': [[0, 38, 70, 82, 80], [0, 38, 70, 82, 80], 1, 1],
-  '2999A006': [[0, 0, 9, 9, 9], [0, 0, 0, 7, 7], 1, 1],
-  '2999A007': [[1, 2, 3, 7, 7], [1, 2, 3, 7, 7], 1, 1],
-  '2999A008': [[4, 49, 66, 72, 78], [4, 4, 49, 49, 59], 1, 1],
-  '2999A009': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '2999A010': [[3, 9, 9, 9, 9], [0, 3, 9, 9, 9], 1, 1],
-  '2999A011': [[0, 0, 4, 9, 9], [0, 0, 4, 9, 9], 1, 1],
-  '2999A012': [[0, 0, 9, 9, 9], [0, 0, 0, 0, 0], 1, 0],
-  '2999A013': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '2999A014': [[9, 9, 9, 9, 9], [3, 9, 9, 9, 9], 1, 1],
-  '2999A019': [[3, 9, 9, 9, 9], [0, 3, 9, 9, 9], 1, 1],
-  '3512001': [[1, 2, 3, 7, 7], [1, 2, 3, 7, 7], 1, 1],
-  '3512002': [[1, 2, 3, 7, 7], [1, 2, 3, 7, 7], 1, 1],
-  '3512003': [[0, 3, 9, 9, 9], [0, 0, 3, 7, 7], 1, 1],
-  '3512004': [[4, 4, 48, 48, 58], [4, 4, 48, 48, 58], 1, 1],
-  '3512005': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '3512006': [[2, 3, 9, 9, 9], [1, 2, 3, 7, 7], 1, 1],
-  '3512007': [[0, 0, 3, 4, 4], [0, 0, 3, 4, 4], 1, 1],
-  '3512008': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 0],
-  '3512009': [[4, 12, 12, 12, 12], [3, 4, 12, 12, 12], 1, 1],
-  '3512010': [[38, 82, 102, 109, 109], [0, 38, 70, 82, 80], 1, 1],
-  '3512011': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 0],
-  '3512012': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '3512013': [[0, 9, 9, 9, 9], [0, 0, 9, 9, 9], 1, 1],
-  '3512014': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '3512015': [[0, 0, 9, 9, 9], [0, 0, 0, 7, 7], 1, 1],
-  '2999A020': [[3, 9, 9, 9, 9], [0, 3, 9, 9, 9], 1, 1],
-  '3600001': [[4, 96, 175, 204, 212], [4, 96, 175, 204, 212], 1, 1],
-  '3600002': [[4, 95, 175, 204, 208], [4, 95, 175, 204, 208], 1, 1],
-  '3600003': [[4, 205, 252, 295, 219], [4, 205, 252, 295, 219], 1, 1],
-  '3600004': [[4, 206, 250, 293, 219], [4, 206, 250, 293, 219], 1, 1],
-  '3600005': [[0, 204, 256, 302, 219], [0, 204, 256, 302, 219], 1, 1],
-  '3600006': [[4, 206, 250, 292, 219], [4, 206, 250, 292, 219], 1, 1],
-  '3600007': [[4, 95, 176, 205, 208], [4, 95, 176, 205, 208], 1, 1],
-  '3600008': [[4, 96, 175, 205, 207], [4, 96, 175, 205, 207], 1, 1],
-  '3600009': [[4, 4, 59, 59, 70], [4, 4, 59, 59, 70], 1, 1],
-  '3600010': [[146, 253, 239, 270, 291], [4, 205, 253, 297, 219], 1, 1],
-  '3600014': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '3600015': [[0, 3, 9, 9, 9], [0, 0, 3, 7, 7], 1, 1],
-  '3600016': [[0, 0, 3, 7, 7], [0, 0, 3, 7, 7], 1, 1],
-  '8711023C': [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 0, 0]
+const DERIVED: Record<ParcelId, [0 | 1, 0 | 1]> = {
+  '0026T001A': [1, 1],
+  '0026T002': [1, 1],
+  '0026T003': [1, 1],
+  '0026T004': [1, 1],
+  '0026T005': [1, 1],
+  '0026T006': [1, 1],
+  '0026T007': [1, 1],
+  '0026T008': [0, 0],
+  '0026T009': [1, 1],
+  '0026T010': [1, 1],
+  '0026T011': [1, 1],
+  '0026T012': [1, 1],
+  '0026T013': [0, 0],
+  '0026T014': [1, 1],
+  '0026T015': [1, 1],
+  '2999A001': [1, 1],
+  '2999A002': [1, 1],
+  '2999A003': [0, 0],
+  '2999A004': [1, 1],
+  '2999A005': [1, 1],
+  '2999A006': [1, 1],
+  '2999A007': [1, 1],
+  '2999A008': [1, 1],
+  '2999A009': [1, 1],
+  '2999A010': [1, 1],
+  '2999A011': [1, 1],
+  '2999A012': [1, 1],
+  '2999A013': [1, 1],
+  '2999A014': [1, 1],
+  '2999A019': [1, 1],
+  '3512001': [1, 1],
+  '3512002': [1, 1],
+  '3512003': [1, 1],
+  '3512004': [1, 1],
+  '3512005': [1, 1],
+  '3512006': [1, 1],
+  '3512007': [1, 1],
+  '3512008': [0, 0],
+  '3512009': [1, 1],
+  '3512010': [1, 1],
+  '3512011': [0, 0],
+  '3512012': [1, 1],
+  '3512013': [1, 1],
+  '3512014': [1, 1],
+  '3512015': [1, 1],
+  '2999A020': [1, 1],
+  '3600001': [1, 1],
+  '3600002': [1, 1],
+  '3600003': [1, 1],
+  '3600004': [1, 1],
+  '3600005': [1, 1],
+  '3600006': [1, 1],
+  '3600007': [1, 1],
+  '3600008': [1, 1],
+  '3600009': [1, 1],
+  '3600010': [1, 1],
+  '3600014': [1, 1],
+  '3600015': [1, 1],
+  '3600016': [1, 1],
+  '8711023C': [0, 0]
 };
 
 const RINGS: Record<Row['shape'], Ring> = {
@@ -328,7 +325,6 @@ export function miniCity(): MiniCity {
   });
 
   const n = rows.length;
-  const F = FILL_LEVELS.length;
   const col = <T extends { [k: number]: number }>(
     make: new (len: number) => T,
     pick: (r: Row) => number
@@ -338,24 +334,14 @@ export function miniCity(): MiniCity {
     return a;
   };
   const derived = (r: Row) => DERIVED[r.id];
-  const perFill = (k: 0 | 1) => {
-    const a = new Uint16Array(n * F);
-    rows.forEach((r, i) => a.set(derived(r)[k], i * F));
-    return a;
-  };
   const envelope = (r: Row) => (r.lp ? LP_STORIES : BASE_STORIES)[r.district];
-  const yieldCol = perFill(0);
-  const baseYield = perFill(1);
-  const ratio = (y: Uint16Array) =>
-    col(Float32Array, (r) => y[rows.indexOf(r) * F + F - 1] / Math.max(r.units, 1));
   let cell = 0;
   const parcels: ScenarioParcels = {
-    format: 'sfh-scenario/1',
+    format: 'sfh-scenario/2',
     datasetVersion: MINI_VERSION,
     scenario: 'fzp',
     rollYear: 2025,
     count: n,
-    fillLevels: [...FILL_LEVELS],
     cells: MINI_CELLS.map((cellId, c) => {
       const count = rows.filter((r) => r.cell === c).length;
       const start = cell;
@@ -368,7 +354,7 @@ export function miniCity(): MiniCity {
       localProgram: prov('Local Program'),
       features: prov('Features'),
       existingUnits: { ...prov('Existing units'), n, window: ['2025-01-01', '2025-12-31'] },
-      yield: prov('Yield')
+      cap: prov('Cap')
     },
     id: rows.map((r) => r.id),
     index: new Map(rows.map((r, i) => [r.id, i])),
@@ -378,7 +364,7 @@ export function miniCity(): MiniCity {
     envelopeStories: col(Uint8Array, envelope),
     baseStories: col(Uint8Array, (r) => BASE_STORIES[r.district]),
     localProgram: col(Uint8Array, (r) => r.lp ?? 0),
-    hostable: col(Uint8Array, (r) => derived(r)[2]),
+    hostable: col(Uint8Array, (r) => derived(r)[0]),
     eligible: col(Uint8Array, (r) => (r.ineligible ? 0 : 1)),
     split: col(Uint8Array, (r) => r.split ?? 0),
     imputed: col(Uint8Array, (r) => r.imputed ?? 0),
@@ -391,17 +377,9 @@ export function miniCity(): MiniCity {
     improvementShare: col(Float32Array, (r) => r.share200 / 200),
     rentControlLikely: col(Uint8Array, (r) => r.rc ?? 0),
     landUseClass: col(Uint8Array, (r) => r.luc),
-    hostableBase: col(Uint8Array, (r) => derived(r)[3]),
-    // The FZP yields' cap: none on a Local Program parcel, the base cap elsewhere (as mini-policy's
-    // `fzpYieldCap`, which the loader binds here).
-    fzpCap: col(Uint16Array, (r) => (r.lp ? NO_CAP : (r.cap ?? NO_CAP))),
-    baseYield,
-    yield: yieldCol,
-    potentialRatio: { fzp: ratio(yieldCol), base: ratio(baseYield) },
-    storiesGap: {
-      fzp: col(Int16Array, (r) => envelope(r) - r.stories),
-      base: col(Int16Array, (r) => BASE_STORIES[r.district] - r.stories)
-    }
+    hostableBase: col(Uint8Array, (r) => derived(r)[1]),
+    // The FZP cap: none on a Local Program parcel, the base cap elsewhere.
+    fzpCap: col(Uint16Array, (r) => (r.lp ? NO_CAP : (r.cap ?? NO_CAP)))
   };
 
   const manifest: Manifest = {

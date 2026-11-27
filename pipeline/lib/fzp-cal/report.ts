@@ -34,7 +34,6 @@ import type { FitCell, InitiationEvents, PanelResult } from './panel';
 import { sig6 } from './tail';
 import type { PurgeExit } from './purge';
 import { REVISION_EDGES } from './revision';
-import { SIZE_EDGES } from './size';
 import type { CellReport, FitResult, NoFcdCell } from './transitions';
 import {
   SC_RULE_IDS,
@@ -549,21 +548,14 @@ function initiationSection(x: ReportInput): string[] {
 }
 
 function sizeRevisionSection(x: ReportInput): string[] {
-  const s = x.calibration.size;
   const v = x.calibration.revision;
   const clamp = x.tallies['sc.revision.ratio-clamp'];
   const carried = x.tallies['sc.revision.carried-excluded'];
   return [
     REPORT_SECTIONS[5],
     '',
-    `### Size (tier ${s.provenance.tier}, n = ${num(s.provenance.n)})`,
-    '',
-    `Fill levels ${s.fillLevels.map(num).join(', ')}; bucket edges ${SIZE_EDGES.join(', ')}; calibration.method.sizeOverEnvelope = ${x.sizeOverEnvelope.fired} of ${x.sizeOverEnvelope.of} (r > 1 mapped to fill 1).`,
-    '',
-    ...table(
-      ['max stories up to', ...s.fillLevels.map((f) => `fill ${num(f)}`)],
-      s.byEnvelope.map((b) => [num(b.maxStoriesUpTo), ...b.probs])
-    ),
+    'Size: the developer’s choice among the lot’s building options (see Choice below; the ' +
+      'fill-level size model is retired).',
     '',
     `### Revision (tier ${v.provenance.tier}, n = ${num(v.provenance.n)})`,
     '',
@@ -611,7 +603,6 @@ function provenanceIndex(c: Calibration): [string, Provenance][] {
     ['initiation.provenance', c.initiation.provenance],
     ['pathwayForNew.provenance', c.pathwayForNew.provenance],
     ['ppaShare.provenance', c.ppaShare.provenance],
-    ['size.provenance', c.size.provenance],
     ['revision.provenance', c.revision.provenance],
     ['streamlinedForLocalProgram', c.streamlinedForLocalProgram],
     ['phaseGap.provenance', c.phaseGap.provenance]
@@ -699,7 +690,6 @@ function constantsSection(x: ReportInput): string[] {
           value(x.cal[k])
         ]),
         ['MONTH_DAYS (definitional)', num(MONTH_DAYS)],
-        ['size bucket edges', SIZE_EDGES.join(', ')],
         ['revision ratio edges', REVISION_EDGES.join(', ')],
         ['FZP filings band', `${FZP_BAND[0]} to ${FZP_BAND[1]}`],
         ...Object.entries(INITIAL_EDGES).map(([f, e]) => [`initial bins: ${f}`, e.join(', ')])
@@ -769,7 +759,7 @@ function rulesSection(x: ReportInput): string[] {
         [
           'calibration.method.sizeOverEnvelope',
           x.sizeOverEnvelope.fired,
-          `${x.sizeOverEnvelope.of} measured size histories`
+          `${x.sizeOverEnvelope.of} choice records`
         ],
         ['calibration.window.preRoll', c['calibration.window.preRoll'], 'qualifying histories'],
         ['calibration.noFcd.flaggedPooled', c['calibration.noFcd.flaggedPooled'], 'pooled cells']

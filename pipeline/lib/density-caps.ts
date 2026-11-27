@@ -606,8 +606,8 @@ export function densityCap(
 }
 
 /**
- * The cap parcels.bin's FZP `yield` uses (spec §4.4): none on a Local Program parcel (Bulletin 11,
- * §206.10(d)(1)(A)), else `densityCap` on `capDay`. policy.bin ships it as `fzpYieldCap`.
+ * The FZP unit cap (spec §4.4): none on a Local Program parcel (Bulletin 11, §206.10(d)(1)(A)),
+ * else `densityCap` on `capDay`. parcels.bin ships it as `fzpCap`.
  */
 export function fzpYieldCapOf(
   zoning: string | null,

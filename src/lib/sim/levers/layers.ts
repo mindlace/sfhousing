@@ -29,13 +29,13 @@ export type DataLayer = 'fzp' | 'base';
 
 /** One data layer's columns as parcels.bin / policy.bin carry them. */
 export function stockTable(ctx: LayerCtx, id: DataLayer): EnvelopeTable {
-  const { parcels: p, policy: q } = ctx;
+  const p = ctx.parcels;
   const count = p.count;
   return id === 'fzp'
     ? {
         count,
         stories: p.envelopeStories,
-        cap: q.fzpYieldCap,
+        cap: p.fzpCap,
         hostable: p.hostable
       }
     : {

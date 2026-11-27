@@ -209,11 +209,11 @@ function transitionsSection(cal: Calibration): ProvSection {
 const LAND_USE = ['residential', 'mixed', 'commercial', 'pdr', 'vacant', 'other'];
 
 const FEATURE_LABEL: Record<FeatureId, string> = {
-  potentialRatio: 'Homes allowed ÷ homes there now',
+  potentialRatio: 'Homes likely built ÷ homes there now',
   existingUnits: 'Homes there now',
   lotAreaM2: 'Lot area (square meters)',
   yearBuilt: 'Year built',
-  storiesGap: 'Stories allowed above the existing building',
+  storiesGap: 'Stories likely built above the existing building',
   improvementShare: 'Share of assessed value in the building',
   rentControlLikely: 'Likely rent-controlled (2 or more homes, built before 1979)',
   landUseClass: 'Land use',
@@ -409,26 +409,23 @@ function moneySection(cal: Calibration, terms: ResolvedTerms): ProvSection | nul
 }
 
 function sizeSection(cal: Calibration): ProvSection {
-  const { size } = cal;
-  const rows = size.byEnvelope.flatMap((band) =>
-    size.fillLevels.map((fill, j) => [
-      `Up to ${band.maxStoriesUpTo} stories`,
-      `${Number((fill * 100).toFixed(1))}% of the allowed height`,
-      pct(band.probs[j])
-    ])
-  );
+  const c = cal.choice;
   return {
     id: 'src-size',
     heading: 'How big new projects are',
-    intro: [],
-    entries: [entry('src-size-model', 'Size of a new project', size.provenance)],
-    tables: [
-      {
-        caption: 'Share of new projects at each fill level',
-        head: ['Allowed height', 'Fill level', 'Share'],
-        rows
-      }
-    ]
+    intro: [
+      'A developer picks one of the lot’s buildings that zoning allows, most often the one ' +
+        'worth most per its cost.'
+    ],
+    entries: c
+      ? [
+          entry('src-size-model', 'Which building a developer picks', c.provenance.choiceSpread),
+          entry('src-size-costs', 'Building costs by type', c.provenance.anchors),
+          entry('src-size-value', 'What homes sell or rent for', c.provenance.locationValue),
+          entry('src-size-affordable', 'Fully affordable projects', c.provenance.affordableRule)
+        ]
+      : [],
+    tables: []
   };
 }
 

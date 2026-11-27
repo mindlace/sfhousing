@@ -134,8 +134,15 @@ describe('bands, zones and standards', () => {
   });
 });
 
+/** One option per story count up to 20, `perStory` homes a story (`flat`: the same at every story). */
+const opts = (perStory: number, flat = false) =>
+  Array.from({ length: 20 }, (_, k) => ({
+    stories: k + 1,
+    homes: flat ? perStory : perStory * (k + 1)
+  }));
+
 describe('sb79Row', () => {
-  it('sb79Row caps at the statute density and applies the 5-unit minimum per fill level', () => {
+  it('sb79Row caps at the statute density and applies the 5-unit minimum', () => {
     const base = {
       best: { tier: 1, band: 2 },
       eligible: true,
@@ -143,22 +150,22 @@ describe('sb79Row', () => {
       rentControlLikely: false,
       existingUnits: 0
     } as const;
-    // 4046.8564224 m² = 1 acre → tier 1 quarter cap 120; grossAt = 20 per story
-    expect(sb79Row({ ...base, lotAreaM2: 4046.8564224, grossAt: (s) => 20 * s })).toMatchObject({
+    // 4046.8564224 m² = 1 acre → tier 1 quarter cap 120; 20 homes a story
+    expect(sb79Row({ ...base, lotAreaM2: 4046.8564224, options: opts(20) })).toMatchObject({
       status: 'applies',
       stories: 7,
       cap: 120,
-      yield: [40, 80, 100, 120, 120],
+      top: 120,
       uncappedTop: 140
     });
-    expect(sb79Row({ ...base, lotAreaM2: 100, grossAt: (s) => s }).status).toBe('min-units'); // cap ≤ 3
+    expect(sb79Row({ ...base, lotAreaM2: 100, options: opts(1) }).status).toBe('min-units'); // cap ≤ 3
     // §65912.157(h): more than two rent-controlled units. A 2-unit pre-1979 lot is not excluded,
     // a 3-unit one is.
     const old = {
       ...base,
       rentControlLikely: true,
       lotAreaM2: 4046.8564224,
-      grossAt: (s: number) => 20 * s
+      options: opts(20)
     };
     expect(sb79Row({ ...old, existingUnits: 2 }).status).toBe('applies');
     expect(sb79Row({ ...old, existingUnits: 3 }).status).toBe('rent-control');
@@ -169,12 +176,12 @@ describe('sb79Row', () => {
         eligible: false,
         rentControlLikely: true,
         lotAreaM2: 1,
-        grossAt: (s) => s
+        options: opts(1)
       }).status
     ).toBe('not-eligible');
   });
 
-  it('zeroes fill levels below 5 units, and gives the other statuses no stories, cap or yield', () => {
+  it('reads the options within the statute stories, and gives the other statuses no envelope', () => {
     const base = {
       best: { tier: 2, band: 3 },
       eligible: true,
@@ -183,28 +190,31 @@ describe('sb79Row', () => {
       existingUnits: 0,
       lotAreaM2: 4046.8564224
     } as const;
-    // Tier 2 half: 55 ft → 5 stories, fill [1, 3, 4, 5, 5] × 2 = [2, 6, 8, 10, 10].
-    expect(sb79Row({ ...base, grossAt: (s) => 2 * s })).toMatchObject({
+    // Tier 2 half: 55 ft → 5 stories; 2 homes a story → 10 at 5 stories.
+    expect(sb79Row({ ...base, options: opts(2) })).toMatchObject({
       status: 'applies',
       stories: 5,
       cap: 80,
-      yield: [0, 6, 8, 10, 10],
+      top: 10,
       uncappedTop: 10
     });
-    const empty = { stories: 0, cap: null, yield: [0, 0, 0, 0, 0] };
-    expect(sb79Row({ ...base, best: null, grossAt: (s) => s })).toMatchObject({
+    const empty = { stories: 0, cap: null, top: 0 };
+    expect(sb79Row({ ...base, best: null, options: opts(1) })).toMatchObject({
       status: 'outside',
       ...empty
     });
-    expect(sb79Row({ ...base, zone: 'excluded', grossAt: (s) => 9 * s })).toMatchObject({
+    expect(sb79Row({ ...base, zone: 'excluded', options: opts(9) })).toMatchObject({
       status: 'zone',
       ...empty
     });
-    expect(sb79Row({ ...base, zone: 'unlisted', grossAt: (s) => 9 * s }).status).toBe('zone');
-    expect(sb79Row({ ...base, grossAt: () => 4 })).toMatchObject({ status: 'min-units', ...empty });
-    // The cap at or below the existing homes gives 0 (capScenarioYield), so min-units.
-    expect(
-      sb79Row({ ...base, lotAreaM2: 202, existingUnits: 4, grossAt: (s) => 9 * s }).status
-    ).toBe('min-units');
+    expect(sb79Row({ ...base, zone: 'unlisted', options: opts(9) }).status).toBe('zone');
+    expect(sb79Row({ ...base, options: opts(4, true) })).toMatchObject({
+      status: 'min-units',
+      ...empty
+    });
+    // The cap at or below the existing homes allows no building (capHomes), so min-units.
+    expect(sb79Row({ ...base, lotAreaM2: 202, existingUnits: 4, options: opts(9) }).status).toBe(
+      'min-units'
+    );
   });
 });

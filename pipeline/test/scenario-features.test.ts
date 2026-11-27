@@ -5,12 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
-import {
-  FILL_LEVELS,
-  decodeScenarioPayload,
-  featureValue,
-  type ScenarioParcels
-} from '../../src/lib/data/scenario-codec';
+import { decodeScenarioPayload, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import { parseManifest } from '../../src/lib/data/manifest';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { FIXTURE_PROFILE } from '../config';
@@ -45,8 +40,6 @@ const PANEL_COLUMNS = [
   'improvement_share',
   'rent_control_likely',
   'imputed',
-  'potential_ratio_base',
-  'stories_gap_base',
   'hostable_base',
   'option_row'
 ];
@@ -65,12 +58,9 @@ interface PanelRow {
   improvement_share: number;
   rent_control_likely: boolean;
   imputed: number;
-  potential_ratio_base: number;
-  stories_gap_base: number;
   hostable_base: boolean;
 }
 
-const F = FILL_LEVELS.length;
 let derived: string;
 let outDir: string;
 let p: ScenarioParcels;
@@ -116,15 +106,12 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
       expect(i, r.mapblklot).toBeDefined();
       const k = i as number;
       // Lot 19 (3512019) is freeway land: the panel keeps it eligible (calibration describes the
-      // past market), T11 does not, so its base-yield features are the rule's 0 on T11 only.
+      // past market), T11 does not, so its hostableBase is the rule's 0 on T11 only.
       const freeway = r.mapblklot === '3512019';
       if (freeway) {
         expect(r.hostable_base, 'lot 19 panel').toBe(true);
         expect(r.base_yield, 'lot 19 panel').toBeGreaterThan(0);
-        expect(r.potential_ratio_base, 'lot 19 panel').toBeGreaterThan(0);
         expect(p.hostableBase[k], 'lot 19 T11').toBe(0);
-        expect(p.baseYield[k * F + F - 1], 'lot 19 T11').toBe(0);
-        expect(featureValue(p, k, 'potentialRatio', 'base'), 'lot 19 T11').toBe(0);
       }
       const ruled = (v: number) => (freeway ? 0 : v);
       expect(
@@ -137,28 +124,22 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
           rent_control_likely: r.rent_control_likely ? 1 : 0,
           land_use_class: r.land_use_class,
           imputed: r.imputed,
-          potential_ratio_base: ruled(r.potential_ratio_base),
-          stories_gap_base: r.stories_gap_base,
           base_stories: r.base_stories,
           base_density_cap: r.base_density_cap ?? 0xffff,
-          base_yield: ruled(r.base_yield),
           hostable_base: ruled(r.hostable_base ? 1 : 0)
         },
         r.mapblklot
       ).toEqual({
-        existing_units: featureValue(p, k, 'existingUnits', 'base'),
+        existing_units: p.existingUnits[k],
         existing_stories: p.existingStories[k],
-        lot_area_m2: featureValue(p, k, 'lotAreaM2', 'base'),
-        year_built: featureValue(p, k, 'yearBuilt', 'base'),
-        improvement_share: featureValue(p, k, 'improvementShare', 'base'),
-        rent_control_likely: featureValue(p, k, 'rentControlLikely', 'base'),
-        land_use_class: featureValue(p, k, 'landUseClass', 'base'),
+        lot_area_m2: p.lotAreaM2[k],
+        year_built: p.yearBuilt[k],
+        improvement_share: p.improvementShare[k],
+        rent_control_likely: p.rentControlLikely[k],
+        land_use_class: p.landUseClass[k],
         imputed: p.imputed[k],
-        potential_ratio_base: featureValue(p, k, 'potentialRatio', 'base'),
-        stories_gap_base: featureValue(p, k, 'storiesGap', 'base'),
         base_stories: p.baseStories[k],
         base_density_cap: p.baseCap[k],
-        base_yield: p.baseYield[k * F + F - 1],
         hostable_base: p.hostableBase[k]
       });
     }
@@ -174,13 +155,14 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     // over the parcels with a row in both years: mini's panel grows from 2 rows (2023) to 19
     // (2024) and 17 (2025), which is coverage, not flips. Vacant lots 15, 17 and 19 are
     // hostable in 2024 and 2025 (lot 19, freeway land, only in the panel); underwater lot 16 and
-    // road-like lot 21 never are.
+    // road-like lot 21 never are. Lot 8 hosts in 2024 and 2025: its options at 4 stories hold
+    // more homes than it has (the fill-level generator gave it none).
     const rows = await panel();
     const years = [...new Set(rows.map((r) => r.roll_year))].sort();
     expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual(
       years.map((y) => rows.filter((r) => r.roll_year === y && r.hostable_base).length)
     );
-    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 12, 11]);
+    expect(years.map((y) => counts[`scenario.panel.hostable_base.${y}`])).toEqual([2, 13, 12]);
     const at = new Map(rows.map((r) => [`${r.mapblklot}:${r.roll_year}`, r.hostable_base]));
     for (const y of years.slice(1)) {
       const both = rows.filter((r) => r.roll_year === y && at.has(`${r.mapblklot}:${y - 1}`));
@@ -204,7 +186,7 @@ describe('scenario T13 panel and T11 features (mini fixture)', () => {
     expect(cols.map((c) => c.column_name)).toEqual(PANEL_COLUMNS);
     const type = Object.fromEntries(cols.map((c) => [c.column_name, c.column_type]));
     expect(type.land_use_class).toBe('INTEGER');
-    expect(type.potential_ratio_base).toBe('FLOAT');
+    expect(type.base_yield).toBe('INTEGER');
     // Sorted by (mapblklot, roll_year) as written.
     const raw = await db.all<{ mapblklot: string; roll_year: number }>(
       `SELECT mapblklot, roll_year FROM read_parquet('${join(derived, 'parcel-panel.parquet')}')`

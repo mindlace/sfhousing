@@ -59,9 +59,9 @@ const ManifestBaseSchema = z.object({
         parcels: RootRelativeUrl,
         projects: RootRelativeUrl,
         calibration: RootRelativeUrl,
-        /** Per-lot policy inputs (sfh-policy/1). Optional: datasets built before it lack it. */
+        /** Per-lot policy inputs (sfh-policy/2). Optional: datasets built before it lack it. */
         policy: RootRelativeUrl.optional(),
-        /** Per-lot gross table (pipeline-built, scenarios/fzp/gross.bin). Optional: older datasets lack it. */
+        /** Older datasets' per-lot gross table. Accepted so they still validate; nothing reads it. */
         gross: RootRelativeUrl.optional(),
         /** Per-lot building options (sfh-options/1, scenarios/fzp/options.bin). Optional: older datasets lack it. */
         options: RootRelativeUrl.optional(),

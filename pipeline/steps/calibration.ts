@@ -7,7 +7,6 @@
 // cache, not shipped). No network.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import type { CarModel } from '../../src/lib/sim/cars';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
 import type { Day, ProjectHistoriesFile, Provenance } from '../../src/lib/timelapse/types';
@@ -201,7 +200,6 @@ export async function writeCalibration(o: {
     options: readOptionsBin(join(o.outDir, OPTIONS_BIN)),
     panelOptions: readOptionsBin(join(o.derivedDir, PANEL_OPTIONS_BIN)),
     locationValue: o.locationValue ?? (await locationValueByLot(o.db)).provenance,
-    fillLevels: FILL_LEVELS,
     datasetVersion: o.datasetVersion,
     market,
     funding,

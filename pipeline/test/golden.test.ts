@@ -4,13 +4,14 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
 import { parseManifest } from '../../src/lib/data/manifest';
-import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import { optionsOfRow, topHomesAt } from '../../src/lib/data/envelope-row';
+import type { OptionTable } from '../../src/lib/data/option-table';
+import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import { PATHWAYS, STAGE_ORDER } from '../../src/lib/timelapse/types';
 import { GOLDEN_DERIVED, fixture } from '../steps/fixture';
 import { CALIBRATION_JSON } from '../steps/calibration';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, dumpPermits } from '../steps/projects';
 import { POLICY_BIN, POLICY_DUMP, formatPolicyDump, readPolicyBin } from '../steps/policy';
-import { GROSS_BIN, GROSS_DUMP, formatGrossDump, readGrossBin } from '../steps/gross';
 import { OPTIONS_BIN, OPTIONS_DUMP, formatOptionsDump, readOptionsBin } from '../steps/options';
 import { CARS_DUMP, formatCarsDump, readCarsBin } from '../steps/cars';
 import { CARS_BIN, CAR_ZONES_JSON } from '../lib/scenario-files';
@@ -46,7 +47,6 @@ const decodeBin = (dir: string) => readParcelsBin(join(dir, PARCELS_BIN));
 const dumpOf = (dir: string) => formatScenarioDump(decodeBin(dir));
 const policyDumpOf = (dir: string) =>
   formatPolicyDump(readPolicyBin(join(dir, POLICY_BIN), decodeBin(dir)));
-const grossDumpOf = (dir: string) => formatGrossDump(readGrossBin(join(dir, GROSS_BIN)));
 const optionsDumpOf = (dir: string) => formatOptionsDump(readOptionsBin(join(dir, OPTIONS_BIN)));
 const carsDumpOf = (dir: string) =>
   formatCarsDump(readCarsBin(join(dir, CARS_BIN), decodeBin(dir).count));
@@ -81,9 +81,6 @@ describe('pipeline fixture', () => {
     const policy = policyDumpOf(a);
     expect(policy).toBe(readFileSync(join(golden, POLICY_DUMP), 'utf8'));
     expect(policy).toBe(policyDumpOf(b));
-    // gross.bin: the decoded payload too.
-    expect(grossDumpOf(a)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
-    expect(grossDumpOf(b)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
     // options.bin: the decoded payload too.
     expect(optionsDumpOf(a)).toBe(readFileSync(join(golden, OPTIONS_DUMP), 'utf8'));
     expect(optionsDumpOf(b)).toBe(readFileSync(join(golden, OPTIONS_DUMP), 'utf8'));
@@ -209,7 +206,6 @@ describe('pipeline fixture', () => {
       expect(readFileSync(join(e2e, f), 'utf8'), f).toBe(readFileSync(join(golden, f), 'utf8'));
     }
     expect(dumpOf(e2e)).toBe(readFileSync(join(golden, SCENARIO_DUMP), 'utf8'));
-    expect(grossDumpOf(e2e)).toBe(readFileSync(join(golden, GROSS_DUMP), 'utf8'));
     expect(optionsDumpOf(e2e)).toBe(readFileSync(join(golden, OPTIONS_DUMP), 'utf8'));
     expect(carsDumpOf(e2e)).toBe(readFileSync(join(golden, CARS_DUMP), 'utf8'));
   });
@@ -218,13 +214,19 @@ describe('pipeline fixture', () => {
 describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   const e2e = 'e2e/fixtures/data/fixture-0';
   let p: ScenarioParcels;
+  let t: OptionTable;
   let counts: Record<string, number>;
   beforeAll(() => {
     p = decodeBin(e2e);
+    t = readOptionsBin(join(e2e, OPTIONS_BIN));
     counts = JSON.parse(readFileSync(join(e2e, 'report.json'), 'utf8')).counts;
   });
-  const F = FILL_LEVELS.length;
   const NULL_CAP = 0xffff;
+  /** Row i's most homes within `stories` after `cap` (rule A, options.bin). */
+  const topOf = (i: number, stories: number, cap: number) =>
+    stories === 0
+      ? 0
+      : topHomesAt(optionsOfRow(t, i), stories, cap === NULL_CAP ? null : cap, p.existingUnits[i]);
   const row = (id: string) => {
     const i = p.index.get(id);
     if (i === undefined) throw new Error(`no row ${id}`);
@@ -239,8 +241,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       baseCap: p.baseCap[i],
       existingUnits: p.existingUnits[i],
       rentControlLikely: p.rentControlLikely[i],
-      baseYield: [...p.baseYield.subarray(i * F, i * F + F)],
-      yield: [...p.yield.subarray(i * F, i * F + F)]
+      fzpCap: p.fzpCap[i],
+      baseTop: topOf(i, p.baseStories[i], p.baseCap[i]),
+      top: topOf(i, p.envelopeStories[i], p.fzpCap[i])
     };
   };
   // Mini lot ids (make-fixture.ts LOT_IDS): 35120NN, except lots 3 and 4.
@@ -257,8 +260,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     const i = p.index.get(lotId(19))!;
     expect([p.eligible[i], p.hostable[i], p.hostableBase[i]]).toEqual([0, 0, 0]);
     expect(L(19)).toMatchObject({ district: '40//65-R-4', existingUnits: 0 });
-    expect(L(19).yield).toEqual([0, 0, 0, 0, 0]);
-    expect(L(19).baseYield).toEqual([0, 0, 0, 0, 0]);
+    expect([L(19).top, L(19).baseTop]).toEqual([0, 0]);
     expect(counts['scenario.freeway_land.lots']).toBe(1);
     expect(counts['scenario.freeway_land.net_removed']).toBeGreaterThan(0);
     expect(counts['scenario.freeway_land.net_removed.i-80']).toBe(
@@ -275,7 +277,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     });
   });
 
-  it('lot 1: Local Program, base 4, envelope 6, rent control likely, capped base yield', () => {
+  it('lot 1: Local Program, base 4, envelope 6, rent control likely, capped base homes', () => {
     const r = L(1);
     expect(r).toMatchObject({
       localProgram: 1,
@@ -284,8 +286,9 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       rentControlLikely: 1,
       baseCap: 4
     });
-    expect(r.baseYield).not.toEqual(r.yield);
-    for (const y of r.baseYield) expect(y).toBeLessThanOrEqual(4);
+    expect(r.fzpCap).toBe(NULL_CAP);
+    expect(r.baseTop).not.toBe(r.top);
+    expect(r.baseTop).toBeLessThanOrEqual(4);
   });
 
   it('lot 2: three condo units, Local Program', () => {
@@ -317,22 +320,22 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
   it('lot 4: rent-control excluded, envelope 4, pre-FZP NC-1 cap 4, FZP cap none (C2)', () => {
     const r = L(4);
     expect(r).toMatchObject({ localProgram: 0, envelopeStories: 4, baseStories: 4, baseCap: 4 });
-    for (const y of r.baseYield) expect(y).toBeLessThanOrEqual(4);
-    // FZP yield is uncapped: it differs from the base yield where the generator exceeds 4 units.
-    expect(r.yield.some((y) => y > 4)).toBe(true);
-    expect(r.yield.map((y) => Math.min(y, 4))).toEqual(r.baseYield);
+    expect(r.baseTop).toBeLessThanOrEqual(4);
+    // The FZP cap is none: the most homes differ from the base ones where an option exceeds 4.
+    expect(r.fzpCap).toBe(NULL_CAP);
+    expect(r.top).toBeGreaterThan(4);
+    expect(Math.min(r.top, 4)).toBe(r.baseTop);
     // Lots 4 and 3: lot 3 is a hotel AND, after sd.roll.units-capacity, has 4 non-condo units
     // built 1920, so it meets both exclusions, which are counted separately (spec §4.10;
     // controller ruling, F1 Task 5: the §4.11 "all" row's 1 predates RA1).
     expect(counts['scenario.excluded.rent_control']).toBe(2);
     expect(counts['scenario.density_cap.fzp_differs']).toBe(1);
-    expect(counts['scenario.yield.nonlp_base_mismatch']).toBe(0);
   });
 
-  it('lot 5: 65-X by largest overlap, not Local Program, cap 4, base yield = yield', () => {
+  it('lot 5: 65-X by largest overlap, not Local Program, cap 4, base homes = FZP homes', () => {
     const r = L(5);
-    expect(r).toMatchObject({ district: '65-X', localProgram: 0, baseCap: 4, split: 1 });
-    expect(r.baseYield).toEqual(r.yield);
+    expect(r).toMatchObject({ district: '65-X', localProgram: 0, baseCap: 4, split: 1, fzpCap: 4 });
+    expect(r.baseTop).toBe(r.top);
   });
 
   it('lot 6: cap 3 (260 m² with the courtyard hole = 2,798 sf, / 800)', () => {
@@ -360,7 +363,7 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       envelopeStories: 0,
       hostable: 0
     });
-    expect(L(12).yield).toEqual([0, 0, 0, 0, 0]);
+    expect(L(12).top).toBe(0);
   });
 
   it('lots 3, 13 and 14 have no density cap', () => {
@@ -466,19 +469,17 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
       // No MUNI_TIER2_STOP_IDS id is a mini stop: all 438 list ids go unmatched.
       'sd.sb79.tier2-unmatched': [438, 438],
       'sd.sb79.zone-unlisted': [0, 25],
-      'sd.yield.nonmonotone': [0, 25],
-      // Road-like lots 20-24 are not eligible, so not hostable: 5 fewer than without the rule.
-      'sd.yield.zero-hostable': [3, 15],
-      'sd.zoning.c2-floor-approx': [0, 12],
-      'sd.zoning.generic-nc': [1, 12],
-      'sd.zoning.m1-floor-approx': [0, 12],
-      'sd.zoning.missing': [0, 12],
+      // Of the 13 hostable parcels: lot 8 hosts on its options (the fill levels gave it none).
+      'sd.zoning.c2-floor-approx': [0, 13],
+      'sd.zoning.generic-nc': [1, 13],
+      'sd.zoning.m1-floor-approx': [0, 13],
+      'sd.zoning.missing': [0, 13],
       // Lot 12's P and lot 25's P (kept by its block row); the road-like P lots 20, 22 and 24 are
       // no longer hostable.
-      'sd.zoning.named-no-cap': [2, 12],
-      'sd.zoning.rc4-vanness-approx': [0, 12],
-      'sd.zoning.split-code': [0, 12],
-      'sd.zoning.unlisted': [0, 12]
+      'sd.zoning.named-no-cap': [2, 13],
+      'sd.zoning.rc4-vanness-approx': [0, 13],
+      'sd.zoning.split-code': [0, 13],
+      'sd.zoning.unlisted': [0, 13]
     };
     const sd = QUALITY_RULES.filter((r) => r.owner === 'scenario-data');
     expect(sd.map((r) => r.id)).toEqual(Object.keys(want));
@@ -511,12 +512,10 @@ describe('fixture-0 scenario known answers (spec §4.11, with rulings)', () => {
     expect(counts['scenario.units.total']).toBe(74);
     expect(counts['scenario.roll.years']).toBe(3);
     expect(counts['scenario.panel.years']).toBe(3);
-    expect(counts['scenario.yield.clamped']).toBe(0);
     expect(counts['scenario.height.parse_fail']).toBe(0);
     expect(counts['scenario.panel.feature_mismatch']).toBe(0);
     expect(counts['scenario.v18.cap_period_differs']).toBe(0);
     expect(counts['scenario.v18.basecap_mismatch']).toBe(0);
-    expect(p.fillLevels).toEqual([...FILL_LEVELS]);
   });
 });
 
@@ -650,7 +649,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
     );
   });
 
-  it('names the three scenario files, policy.bin, gross.bin, options.bin and the car files in the manifest', () => {
+  it('names the three scenario files, policy.bin, options.bin and the car files in the manifest', () => {
     const raw = JSON.parse(readFileSync(join(e2e, 'manifest.json'), 'utf8')) as {
       scenarios?: unknown;
     };
@@ -659,21 +658,20 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       'projects.json',
       'calibration.json',
       'policy.bin',
-      'gross.bin',
       'options.bin',
       'cars.bin',
       'car-zones.json'
     ]) {
       expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(true);
     }
-    expect(existsSync(join(e2e, 'scenarios/fzp', 'frontage.bin'))).toBe(false);
+    for (const f of ['frontage.bin', 'gross.bin'])
+      expect(existsSync(join(e2e, 'scenarios/fzp', f)), f).toBe(false);
     expect(raw.scenarios).toEqual({
       fzp: {
         parcels: '/data/fixture-0/scenarios/fzp/parcels.bin',
         projects: '/data/fixture-0/scenarios/fzp/projects.json',
         calibration: '/data/fixture-0/scenarios/fzp/calibration.json',
         policy: '/data/fixture-0/scenarios/fzp/policy.bin',
-        gross: '/data/fixture-0/scenarios/fzp/gross.bin',
         options: '/data/fixture-0/scenarios/fzp/options.bin',
         cars: '/data/fixture-0/scenarios/fzp/cars.bin',
         carZones: '/data/fixture-0/scenarios/fzp/car-zones.json'
@@ -696,7 +694,7 @@ describe('fixture-0 project records report (project-records spec §4.9)', () => 
       createHash('sha256')
         .update(readFileSync(join(e2e, 'scenarios/fzp/parcels.bin')))
         .digest('hex')
-    ).toBe('6716a99bb2d70426fac5ea759fe8e326bc94c19a1cbc10ab31d9329a75b9f583');
+    ).toBe('4b3984786b976b113a624f1d6c4f73e67b7852ba2eb0199424a36116abedad8c');
   });
 
   it('fixture-0 has no less-cars output', () => {

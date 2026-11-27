@@ -1,6 +1,6 @@
 // world-funding Task 6: serving and the award (spec rules 10, 11).
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
+import { allowedCount, capFrom, mostHomes, optionHomes } from '$lib/sim/choice/choose';
 import { MARKET_TERMS, projectDollars, prototypeFor, resolveTerms } from '$lib/sim/finance';
 import { pathwayFrom } from '$lib/sim/world/rules/stages';
 import { awardSet, coverageLevel, lineKey, type Award } from '$lib/sim/world/rules/funding';
@@ -42,7 +42,6 @@ const input = fundedMini();
 const statics = staticsOf(input);
 const fin = miniFinance(input.asOf);
 const timeline = oneMoneyTimeline(input, fin);
-const F = FILL_LEVELS.length;
 const AFF = 'm-city-grant,federal-grant';
 const SEED = 7;
 
@@ -137,23 +136,40 @@ function freshWorld(t: PolicyTimeline = timeline, federal = true): World {
   return w;
 }
 
-/** Free lots (no row in the new world) whose top level has at least 2 homes, in rank order. */
+/** The lot's most-homes option at its envelope and cap (the size of a start there), or null. */
+function bestOf(lot: number): { k: number; units: number; stories: number } | null {
+  const p = input.parcels;
+  const t = input.options;
+  const cap = capFrom(p.fzpCap[lot]);
+  const k = mostHomes(
+    t,
+    lot,
+    allowedCount(t, lot, p.envelopeStories[lot]),
+    cap,
+    p.existingUnits[lot]
+  );
+  if (k < 0) return null;
+  const j = t.offset[lot] + k;
+  return { k, units: optionHomes(t, j, cap, p.existingUnits[lot]), stories: t.stories[j] };
+}
+
+/** Free lots (no row in the new world) whose most-homes option has at least 2 homes, in rank order. */
 const LOTS = (() => {
   const w = freshWorld();
   const has = new Set(Array.from(w.lots.lot.subarray(0, w.lots.n)));
   const out: number[] = [];
-  const y = input.parcels.yield;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
-    if (has.has(lot) || y[lot * F + F - 1] < 2) continue;
+    if (has.has(lot) || (bestOf(lot)?.units ?? 0) < 2) continue;
     out.push(lot);
   }
   return out.sort((a, b) => statics.rank[a] - statics.rank[b]);
 })();
 
-/** An application of `lot` at its top level, applied on `applied`. */
+/** An application of `lot` at its most-homes option, applied on `applied`. */
 function app(lot: number, kind: ProjectKind, applied: Day, bundle: string, keyDay = applied) {
-  const f = F - 1;
-  const units = input.parcels.yield[lot * F + f];
+  const best = bestOf(lot)!;
+  const f = best.k;
+  const units = best.units;
   return {
     lot,
     kind: kind === 'market' ? KIND_MARKET : KIND_AFFORDABLE,
@@ -163,7 +179,7 @@ function app(lot: number, kind: ProjectKind, applied: Day, bundle: string, keyDa
     bundle,
     f,
     units,
-    stories: fillStories(FILL_LEVELS[f], input.parcels.envelopeStories[lot]),
+    stories: best.stories,
     level: 1,
     viewMonth: 1
   } satisfies Application;
