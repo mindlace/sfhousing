@@ -17,7 +17,7 @@
   The actions render once: in the bar when `wide` (known after mount), else in the panel.
   Placement: the `<header>` is `relative`, and the pinned slot's box is a direct child of it with no
   position class (never `relative`, `absolute`, `fixed` or `sticky`) and no wrapper of its own
-  around the snippet, so a pinned item's pop-over (GoalHeadline's side goals) places itself against
+  around the snippet, so a pinned item's pop-over (the round panel) places itself against
   the header, inside its gutters.
 -->
 <script lang="ts">
@@ -88,6 +88,9 @@
   let open = $state(false);
   let header = $state<HTMLElement>();
   let menuButton = $state<HTMLButtonElement>();
+  /** From lg the panel is a pop-over: SURFACE_POP (ui.ts), each class with `lg:` (ui.spec.ts). */
+  const PANEL_POP =
+    'lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-2 lg:text-sm lg:text-ink lg:shadow-lg lg:dark:border-line-dark lg:dark:bg-surface-dark lg:dark:text-ink-dark lg:dark:scheme-dark';
   let panel = $state<HTMLDivElement>();
 
   const openOnly = headerOverlay(panelId, () => (open = false));
@@ -244,7 +247,11 @@
     data-header-panel
     class={[
       open
-        ? 'absolute top-full z-50 flex max-h-[calc(100dvh-47px)] flex-col gap-3 overflow-y-auto overscroll-contain border-b bg-surface p-4 shadow-lg max-lg:inset-x-0 lg:right-4 lg:w-96 lg:rounded-lg lg:border dark:border-gray-700 dark:bg-chrome-dark'
+        ? [
+            'absolute top-full z-50 flex max-h-[calc(100dvh-47px)] flex-col gap-3 overflow-y-auto overscroll-contain max-lg:inset-x-0 lg:right-4 lg:w-96',
+            'max-lg:border-b max-lg:bg-surface max-lg:p-4 max-lg:shadow-lg max-lg:dark:border-gray-700 max-lg:dark:bg-chrome-dark',
+            PANEL_POP
+          ]
         : 'hidden'
     ]}
     onclick={onpanelclick}
