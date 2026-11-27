@@ -8,6 +8,7 @@ import { SAVES_KEY, saveKey } from '../../src/lib/game/saves';
 import type { GameState } from '../../src/lib/game/state';
 import type { Day } from '../../src/lib/timelapse/time';
 import { seedGame, seedGoalAmount } from './game';
+import { holdPolicy, openKind } from './run';
 import { FRAME, jumpAndIdle, openHeaderMenu, type Win } from './sharing';
 
 /** The first day of a calendar month, as a `Day` (whole days since 1970-01-01, UTC). */
@@ -178,6 +179,16 @@ export async function takeGift(page: Page, by: 'pointer' | 'keys'): Promise<stri
 const focused = (target: Locator): Promise<boolean> =>
   target.evaluate((el) => el === document.activeElement);
 
+/** Puts focus on body and makes it the start of sequential focus navigation. */
+export async function focusBody(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute('tabindex');
+  });
+}
+
 /** Presses Tab, at most 80 times, until `target` has focus; throws otherwise. */
 export async function tabTo(page: Page, target: Locator): Promise<void> {
   if (await focused(target)) return;
@@ -234,3 +245,34 @@ export const policyRowNamed = (page: Page, label: string): Locator =>
 /** The playhead's day, from the debug hook. */
 export const playheadDay = (page: Page): Promise<number> =>
   page.evaluate(() => (window as { __sfhFzp?: { day: number } }).__sfhFzp?.day ?? -1);
+
+/** Storage refuses the policy record only: the autosave is off, the game still saves. */
+export async function refusePolicyRecord(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+      if (key === 'sfhousing:sim:v2') throw new DOMException('refused', 'QuotaExceededError');
+      return set.call(this, key, value);
+    };
+  });
+}
+
+/** The header's "Autosave off" button (an icon below sm in a game, named by its word). */
+export const autosaveOff = (page: Page) =>
+  page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true });
+/** "Updating" in the status cell (a spinner below sm in a game, named by its word). */
+export const updating = (page: Page) =>
+  page.getByTestId('tl-status').getByRole('button', { name: 'Updating', exact: true });
+
+/** The rail rule switched on while `setPolicy` is held: "Updating" shows, the state pending. */
+export async function staleEdit(page: Page): Promise<void> {
+  await holdPolicy(page);
+  await openKind(page, 'Zoning');
+  const railSwitch = policyRow(page, 'transit-rail').getByRole('switch');
+  await railSwitch.click();
+  await expect(railSwitch).toHaveAttribute('aria-checked', 'true');
+  const close = page.getByRole('button', { name: 'Close Zoning', exact: true });
+  if (await close.isVisible()) await close.click();
+  await expect(updating(page)).toBeVisible();
+  await waitResult(page, 'pending');
+}

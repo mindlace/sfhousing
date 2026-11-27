@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import { fixtureCalibration } from '$lib/fzp/fixtures/calibration';
@@ -541,6 +541,75 @@ describe('TimelineMode in a game: the reset and the result (P16, P19)', () => {
     expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
   });
 
+  describe('below sm the status cell is icons', () => {
+    const cell = () => page.getByTestId('tl-status').element().getBoundingClientRect();
+    const line = () => page.getByTestId('goal-phone').element().getBoundingClientRect().toJSON();
+    const spinner = () => page.getByTestId('tl-status-spinner');
+    const updating = () => page.getByTestId('tl-status').getByRole('button', { name: 'Updating' });
+
+    /** A pending round at 375 px, then the rule switched on: the numbers go stale. */
+    async function staleAt375() {
+      await page.viewport(375, 812);
+      const s = await opened(
+        { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(2), false)) },
+        LONG
+      );
+      await expect.element(page.getByTestId('goal-phone')).toBeVisible();
+      return s;
+    }
+
+    it('the spinner box is reserved: the goal line does not move when Updating comes', async () => {
+      const s = await staleAt375();
+      expect(cell().width).toBe(24);
+      const before = line();
+      await edit(s, switchOn);
+      await expect.element(updating()).toBeVisible();
+      expect(cell().width).toBe(24);
+      expect(line()).toEqual(before);
+      const r = spinner().element().getBoundingClientRect();
+      expect(r.width).toBeGreaterThan(0);
+      expect(r.width).toBeLessThanOrEqual(24);
+      // The word stays for assistive technology: the button's name, visually hidden, and the
+      // status's live region.
+      const word = page.getByTestId('tl-status-shown').getByText('Updating', { exact: true });
+      expect(word.element().getBoundingClientRect().width).toBeLessThanOrEqual(1);
+      await expect.element(page.getByTestId('tl-status-live')).toHaveTextContent('Updating');
+    });
+
+    it('the spinner turns, and stands still under reduced motion', async () => {
+      const s = await staleAt375();
+      await edit(s, switchOn);
+      await expect.element(spinner()).toBeVisible();
+      await cdp().send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }]
+      });
+      await expect.poll(() => getComputedStyle(spinner().element()).animationName).toBe('spin');
+      await cdp().send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+      });
+      try {
+        await expect.poll(() => getComputedStyle(spinner().element()).animationName).toBe('none');
+      } finally {
+        await cdp().send('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }]
+        });
+      }
+    });
+
+    it('from sm the word shows and there is no spinner', async () => {
+      await page.viewport(1280, 900);
+      const s = await opened(
+        { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(2), false)) },
+        LONG
+      );
+      await edit(s, switchOn);
+      await expect.element(updating()).toBeVisible();
+      const word = page.getByTestId('tl-status-shown').getByText('Updating', { exact: true });
+      expect(word.element().getBoundingClientRect().width).toBeGreaterThan(30);
+      expect(spinner().element().getBoundingClientRect().width).toBe(0);
+    });
+  });
+
   it("the ruler's goal flag reads the target at the target", async () => {
     const target = dayFromUtc(2060, 6, 1);
     await opened({ game: gameWith({ phase: 'runs', round: 1, target }) }, LONG);
@@ -567,12 +636,12 @@ describe('the status cell below sm (rule 32)', () => {
     expect(cellWidth()).toBeGreaterThan(30);
   });
 
-  it('in a game it keeps none, so the phone goal takes the width', async () => {
+  it("in a game it keeps only the spinner's box, so the phone goal takes the rest", async () => {
     await page.viewport(375, 812);
     await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
     await expect.element(page.getByTestId('tl-status')).toBeInTheDocument();
     expect(page.getByTestId('tl-status-shown').element().textContent?.trim()).toBe('');
-    expect(cellWidth()).toBe(0);
+    expect(cellWidth()).toBe(24);
   });
 });
 

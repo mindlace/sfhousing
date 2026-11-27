@@ -967,6 +967,18 @@ describe('SiteHeader', () => {
           expect(about.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(r.top);
         });
 
+      it('at 667 by 375 with one saved game the panel fits with no scrollbar', async () => {
+        await page.viewport(667, 375);
+        const pinned = createRawSnippet(() => ({ render: () => '<span>Pinned</span>' }));
+        const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves: 1 });
+        render(GameHeaderHost, { game, routeId: '/', pinned });
+        await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        await expect.element(page.getByTestId('game-panel')).toBeVisible();
+        const panel = panelOf();
+        expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
+        expect(panel.getBoundingClientRect().bottom).toBeLessThanOrEqual(375);
+      });
+
       it('at 1280 px the pop-over has no scrollbar it does not need', async () => {
         await page.viewport(1280, 800);
         const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves: 3 });

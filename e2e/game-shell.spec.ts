@@ -2,14 +2,31 @@
 // same address, `/sim` as a redirect to `/`, the header with no steps, the first load's brush, the
 // simulation with no game, and `/p/<id>` in full. Runs against the VITE_E2E build on fixture-0,
 // with the real game switched on by e2e/helpers/game.ts before the first navigation. The round's
-// header at phone width: the pinned goal's states at 320 px, a win with "Autosave off" beside it,
-// and the round panel under the header.
+// header at 320 and 375 px: the pinned goal's line whole in every state and status (none,
+// "Autosave off", "Updating", both), with the page's words and the widest, and the round panel
+// under the header.
 import { expect, test, type Page } from '@playwright/test';
 import type { GameState } from '../src/lib/game/state';
 import { expectHeaderRowFits } from './helpers/chrome';
 import { seedGoalAmount } from './helpers/game';
-import { FIXTURE_AMOUNT, frameMap, monthDay, seedRuns, waitResult, waitSim } from './helpers/play';
-import { slider, waitFilled } from './helpers/run';
+import {
+  WIDEST_PINNED,
+  expectGoalLineWhole,
+  goalLine,
+  widestGameHeader
+} from './helpers/header-text';
+import {
+  FIXTURE_AMOUNT,
+  autosaveOff,
+  frameMap,
+  monthDay,
+  refusePolicyRecord,
+  seedRuns,
+  staleEdit,
+  waitResult,
+  waitSim
+} from './helpers/play';
+import { installPolicyHold, slider, waitFilled } from './helpers/run';
 import {
   gotoEditor,
   gotoHydrated,
@@ -119,10 +136,17 @@ const ROUND: Record<'pending' | 'win' | 'late', Partial<GameState>> = {
 
 /**
  * A seeded round at `width`, on the simulation, filled; the ruler's End unless pending. With
- * `off`, storage refuses the policy record, so the autosave is off.
+ * `off`, storage refuses the policy record, so the autosave is off; with `hold`, the timeline
+ * worker's `setPolicy` can be held (`holdPolicy`), so an edit leaves the numbers stale.
  */
-async function roundAt(page: Page, width: number, state: 'pending' | 'win' | 'late', off = false) {
-  if (off) await refusePolicyRecord(page);
+async function roundAt(
+  page: Page,
+  width: number,
+  state: 'pending' | 'win' | 'late',
+  opts: { off?: boolean; hold?: boolean } = {}
+) {
+  if (opts.off) await refusePolicyRecord(page);
+  if (opts.hold) await installPolicyHold(page);
   await page.setViewportSize({ width, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await seedRuns(page, ROUND[state], FIXTURE_AMOUNT);
@@ -135,54 +159,20 @@ async function roundAt(page: Page, width: number, state: 'pending' | 'win' | 'la
     await page.keyboard.press('End');
   }
   await waitResult(page, state);
-}
-
-/** Storage refuses the policy record only: the autosave is off, the game still saves. */
-async function refusePolicyRecord(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const set = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
-      if (key === 'sfhousing:sim:v2') throw new DOMException('refused', 'QuotaExceededError');
-      return set.call(this, key, value);
-    };
-  });
+  await expect(autosaveOff(page)).toHaveCount(opts.off ? 1 : 0);
 }
 
 /**
- * The phone line as drawn: its box, each drawn part's box (count, short count, homes, the rest
- * and the result), the part holding `word` and the viewport's width, for the checks and their
- * failure messages.
+ * The line whole with the page's words, then with the widest words (`widestGameHeader`); the
+ * widest case's slack is recorded as an annotation.
  */
-async function phoneLine(page: Page, word: string) {
-  return page.getByTestId('goal-phone').evaluate((line, w) => {
-    const box = (el: Element) => {
-      const r = el.getBoundingClientRect();
-      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
-    };
-    const parts = ['count', 'short', 'homes', 'rest', 'result']
-      .map((c) => ({ c, el: line.querySelector(`.goal-${c}`) }))
-      .filter((p) => p.el !== null && p.el.getBoundingClientRect().width > 0)
-      .map((p) => ({ c: p.c, text: p.el!.textContent ?? '', ...box(p.el!) }));
-    return {
-      line: box(line),
-      parts,
-      word: parts.find((p) => p.text.includes(w)) ?? null,
-      viewport: innerWidth
-    };
-  }, word);
-}
-
-/** Every drawn part of the line inside the line's box and the viewport; the word drawn whole. */
-function expectWhole(drawn: Awaited<ReturnType<typeof phoneLine>>): void {
-  const why = JSON.stringify(drawn);
-  for (const p of drawn.parts) {
-    expect(p.left, why).toBeGreaterThanOrEqual(drawn.line.left - 0.5);
-    expect(p.right, why).toBeLessThanOrEqual(drawn.line.right + 0.5);
-    expect(p.top, why).toBeGreaterThanOrEqual(drawn.line.top - 0.5);
-    expect(p.bottom, why).toBeLessThanOrEqual(drawn.line.bottom + 0.5);
-    expect(p.right, why).toBeLessThanOrEqual(drawn.viewport);
-  }
-  expect(drawn.word, why).not.toBeNull();
+async function expectBothWhole(page: Page, word: string, label: string): Promise<void> {
+  expectGoalLineWhole(await goalLine(page, word));
+  await widestGameHeader(page);
+  const widest = await goalLine(page, word === 'before' ? 'before' : WIDEST_PINNED.phoneResult);
+  expectGoalLineWhole(widest);
+  test.info().annotations.push({ type: 'slack', description: `${label}: ${widest.slack} px` });
+  await expectHeaderRowFits(page);
 }
 
 /** Each state's word, and how many gifts it shows. */
@@ -192,43 +182,60 @@ const STATES = [
   { state: 'late', word: 'late', gifts: 0 }
 ] as const;
 
+// The widest words fit. Measured slack with them (px left at the line's right after its widest
+// row; both projects, 2026-11-26): at 320 px, 79 with no status or beside Updating (pending,
+// late), 51 in a win (the gift), 47 beside Autosave off (with or without Updating), 19 in a win
+// beside Autosave off (the result wrapped); at 375 px, 113 pending, 85 in a win, 81 beside
+// Autosave off, 74 in a win beside it, and 0.6 for a late line on one row (a pixel more and its
+// result wraps beneath).
 for (const width of [320, 375])
   for (const off of [false, true])
     for (const c of STATES) {
-      test(`at ${width} px ${c.state}${off ? ' beside Autosave off' : ''}: the goal line is whole`, async ({
+      test(`at ${width} px ${c.state}${off ? ' beside Autosave off' : ''}: the goal line is whole, widest words too`, async ({
         page
       }) => {
-        await roundAt(page, width, c.state, off);
-        await expect(
-          page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true })
-        ).toHaveCount(off ? 1 : 0);
+        await roundAt(page, width, c.state, { off });
         await expectHeaderRowFits(page);
-        expectWhole(await phoneLine(page, c.word));
-        await expect(page.getByTestId('goal-phone')).toContainText(c.word);
         const gifts = await page
           .getByTestId('goal-gift')
           .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
         expect(gifts).toHaveLength(c.gifts);
         expect(gifts.every((r) => r.width >= 24 && r.height >= 24)).toBe(true);
+        await expect(page.getByTestId('goal-phone')).toContainText(c.word);
+        await expectBothWhole(page, c.word, `${width} ${c.state}${off ? ' off' : ''}`);
       });
     }
 
+// "Updating" shows only while the numbers are stale, and the judge gives no win or late on stale
+// numbers (`judge`, current false), so beside "Updating" the round reads pending.
+for (const width of [320, 375])
+  for (const off of [false, true])
+    test(`at ${width} px beside Updating${off ? ' and Autosave off' : ''}: the line does not move and is whole`, async ({
+      page
+    }) => {
+      await roundAt(page, width, 'pending', { off, hold: true });
+      const before = await page.getByTestId('goal-phone').boundingBox();
+      await staleEdit(page);
+      expect(await page.getByTestId('goal-phone').boundingBox()).toEqual(before);
+      await expect(page.getByTestId('tl-status-spinner')).toBeVisible();
+      expect((await page.getByRole('banner').boundingBox())!.height).toBe(48);
+      await expectBothWhole(page, 'before', `${width} updating${off ? ' off' : ''}`);
+    });
+
 test('at 375 px with no status the win line is one line', async ({ page }) => {
   await roundAt(page, 375, 'win');
-  const drawn = await phoneLine(page, 'early');
-  expectWhole(drawn);
+  const drawn = await goalLine(page, 'early');
+  expectGoalLineWhole(drawn);
   expect(new Set(drawn.parts.map((p) => Math.round(p.top))).size, JSON.stringify(drawn)).toBe(1);
 });
 
-test('at 320 px beside Autosave off the wrapped line keeps the header at its height', async ({
+test('at 320 px beside Autosave off the widest win wraps and keeps the header at its height', async ({
   page
 }) => {
-  await roundAt(page, 320, 'win', true);
-  await expect(
-    page.getByRole('banner').getByRole('button', { name: 'Autosave off', exact: true })
-  ).toBeVisible();
-  const drawn = await phoneLine(page, 'early');
-  expectWhole(drawn);
+  await roundAt(page, 320, 'win', { off: true });
+  await widestGameHeader(page);
+  const drawn = await goalLine(page, WIDEST_PINNED.phoneResult);
+  expectGoalLineWhole(drawn);
   const rest = drawn.parts.find((p) => p.c === 'rest')!;
   const result = drawn.parts.find((p) => p.c === 'result')!;
   expect(result.top, JSON.stringify(drawn)).toBeGreaterThan(rest.top);

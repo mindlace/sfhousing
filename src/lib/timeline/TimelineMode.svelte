@@ -1282,7 +1282,7 @@
       },
       onheights: (c) => {
         if (dead) return;
-        heightsSeen = c;
+        if (import.meta.env.VITE_E2E === '1') heightsSeen = c;
         onheights?.(c);
       },
       onchunks: (c) => {
@@ -1625,15 +1625,13 @@
         ]}
         data-testid="tl-status"
       >
-        <!-- In a game, below sm, the cell keeps no room for "Updating" while it is away: the
-             phone goal takes that width and narrows (its line drops "homes" first) when it
-             comes. With no game the room is kept at every width (rule 32). -->
-        <span
-          aria-hidden="true"
-          class={[
-            'invisible col-start-1 row-start-1 whitespace-nowrap',
-            shownStatus === null && g && 'max-sm:hidden'
-          ]}>{UPDATING}</span
+        <!-- The room the cell keeps whether or not "Updating" shows, so nothing moves when it
+             comes (rule 32): the word's width; in a game below sm, where the cell is icons and
+             the phone goal needs the room, the spinner's 24 px box. -->
+        <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
+          ><span class={[g && 'max-sm:hidden']}>{UPDATING}</span>{#if g}<span
+              class="hidden size-6 max-sm:block"
+            ></span>{/if}</span
         >
         <span
           bind:this={shownCell}
@@ -1641,7 +1639,15 @@
           data-testid="tl-status-shown"
         >
           {#if shownStatus !== null}
-            <Explain text={shownStatus === 'stale' ? STALE_NOTE : WAITING_NOTE}>{UPDATING}</Explain>
+            <Explain text={shownStatus === 'stale' ? STALE_NOTE : WAITING_NOTE}
+              >{#if g}<!-- Below sm a spinner, still under reduced motion; the word stays the
+                   button's name, visually hidden (and the live region speaks it). --><span
+                  aria-hidden="true"
+                  data-testid="tl-status-spinner"
+                  class="mx-[5px] hidden size-3.5 rounded-full border-2 border-line border-t-ink align-middle motion-safe:animate-spin max-sm:inline-block dark:border-line-dark dark:border-t-ink-dark"
+                ></span><span class="max-sm:sr-only">{UPDATING}</span
+                >{:else}{UPDATING}{/if}</Explain
+            >
           {/if}
         </span>
       </span>

@@ -13,27 +13,22 @@ import { seedGoalAmount } from './helpers/game';
 import type { GameState } from '../src/lib/game/state';
 import {
   FIXTURE_AMOUNT,
+  autosaveOff,
+  focusBody,
   frameMap,
   monthDay,
   openGamePanel,
   policyRow,
+  refusePolicyRecord,
   seedRuns,
+  staleEdit,
   tabTo,
+  updating,
   waitResult,
   waitSim
 } from './helpers/play';
-import { openKind, slider, waitFilled } from './helpers/run';
+import { installPolicyHold, openKind, slider, waitFilled } from './helpers/run';
 import { gotoEditor, gotoHydrated, openHeaderMenu, paintOnce } from './helpers/sharing';
-
-/** Puts focus on body and makes it the start of sequential focus navigation. */
-async function focusBody(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    (document.activeElement as HTMLElement | null)?.blur();
-    document.body.tabIndex = -1;
-    document.body.focus();
-    document.body.removeAttribute('tabindex');
-  });
-}
 
 /**
  * The checklist in one state. `own` are the state's own controls (closing spec, sec-design-a11y),
@@ -227,5 +222,17 @@ test("an editable policy's editor", async ({ page }) => {
   const editor = page.getByTestId('inspector');
   await expect(editor).toBeVisible();
   await expect(editor.getByLabel('Within metres, band 2')).toBeVisible();
+  await expectNoA11yViolations(page);
+});
+
+test('a round beside Updating and Autosave off at 375 px: the status icons', async ({ page }) => {
+  await refusePolicyRecord(page);
+  await installPolicyHold(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await roundPage(page, { round: 1, target: BEATEN });
+  await staleEdit(page);
+  await expect(autosaveOff(page)).toBeVisible();
+  await expect(updating(page)).toBeVisible();
+  await expect(page.getByTestId('tl-status-spinner')).toBeVisible();
   await expectNoA11yViolations(page);
 });

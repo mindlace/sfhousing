@@ -7,7 +7,7 @@
     status,
     align = 'end',
     covered = false,
-    fold = false
+    icons = false
   }: {
     status: SaveStatus;
     /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left; right
@@ -19,10 +19,11 @@
      */
     covered?: boolean;
     /**
-     * A game's header: below sm, while nothing shows, the cell takes no width (the pinned goal
-     * needs the room on a phone); from sm it keeps the width of "Saving…" as always.
+     * A game's header: below sm the cell is icons, so the pinned goal has the room on a phone.
+     * "Saving…" and its sizer draw nothing; "Autosave off" is a 24 px icon button, its word kept
+     * as its name. From sm the cell is as always.
      */
-    fold?: boolean;
+    icons?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -66,7 +67,7 @@
 
 <!-- One inline grid cell: the invisible sizer holds the width of "Saving…" so the header never moves
   when the text comes or goes; the shown text and the "Autosave off" button share its cell. With
-  `fold`, below sm, the sizer goes while nothing shows. -->
+  `icons`, below sm, the sizer and "Saving…" draw nothing and "Autosave off" is an icon. -->
 <div
   class="relative inline-grid items-center text-xs text-gray-700 dark:text-gray-300"
   data-testid="save-state"
@@ -74,22 +75,41 @@
   bind:this={root}
 >
   <span
-    class={[
-      'invisible col-start-1 row-start-1 whitespace-nowrap',
-      fold && status === 'saved' && 'max-sm:hidden'
-    ]}
+    class={['invisible col-start-1 row-start-1 whitespace-nowrap', icons && 'max-sm:hidden']}
     aria-hidden="true">Saving…</span
   >
   {#if status === 'off'}
     <button
       type="button"
-      class="col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900"
+      class={[
+        'col-start-1 row-start-1 min-h-6 min-w-6 rounded-full border border-amber-700 bg-amber-50 px-2 whitespace-nowrap text-amber-900',
+        icons && 'max-sm:inline-flex max-sm:items-center max-sm:justify-center max-sm:px-0'
+      ]}
       aria-expanded={popOpen}
       aria-controls={popId}
       inert={covered}
       onclick={() => (popOpen = !popOpen)}
     >
-      {COPY.autosaveOff}
+      {#if icons}
+        <!-- A disk struck through: autosave is off. -->
+        <svg
+          aria-hidden="true"
+          class="hidden max-sm:block"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+          ><path d="M3 2.5h8l2.5 2.5v8.5h-11z M5.5 2.5v3.5h5v-3.5" /><path
+            d="M1.5 1.5l13 13"
+            stroke-linecap="round"
+          /></svg
+        ><span class="max-sm:sr-only">{COPY.autosaveOff}</span>
+      {:else}
+        {COPY.autosaveOff}
+      {/if}
     </button>
     <p
       id={popId}
@@ -105,7 +125,10 @@
       {COPY.n4}
     </p>
   {:else if status === 'saving'}
-    <span class="col-start-1 row-start-1 whitespace-nowrap" data-testid="save-text">Saving…</span>
+    <span
+      class={['col-start-1 row-start-1 whitespace-nowrap', icons && 'max-sm:hidden']}
+      data-testid="save-text">Saving…</span
+    >
   {/if}
   <!-- `visible`: a covering parent hides the rest with `visibility: hidden` (/sim's "Updating");
        the announcements still reach screen readers. -->

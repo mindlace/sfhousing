@@ -167,13 +167,14 @@ All in `src/lib/game/ui/`; none renders for the open game.
   `'pending'`, `'win'` or `'late'`; `words` from `pinnedWords(verdict, ctx)` (`ui/round-words.ts`),
   drawn from sm as line 1, the bar (`fill`, 0 to 1: the homes at the playhead's month over the
   amount) and line 2. Below sm it is `goal-phone` (count, " homes" in pending, a space, the rest:
-  the month, "by Mar 2058"; then in a win or late the result, "· 2 yr 3 mo early"), from the bar's
-  left up to the Menu with the bar under it. It reads on one line when it fits; when it does not
-  (beside "Autosave off" or "Updating"), the result wraps beneath as a second line, within the
-  48 px bar, and nothing is cut off. The line is an inline-size container: at 17rem or less "homes"
-  hides, at 13rem or less the short count ("82k") replaces the full one; the month and the result
-  always show. In a game below sm the save state takes no width while nothing shows
-  (`SaveIndicator`'s `fold`). A win reads "early" in
+  the month, "by Mar 2058"; then in a win or late a separator and the result, "2 yr 3 mo
+  early"), from the bar's left up to the Menu with the bar under it. It reads on one line when it
+  fits; when it does not, the result wraps beneath as a second line, within the 48 px bar, with no
+  leading dot (the row starts one separator to the left of the clipped line), and nothing is cut
+  off. The line is an inline-size container: at 17rem or less "homes" hides, at 13rem or less the
+  short count ("82k") replaces the full one; the month and the result always show. Below sm the
+  header's status cell is icons in a game: a spinner for "Updating" in a box always reserved, an
+  icon-only "Autosave off" ([timeline-ui.md](timeline-ui.md), rule 32). A win reads "early" in
   words and adds an accent border; with `ongift` it carries the gift, a 24 px button named by
   `words.gift` that jiggles once every `JIGGLE_MS` (4 s, `ui/motion.ts`; a 600 ms turn,
   the keyframes' first 15%) and is still under reduced motion. Win and late arriving after mount put
@@ -390,7 +391,12 @@ again and update the constants when the engine or the fixture changes the months
 is the first day of a month as a `Day`.
 
 `e2e/helpers/header-text.ts` has `widestGameHeader(page)`, which writes the pinned goal's widest
-words (`WIDEST_PINNED`) into its two lines and its phone line for the width checks.
+words (`WIDEST_PINNED`, measured in the line's font: the month phrase "before May 2066" and the
+result "10 yr 11 mo early") into its two lines and into each part of its phone line, and
+`goalLine(page, word)` with `expectGoalLineWhole`, which check every drawn part of the phone line
+lies inside its clipped box (the bar's own overflow cannot show a clip inside the line). Their
+helpers for the status: `refusePolicyRecord` (autosave off) and `staleEdit` ("Updating", after
+`installPolicyHold`) in `play.ts`.
 
 ### The journeys
 
@@ -421,10 +427,12 @@ journey whole plays about 8 s of months on top of the page's work and nears a te
 
 `e2e/game-a11y.spec.ts` runs the accessibility checklist on each state ([accessibility.md](accessibility.md)).
 `e2e/game-shell.spec.ts` checks the round's header at 320 and 375 px in pending, win and late,
-with no status and beside "Autosave off": every part of the goal line inside the line's box and the
-viewport, the row fitting, the word ("before", "early", "late") drawn; the win on one line at 375 px
-with no status, and wrapped within the 48 px bar at 320 px beside "Autosave off"; and the round
-panel inside the viewport under the header at 320 and 1280 px.
+with no status and beside "Autosave off", and pending beside "Updating" alone and with "Autosave
+off" (stale numbers read pending): every part of the goal line inside the line's box and the
+viewport, with the page's words and with the widest, the row fitting, the word ("before",
+"early", "late") drawn, and the line not moving when "Updating" comes; the win on one line at
+375 px with no status, and the widest win wrapped within the 48 px bar at 320 px beside "Autosave
+off"; and the round panel inside the viewport under the header at 320 and 1280 px.
 
 ## The reach check
 

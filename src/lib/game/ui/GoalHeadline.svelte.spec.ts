@@ -243,7 +243,7 @@ describe('GoalHeadline', () => {
         .map((c) => part(c))
         .filter(shows)
         .map((el, i, all) => (el === all.at(-1) ? ` ${el.textContent}` : el.textContent))
-        .join('') + (part('result') ? ` ${part('result').textContent}` : '');
+        .join('') + (part('result') ? ` · ${part('result').textContent}` : '');
     const rect = (el: Element) => el.getBoundingClientRect();
     /** Every drawn part of the phone line lies inside the line's box: nothing is cut off. */
     const expectWhole = () => {
@@ -278,6 +278,9 @@ describe('GoalHeadline', () => {
       expect(shows(part('result'))).toBe(true);
       expectWhole();
       expect(rect(part('result')).top).toBeGreaterThan(rect(part('rest')).top);
+      // No leading dot on the wrapped line: the separator sits left of the line's box, unseen.
+      expect(rect(part('sep')).right).toBeLessThanOrEqual(rect(phone().element()).left + 0.5);
+      expect(rect(part('result')).left).toBeLessThanOrEqual(rect(phone().element()).left + 0.5);
       const banner = page.getByRole('banner').element();
       expect(rect(banner).height).toBe(48);
       const g = rect(giftEl().element());
@@ -299,6 +302,12 @@ describe('GoalHeadline', () => {
       await expect.element(phone()).toBeVisible();
       expectWhole();
       expect(rect(part('result')).top).toBe(rect(part('rest')).top);
+      // On one line the dot stays, between the month and the result, inside the line.
+      const sep = rect(part('sep'));
+      expect(sep.left).toBeGreaterThanOrEqual(rect(part('rest')).right);
+      expect(sep.right).toBeLessThanOrEqual(rect(part('result')).left);
+      expect(sep.left).toBeGreaterThanOrEqual(rect(phone().element()).left);
+      expect(part('sep').textContent?.trim()).toBe('·');
     });
 
     for (const [name, p, rest] of [

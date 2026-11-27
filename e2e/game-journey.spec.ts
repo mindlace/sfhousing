@@ -13,6 +13,7 @@ import {
   FIXTURE_LAW_MONTH,
   FIXTURE_RAIL_MONTH,
   FIXTURE_ROUTE,
+  focusBody,
   frameMap,
   goal,
   monthDay,
@@ -107,15 +108,44 @@ async function expectNewOff(
   await closeKindSheet(page, kind);
 }
 
-/** The opening as a new visitor, painted to a room goal of 1 and tilted; Start pressed later. */
-async function paintedOpening(page: Page, isMobile: boolean): Promise<Locator> {
+/** The map's camera now (map debug). */
+const camera = (page: Page) =>
+  page.evaluate(() => {
+    const m = (window as Win).__sfhMap!.map!;
+    const c = m.getCenter();
+    return {
+      center: [c.lng, c.lat] as [number, number],
+      zoom: m.getZoom(),
+      pitch: m.getPitch(),
+      bearing: m.getBearing()
+    };
+  });
+
+/** Rendered features of the existing buildings' layer in the map's view (map debug). */
+const buildingsDrawn = (page: Page) =>
+  page.evaluate(
+    () =>
+      (window as Win).__sfhMap?.map?.queryRenderedFeatures({ layers: ['existing-buildings'] })
+        .length ?? 0
+  );
+
+/**
+ * The opening as a new visitor, painted to a room goal of 1; Start pressed later. Returns Start
+ * and the opening's own camera as it loaded (before the stroke: `paintOnce` moves to a flat frame
+ * over the fixture's lots so its stroke lands on them).
+ */
+async function paintedOpening(
+  page: Page,
+  isMobile: boolean
+): Promise<{ start: Locator; opening: Awaited<ReturnType<typeof camera>> }> {
   await seedGoalAmount(page, 1);
   await gotoEditor(page);
+  const opening = await camera(page);
   await paintOnce(page, isMobile);
   const start = page.getByTestId('opening-start');
   await expect(start).toBeVisible();
   await waitSaved(page, (s) => s.state.firstWinAt !== null);
-  return start;
+  return { start, opening };
 }
 
 /**
@@ -134,38 +164,35 @@ async function roundOne(page: Page): Promise<void> {
   await waitResult(page, 'pending');
 }
 
+// The pointer and keyboard journeys are branch A's: a round-1 policy switched on wins. Should the
+// probe ever set FIXTURE_ROUTE to 'edit', they would test nothing true; fail loudly instead.
+if (FIXTURE_ROUTE !== 'switch')
+  throw new Error(
+    "FIXTURE_ROUTE is 'edit': write the branch B journeys (Task 11 brief, t11-s2) before running these"
+  );
+
 test.describe('by pointer', () => {
   test.use({ reducedMotion: 'reduce' });
-  // eslint-disable-next-line playwright/no-skipped-test
-  test.skip(FIXTURE_ROUTE !== 'switch', 'branch A: a round-1 policy switched on wins');
 
   test('a new visitor paints, starts, wins current law and takes the gift: round 1', async ({
     page,
     isMobile
   }) => {
-    // 1. The opening: a stroke meets a room goal of 1 (the fixture's lots hold about 70 homes of
-    // room, short of FIXTURE_AMOUNT); the camera tilted as a player would before Start; the
-    // simulation then reads the goal at FIXTURE_AMOUNT when it mounts.
-    const start = await paintedOpening(page, isMobile);
-    await jumpAndIdle(page, { ...FRAME, pitch: 50 });
+    // 1. The opening: it loads pitched (its own camera, the test tilts nothing). A stroke meets a
+    // room goal of 1 (the fixture's lots hold about 70 homes of room, short of FIXTURE_AMOUNT);
+    // the stroke needs a flat frame over the lots, so the opening's camera is put back after it.
+    // The simulation then reads the goal at FIXTURE_AMOUNT when it mounts.
+    const { start, opening } = await paintedOpening(page, isMobile);
+    expect(opening.pitch).toBeGreaterThan(0);
+    await jumpAndIdle(page, opening);
     await setGoalAmount(page, FIXTURE_AMOUNT);
     await start.click();
     await waitSim(page);
     expect(new URL(page.url()).pathname).toBe('/');
 
-    // 2. The map is pitched, with buildings drawn.
-    await expect
-      .poll(() => page.evaluate(() => (window as Win).__sfhMap?.map?.getPitch() ?? 0), FAST)
-      .toBeGreaterThan(0);
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            (window as Win).__sfhMap?.map?.queryRenderedFeatures({ layers: ['existing-buildings'] })
-              .length ?? 0
-        )
-      )
-      .toBeGreaterThan(0);
+    // 2. The simulation keeps the opening's pitch, with buildings drawn.
+    await expect.poll(async () => (await camera(page)).pitch, FAST).toBeCloseTo(opening.pitch, 1);
+    await expect.poll(() => buildingsDrawn(page)).toBeGreaterThan(0);
 
     // 3. Current law: pending until played, then the win at its goal month, with the gift.
     await waitFilled(page);
@@ -247,8 +274,6 @@ test.describe('by pointer', () => {
 test.describe('by keyboard only', () => {
   // eslint-disable-next-line playwright/no-skipped-test
   test.skip(({ isMobile }) => isMobile, 'the keyboard journey runs on the desktop project');
-  // eslint-disable-next-line playwright/no-skipped-test
-  test.skip(FIXTURE_ROUTE !== 'switch', 'branch A: a round-1 policy switched on wins');
 
   test('the opening stamped by Enter, Start, and current law won by the ruler: round 1', async ({
     page
@@ -257,7 +282,7 @@ test.describe('by keyboard only', () => {
     await seedGoalAmount(page, 1);
     await gotoEditor(page);
     await jumpAndIdle(page, FRAME);
-    await page.locator('body').focus();
+    await focusBody(page);
     await tabTo(page, page.locator('.maplibregl-canvas'));
     await page.keyboard.press('Enter');
     await expect.poll(() => ops(page), FAST).toBe(1);
@@ -283,7 +308,7 @@ test.describe('by keyboard only', () => {
     page
   }) => {
     await roundOne(page);
-    await page.locator('body').focus();
+    await focusBody(page);
 
     // 3. The kind by Enter; the rail rule's New pane by Enter (focus stays on New, the pane has
     // no focus of its own); Close by Tab and Enter.
@@ -357,7 +382,7 @@ test.describe('by keyboard only', () => {
     await waitSim(page);
     await frameMap(page);
     await waitFilled(page);
-    await page.locator('body').focus();
+    await focusBody(page);
     const zoning = page
       .getByTestId('tl-timeline')
       .getByRole('button', { name: 'Zoning', exact: true })
@@ -411,6 +436,10 @@ test('a round played past its target is late, with no gift, and nothing is saved
   await expect(page.getByTestId('goal-line2')).toHaveText(/late$/);
   await expect(page.getByTestId('goal-line2')).toHaveText('4 yr 8 mo late');
   await expect(page.getByTestId('goal-gift')).toHaveCount(0);
+  // Compared once the page has settled: playback paused, and the autosave back at "saved" (a
+  // debounced write reads "saving" until it lands), so a wrongly scheduled save has had its chance.
+  await expect.poll(() => fzp(page, 'playing'), FAST).toBe(false);
+  await expect(page.getByTestId('save-state')).toHaveAttribute('data-save-status', 'saved');
   expect((await savedGame(page)).state).toEqual(before.state);
 });
 
@@ -489,6 +518,11 @@ test('a saved version 2 game opens in round 2 with its plan and its own rule run
   );
   await gotoHydrated(page, '/');
   await waitSim(page);
+  // A loaded game opens on the simulation pitched, with buildings drawn (before the test frames
+  // the map flat over the fixture's lots).
+  await expect(page.getByTestId('map-root')).toHaveAttribute('data-state', 'ready');
+  await expect.poll(async () => (await camera(page)).pitch, FAST).toBeGreaterThan(0);
+  await expect.poll(() => buildingsDrawn(page)).toBeGreaterThan(0);
   await frameMap(page);
   await waitFilled(page);
 

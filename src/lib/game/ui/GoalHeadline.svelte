@@ -94,17 +94,23 @@
 
 {#snippet lines()}
   <span data-testid="goal-line1" class="truncate font-semibold max-sm:hidden">{words.line1}</span>
-  <!-- One line when it fits; else the early or late part wraps beneath the first part. -->
+  <!-- One line when it fits; else the early or late part wraps beneath the first part, with no
+       leading dot: the row starts one separator to the left of the clipped line, so a separator
+       that begins a line falls outside it. -->
   <span
     data-testid="goal-phone"
-    class="goal-phone flex flex-wrap items-baseline gap-x-1 text-xs leading-tight font-semibold sm:hidden"
-    ><span class="goal-first"
-      ><span class="goal-count">{words.phone.count}</span><span class="goal-short"
-        >{words.phone.short}</span
-      ><span class="goal-homes">{words.phone.homes}</span>
-      <span class="goal-rest">{words.phone.rest}</span></span
-    >{#if words.phone.result !== ''}<span class="goal-result">· {words.phone.result}</span
-      >{/if}</span
+    class="goal-phone block text-xs leading-tight font-semibold sm:hidden"
+    ><span class="goal-wrap flex flex-wrap items-baseline"
+      ><span class="goal-first"
+        ><span class="goal-count">{words.phone.count}</span><span class="goal-short"
+          >{words.phone.short}</span
+        ><span class="goal-homes">{words.phone.homes}</span>
+        <span class="goal-rest">{words.phone.rest}</span></span
+      >{#if words.phone.result !== ''}<span class="goal-tail"
+          ><span class="goal-sep"> · </span><span class="goal-result">{words.phone.result}</span
+          ></span
+        >{/if}</span
+    ></span
   >
   <span
     aria-hidden="true"
@@ -194,11 +200,24 @@
 <style>
   /* The phone line measures its own width: "homes" goes first, then the full count. */
   .goal-phone {
+    /* The separator's width: the row starts this far left of the line, which clips it. */
+    --goal-sep: 0.75em;
     container-type: inline-size;
     overflow: hidden;
   }
   .goal-short {
     display: none;
+  }
+  .goal-wrap {
+    margin-left: calc(-1 * var(--goal-sep));
+  }
+  .goal-first {
+    padding-left: var(--goal-sep);
+  }
+  .goal-sep {
+    display: inline-block;
+    width: var(--goal-sep);
+    text-align: center;
   }
   @container (max-width: 17rem) {
     .goal-homes {
