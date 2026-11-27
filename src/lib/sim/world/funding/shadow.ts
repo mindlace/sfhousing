@@ -1,7 +1,7 @@
 // Shadow starts (spec rule 20): when an award pre-empts a lot's ordinary start, the lot keeps a
 // shadow of the attempt it was on. In the month holding the ordinary start day that attempt would
 // have had, the homes that start would have added are recorded on the funded row as displaced.
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { lotRow } from '../columns';
 import { lotEntity, ordinaryStart, type OrdinaryStart } from '../rates';
 import type { StepCtx } from '../types';
@@ -74,7 +74,7 @@ export function stepShadows(ctx: StepCtx): void {
     const g = timeline.frameAt(Math.min(s.frameMonth, month));
     const existing = line.shadowExisting[i];
     const uS = drawOn(streamOf(sh, lotEntity(statics, lot), k), P.SIZE, 0);
-    const size = sizeIn(statics, g.view, g.calibration, lot, existing, uS);
+    const size = sizeIn(g.view, g.choiceStep, lot, existing, uS);
     if (size !== null) ctx.displace(line.shadowRow[i], lot, s.day, size.units - existing);
   }
   dropShadows(line, ended);

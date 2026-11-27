@@ -1,6 +1,7 @@
 // Synthetic LiDAR scenes for tests and the fixture: boxes on a ground surface, drawn into a tile.
 import { BOXES } from '../boxes-config.js';
-import type { Bbox7131, Ring } from '../geom.js';
+import type { Bbox7131, MultiPoly, Ring } from '../geom.js';
+import type { Footprint, Shift, ShiftSource } from '../lib/lidar/register.js';
 import { groundBilinear, type RasterWindow } from '../lib/lidar/mosaic.js';
 import { LIDAR_NODATA, type LidarTile } from '../lib/lidar/tile.js';
 
@@ -123,3 +124,32 @@ export function synthWindow(scene: SynthScene, b: Bbox7131): RasterWindow {
     }
   return { x0, y0, res, nx, ny, hag, ground, veg };
 }
+
+export const rect = (x0: number, y0: number, x1: number, y1: number): Ring => [
+  [x0, y0],
+  [x1, y0],
+  [x1, y1],
+  [x0, y1]
+];
+
+export const fpOf = (shape: MultiPoly, o: Partial<Footprint> = {}): Footprint => ({
+  bid: 'b1',
+  shape,
+  heightM: 9,
+  baseM: 0,
+  hs: 0,
+  ...o
+});
+
+export const shiftOf = (dx = 0, dy = 0, source: ShiftSource = 'fit'): Shift => ({
+  dx,
+  dy,
+  source,
+  score: source === 'none' ? 0 : 0.5,
+  best: source === 'none' ? 0 : 0.5,
+  ratio: 0.2,
+  sharpX: 0.1,
+  sharpY: 0.1,
+  atEdge: false,
+  flagged: source !== 'fit'
+});

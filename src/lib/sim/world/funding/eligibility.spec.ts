@@ -3,9 +3,9 @@
 // offered) gets no clock. Exact: runs with and without the skip give the same events, ledger and
 // world, and every skipped (lot, kind) has a clock with no day.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { seedHash } from '$lib/sim/scenario/rng';
+import { withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import { seedHash } from '$lib/sim/world/rules/rng';
 import type { ProjectKind } from '$lib/timelapse/types';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';

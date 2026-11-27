@@ -1,11 +1,12 @@
 // Pipeline rows, masters and phases (spec rules 3 and 13; today's `pipelineRow`, `masterOf`,
-// `phaseFiledDay` and `phaseSchedule`, scenario/engine.ts:661-898): made at the dataset date,
+// `phaseFiledDay` and `phaseSchedule`): made at the dataset date,
 // followed through their stages month by month, and phases filed as their days come.
 import type { ParcelId } from '$lib/data/parcel';
-import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import * as engineModule from '$lib/sim/scenario/engine';
-import * as rngModule from '$lib/sim/scenario/rng';
+import * as chooseModule from '$lib/sim/choice/choose';
+import * as stagesModule from '$lib/sim/world/rules/stages';
+import * as rngModule from '$lib/sim/world/rules/rng';
 import type { InFlightProject } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import * as timelapseTypesModule from '$lib/timelapse/types';
@@ -21,8 +22,8 @@ import type { StepSink, World } from './types';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
-const { FILL_LEVELS } = scenarioCodecModule;
-const { isSkipped, nextStage } = engineModule;
+const { allowedCount, capFrom, topHomes } = chooseModule;
+const { isSkipped, nextStage } = stagesModule;
 const { P, drawOn, jobEntity, streamOf } = rngModule;
 const { PATHWAYS, STAGE_ORDER } = timelapseTypesModule;
 const { addProject, pushRev } = columnsModule;
@@ -43,7 +44,6 @@ const {
   RULE_PIPELINE
 } = typesModule;
 
-const F = FILL_LEVELS.length;
 const S = STAGE_ORDER.length;
 const SI = Object.fromEntries(STAGE_ORDER.map((s, i) => [s, i])) as Record<Stage, number>;
 const PRE_APPLICATION = SI.preApplication;
@@ -59,7 +59,7 @@ const NEXT = Int8Array.from({ length: PATHWAYS.length * S }, (_, i) =>
 
 /** Revision caps of a project on some view rows (today's `Caps`). */
 interface Caps {
-  /** Sum of the top-level yield of its rows. */
+  /** Sum over its rows of the most homes the view's envelope and cap allow (`topHomes`). */
   yieldCap: number;
   /** Largest envelope stories of its rows. */
   envelope: number;
@@ -106,12 +106,14 @@ function rowsOf(parcels: ScenarioParcels, ids: readonly ParcelId[]): Int32Array 
   return Int32Array.from(out);
 }
 
-function capsOf(parcels: ScenarioParcels, rows: Int32Array): Caps {
+function capsOf(parcels: ScenarioParcels, t: OptionTable, rows: Int32Array): Caps {
   let yieldCap = 0;
   let envelope = 0;
   for (const i of rows) {
-    yieldCap += parcels.yield[i * F + F - 1];
-    envelope = Math.max(envelope, parcels.envelopeStories[i]);
+    const stories = parcels.envelopeStories[i];
+    const allowed = allowedCount(t, i, stories);
+    yieldCap += topHomes(t, i, allowed, capFrom(parcels.fzpCap[i]), parcels.existingUnits[i]);
+    envelope = Math.max(envelope, stories);
   }
   return { yieldCap, envelope };
 }
@@ -128,6 +130,7 @@ export function rowStaticsOf(statics: Statics, view: ZoningView): RowStatics {
   const hit = byView.get(view);
   if (hit) return hit;
   const parcels = view.parcels;
+  const t = view.pre.choice.t;
   const out = statics.projects.map((p): RowStatic => {
     const own = rowsOf(parcels, p.parcelIds);
     let phased: RowStatic['phased'] = null;
@@ -152,12 +155,12 @@ export function rowStaticsOf(statics: Statics, view: ZoningView): RowStatics {
             entity: jobEntity(projectId),
             rows: r,
             existing,
-            ...capsOf(parcels, r)
+            ...capsOf(parcels, t, r)
           };
         })
       };
     }
-    return { entity: jobEntity(p.id), rows: own, phased, ...capsOf(parcels, own) };
+    return { entity: jobEntity(p.id), rows: own, phased, ...capsOf(parcels, t, own) };
   });
   byView.set(view, out);
   return out;

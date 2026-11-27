@@ -5,6 +5,7 @@
 import type { ParcelId } from '../data/parcel';
 import type { Day } from './time';
 import type { CarModel } from '../sim/cars/types';
+import type { ChoiceModel, HeightTimeModel } from '../sim/choice/types';
 
 export type { Day } from './time';
 
@@ -77,7 +78,6 @@ export interface Calibration {
   initiation: InitiationModel;
   pathwayForNew: Record<Pathway, number> & { provenance: Provenance };
   ppaShare: Record<Pathway, number> & { provenance: Provenance }; // share of new projects that start at preApplication
-  size: SizeModel;
   revision: RevisionModel;
   streamlinedForLocalProgram: Provenance; // tier 2: Local Program projects use the streamlined tables
   phaseGap: { days: number[]; provenance: Provenance }; // days: empirical gaps between successive phases' permitFiled
@@ -105,6 +105,10 @@ export interface Calibration {
   };
   /** The car-ownership model (`src/lib/sim/cars`); absent means no car model. */
   cars?: CarModel;
+  /** The developer's choice among building options (`src/lib/sim/choice`); optional until written. */
+  choice?: ChoiceModel;
+  /** Construction-time multipliers and months by height band; optional until written. */
+  heightTime?: HeightTimeModel;
 }
 
 // T4a: initiation.
@@ -117,7 +121,8 @@ export type FeatureId =
   | 'storiesGap' // envelope stories − existing stories
   | 'improvementShare' // improvement ÷ (land + improvement) assessed value
   | 'rentControlLikely' // 0/1: ≥ 2 units and built < 1979
-  | 'landUseClass'; // categorical: residential, mixed, commercial, pdr, vacant, other
+  | 'landUseClass' // categorical: residential, mixed, commercial, pdr, vacant, other
+  | 'choiceMargin'; // best allowed option's residual ÷ (meanOptionHomes × meanOptionCost), choose.ts
 
 export interface InitiationModel {
   kind: 'logit-monthly';
@@ -126,17 +131,6 @@ export interface InitiationModel {
     feature: FeatureId;
     bins: number[]; // ascending edges; categorical features use category index
     coef: number[]; // one per bin
-  }[];
-  provenance: Provenance;
-}
-
-// T4b: size.
-
-export interface SizeModel {
-  fillLevels: number[]; // ascending fractions of envelope stories; last = 1; length F matches T11 yield
-  byEnvelope: {
-    maxStoriesUpTo: number;
-    probs: number[]; // length F, sums to 1
   }[];
   provenance: Provenance;
 }

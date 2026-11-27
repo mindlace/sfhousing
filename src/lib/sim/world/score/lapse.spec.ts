@@ -3,9 +3,10 @@
 // no row; each award starts one row and sends one 'award', so funded homes, tiers and the award
 // day the tiers read are the funded row's own, in every feed order.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { tierContext, tierSeries, type TierCtx } from '$lib/sim/scenario/finance-score';
-import { miniCalibrationWithRoutes } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { tierContext, type TierCtx } from '$lib/sim/world/score/finance';
+import { tierSeries } from './test/oracles';
+import { miniCalibrationWithRoutes } from '$lib/sim/world/fixtures/mini-finance';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import type { Effect, Policy } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool, Programme, TierUnits } from '$lib/timelapse/types';

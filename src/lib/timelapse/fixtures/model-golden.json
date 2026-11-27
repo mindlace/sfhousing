@@ -602,152 +602,152 @@
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=-0.5 existingUnits=0 lotAreaM2=150 yearBuilt=1870 storiesGap=-3 improvementShare=0 rentControlLikely=0 landUseClass=0",
+      "input": "synthetic potentialRatio=-0.5 existingUnits=0 lotAreaM2=150 yearBuilt=1870 storiesGap=-3 improvementShare=0 rentControlLikely=0 landUseClass=0 choiceMargin=0",
       "bits": ["3f79d3d8761eacca"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=3.4784946236559136 existingUnits=11 lotAreaM2=247 yearBuilt=1923 storiesGap=2 improvementShare=0.29896907216494845 rentControlLikely=1 landUseClass=1",
+      "input": "synthetic potentialRatio=3.4784946236559136 existingUnits=11 lotAreaM2=247 yearBuilt=1923 storiesGap=2 improvementShare=0.29896907216494845 rentControlLikely=1 landUseClass=1 choiceMargin=0",
       "bits": ["3f856a535a51da7c"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=7.456989247311827 existingUnits=22 lotAreaM2=344 yearBuilt=1976 storiesGap=-2 improvementShare=0.5979381443298969 rentControlLikely=0 landUseClass=2",
+      "input": "synthetic potentialRatio=7.456989247311827 existingUnits=22 lotAreaM2=344 yearBuilt=1976 storiesGap=-2 improvementShare=0.5979381443298969 rentControlLikely=0 landUseClass=2 choiceMargin=0",
       "bits": ["3f83042494fde845"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=0.575268817204301 existingUnits=33 lotAreaM2=441 yearBuilt=2029 storiesGap=3 improvementShare=0.8969072164948454 rentControlLikely=1 landUseClass=3",
+      "input": "synthetic potentialRatio=0.575268817204301 existingUnits=33 lotAreaM2=441 yearBuilt=2029 storiesGap=3 improvementShare=0.8969072164948454 rentControlLikely=1 landUseClass=3 choiceMargin=0",
       "bits": ["3f5298792007960b"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=4.553763440860215 existingUnits=4 lotAreaM2=538 yearBuilt=1922 storiesGap=-1 improvementShare=0.1958762886597938 rentControlLikely=0 landUseClass=4",
+      "input": "synthetic potentialRatio=4.553763440860215 existingUnits=4 lotAreaM2=538 yearBuilt=1922 storiesGap=-1 improvementShare=0.1958762886597938 rentControlLikely=0 landUseClass=4 choiceMargin=0",
       "bits": ["3f8daab0f69fbfe1"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=8.532258064516128 existingUnits=15 lotAreaM2=635 yearBuilt=1975 storiesGap=4 improvementShare=0.4948453608247423 rentControlLikely=1 landUseClass=5",
+      "input": "synthetic potentialRatio=8.532258064516128 existingUnits=15 lotAreaM2=635 yearBuilt=1975 storiesGap=4 improvementShare=0.4948453608247423 rentControlLikely=1 landUseClass=5 choiceMargin=0",
       "bits": ["3f90354c2b5b9e42"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=1.650537634408602 existingUnits=26 lotAreaM2=732 yearBuilt=2028 storiesGap=0 improvementShare=0.7938144329896907 rentControlLikely=0 landUseClass=0",
+      "input": "synthetic potentialRatio=1.650537634408602 existingUnits=26 lotAreaM2=732 yearBuilt=2028 storiesGap=0 improvementShare=0.7938144329896907 rentControlLikely=0 landUseClass=0 choiceMargin=0",
       "bits": ["3f69398f64b3b550"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=5.629032258064516 existingUnits=37 lotAreaM2=829 yearBuilt=1921 storiesGap=5 improvementShare=0.09278350515463918 rentControlLikely=1 landUseClass=1",
+      "input": "synthetic potentialRatio=5.629032258064516 existingUnits=37 lotAreaM2=829 yearBuilt=1921 storiesGap=5 improvementShare=0.09278350515463918 rentControlLikely=1 landUseClass=1 choiceMargin=0",
       "bits": ["3f91b54c17a63f72"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=9.60752688172043 existingUnits=8 lotAreaM2=926 yearBuilt=1974 storiesGap=1 improvementShare=0.3917525773195876 rentControlLikely=0 landUseClass=2",
+      "input": "synthetic potentialRatio=9.60752688172043 existingUnits=8 lotAreaM2=926 yearBuilt=1974 storiesGap=1 improvementShare=0.3917525773195876 rentControlLikely=0 landUseClass=2 choiceMargin=0",
       "bits": ["3f95c21ecc8dfc18"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=2.725806451612903 existingUnits=19 lotAreaM2=1023 yearBuilt=2027 storiesGap=-3 improvementShare=0.6907216494845361 rentControlLikely=1 landUseClass=3",
+      "input": "synthetic potentialRatio=2.725806451612903 existingUnits=19 lotAreaM2=1023 yearBuilt=2027 storiesGap=-3 improvementShare=0.6907216494845361 rentControlLikely=1 landUseClass=3 choiceMargin=0",
       "bits": ["3f64417772fa800a"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=6.704301075268817 existingUnits=30 lotAreaM2=220 yearBuilt=1920 storiesGap=2 improvementShare=0.9896907216494846 rentControlLikely=0 landUseClass=4",
+      "input": "synthetic potentialRatio=6.704301075268817 existingUnits=30 lotAreaM2=220 yearBuilt=1920 storiesGap=2 improvementShare=0.9896907216494846 rentControlLikely=0 landUseClass=4 choiceMargin=0",
       "bits": ["3f8915eac4e58d38"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=-0.1774193548387097 existingUnits=1 lotAreaM2=317 yearBuilt=1973 storiesGap=-2 improvementShare=0.28865979381443296 rentControlLikely=1 landUseClass=5",
+      "input": "synthetic potentialRatio=-0.1774193548387097 existingUnits=1 lotAreaM2=317 yearBuilt=1973 storiesGap=-2 improvementShare=0.28865979381443296 rentControlLikely=1 landUseClass=5 choiceMargin=0",
       "bits": ["3f5f914f977dedb8"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=3.801075268817204 existingUnits=12 lotAreaM2=414 yearBuilt=2026 storiesGap=3 improvementShare=0.5876288659793815 rentControlLikely=0 landUseClass=0",
+      "input": "synthetic potentialRatio=3.801075268817204 existingUnits=12 lotAreaM2=414 yearBuilt=2026 storiesGap=3 improvementShare=0.5876288659793815 rentControlLikely=0 landUseClass=0 choiceMargin=0",
       "bits": ["3f7e4697c57399e6"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=7.779569892473118 existingUnits=23 lotAreaM2=511 yearBuilt=1919 storiesGap=-1 improvementShare=0.8865979381443299 rentControlLikely=1 landUseClass=1",
+      "input": "synthetic potentialRatio=7.779569892473118 existingUnits=23 lotAreaM2=511 yearBuilt=1919 storiesGap=-1 improvementShare=0.8865979381443299 rentControlLikely=1 landUseClass=1 choiceMargin=0",
       "bits": ["3f77da768c994197"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=0.8978494623655913 existingUnits=34 lotAreaM2=608 yearBuilt=1972 storiesGap=4 improvementShare=0.18556701030927836 rentControlLikely=0 landUseClass=2",
+      "input": "synthetic potentialRatio=0.8978494623655913 existingUnits=34 lotAreaM2=608 yearBuilt=1972 storiesGap=4 improvementShare=0.18556701030927836 rentControlLikely=0 landUseClass=2 choiceMargin=0",
       "bits": ["3f80b789c13b9609"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=4.876344086021505 existingUnits=5 lotAreaM2=705 yearBuilt=2025 storiesGap=0 improvementShare=0.4845360824742268 rentControlLikely=1 landUseClass=3",
+      "input": "synthetic potentialRatio=4.876344086021505 existingUnits=5 lotAreaM2=705 yearBuilt=2025 storiesGap=0 improvementShare=0.4845360824742268 rentControlLikely=1 landUseClass=3 choiceMargin=0",
       "bits": ["3f7299da30f005d9"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=8.854838709677418 existingUnits=16 lotAreaM2=802 yearBuilt=1918 storiesGap=5 improvementShare=0.7835051546391752 rentControlLikely=0 landUseClass=4",
+      "input": "synthetic potentialRatio=8.854838709677418 existingUnits=16 lotAreaM2=802 yearBuilt=1918 storiesGap=5 improvementShare=0.7835051546391752 rentControlLikely=0 landUseClass=4 choiceMargin=0",
       "bits": ["3f99f0d0ef83c6b9"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=1.9731182795698925 existingUnits=27 lotAreaM2=899 yearBuilt=1971 storiesGap=1 improvementShare=0.08247422680412371 rentControlLikely=1 landUseClass=5",
+      "input": "synthetic potentialRatio=1.9731182795698925 existingUnits=27 lotAreaM2=899 yearBuilt=1971 storiesGap=1 improvementShare=0.08247422680412371 rentControlLikely=1 landUseClass=5 choiceMargin=0",
       "bits": ["3f7ee1fc15946ad6"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=5.951612903225806 existingUnits=38 lotAreaM2=996 yearBuilt=2024 storiesGap=-3 improvementShare=0.38144329896907214 rentControlLikely=0 landUseClass=0",
+      "input": "synthetic potentialRatio=5.951612903225806 existingUnits=38 lotAreaM2=996 yearBuilt=2024 storiesGap=-3 improvementShare=0.38144329896907214 rentControlLikely=0 landUseClass=0 choiceMargin=0",
       "bits": ["3f76ec5d81764628"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=9.93010752688172 existingUnits=9 lotAreaM2=193 yearBuilt=1917 storiesGap=2 improvementShare=0.6804123711340206 rentControlLikely=1 landUseClass=1",
+      "input": "synthetic potentialRatio=9.93010752688172 existingUnits=9 lotAreaM2=193 yearBuilt=1917 storiesGap=2 improvementShare=0.6804123711340206 rentControlLikely=1 landUseClass=1 choiceMargin=0",
       "bits": ["3f8c3d66b56e2d98"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=3.048387096774193 existingUnits=20 lotAreaM2=290 yearBuilt=1970 storiesGap=-2 improvementShare=0.979381443298969 rentControlLikely=0 landUseClass=2",
+      "input": "synthetic potentialRatio=3.048387096774193 existingUnits=20 lotAreaM2=290 yearBuilt=1970 storiesGap=-2 improvementShare=0.979381443298969 rentControlLikely=0 landUseClass=2 choiceMargin=0",
       "bits": ["3f70818dd6390557"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=7.026881720430107 existingUnits=31 lotAreaM2=387 yearBuilt=2023 storiesGap=3 improvementShare=0.27835051546391754 rentControlLikely=1 landUseClass=3",
+      "input": "synthetic potentialRatio=7.026881720430107 existingUnits=31 lotAreaM2=387 yearBuilt=2023 storiesGap=3 improvementShare=0.27835051546391754 rentControlLikely=1 landUseClass=3 choiceMargin=0",
       "bits": ["3f856a535a51da7c"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=0.14516129032258063 existingUnits=2 lotAreaM2=484 yearBuilt=1916 storiesGap=-1 improvementShare=0.5773195876288659 rentControlLikely=0 landUseClass=4",
+      "input": "synthetic potentialRatio=0.14516129032258063 existingUnits=2 lotAreaM2=484 yearBuilt=1916 storiesGap=-1 improvementShare=0.5773195876288659 rentControlLikely=0 landUseClass=4 choiceMargin=0",
       "bits": ["3f697a420249d0cf"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=4.123655913978494 existingUnits=13 lotAreaM2=581 yearBuilt=1969 storiesGap=4 improvementShare=0.8762886597938144 rentControlLikely=1 landUseClass=5",
+      "input": "synthetic potentialRatio=4.123655913978494 existingUnits=13 lotAreaM2=581 yearBuilt=1969 storiesGap=4 improvementShare=0.8762886597938144 rentControlLikely=1 landUseClass=5 choiceMargin=0",
       "bits": ["3f73bee3aa6f9c4b"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=8.102150537634408 existingUnits=24 lotAreaM2=678 yearBuilt=2022 storiesGap=0 improvementShare=0.17525773195876287 rentControlLikely=0 landUseClass=0",
+      "input": "synthetic potentialRatio=8.102150537634408 existingUnits=24 lotAreaM2=678 yearBuilt=2022 storiesGap=0 improvementShare=0.17525773195876287 rentControlLikely=0 landUseClass=0 choiceMargin=0",
       "bits": ["3f90354c2b5b9e42"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=1.2204301075268815 existingUnits=35 lotAreaM2=775 yearBuilt=1915 storiesGap=5 improvementShare=0.4742268041237113 rentControlLikely=1 landUseClass=1",
+      "input": "synthetic potentialRatio=1.2204301075268815 existingUnits=35 lotAreaM2=775 yearBuilt=1915 storiesGap=5 improvementShare=0.4742268041237113 rentControlLikely=1 landUseClass=1 choiceMargin=0",
       "bits": ["3f82a49fecbe5196"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=5.198924731182795 existingUnits=6 lotAreaM2=872 yearBuilt=1968 storiesGap=1 improvementShare=0.7731958762886598 rentControlLikely=0 landUseClass=2",
+      "input": "synthetic potentialRatio=5.198924731182795 existingUnits=6 lotAreaM2=872 yearBuilt=1968 storiesGap=1 improvementShare=0.7731958762886598 rentControlLikely=0 landUseClass=2 choiceMargin=0",
       "bits": ["3f8396fb56fac809"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=9.177419354838708 existingUnits=17 lotAreaM2=969 yearBuilt=2021 storiesGap=-3 improvementShare=0.07216494845360824 rentControlLikely=1 landUseClass=3",
+      "input": "synthetic potentialRatio=9.177419354838708 existingUnits=17 lotAreaM2=969 yearBuilt=2021 storiesGap=-3 improvementShare=0.07216494845360824 rentControlLikely=1 landUseClass=3 choiceMargin=0",
       "bits": ["3f80110d2ad1407a"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=2.2956989247311825 existingUnits=28 lotAreaM2=166 yearBuilt=1914 storiesGap=2 improvementShare=0.3711340206185567 rentControlLikely=0 landUseClass=4",
+      "input": "synthetic potentialRatio=2.2956989247311825 existingUnits=28 lotAreaM2=166 yearBuilt=1914 storiesGap=2 improvementShare=0.3711340206185567 rentControlLikely=0 landUseClass=4 choiceMargin=0",
       "bits": ["3f8915eac4e58d32"]
     },
     {
       "fn": "initiationHazard",
-      "input": "synthetic potentialRatio=6.274193548387096 existingUnits=39 lotAreaM2=263 yearBuilt=1967 storiesGap=-2 improvementShare=0.6701030927835051 rentControlLikely=1 landUseClass=5",
+      "input": "synthetic potentialRatio=6.274193548387096 existingUnits=39 lotAreaM2=263 yearBuilt=1967 storiesGap=-2 improvementShare=0.6701030927835051 rentControlLikely=1 landUseClass=5 choiceMargin=0",
       "bits": ["3f7817791c47804e"]
     },
     {

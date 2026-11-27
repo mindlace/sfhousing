@@ -1,23 +1,19 @@
 // The timeline host's height limits (ensemble-runner Task 9, spec S14): `heights` for the zoning in
 // force at the last `viewMonth` (month 1 before any), posted again when that zoning changes, and
 // `heightLids` answered for it by staged lid builds in the runner's slices. Fixture-0, one world,
-// a fake clock that charges compute time; a differential against the old host's posts.
+// a fake clock that charges compute time.
 import { describe, expect, it, vi } from 'vitest';
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId } from '$lib/data/parcel';
 import type { FetchLike } from '$lib/sim/chunks';
 import { STOP_TYPES } from '$lib/sim/levers/brushes';
 import { SRC_PAINT } from '$lib/sim/levers/source';
-import { DEFAULT_LEVERS } from '$lib/sim/levers/types';
-import { scenarioUrls } from '$lib/sim/scenario/load';
-import { createScenarioHost } from '$lib/sim/scenario/scenario-host';
-import type { ScenarioResponse } from '$lib/sim/scenario/types';
+import { simInputUrls } from '$lib/sim/world/input/load';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY4, queriesOf4, type SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import { createTimelineHost } from './host';
-import { monthLastDay } from './months';
 import { span, timingSet } from './policy/test/fixtures';
 import { datasetFetch, fakeClock } from './runner/test/harness';
 
@@ -54,7 +50,7 @@ const PAINT: CustomBrush = {
 
 async function asOfOf(): Promise<Day> {
   const f = datasetFetch(FIXTURE);
-  const body = (await (await f.fetch(scenarioUrls(f.manifest)!.projects)).json()) as {
+  const body = (await (await f.fetch(simInputUrls(f.manifest)!.projects)).json()) as {
     asOf: Day;
   };
   return body.asOf;
@@ -313,60 +309,6 @@ describe('timeline host: heights', () => {
     expect(h.lidsOf(late)?.result).toMatchObject({ ok: false, reason: 'no-session' });
   });
 
-  it("the default document's heights and lids equal the old host's with default levers", async () => {
-    const { bbox } = await firstChunk();
-    const asOf = await asOfOf();
-    // the old host, before any setLevers
-    const f = datasetFetch(FIXTURE);
-    const clock = fakeClock();
-    const old: ScenarioResponse[] = [];
-    const oldHost = createScenarioHost({
-      fetch: f.fetch,
-      fetchBytes: f.fetchBytes,
-      post: (m) => old.push(m),
-      setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
-      clearTimeout: (x) => clock.clearTimeout(x),
-      now: () => {
-        clock.tick(TICK_MS);
-        return clock.now();
-      },
-      retryDelaysMs: [],
-      bandRuns: 1,
-      warn: () => {}
-    });
-    oldHost.handle({
-      type: 'initScenario',
-      rev: 1,
-      manifest: f.manifest,
-      scenario: 'fzp',
-      seed: 1,
-      horizon: monthLastDay(asOf, MONTHS),
-      levers: structuredClone(DEFAULT_LEVERS)
-    });
-    oldHost.handle({ type: 'prefetch', bbox: allBbox(f.manifest) });
-    oldHost.handle({ type: 'heightLids', reqId: 1, bbox });
-    const oldLids = () =>
-      old.find(
-        (m): m is Extract<ScenarioResponse, { type: 'heightLids' }> => m.type === 'heightLids'
-      );
-    for (let k = 0; k < 20_000 && !oldLids(); k++)
-      if (!(await clock.runNext())) await new Promise((r) => setImmediate(r));
-    oldHost.dispose();
-    const oldHeights = old.filter((m) => m.type === 'heights');
-    expect(oldHeights).toHaveLength(1);
-    expect(oldLids()!.result.ok).toBe(true);
-
-    const h = makeHost();
-    h.open(DEFAULT_POLICY4);
-    h.prefetchAll();
-    await h.run(() => h.filled());
-    const id = h.askLids(bbox);
-    await h.run(() => h.lidsOf(id) !== undefined);
-    h.host.dispose();
-    expect(heightsOf(h)).toEqual(oldHeights);
-    expect(h.lidsOf(id)!.result).toEqual(oldLids()!.result);
-  });
-
   it('a throw in a city build posts error timeline at the rev in use, stops filling and answers lids no-session', async () => {
     const { bbox } = await firstChunk();
     const h = makeHost();
@@ -390,37 +332,6 @@ describe('timeline host: heights', () => {
     } finally {
       boom.city = false;
     }
-  });
-
-  it("heightLids is answered while an edit's compile is stalled", async () => {
-    const f = datasetFetch(FIXTURE);
-    const cell = f.manifest.chunks[0];
-    // no gross table, and the first chunk never arrives: an edit painting it waits on it
-    const manifest = structuredClone(f.manifest);
-    delete (manifest.scenarios!.fzp as { gross?: string }).gross;
-    const fetch: FetchLike = (url) =>
-      url === cell.url ? new Promise<never>(() => {}) : f.fetch(url);
-    const { doc, lots } = await paintedDoc(1);
-    const h = makeHost({ fetch, manifest });
-    h.open(DEFAULT_POLICY4);
-    h.prefetchAll();
-    await h.run(() => heightsOf(h).length > 0 && h.filled());
-    h.handle({ type: 'setPolicy', rev: 2, policy: doc, lots });
-    await h.run(() => h.of('compiling').some((c) => c.rev === 2));
-    expect(await h.idle()).toBe(true);
-    const progress = h
-      .of('compiling')
-      .filter((c) => c.rev === 2)
-      .at(-1)!;
-    expect(progress.done).toBeLessThan(progress.total);
-    const id = h.askLids(f.manifest.chunks[1].bbox as BBox4);
-    await h.run(() => h.lidsOf(id) !== undefined);
-    const got = h.lidsOf(id)!.result;
-    expect(got.ok).toBe(true);
-    if (got.ok) expect([...got.lids.pieces.source].some((s) => s === SRC_PAINT)).toBe(false);
-    // the edit is still waiting on its chunk
-    expect(h.of('compiled').some((c) => c.rev === 2)).toBe(false);
-    expect(h.of('error')).toEqual([]);
   });
 
   it('an edit that renames a transit rule posts heights with the new rule id', async () => {

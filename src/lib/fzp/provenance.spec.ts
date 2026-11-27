@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MARKET_TERMS, AVERAGE_DRAWN, DRAW_UP_FRONT, resolveTerms } from '$lib/sim/finance';
-import { MONEY_SOURCES } from '$lib/sim/scenario/finance-score';
-import { PIPELINE_FUNDED } from '$lib/sim/scenario/funding';
-import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/scenario/score';
+import { MONEY_SOURCES } from '$lib/sim/world/score/finance';
+import { PIPELINE_FUNDED } from '$lib/sim/world/rules/funding';
+import { REFERENCES, RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 import { formatCount } from '$lib/scoreboard/format';
 import { M1_TARGETS } from '$lib/scoreboard/targets';
 import { cumulativeIncidence, parseCalibration } from '$lib/timelapse/model';
@@ -48,8 +48,8 @@ import {
 
 /** `marketLevel` as built unless a test forces a level (spec 6: the level is stubbed). */
 const forced = vi.hoisted(() => ({ level: null as 'all' | 'private' | null }));
-vi.mock('$lib/sim/scenario/market', async (importOriginal) => {
-  const real = await importOriginal<typeof import('$lib/sim/scenario/market')>();
+vi.mock('$lib/sim/world/input/market', async (importOriginal) => {
+  const real = await importOriginal<typeof import('$lib/sim/world/input/market')>();
   return {
     ...real,
     marketLevel: (c: Parameters<typeof real.marketLevel>[0]) => forced.level ?? real.marketLevel(c)
@@ -268,11 +268,14 @@ describe('provenanceSections', () => {
     expect(table.rows[0][0]).toBe(table.rows[1][0]);
   });
 
-  it('renders the size table with whole percents', () => {
-    const [table] = section('src-size').tables;
-    expect(table.rows).toHaveLength(cal.size.fillLevels.length * cal.size.byEnvelope.length);
-    expect(table.rows[0]).toEqual(['Up to 999 stories', '25% of the allowed height', '0%']);
-    expect(table.rows.at(-1)).toEqual(['Up to 999 stories', '100% of the allowed height', '100%']);
+  it('describes the size of new projects by the developer’s choice', () => {
+    const s = section('src-size');
+    expect(s.tables).toEqual([]);
+    expect(s.entries.map((e) => e.id)).toEqual(
+      cal.choice
+        ? ['src-size-model', 'src-size-costs', 'src-size-value', 'src-size-affordable']
+        : []
+    );
   });
 
   it('renders one revision row per stage with shrink and grow shares', () => {

@@ -10,9 +10,9 @@
  */
 import { buildFinance } from '$lib/sim/levers/finance';
 import type { FinanceLevers } from '$lib/sim/levers/types';
-import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/scenario/funding';
-import type { FinanceIndex } from '$lib/sim/scenario/funding';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { financeIndexOf, inflowArrivals, isOff, isOffered } from '$lib/sim/world/rules/funding';
+import type { FinanceIndex } from '$lib/sim/world/rules/funding';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { canonicalJson } from '$lib/sim-page/policy';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
@@ -153,7 +153,7 @@ export function createMoneyTrack(
         return fin.programmes[i];
       });
 
-      // As `Treasury` builds them (`scenario/money.ts`), over this month's days only.
+      // The engine's treasury built them, over this month's days only.
       const lo = m === 1 ? asOf : first;
       const arrivals: FinanceFrame['arrivals'] = [];
       fin.pools.forEach((p, q) => {

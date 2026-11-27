@@ -11,6 +11,7 @@ import {
   typicalMonths
 } from './model';
 import type { CarModel } from '../sim/cars/types';
+import type { ChoiceModel, HeightTimeModel } from '../sim/choice/types';
 import type { Day } from './time';
 import {
   EXIT_ORDER,
@@ -29,7 +30,6 @@ import {
   type ProjectHistoriesFile,
   type Provenance,
   type RevisionModel,
-  type SizeModel,
   type Stage,
   type Transition
 } from './types';
@@ -77,7 +77,6 @@ interface RowCalibration {
   initiation: RowInitiationModel;
   pathwayForNew: Record<RowPathway, number> & { provenance: RowProvenance };
   ppaShare: Record<RowPathway, number> & { provenance: RowProvenance };
-  size: RowSizeModel;
   revision: RowRevisionModel;
   streamlinedForLocalProgram: RowProvenance;
   phaseGap: { days: number[]; provenance: RowProvenance };
@@ -94,6 +93,8 @@ interface RowCalibration {
     };
   };
   cars?: CarModel;
+  choice?: ChoiceModel;
+  heightTime?: HeightTimeModel;
 }
 
 // T4a
@@ -105,18 +106,12 @@ type RowFeatureId =
   | 'storiesGap'
   | 'improvementShare'
   | 'rentControlLikely'
-  | 'landUseClass';
+  | 'landUseClass'
+  | 'choiceMargin';
 interface RowInitiationModel {
   kind: 'logit-monthly';
   intercept: number;
   terms: { feature: RowFeatureId; bins: number[]; coef: number[] }[];
-  provenance: RowProvenance;
-}
-
-// T4b
-interface RowSizeModel {
-  fillLevels: number[];
-  byEnvelope: { maxStoriesUpTo: number; probs: number[] }[];
   provenance: RowProvenance;
 }
 
@@ -191,20 +186,15 @@ const rowsMatch: Assert<
             ? Equals<Calibration, RowCalibration> extends true
               ? Equals<FeatureId, RowFeatureId> extends true
                 ? Equals<InitiationModel, RowInitiationModel> extends true
-                  ? Equals<SizeModel, RowSizeModel> extends true
-                    ? Equals<RevisionModel, RowRevisionModel> extends true
-                      ? Equals<ProjectHistory, RowProjectHistory> extends true
-                        ? Equals<ProjectHistoriesFile, RowProjectHistoriesFile> extends true
-                          ? Equals<typeof sampleTransition, RowSampleTransition> extends true
-                            ? Equals<typeof initiationHazard, RowInitiationHazard> extends true
-                              ? Equals<typeof chanceTable, RowChanceTable> extends true
-                                ? Equals<typeof typicalMonths, RowTypicalMonths> extends true
-                                  ? Equals<
-                                      typeof parseCalibration,
-                                      RowParseCalibration
-                                    > extends true
-                                    ? Equals<typeof cumulativeIncidence, RowCumulativeIncidence>
-                                    : false
+                  ? Equals<RevisionModel, RowRevisionModel> extends true
+                    ? Equals<ProjectHistory, RowProjectHistory> extends true
+                      ? Equals<ProjectHistoriesFile, RowProjectHistoriesFile> extends true
+                        ? Equals<typeof sampleTransition, RowSampleTransition> extends true
+                          ? Equals<typeof initiationHazard, RowInitiationHazard> extends true
+                            ? Equals<typeof chanceTable, RowChanceTable> extends true
+                              ? Equals<typeof typicalMonths, RowTypicalMonths> extends true
+                                ? Equals<typeof parseCalibration, RowParseCalibration> extends true
+                                  ? Equals<typeof cumulativeIncidence, RowCumulativeIncidence>
                                   : false
                                 : false
                               : false

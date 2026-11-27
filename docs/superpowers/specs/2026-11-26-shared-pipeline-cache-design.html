@@ -1,0 +1,108 @@
+<article>
+  <header>
+    <h1>Shared pipeline cache</h1>
+    <p>One cache per machine for the pipeline's point-in-time downloads, and a <code>boxes</code> that skips work it has already done.</p>
+  </header>
+
+  <section id="sec-why">
+    <h2>Why</h2>
+    <p>The hour of compute is <code>boxes</code> (about 54 minutes, single-threaded). Behind it is the LiDAR data it reads, which takes about 68 minutes to fetch. Both are wasted on most branches, for two reasons:</p>
+    <ul>
+      <li><strong>The cache lives in each worktree.</strong> <code>pipeline/.cache</code> sits inside each worktree, so every new worktree starts empty. One worktree, <code>building-steps</code>, holds 70 GB of it: 59 GB of EPT, 7.6 GB of <code>lidar-work</code> and 3 GB of <code>raw</code>.</li>
+      <li><strong><code>boxes</code> never checks for earlier work.</strong> It normalises and rebuilds in full even when its code, config and inputs are unchanged.</li>
+    </ul>
+    <p>The files in the cache are point-in-time references and content-addressed: <code>raw/&lt;sha256&gt;</code>, and the boxes artifact's <code>upstreamVersion</code> hashes its code, config and inputs. One shared copy is therefore safe.</p>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals and non-goals</h2>
+    <ul>
+      <li><strong>Goal:</strong> a new worktree builds without downloading anything again, as long as this machine has fetched it once.</li>
+      <li><strong>Goal:</strong> <code>boxes</code> finishes in seconds when it has already been run for its exact code, config and inputs. It runs in full only when one of those changed.</li>
+      <li><strong>Goal:</strong> the 70 GB already on disk is moved into the shared cache, not fetched again.</li>
+      <li><strong>Non-goal:</strong> caching the stages inside <code>build</code> (about 4.5 minutes) or changing how the dataset version is computed.</li>
+      <li><strong>Non-goal:</strong> fetching cache misses from R2, or sharing the cache between machines or with CI.</li>
+      <li><strong>Non-goal:</strong> making <code>boxes</code> itself faster.</li>
+      <li><strong>Anti-goal:</strong> a cache hit that gives a different dataset version or different bytes than a cold run. A skip must restore exactly the lock entry a full run would write.</li>
+    </ul>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <aside data-kind="decision"><strong>Decision</strong> The owner picked A.</aside>
+    <ul>
+      <li><strong>A. A shared local cache, and <code>boxes</code> skips work it has already done (picked).</strong> This removes the hour on every branch whose boxes inputs are unchanged, at the cost of some path plumbing and one index.</li>
+      <li><strong>B. A, plus a fallback to R2 on a cache miss.</strong> This helps a second machine or CI, but adds upload logic and storage. Deferred until a second machine needs it.</li>
+      <li><strong>C. A, plus caching each <code>build</code> stage separately.</strong> This saves at most about 4 minutes and makes the version scheme harder to reason about. Rejected.</li>
+    </ul>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-location">
+      <h3>Where the cache lives</h3>
+      <p>The pipeline resolves its cache root in one function, <code>cacheRoot()</code>:</p>
+      <ol>
+        <li><code>SFH_CACHE_DIR</code>, if it is set, for example to point at an external drive.</li>
+        <li>Otherwise <code>$XDG_CACHE_HOME/sfhousing</code>.</li>
+        <li>Otherwise <code>~/.cache/sfhousing</code>.</li>
+      </ol>
+      <p>Every path that is hard-coded today derives from <code>cacheRoot()</code>. These include <code>pipeline/cli.ts:27</code>, <code>steps/fetch.ts:21</code>, <code>sources/lidar.ts:36</code> and <code>scripts/data-transit.ts:31</code>.</p>
+      <table id="tbl-dirs">
+        <caption>What moves and what stays</caption>
+        <thead><tr><th scope="col">Directory</th><th scope="col">Where</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+          <tr><th scope="row"><code>raw/</code></th><td>Shared</td><td>Content-addressed by sha256. Also holds the boxes outputs.</td></tr>
+          <tr><th scope="row"><code>ept/</code></th><td>Shared</td><td>Copies of USGS EPT nodes, keyed by node.</td></tr>
+          <tr><th scope="row"><code>lidar-work/&lt;hash8&gt;/</code></th><td>Shared</td><td>Already keyed by its input hash; lets a run resume.</td></tr>
+          <tr><th scope="row"><code>boxes-index/</code></th><td>Shared (new)</td><td>See <a href="#sec-skip">the skip</a>.</td></tr>
+          <tr><th scope="row"><code>derived/</code>, <code>review/</code>, logs</td><td>Worktree</td><td>Per version or per run; small; a worktree's own output.</td></tr>
+          <tr><th scope="row"><code>lidar-venv/</code></th><td>Worktree</td><td>Tied to that worktree's <code>pyproject</code>; 121 MB.</td></tr>
+        </tbody>
+      </table>
+      <p>The code hash keeps excluding <code>pipeline/.cache</code>. The shared root lies outside the repo, so nothing it holds can affect the dataset version.</p>
+    </section>
+
+    <section id="sec-writes">
+      <h3>Safe writes from several worktrees</h3>
+      <ul>
+        <li>Files in the shared cache are written to a temp name in the same directory, then renamed into place. A reader never sees a half-written file.</li>
+        <li>A file whose sha256 name is already present is not written again.</li>
+        <li><code>boxes</code> holds an exclusive lock file per key (<code>boxes-index/&lt;key&gt;.lock</code>) while it runs. A second run for the same key waits for the first, then takes the skip.</li>
+      </ul>
+    </section>
+
+    <section id="sec-skip">
+      <h3>The skip in <code>boxes</code></h3>
+      <ol>
+        <li>After verifying the raw files, <code>boxes</code> computes the key from its inputs. The key is the full <code>upstreamVersion</code> (code, config and input hashes) that a full run would write.</li>
+        <li>If <code>boxes-index/&lt;key&gt;.json</code> exists and every file it names is present in <code>raw/</code> with the right sha256, <code>boxes</code> writes that stored lock entry into <code>sources.lock.json</code>. It prints "boxes: reused &lt;key&gt;" and exits 0.</li>
+        <li>Otherwise it runs in full, as it does today. When it finishes, it writes <code>boxes-index/&lt;key&gt;.json</code> with the exact <code>building-boxes</code> lock entry it put in the lock.</li>
+        <li><code>--force</code> skips the check and runs in full.</li>
+      </ol>
+      <p>A reused entry is byte-for-byte the one a full run with the same key wrote. The lock, and so the dataset version, comes out the same either way. If the entry's <code>retrievedAt</code> stays as the original run's date, the version's date stays stable as well.</p>
+    </section>
+
+    <section id="sec-migrate">
+      <h3>Moving the existing caches</h3>
+      <ul>
+        <li>A new command, <code>npm run pipeline -- cache import &lt;dir&gt;</code>, moves the shared directories of an old <code>pipeline/.cache</code> into the shared cache.</li>
+        <li>On the same volume it renames rather than copies. It checks the sha256 of every <code>raw/</code> file it moves, skips files the shared cache already has, and leaves the per-worktree directories where they are.</li>
+        <li>When the old directory holds a <code>building-boxes</code> artifact in <code>raw/</code>, the command also writes its <code>boxes-index</code> entry. The 54 minutes already spent then count as earlier work.</li>
+        <li>Any pipeline command that finds a local <code>pipeline/.cache/raw</code>, <code>ept</code> or <code>lidar-work</code> prints one line naming the import command.</li>
+        <li>The builder runs the import once on this machine for every worktree that has a cache, starting with <code>building-steps</code>.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>The exact contents of the <code>boxes-index</code> file, as long as it holds the full lock entry and the list of sha256 files it depends on.</li>
+      <li>How <code>fixture</code> builds and pipeline tests point at a temp cache root, so tests never touch the developer's shared cache.</li>
+      <li>Updating <code>docs/dev/pipeline.md</code> and <code>docs/dev/building-boxes.md</code>: the cache location, <code>SFH_CACHE_DIR</code>, the skip, <code>--force</code> and <code>cache import</code>.</li>
+    </ul>
+    <aside data-kind="note"><strong>Note</strong> These calls were mine, not the owner's: the default location <code>~/.cache/sfhousing</code>; keeping <code>derived/</code>, <code>review/</code> and <code>lidar-venv/</code> in each worktree; the lock file per key; and the import being a command rather than an automatic move.</aside>
+  </section>
+</article>

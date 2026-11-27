@@ -12,7 +12,7 @@ import type { TimelineUpdate } from '../types';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
 import { localFrame } from '$lib/generator/geo';
-import type { Massing, Schedule } from '$lib/sim/scenario/types';
+import type { Massing, Schedule } from '$lib/sim/world/input/types';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 
 const BUILDINGS = gen as unknown as GeneratedBuilding[];

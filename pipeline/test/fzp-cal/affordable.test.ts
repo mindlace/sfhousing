@@ -288,7 +288,8 @@ describe('siteChoice', () => {
     storiesGap: 0,
     improvementShare: 0.3,
     rentControlLikely: 0,
-    landUseClass: 0
+    landUseClass: 0,
+    choiceMargin: 0
   });
   const r = (mapblklot: string, pr: number, hostableBase = true): PanelYearRow => ({
     mapblklot,

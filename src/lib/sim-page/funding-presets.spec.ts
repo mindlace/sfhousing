@@ -3,10 +3,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { baselineFixture, FIXTURE_AS_OF, fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { LAST_DAY } from '$lib/sim/levers/finance';
-import { dayOf } from '$lib/sim/scenario/dates';
-import { inflowArrivals } from '$lib/sim/scenario/funding';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import { dayOf } from '$lib/sim/world/dates';
+import { inflowArrivals } from '$lib/sim/world/rules/funding';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { parseCalibration } from '$lib/timelapse/model';
 import type { Calibration, Inflow, PoolKind } from '$lib/timelapse/types';
 import {

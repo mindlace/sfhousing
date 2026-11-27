@@ -1,24 +1,23 @@
-import * as scenarioCodecModule from '$lib/data/scenario-codec';
-import type { Schedule } from '$lib/sim/scenario/types';
+import * as policyCodecModule from '$lib/data/policy-codec';
+import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import * as typesModule from './types';
 import type { LotColumns, ProjectColumns, World } from './types';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
-const { FILL_LEVELS } = scenarioCodecModule;
-const { END_ALIVE, NO_DAY, NO_STOP, LOT_FREE } = typesModule;
+const { NULL_CAP } = policyCodecModule;
+const { END_ALIVE, NO_BTYPE, NO_DAY, NO_STOP, LOT_FREE } = typesModule;
 
-type Typed = Int32Array | Uint32Array | Uint8Array | Float64Array;
+type Typed = Int32Array | Uint32Array | Uint16Array | Uint8Array | Float64Array;
 
 /** Stages a row's `entered` entry covers. */
 const ENTERED_STRIDE = 7;
-const YIELDS_STRIDE = FILL_LEVELS.length;
 const FIRST_CAPACITY = 64;
 
 /** Per-row strides of the project columns; every other typed column has one entry per row. */
-const STRIDE: Record<string, number> = { entered: ENTERED_STRIDE, yields: YIELDS_STRIDE };
-const REV_COLUMNS = ['revDay', 'revUnits', 'revStories', 'revPrev'];
+const STRIDE: Record<string, number> = { entered: ENTERED_STRIDE };
+const REV_COLUMNS = ['revDay', 'revUnits', 'revStories', 'revLevel', 'revPrev'];
 const DISP_COLUMNS = ['dispRow', 'dispDay', 'dispUnits'];
 const COUNTS = new Set(['n', 'revN', 'dispN']);
 
@@ -93,10 +92,11 @@ function emptyProjects(): ProjectColumns {
     existing: new Int32Array(0),
     yieldCap: new Int32Array(0),
     envelope: new Int32Array(0),
-    level: new Uint8Array(0),
+    level: new Uint16Array(0),
+    btype: new Uint8Array(0),
+    optCap: new Uint16Array(0),
     env: new Int32Array(0),
     top: new Int32Array(0),
-    yields: new Int32Array(0),
     phaseNext: new Int32Array(0),
     phaseDay: new Int32Array(0),
     kind: new Uint8Array(0),
@@ -111,6 +111,7 @@ function emptyProjects(): ProjectColumns {
     revDay: new Int32Array(0),
     revUnits: new Int32Array(0),
     revStories: new Float64Array(0),
+    revLevel: new Uint16Array(0),
     revPrev: new Int32Array(0),
     dispN: 0,
     dispRow: new Int32Array(0),
@@ -149,23 +150,27 @@ export function addProject(p: ProjectColumns): number {
   p.endKind[row] = END_ALIVE;
   p.stopAt[row] = NO_STOP;
   p.filed[row] = NO_DAY;
+  p.btype[row] = NO_BTYPE;
+  p.optCap[row] = NULL_CAP;
   p.revLast[row] = -1;
   p.programmes[row] = '';
   return row;
 }
 
 /**
- * Records a revision on `row` with today's same-day merge (`pushRevision`, scenario/engine.ts):
- * a revision due on the last entry's day replaces that entry's units and stories; if the merged
- * entry then equals its predecessor it is removed. The first entry is never removed. A day before
- * the last entry's throws.
+ * Records a revision on `row` with today's same-day merge (`pushRevision`):
+ * a revision due on the last entry's day replaces that entry's units, stories and option; if the
+ * merged entry then equals its predecessor it is removed. The first entry is never removed. A day
+ * before the last entry's throws. `level` is a simulated row's option (`ProjectColumns.level`),
+ * 0 on any other row.
  */
 export function pushRev(
   p: ProjectColumns,
   row: number,
   day: Day,
   units: number,
-  stories: number | null
+  stories: number | null,
+  level = 0
 ): void {
   const s = stories === null ? NaN : stories;
   const last = p.revLast[row];
@@ -177,8 +182,14 @@ export function pushRev(
     if (day === lastDay) {
       p.revUnits[last] = units;
       p.revStories[last] = s;
+      p.revLevel[last] = level;
       const prev = p.revPrev[last];
-      if (prev >= 0 && p.revUnits[prev] === units && sameStories(p.revStories[prev], s)) {
+      if (
+        prev >= 0 &&
+        p.revUnits[prev] === units &&
+        sameStories(p.revStories[prev], s) &&
+        p.revLevel[prev] === level
+      ) {
         p.revLast[row] = prev;
         // Reclaim the slot when it is the newest one in the side table.
         if (last === p.revN - 1) p.revN--;
@@ -191,6 +202,7 @@ export function pushRev(
   p.revDay[at] = day;
   p.revUnits[at] = units;
   p.revStories[at] = s;
+  p.revLevel[at] = level;
   p.revPrev[at] = last;
   p.revLast[row] = at;
 }
@@ -217,13 +229,27 @@ function sameStories(a: number, b: number): boolean {
   return a === b || (Number.isNaN(a) && Number.isNaN(b));
 }
 
-/** The row's revisions dated at or before `upTo`, ascending, as today's `Schedule.revisions`. */
-export function revisionsOf(p: ProjectColumns, row: number, upTo: Day): Schedule['revisions'] {
+/**
+ * The row's revisions dated at or before `upTo`, ascending, as today's `Schedule.revisions`;
+ * with `option`, each carries its option (a simulated row's).
+ */
+export function revisionsOf(
+  p: ProjectColumns,
+  row: number,
+  upTo: Day,
+  option = false
+): Schedule['revisions'] {
   const out: Schedule['revisions'] = [];
   for (let at = p.revLast[row]; at >= 0; at = p.revPrev[at]) {
     if (p.revDay[at] > upTo) continue;
     const st = p.revStories[at];
-    out.push({ day: p.revDay[at], units: p.revUnits[at], stories: Number.isNaN(st) ? null : st });
+    const r: Schedule['revisions'][number] = {
+      day: p.revDay[at],
+      units: p.revUnits[at],
+      stories: Number.isNaN(st) ? null : st
+    };
+    if (option) r.option = p.revLevel[at];
+    out.push(r);
   }
   return out.reverse();
 }

@@ -133,14 +133,14 @@ const editScenario = (dir: string, f: (p: ScenarioParcels) => void) => {
   writeFileSync(file, deflateRawSync(encodeScenarioPayload(p)));
 };
 /** A copy whose policy.bin row of parcel `id` is edited by `f` (re-encoded, still decodes). */
-const editPolicyRow = (id: string, f: (pol: PolicyParcels, i: number, F: number) => void) => {
+const editPolicyRow = (id: string, f: (pol: PolicyParcels, i: number) => void) => {
   const d = copy();
   const file = join(d, POLICY_BIN);
   const s = decodeScenarioPayload(
     new Uint8Array(inflateRawSync(readFileSync(join(d, PARCELS_BIN))))
   );
   const pol = decodePolicyPayload(new Uint8Array(inflateRawSync(readFileSync(file))), s);
-  f(pol, s.index.get(id)!, pol.fillLevels.length);
+  f(pol, s.index.get(id)!);
   writeFileSync(file, deflateRawSync(encodePolicyPayload(pol)));
   return d;
 };
@@ -387,14 +387,6 @@ describe('invariants', () => {
   it('V16 fails on a parse failure', async () => {
     expect(await failed(base, { ...counts, 'scenario.height.parse_fail': 1 })).toContain('V16');
   });
-  it('V17 fails on a clamped yield', async () => {
-    expect(await failed(base, { ...counts, 'scenario.yield.clamped': 1 })).toContain('V17');
-  });
-  it('V17 fails on a non-Local-Program base mismatch', async () => {
-    expect(await failed(base, { ...counts, 'scenario.yield.nonlp_base_mismatch': 1 })).toContain(
-      'V17'
-    );
-  });
   it('V17 fails when a hostable flag disagrees', async () => {
     const d = copy();
     editScenario(d, (p) => {
@@ -434,17 +426,16 @@ describe('invariants', () => {
     expect(v17.ok).toBe(false);
     expect(v17.detail).toMatch(/1 eligible flag\(s\) disagree with the chunk record/);
   });
-  it('V17 reads eligibility from flags bit 5: a no-land-use parcel with homes may be hostable', async () => {
+  it('V17 reads eligibility from flags bit 5: a no-land-use parcel with homes is eligible', async () => {
     // Lot 9 has no land-use row (chunk `eligible` false). With roll homes it is eligible in the
-    // scenario (sd.landuse.none-with-units), so its hostable flags need no chunk eligibility.
+    // scenario (sd.landuse.none-with-units), whatever its chunk eligibility. (Its options.bin row,
+    // built on 0 homes and no eligibility, has no option, so it stays unhostable.)
     const d = copy();
     editScenario(d, (p) => {
       const i = p.index.get('3512009')!;
       expect(p.eligible[i]).toBe(0);
       p.existingUnits[i] = 2;
       p.eligible[i] = 1;
-      p.hostable[i] = 1;
-      p.hostableBase[i] = 1;
     });
     const v17 = await result(d, 'V17');
     expect(v17).toMatchObject({
@@ -475,7 +466,7 @@ describe('invariants', () => {
     expect(v17.ok).toBe(false);
     expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
   });
-  it("V17 fails when the step's hostable flags disagree with its uncapped yields", async () => {
+  it("V17 fails when the step's hostable flags disagree with its own candidates", async () => {
     for (const k of ['scenario.hostable_mismatch', 'scenario.hostable_base_mismatch']) {
       const v17 = await result(base, 'V17', { ...counts, [k]: 1 });
       expect(v17.ok, k).toBe(false);
@@ -494,37 +485,39 @@ describe('invariants', () => {
     expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree/);
     expect(v17.detail).toMatch(/1 hostableBase flag\(s\) disagree/);
   });
-  it('V17 lets an eligible parcel with an envelope and a capped yield of 0 be hostable', async () => {
-    // The payload ships capped yields only, so V17 checks the necessary conditions; the step's
-    // scenario.hostable_mismatch covers the uncapped rule (partner ruling, option c).
+  it('V17 checks the flags against options.bin both ways: a cleared flag fails too', async () => {
     const d = copy();
     editScenario(d, (p) => {
-      const i = p.index.get('3512006')!; // lot 6: eligible, envelope 6, yields 0
-      p.hostable[i] = 1;
-      p.hostableBase[i] = 1;
-    });
-    expect((await result(d, 'V17')).ok).toBe(true);
-  });
-  it('V17 fails when fillLevels differ from FILL_LEVELS', async () => {
-    const d = copy();
-    editScenario(d, (p) => {
-      p.fillLevels = [0.2, 0.5, 0.75, 0.9, 1];
+      const i = p.index.get('3512001')!; // lot 1: hostable, base and FZP
+      p.hostable[i] = 0;
+      p.hostableBase[i] = 0;
     });
     const v17 = await result(d, 'V17');
     expect(v17.ok).toBe(false);
-    expect(v17.detail).toMatch(/fillLevels \[0\.2, 0\.5, 0\.75, 0\.9, 1\] ≠ FILL_LEVELS/);
+    expect(v17.detail).toMatch(/1 hostable flag\(s\) disagree with eligibility and options/);
+    expect(v17.detail).toMatch(/1 hostableBase flag\(s\) disagree with eligibility and options/);
+  });
+  it('V17 fails when a Local Program lot has an FZP cap', async () => {
+    const d = copy();
+    editScenario(d, (p) => {
+      const i = p.localProgram.indexOf(1);
+      p.fzpCap[i] = 3;
+    });
+    const v17 = await result(d, 'V17');
+    expect(v17.ok).toBe(false);
+    expect(v17.detail).toMatch(/1 Local Program lot\(s\) with an FZP cap/);
   });
   it('V17 does not warn when the FZP net total is in band', async () => {
-    const v17 = await result(base, 'V17', { ...counts, 'scenario.yield.fzp_net_total': 780000 });
+    const v17 = await result(base, 'V17', { ...counts, 'scenario.capacity.fzp_net_total': 780000 });
     // Lot 25 included; road-like lots 20-24 are not eligible.
-    expect(v17).toMatchObject({ ok: true, detail: 'hostable 12/16 eligible' });
+    expect(v17).toMatchObject({ ok: true, detail: 'hostable 13/16 eligible' });
   });
   it('V17 passes with a warning when the FZP net total is far from the cross-check', async () => {
     const v17 = (
       await checkDataset(base, FIXTURE_PROFILE, { counts, reencodeIdentical: true })
     ).find((x) => x.id === 'V17')!;
     expect(v17.ok).toBe(true);
-    expect(v17.detail).toMatch(/warn: FZP net capacity 36 outside/);
+    expect(v17.detail).toMatch(/warn: FZP net capacity 61 outside/);
   });
   it('V18 fails on a missing roll year', async () => {
     expect(
@@ -544,9 +537,7 @@ describe('invariants', () => {
       'scenario.v18.cap_period_differs.RC-3': 1
     });
     expect(v18.ok).toBe(true);
-    expect(v18.detail).toMatch(
-      /base cap differs by period on 3 parcels \(base-cap features not compared; RC-3 1, RM-1 2\)/
-    );
+    expect(v18.detail).toMatch(/base cap differs by period on 3 parcels \(RC-3 1, RM-1 2\)/);
   });
   it('V18 fails when a T11 baseCap differs from the parcel’s own pre-FZP cap', async () => {
     const v18 = await result(base, 'V18', { ...counts, 'scenario.v18.basecap_mismatch': 2 });
@@ -916,10 +907,7 @@ describe('V31 policy file', () => {
     writeFileSync(file, deflateRawSync(bytes(decodePolicyPayload(payload, parcels), payload)));
   };
   /** Edit parcels.bin and policy.bin together, so policy.bin still decodes against it. */
-  const editBoth = (
-    dir: string,
-    f: (p: { datasetVersion: string; fillLevels: number[] }) => void
-  ) => {
+  const editBoth = (dir: string, f: (p: { datasetVersion: string }) => void) => {
     const before = readScenario(dir);
     editScenario(dir, f);
     rewritePolicy(
@@ -990,15 +978,6 @@ describe('V31 policy file', () => {
     const r = await v31(d);
     expect(r.ok).toBe(false);
     expect(r.detail).toBe('re-encoding the decoded payload differs');
-  });
-  it('fails when fillLevels differ from FILL_LEVELS', async () => {
-    const d = copy();
-    editBoth(d, (p) => {
-      p.fillLevels = [0.2, 0.5, 0.75, 0.9, 1];
-    });
-    const r = await v31(d);
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/fillLevels \[0\.2, 0\.5, 0\.75, 0\.9, 1\] ≠ FILL_LEVELS/);
   });
   it('fails when the manifest names another url', async () => {
     const d = copy();
@@ -1084,14 +1063,10 @@ describe('V32 SB 79 as written', () => {
     const cap = await v32(editRow(APPLIES, (p, i) => (p.sb79Cap[i] += 1)));
     expect(cap.detail).toMatch(/^sb79Cap ≠ statute density: 1 rows/);
   });
-  it('fails on an applies yield above the cap or in 1..4', async () => {
-    const above = await v32(
-      editRow(APPLIES, (p, i, F) => (p.sb79Yield[i * F + F - 1] = p.sb79Cap[i] + 1))
-    );
-    expect(above.detail).toMatch(/sb79Yield above sb79Cap: 1 rows/);
-    const small = await v32(editRow(APPLIES, (p, i, F) => (p.sb79Yield[i * F] = 3)));
+  it('fails on an applies row whose options hold fewer than 5 homes within its envelope', async () => {
+    const small = await v32(editRow(APPLIES, (p, i) => (p.sb79Cap[i] = 4)));
     expect(small.ok).toBe(false);
-    expect(small.detail).toMatch(/sb79Yield in 1\.\.4: 1 rows/);
+    expect(small.detail).toContain('applies with fewer than 5 homes: 1 rows (3512018)');
   });
   it('fails on a non-applies row with an envelope, or a hostable flag that is not applies', async () => {
     const env = await v32(editRow(NOT_ELIGIBLE, (p, i) => (p.sb79Stories[i] = 3)));
@@ -1202,18 +1177,17 @@ describe('V33 current law (FZP + §207.11)', () => {
     const off = await v33(editPolicyRow(EXEMPT, (p, i) => (p.currentFromS207[i] = 1)));
     expect(off.detail).toMatch(/currentFromS207 on a exempt row: 1 rows \(3512015\)/);
     const host = await v33(editPolicyRow(FROM_S207, (p, i) => (p.hostableCurrent[i] = 0)));
-    expect(host.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
-    const low = await v33(
-      editPolicyRow(FROM_S207, (p, i, F) => (p.currentYield[i * F + F - 1] = 4))
-    );
-    expect(low.detail).toBe('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
+    expect(host.detail).toBe('hostableCurrent ≠ its options: 1 rows (3512018)');
+    // Fewer stories than FZP's: §207.11's options hold no more homes, so FZP stays.
+    const low = await v33(editPolicyRow(FROM_S207, (p, i) => (p.currentStories[i] = 1)));
+    expect(low.detail).toContain('currentFromS207 not more permissive than FZP: 1 rows (3512018)');
   });
   it('fails when an applies row has no FZP cap', async () => {
-    const r = await v33(
-      editPolicyRow(FROM_S207, (p, i) => {
-        p.fzpYieldCap[i] = NULL_CAP;
-      })
-    );
+    const d = copy();
+    editScenario(d, (p) => {
+      p.fzpCap[p.index.get(FROM_S207)!] = NULL_CAP;
+    });
+    const r = await v33(d);
     expect(r.ok).toBe(false);
     expect(r.detail).toContain('applies with no FZP cap');
   });
@@ -1221,8 +1195,8 @@ describe('V33 current law (FZP + §207.11)', () => {
     const ft = await v33(base, { ...counts, 'policy.s207.base_ft_mismatch': 1 });
     expect(ft.ok).toBe(false);
     expect(ft.detail).toBe('policy.s207.base_ft_mismatch 1 ≠ 0');
-    const y = await v33(base, { ...counts, 'policy.current.yield_mismatch': 2 });
-    expect(y.detail).toBe('policy.current.yield_mismatch 2 ≠ 0');
+    const y = await v33(base, { ...counts, 'policy.current.fzp_mismatch': 2 });
+    expect(y.detail).toBe('policy.current.fzp_mismatch 2 ≠ 0');
   });
 });
 
@@ -1238,8 +1212,8 @@ describe('V37 render boxes', () => {
   const without = (c: Record<string, number>) =>
     Object.fromEntries(Object.entries(c).filter(([k]) => !/^(boxes|render)\./.test(k)));
   const patched = (patch: Record<string, number>) => ({ ...counts, ...patch });
-  // The fixture's src counts (README "Building boxes"); fallback 4 of 12, fit 9 of 11 clusters.
-  const FIXTURE_DETAIL = 'src box/base/front/step/part 4/7/1/1/9; fallback 33.3%; reg fit 81.8%';
+  // The fixture's src counts (the golden report's counts); fallback 3 of 12, fit 9 of 11 clusters.
+  const FIXTURE_DETAIL = 'src box/base/front/step/part 3/8/1/5/9; fallback 25.0%; reg fit 81.8%';
 
   it('V37 is OK without an artifact', async () => {
     const ok = { id: 'V37', ok: true, detail: 'no boxes artifact' };
@@ -1257,7 +1231,7 @@ describe('V37 render boxes', () => {
     });
   });
 
-  it('V37 fails on a box outside its footprint, on a missing building, on 5 steps and on z14+ drops', () => {
+  it('V37 fails on a box outside its footprint, on a missing building, on steps over the cap and on z14+ drops', () => {
     const fails = (c: Record<string, number>, tilesSkipped = true) => {
       const r = checkV37(c, tilesSkipped);
       expect(r.ok, r.detail).toBe(false);
@@ -1269,16 +1243,17 @@ describe('V37 render boxes', () => {
     expect(fails(patched({ 'boxes.missing_buildings': 2 }))).toBe(
       `buildings without a box 2; ${FIXTURE_DETAIL}`
     );
-    expect(fails(patched({ 'boxes.step.max_per_building': 5 }))).toBe(
-      `steps on one building 5 > cap 4; ${FIXTURE_DETAIL}`
+    expect(fails(patched({ 'boxes.step.over_cap': 1 }))).toBe(
+      `steps over their building's cap 1; ${FIXTURE_DETAIL}`
     );
     expect(fails(patched({ 'tiles.buildings.drops_z14plus': 3 }), false)).toBe(
       `z14+ tile drop reports 3; ${FIXTURE_DETAIL}`
     );
     // Tiles built but the drop count missing: not measured.
     expect(fails(counts, false)).toBe(`z14+ tile drops not measured; ${FIXTURE_DETAIL}`);
-    // At the cap passes; skipped tiles are not checked for drops.
-    expect(checkV37(patched({ 'boxes.step.max_per_building': 4 }), true).ok).toBe(true);
+    // A building's own cap (32 on a sliced one) is checked by the step, not the count.
+    expect(checkV37(patched({ 'boxes.step.max_per_building': 32 }), true).ok).toBe(true);
+    // Skipped tiles are not checked for drops.
     expect(checkV37(patched({ 'tiles.buildings.drops_z14plus': 3 }), true).ok).toBe(true);
   });
 

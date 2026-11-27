@@ -3,17 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { twinInput } from '$lib/sim/levers/apply';
-import { allNeeds, needKey, resolveEnvelopes } from '$lib/sim/levers/resolve';
-import { DEFAULT_LEVERS, LeverFormatError } from '$lib/sim/levers/types';
+import { LeverFormatError } from '$lib/sim/levers/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { DEFAULT_POLICY4, type Effect, type Policy, type SimPolicy4 } from '$lib/timeline/policy4';
 import { reconcilePolicy4 } from '$lib/timeline/reconcile4';
 import type { Day } from '$lib/timelapse/time';
 import { monthFirstDay } from '../months';
-import { inForceAt, permittingOf, zoningLevers, type ZoningLevers } from './combine';
+import { inForceAt, zoningLevers } from './combine';
 import { compileTimeline, type CompileCtx, type TimelineCompile } from './compile';
 import type { PolicyTimeline, ZoningView } from './frame';
-import { cellYields, fakeClock, fakeYields, miniCompileCtx } from './test/compile-fixtures';
+import { fakeClock, miniCompileCtx } from './test/compile-fixtures';
 import { miniDoc, span, timingSet } from './test/fixtures';
 import { createViewJob } from './zoning-view';
 
@@ -92,7 +91,6 @@ const idsOf = (t: PolicyTimeline, n = W) => monthsOf(n).map((m) => t.frameAt(m).
 function scanRows(a: ZoningView, b: ZoningView): number[] {
   const p = a.parcels;
   const q = b.parcels;
-  const F = p.fillLevels.length;
   const out: number[] = [];
   for (let i = 0; i < p.count; i++) {
     let d = false;
@@ -100,12 +98,10 @@ function scanRows(a: ZoningView, b: ZoningView): number[] {
       [p.envelopeStories, q.envelopeStories],
       [p.hostable, q.hostable],
       [p.localProgram, q.localProgram],
-      [p.potentialRatio.fzp, q.potentialRatio.fzp],
-      [p.storiesGap.fzp, q.storiesGap.fzp],
+      [p.fzpCap, q.fzpCap],
       [a.pre.logit, b.pre.logit]
     ];
     for (const [x, y] of cols) if (!Object.is(x[i], y[i])) d = true;
-    for (let f = 0; f < F; f++) if (p.yield[i * F + f] !== q.yield[i * F + f]) d = true;
     if (d) out.push(i);
   }
   return out;
@@ -354,6 +350,15 @@ describe("compileTimeline: base 'preFzp'", () => {
   });
 });
 
+/** The compile's ready month, 0 before month 1's frame exists. */
+function readyOf(c: TimelineCompile): number {
+  try {
+    return c.result().readyThrough();
+  } catch {
+    return 0;
+  }
+}
+
 describe('compileTimeline: slicing (rule 19)', () => {
   const doc = miniDoc(
     painted('p', [
@@ -362,7 +367,7 @@ describe('compileTimeline: slicing (rule 19)', () => {
     ])
   );
 
-  it('step(1) grows readyThrough to a one-call compile, capacity after completion', () => {
+  it('step(0) grows readyThrough a unit at a time to a one-call compile, capacity after', () => {
     const clock = fakeClock();
     const ctx = ctx60({ clock });
     const c = compileTimeline(doc, LOTS, ctx, 'plan');
@@ -373,8 +378,10 @@ describe('compileTimeline: slicing (rule 19)', () => {
     let calls = 0;
     let done = false;
     while (!done) {
-      done = c.step(1);
+      done = c.step(0);
       expect(++calls).toBeLessThan(200);
+      // a call may build only a view: month 1's frame comes with a later one
+      if (!done && readyOf(c) === 0) continue;
       const t = c.result();
       const r = t.readyThrough();
       expect(r).toBeGreaterThanOrEqual(prev);
@@ -398,76 +405,21 @@ describe('compileTimeline: slicing (rule 19)', () => {
     expect(t.changes()).toEqual(oneT.changes());
 
     const z = zoningLevers(inForceAt(doc, monthFirstDay(ASOF, W)), LOTS, true);
-    const job = createViewJob(ctx.input, ctx.layers, fakeYields(), clock.now, z, 'plan');
+    const job = createViewJob(ctx.input, ctx.layers, clock.now, z, 'plan');
     expect(job.step(Infinity)).toBe(true);
     expect(c.capacity()).toEqual(job.result().info.capacity);
     expect(c.unknownLots()).toBe(job.result().info.unknownLots);
     expect(one.capacity()).toEqual(c.capacity());
   });
 
-  it('progress: total is the need count of the zoning states', () => {
+  it('progress: counts the zoning views built, never a failed cell', () => {
     const ctx = ctx60();
     const c = compileTimeline(doc, LOTS, ctx, 'plan');
     expect(c.progress()).toEqual({ done: 0, total: 0, failedCells: [] });
     expect(c.step(Infinity)).toBe(true);
-    let want = 0;
-    for (const m of [1, 13, 25]) {
-      const f = inForceAt(doc, monthFirstDay(ASOF, m));
-      const z: ZoningLevers = zoningLevers(f, LOTS, permittingOf(f).localProgramStreamlined);
-      const r = resolveEnvelopes(ctx.layers, { ...DEFAULT_LEVERS, ...z }, ASOF);
-      want += new Set(allNeeds(r).map(needKey)).size;
-    }
-    expect(want).toBeGreaterThan(0);
-    expect(c.progress()).toEqual({ done: want, total: want, failedCells: [] });
-  });
-});
-
-describe('compileTimeline: waiting on cells', () => {
-  /** A compile of a policy painted from month 13 whose yields wait on cells. */
-  function waiting(failed: (needed: string[]) => string[]) {
-    const clock = fakeClock();
-    const ctx = ctx60({ clock });
-    const needed: string[] = [];
-    const yields = cellYields(clock, {
-      missing: ['3512005'],
-      get failed() {
-        return failed(needed);
-      }
-    });
-    const doc = miniDoc(painted('p', [[13, null, 7]]));
-    const c: TimelineCompile = compileTimeline(doc, LOTS, { ...ctx, yields }, 'plan');
-    return { c, yields, needed, ctx, doc };
-  }
-
-  it('returns false without spinning, passes through only the needed failed cells, then completes', () => {
-    const { c, yields, needed, ctx, doc } = waiting((n) => ['no-such-cell', ...n]);
-    expect(c.step(5)).toBe(false);
-    expect(c.result().readyThrough()).toBe(12);
-    const steps = yields.steps;
-    for (let k = 0; k < 3; k++) {
-      expect(c.step(5)).toBe(false);
-      expect(c.result().readyThrough()).toBe(12);
-    }
-    expect(yields.steps).toBe(steps + 3);
-    expect(c.progress().done).toBe(0);
-    expect(c.progress().total).toBeGreaterThan(0);
-
-    const cells = new Set(
-      D1.map((id) => ctx.input.parcels.index.get(id)!).map(
-        (row) => ctx.input.parcels.cells[ctx.input.parcels.cell[row]].cellId
-      )
-    );
-    needed.push(...cells);
-    expect(new Set(c.progress().failedCells)).toEqual(cells);
-
-    for (const cell of cells) yields.loaded.add(cell);
-    expect(c.missingLots()).toBe(0);
-    expect(c.step(Infinity)).toBe(true);
-    expect(c.result().readyThrough()).toBe(W);
-    expect(c.progress().failedCells).toEqual([]);
-    expect(c.missingLots()).toBe(1);
-
-    const { t } = compiled(doc, ctx);
-    expect(idsOf(c.result())).toEqual(idsOf(t));
+    const p = c.progress();
+    expect(p.done).toBe(p.total);
+    expect(p.done).toBeGreaterThan(0);
+    expect(p.failedCells).toEqual([]);
   });
 });

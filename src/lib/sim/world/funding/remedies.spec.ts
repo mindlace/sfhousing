@@ -2,8 +2,8 @@
 // rows, on the same days, in the same order, with the same ledger and the same world as the direct
 // scan (`serveLine(ctx, { grouped: false })`), and asks the award rule fewer times.
 import { describe, expect, it, vi } from 'vitest';
-import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import { withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { PolicyTimeline } from '../policy/frame';
 import { staticsOf, type Statics } from '../statics';
 import { benchInput } from '../test/cities.node';
@@ -25,8 +25,8 @@ import {
 
 /** Calls of the award rule's probe, counted through the real one. */
 const probes = vi.hoisted(() => ({ n: 0 }));
-vi.mock('$lib/sim/scenario/funding', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('$lib/sim/scenario/funding')>();
+vi.mock('$lib/sim/world/rules/funding', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('$lib/sim/world/rules/funding')>();
   return {
     ...mod,
     awardPasses: (...a: Parameters<typeof mod.awardPasses>) => {

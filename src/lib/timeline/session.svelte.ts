@@ -12,8 +12,11 @@ import type { TimelineUpdate } from '$lib/map/types';
 import type { LeverLookups } from '$lib/sim/levers/apply';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import type { ChunksResponse } from '$lib/sim/protocol';
-import type { ScenarioWorkerInput } from '$lib/sim/scenario-client';
-import { TimelineClient, type TimelineClientEvents } from '$lib/sim/timeline-client';
+import {
+  TimelineClient,
+  type TimelineClientEvents,
+  type WorkerInput
+} from '$lib/sim/timeline-client';
 import type { ScoreStatics, TimelineView } from '$lib/sim/world/score/types';
 import type { Calibration } from '$lib/timelapse/types';
 import type { Day } from '$lib/timelapse/time';
@@ -65,12 +68,12 @@ export interface SessionDeps {
    * The session builds its own client: `createClient(createWorker(), events)`; the default is
    * `new TimelineClient`. Also serves crash restart (no construction cycle).
    */
-  createClient?(worker: ScenarioWorkerInput, events: TimelineClientEvents): SessionClient;
+  createClient?(worker: WorkerInput, events: TimelineClientEvents): SessionClient;
   manifest: Manifest;
   calibration: Calibration;
   /** The store: rule 34 undoes to the last accepted document. */
   undoTo(p: SimPolicy4): void;
-  createWorker(): ScenarioWorkerInput;
+  createWorker(): WorkerInput;
   now(): number;
   setTimeout: typeof setTimeout;
   clearTimeout: typeof clearTimeout;

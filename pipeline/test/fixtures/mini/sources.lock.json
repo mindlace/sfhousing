@@ -3,24 +3,24 @@
     {
       "files": [
         {
-          "archiveKey": "sources/cd7be9a2901f1c904c1a2375016f5eab7165504dffe832f6ad0e416655015d67.parquet",
-          "bytes": 2268,
+          "archiveKey": "sources/220e0d18bd362c1203b5c528fb7e418ad2edd4944b803c534e9d65b4ee7a0a44.parquet",
+          "bytes": 2657,
           "name": "building-boxes/boxes.parquet",
-          "sha256": "cd7be9a2901f1c904c1a2375016f5eab7165504dffe832f6ad0e416655015d67",
+          "sha256": "220e0d18bd362c1203b5c528fb7e418ad2edd4944b803c534e9d65b4ee7a0a44",
           "url": "derived:building-boxes/boxes.parquet"
         },
         {
-          "archiveKey": "sources/b6ef679bb3e2ce9fef148f0c75d9d3adab53090d79c4097d271e552a22d7e929.parquet",
-          "bytes": 5164,
+          "archiveKey": "sources/bab1a84d09bb6925c9014480ec78a5a83a2275d8f775ee56b02308112ca68dc5.parquet",
+          "bytes": 5923,
           "name": "building-boxes/roofs.parquet",
-          "sha256": "b6ef679bb3e2ce9fef148f0c75d9d3adab53090d79c4097d271e552a22d7e929",
+          "sha256": "bab1a84d09bb6925c9014480ec78a5a83a2275d8f775ee56b02308112ca68dc5",
           "url": "derived:building-boxes/roofs.parquet"
         },
         {
-          "archiveKey": "sources/c7ad516be98f485fb67d6be954c6c917511cb6ce4ae15dafdc4ef219262211d4.json",
+          "archiveKey": "sources/bd8a0bba3ebca621cbeffc8aa325d4bffe9e4d96ea4a6a7f1e836c26eff156f8.json",
           "bytes": 697,
           "name": "building-boxes/inputs.json",
-          "sha256": "c7ad516be98f485fb67d6be954c6c917511cb6ce4ae15dafdc4ef219262211d4",
+          "sha256": "bd8a0bba3ebca621cbeffc8aa325d4bffe9e4d96ea4a6a7f1e836c26eff156f8",
           "url": "derived:building-boxes/inputs.json"
         }
       ],
@@ -30,7 +30,7 @@
       "license": "ODbL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 12,
-      "upstreamVersion": "boxes/1 code=6ad1b432e861 config=dc85575b930a overture-buildings=9eafd45b224f overture-building-parts=5cf4e60fa210 usgs-lidar-sf=5aa70101421c datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
+      "upstreamVersion": "boxes/2 code=9465a718c160 config=edb99722c18b overture-buildings=9eafd45b224f overture-building-parts=01415fef6802 usgs-lidar-sf=d0f9c40490e4 datasf-parcels=043e64236abd datasf-streets=d189eabe60de datasf-neighborhoods=b4596d45e804"
     },
     {
       "files": [
@@ -359,10 +359,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/3335ebe87870a43f242ef82d0029b0cb5b6954b5730f78dc2362626f6ac63e71.json",
-          "bytes": 7125,
+          "archiveKey": "sources/994d516f4c7fdf3f66cd7497564ccd9fb8428a1a189e64464de5193d38e20ddd.json",
+          "bytes": 7257,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "3335ebe87870a43f242ef82d0029b0cb5b6954b5730f78dc2362626f6ac63e71",
+          "sha256": "994d516f4c7fdf3f66cd7497564ccd9fb8428a1a189e64464de5193d38e20ddd",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],
@@ -462,6 +462,24 @@
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 2,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/46e27759999582fdf4781a8e06c7c7d92d1f6603ada7980ee1be217c8b78d86c.csv",
+          "bytes": 496,
+          "name": "dgs-ccci.csv",
+          "sha256": "46e27759999582fdf4781a8e06c7c7d92d1f6603ada7980ee1be217c8b78d86c",
+          "url": "https://fixture.invalid/dgs-ccci.csv"
+        }
+      ],
+      "homepage": "https://www.dgs.ca.gov/RESD/Resources/Page-Content/Real-Estate-Services-Division-Resources-List-Folder/DGS-California-Construction-Cost-Index-CCCI",
+      "id": "dgs-ccci",
+      "label": "DGS California Construction Cost Index (CCCI), monthly",
+      "license": "Not stated by DGS; derived from ENR's Building Cost Index. Read by the choice-spread fit only, never committed or shipped.",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 40,
       "upstreamVersion": "fixture"
     },
     {
@@ -626,10 +644,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/13d6fbedb3aabb0808ecaab7566b9433fc3352753429bc9efe00692d884c4fea.geojson",
-          "bytes": 1507,
+          "archiveKey": "sources/e720f9d7526ee76ee79afea485e864cec6607864e1582f35c3a0a48f7c18ed47.geojson",
+          "bytes": 1836,
           "name": "overture-building-parts.page-000.geojson",
-          "sha256": "13d6fbedb3aabb0808ecaab7566b9433fc3352753429bc9efe00692d884c4fea",
+          "sha256": "e720f9d7526ee76ee79afea485e864cec6607864e1582f35c3a0a48f7c18ed47",
           "url": "https://fixture.invalid/overture-building-parts.page-000.geojson"
         }
       ],
@@ -638,7 +656,7 @@
       "label": "Overture Maps Building Parts",
       "license": "ODbL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
-      "rowCount": 5,
+      "rowCount": 6,
       "upstreamVersion": "fixture"
     },
     {

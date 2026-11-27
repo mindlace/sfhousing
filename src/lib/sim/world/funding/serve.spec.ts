@@ -1,19 +1,19 @@
 // world-funding Task 6: serving and the award (spec rules 10, 11).
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
+import { allowedCount, capFrom, mostHomes, optionHomes } from '$lib/sim/choice/choose';
 import { MARKET_TERMS, projectDollars, prototypeFor, resolveTerms } from '$lib/sim/finance';
-import { pathwayFrom } from '$lib/sim/scenario/engine';
-import { lineKey } from '$lib/sim/scenario/funded';
-import { awardSet, coverageLevel, type Award } from '$lib/sim/scenario/funding';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { seedHash, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { BUILDING_TYPES } from '$lib/sim/choice/types';
+import { pathwayFrom } from '$lib/sim/world/rules/stages';
+import { awardSet, coverageLevel, lineKey, type Award } from '$lib/sim/world/rules/funding';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import { seedHash, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import { PATHWAYS, type Pathway, type ProjectKind } from '$lib/timelapse/types';
 import { addProject, ensureLot } from '../columns';
-import { monthFirstDay, monthLastDay } from '../months';
+import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
 import type { PolicyTimeline } from '../policy/frame';
 import { lotEntity } from '../rates';
 import { staticsOf } from '../statics';
@@ -31,6 +31,7 @@ import { withFunding } from '../world';
 import { joinLine, type Application } from './apply';
 import { KIND_AFFORDABLE, KIND_MARKET, fundOf, poolRowOf, type FundLine } from './columns';
 import { frameMoney } from './frame-money';
+import { linePrototype, priceTag, sizedPrototype } from './line-price';
 import { availableOf, heldOf, moneyOnEvent } from './pools';
 import { awardDay, fundedStartOf, serveLine } from './serve';
 import { createFundingSystem } from './system';
@@ -43,7 +44,6 @@ const input = fundedMini();
 const statics = staticsOf(input);
 const fin = miniFinance(input.asOf);
 const timeline = oneMoneyTimeline(input, fin);
-const F = FILL_LEVELS.length;
 const AFF = 'm-city-grant,federal-grant';
 const SEED = 7;
 
@@ -138,23 +138,45 @@ function freshWorld(t: PolicyTimeline = timeline, federal = true): World {
   return w;
 }
 
-/** Free lots (no row in the new world) whose top level has at least 2 homes, in rank order. */
+/** The lot's most-homes option at its envelope and cap (the size of a start there), or null. */
+function bestOf(lot: number): { k: number; units: number; stories: number; btype: number } | null {
+  const p = input.parcels;
+  const t = input.options;
+  const cap = capFrom(p.fzpCap[lot]);
+  const k = mostHomes(
+    t,
+    lot,
+    allowedCount(t, lot, p.envelopeStories[lot]),
+    cap,
+    p.existingUnits[lot]
+  );
+  if (k < 0) return null;
+  const j = t.offset[lot] + k;
+  return {
+    k,
+    units: optionHomes(t, j, cap, p.existingUnits[lot]),
+    stories: t.stories[j],
+    btype: t.type[j]
+  };
+}
+
+/** Free lots (no row in the new world) whose most-homes option has at least 2 homes, in rank order. */
 const LOTS = (() => {
   const w = freshWorld();
   const has = new Set(Array.from(w.lots.lot.subarray(0, w.lots.n)));
   const out: number[] = [];
-  const y = input.parcels.yield;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
-    if (has.has(lot) || y[lot * F + F - 1] < 2) continue;
+    if (has.has(lot) || (bestOf(lot)?.units ?? 0) < 2) continue;
     out.push(lot);
   }
   return out.sort((a, b) => statics.rank[a] - statics.rank[b]);
 })();
 
-/** An application of `lot` at its top level, applied on `applied`. */
+/** An application of `lot` at its most-homes option, applied on `applied`. */
 function app(lot: number, kind: ProjectKind, applied: Day, bundle: string, keyDay = applied) {
-  const f = F - 1;
-  const units = input.parcels.yield[lot * F + f];
+  const best = bestOf(lot)!;
+  const f = best.k;
+  const units = best.units;
   return {
     lot,
     kind: kind === 'market' ? KIND_MARKET : KIND_AFFORDABLE,
@@ -163,11 +185,20 @@ function app(lot: number, kind: ProjectKind, applied: Day, bundle: string, keyDa
     key: lineKey(keyDay, statics.rank[lot], kind),
     bundle,
     f,
+    btype: best.btype,
+    cstep: 0,
+    price: kind === 'market' ? tagOf(best.btype, best.stories, units, 0) : '',
     units,
-    stories: fillStories(FILL_LEVELS[f], input.parcels.envelopeStories[lot]),
+    stories: best.stories,
     level: 1,
     viewMonth: 1
   } satisfies Application;
+}
+
+/** The price tag of a market row of this size at cost step `cstep` (the mini's one choice). */
+function tagOf(btype: number, stories: number, units: number, cstep: number, t = timeline): string {
+  const choice = t.frameAt(1).view.pre.choice;
+  return priceTag(choice, sizedPrototype(choice, btype, stories, units, cstep), cstep);
 }
 
 const day = (m: number, d: number): Day => monthFirstDay(statics.asOf, m) + d;
@@ -181,7 +212,7 @@ function awardOf(line: FundLine, i: number, month: number, t = timeline): Award 
   const a = awardSet(
     fm.bundleIds(line.bundle[i])!,
     kindOf(line, i),
-    prototypeFor(line.stories[i], units).id,
+    linePrototype(t, line, i),
     units,
     () => Infinity,
     fm.index
@@ -661,24 +692,38 @@ describe('rule 10 on the bench city', () => {
   const st = staticsOf(bench);
   const t = moneyTimeline(bench, doc);
 
-  it('synthCity bench funding set, seed 2: the award made on money returned in month 74 waits for month 75', () => {
-    const { world, events } = runFunded(st, t, 2, 75, { ledger: false });
+  it('synthCity bench funding set, seed 1: awards waiting on money returned in month 36 come in month 37', () => {
+    const { world, events, ledger } = runFunded(st, t, 1, 37);
+    const p = world.projects;
     const awards = (m: number): number[] =>
       events
-        .flatMap((e) => (e.kind === 'award' && e.month === m ? [world.projects.src[e.row]] : []))
+        .flatMap((e) => (e.kind === 'award' && e.month === m ? [p.src[e.row]] : []))
         .sort((x, y) => x - y);
-    // In month 74 an award's chain exits in its award month and releases money to u-bench-fund
-    // inside the scan (same-scan investigation). Lot 4116 needs that money (u-bench-fund held
-    // 739,928 after the scan, 646,144 of it returned during it; 4116 asks 646,144): it waits a
-    // month and is awarded on month 75's first day.
-    expect(awards(74)).toEqual([
-      4048, 4689, 10447, 25393, 34568, 43504, 44211, 46818, 49094, 53980, 62418, 62734, 64654,
-      65454, 69174, 81369, 82431, 90765, 106017, 106491, 117035, 124018, 135114, 141113, 146135,
-      149655
+    // In month 36 money returns to u-bench-fund (a release); lots 35239 and 54522, which applied
+    // before month 36, are awarded on month 37's first day: the money returned inside month 36's
+    // scan serves them only from the next month (rule 10). Recorded on the option rows, priced by
+    // option (found by a search of seed 1's months for such a release and such awards).
+    expect(
+      ledger.some(
+        (e) =>
+          e.kind === 'release' && e.pool === 'u-bench-fund' && monthOfDay(bench.asOf, e.day) === 36
+      )
+    ).toBe(true);
+    const first = monthFirstDay(bench.asOf, 37);
+    for (const lot of [35239, 54522]) {
+      const award = events.find(
+        (e) => e.kind === 'award' && e.month === 37 && p.src[e.row] === lot
+      )!;
+      expect(award.day).toBe(first);
+      expect(p.applied[award.row]).toBeLessThan(monthFirstDay(bench.asOf, 36));
+    }
+    expect(awards(36)).toEqual([
+      4133, 10747, 12141, 18858, 33044, 42729, 50729, 78787, 80441, 91354, 99924, 101297, 113999,
+      137951, 143105, 145478
     ]);
-    expect(awards(75)).toEqual([
-      1368, 4116, 7993, 14131, 23342, 27035, 33489, 38025, 51713, 55785, 66347, 80210, 89705,
-      106194, 114367, 133320, 133710, 140858, 142174, 146564, 148689
+    expect(awards(37)).toEqual([
+      7870, 17140, 31634, 33678, 34657, 35239, 47898, 54522, 54589, 54722, 62864, 87337, 92051,
+      99707, 105414, 107617, 119614, 120897, 121417, 122360, 126645, 131013, 137729, 140180, 141231
     ]);
   });
 });
@@ -764,5 +809,88 @@ describe('the route of a certain affordable award', () => {
       const se = Math.sqrt((share * (1 - share)) / n);
       expect(Math.abs(counts[p] / n - share), p).toBeLessThanOrEqual(3 * se);
     }
+  });
+});
+
+describe('a line row is priced by its option (building-choice Task 10)', () => {
+  it('a Type I row at 18 stories is priced between C and D: 857,700 + 5/11 × 61,000 a home', () => {
+    const w = freshWorld();
+    const { line } = fundOf(w);
+    const lot = LOTS[0];
+    const I = BUILDING_TYPES.indexOf('I');
+    joinLine(line, 1, [
+      {
+        ...app(lot, 'market', day(1, 3), 'm-bank-loan'),
+        btype: I,
+        stories: 18,
+        units: 200,
+        price: tagOf(I, 18, 200, 0)
+      }
+    ]);
+    const p = linePrototype(timeline, line, 0);
+    expect(p.id).toBe('I18');
+    expect(p.costPerHome).toBeCloseTo(857_700 + (5 / 11) * 61_000, 6);
+    // not the binning's C (13 to 18 stories), whose cost is C's own
+    expect(prototypeFor(18, 200).costPerHome).toBe(857_700);
+    const fm = frameMoney(timeline, timeline.frameAt(1));
+    const set = fm.bundleIds('m-bank-loan')!;
+    expect(fm.index.price('market', set, p)).not.toBe(
+      fm.index.price('market', set, prototypeFor(18, 200))
+    );
+  });
+
+  it('a row is priced on the cost step its size was drawn at, whatever month serves it', () => {
+    // A second price step from month 60: Type I costs half as much.
+    const choice = input.calibration.choice!;
+    const step0 = choice.prices[0];
+    const anchors = structuredClone(step0.value.anchors);
+    for (const id of ['C', 'D'] as const) anchors[id].costPerHome *= 0.5;
+    const from = monthFirstDay(statics.asOf, 60);
+    const two: SimInput = {
+      ...input,
+      calibration: {
+        ...input.calibration,
+        choice: { ...choice, prices: [step0, { from, value: { ...step0.value, anchors } }] }
+      }
+    };
+    const t2 = oneMoneyTimeline(two, fin);
+    const ctx = t2.frameAt(1).view.pre.choice;
+    expect(ctx.from).toEqual([step0.from, from]);
+    const w = withFunding(createFundingSystem()).createWorld(staticsOf(two), t2, SEED, {
+      event() {}
+    });
+    const { line } = fundOf(w);
+    const I = BUILDING_TYPES.indexOf('I');
+    const row = (cstep: number) => ({
+      ...app(LOTS[0], 'market', day(1, 3), 'm-bank-loan'),
+      btype: I,
+      stories: 18,
+      units: 200,
+      cstep,
+      price: tagOf(I, 18, 200, cstep, t2)
+    });
+    joinLine(line, 1, [row(0), { ...row(1), lot: LOTS[1] }]);
+    const before = linePrototype(t2, line, 0);
+    const after = linePrototype(t2, line, 1);
+    expect(before.costPerHome).toBeCloseTo(857_700 + (5 / 11) * 61_000, 6);
+    expect(after.costPerHome).toBeCloseTo(0.5 * (857_700 + (5 / 11) * 61_000), 6);
+    expect(line.price[0]).toBe('I18@0');
+    expect(line.price[1]).toBe('I18@1');
+    // the same PriceKey on two price steps: two prices, never one cached for both
+    const fm = frameMoney(t2, t2.frameAt(61));
+    const set = fm.bundleIds('m-bank-loan')!;
+    expect(fm.index.price('market', set, before)).not.toEqual(fm.index.price('market', set, after));
+  });
+
+  it('a funded start on an option index above 255 builds that option', () => {
+    const w = freshWorld();
+    const { line, pools } = fundOf(w);
+    const lot = LOTS[0];
+    joinLine(line, 1, [{ ...app(lot, 'affordable', day(1, 3), AFF), f: 300 }]);
+    expect(line.f[0]).toBe(300);
+    pools.received[poolRowOf(pools, 'm-city')] = 1e12;
+    const h = harness(w, 1);
+    serveLine(h.ctx);
+    expect(h.starts().map((s) => [s.lot, s.funded?.f])).toEqual([[lot, 300]]);
   });
 });

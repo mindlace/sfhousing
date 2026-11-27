@@ -2,8 +2,8 @@
 // lens + rounds + limits + offer together.
 import { describe, expect, it } from 'vitest';
 import { baselineFixture } from '$lib/sim/levers/fixtures/finance';
-import miniCalibrationJson from '$lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '$lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '$lib/sim/world/fixtures/mini-market';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import type { SimPolicy } from '$lib/sim-page/policy';
 import { parseCalibration } from '$lib/timelapse/model';

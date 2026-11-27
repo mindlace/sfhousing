@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tempSibling } from '../lib/atomic';
+import { sharedCache } from '../lib/cache-root';
 import { openDuck } from '../lib/duck';
 import { nodeHttp, type Http } from '../lib/http';
 import { rawPath, readLock, sha256File, writeLock, type Lock, type LockEntry } from '../lib/lock';
@@ -14,11 +16,11 @@ import { LIDAR_ID, LIDAR_LOCK, fetchLidar, writeLidarLock, type LidarOpts } from
 import { run as realRun } from '../lib/exec';
 import { fetchBasemap, fetchFonts } from '../sources/protomaps';
 import { SFBOS_EXEMPTIONS_ID, fetchSfbosExemptions } from '../sources/sfbos';
+import { DGS_CCCI_ID, fetchDgsCcci } from '../sources/dgs';
 import { GTFS_ARCHIVE_IDS, GTFS_IDS, type GtfsLockId } from '../transit-config';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 export const LOCK_PATH = join(ROOT, 'pipeline/sources.lock.json');
-export const RAW_DIR = join(ROOT, 'pipeline/.cache/raw');
 
 export const LIDAR_LOCK_PATH = LIDAR_LOCK.live;
 
@@ -34,6 +36,7 @@ export const FETCH_IDS = [
   SFBOS_EXEMPTIONS_ID,
   ...CENSUS_IDS,
   DMV_ID,
+  DGS_CCCI_ID,
   LIDAR_ID,
   ...GTFS_ARCHIVE_IDS
 ] as const;
@@ -91,7 +94,7 @@ export async function restoreRaw(
         present++;
         continue;
       }
-      const part = `${dest}.part`;
+      const part = tempSibling(dest);
       try {
         if (!(await r2.get(f.archiveKey, part))) {
           throw new Error(`${entry.id}: archive ${f.archiveKey} not found in R2`);
@@ -116,7 +119,7 @@ export async function restoreRaw(
 export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
   const lockPath = opts.lockPath ?? LOCK_PATH;
   const lidarLockPath = opts.lidarLockPath ?? LIDAR_LOCK_PATH;
-  const rawDir = opts.rawDir ?? RAW_DIR;
+  const rawDir = opts.rawDir ?? sharedCache().raw;
   if (opts.restore) {
     // Plain --restore never reads the LiDAR lock; --lidar reads only it.
     const from = opts.lidar ? lidarLockPath : lockPath;
@@ -199,6 +202,8 @@ export async function fetchAll(opts: FetchOpts = {}): Promise<number> {
       entry = await fetchCensus(id, rawDir, http);
     } else if (id === DMV_ID) {
       entry = await fetchDmv(rawDir, http);
+    } else if (id === DGS_CCCI_ID) {
+      entry = await fetchDgsCcci(rawDir, http);
     } else entry = await fetchFonts(rawDir, http);
     console.log(
       `  ${id}: ${entry.files.length} file(s), ${entry.rowCount} rows, ${entry.upstreamVersion} (${((Date.now() - t0) / 1000).toFixed(1)}s)`

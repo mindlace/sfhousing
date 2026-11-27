@@ -1,7 +1,7 @@
 /**
  * `calibration-report.md` (stage-calibration spec §4.10; section 11, market-baseline spec §4.7;
- * sections 12 and 13, finance-data spec 4.7 and 4.8): the thirteen sections in order, deterministic
- * Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
+ * sections 12 and 13, finance-data spec 4.7 and 4.8; section 16, building-choice spec): the
+ * sections in order, deterministic Markdown with no wall-clock time. Pipeline-internal, never shipped. Every number is printed by
  * `num`, which writes a non-finite value as "none".
  */
 import { isoOf } from '../../project-records/parse';
@@ -27,12 +27,13 @@ import {
   type InitiationReport,
   type InitiationTermReport
 } from './initiation';
+import type { RecordTargets } from '../building-records';
+import { PROFILE_SPREADS, SPREAD_RANGE, type ChoiceSpreadFit } from './choice-fit';
 import type { MarketReport } from './market';
 import type { FitCell, InitiationEvents, PanelResult } from './panel';
 import { sig6 } from './tail';
 import type { PurgeExit } from './purge';
 import { REVISION_EDGES } from './revision';
-import { SIZE_EDGES } from './size';
 import type { CellReport, FitResult, NoFcdCell } from './transitions';
 import {
   SC_RULE_IDS,
@@ -71,6 +72,23 @@ export interface ReportInput {
   purge: { tally: RuleTally; windows: PurgeWindow[]; exits: PurgeExit[] };
   permitOnlyPre2015: { fired: number; of: number };
   sizeOverEnvelope: { fired: number; of: number };
+  /** Section 16: the developer's choice fits and the height-band stage time. */
+  choice: {
+    spread: ChoiceSpreadFit;
+    /** histories passing the record filters, and those of them with no panel row */
+    measured: number;
+    noPanelRow: number;
+    /** affordable-cohort records left out of the market fit under 'most-homes' */
+    affordableLeftOut: number;
+    affordable: { rule: 'most-homes' | 'market'; diff: number; se: number } & {
+      cohort: RecordTargets['cohort'];
+    };
+    /** choiceMargin against the slope's cost share of the best option, over at-risk rows */
+    marginVsSlope: { r: number; n: number };
+    filedToIssued: { upTo: number; median: number; n: number }[];
+    /** permits above 24 stories and 13 to 24 behind aboveTopCostRatio */
+    aboveTopN: [number, number];
+  };
   fit: FitResult;
   initiation: InitiationReport;
   panel: PanelResult;
@@ -109,7 +127,8 @@ export const REPORT_SECTIONS = [
   '## 12. Publicly funded housing: routes, stages and baseline funding',
   '## 13. Where publicly funded housing starts',
   '## 14. Car ownership',
-  '## 15. Car back-cast'
+  '## 15. Car back-cast',
+  "## 16. The developer's choice and height-band stage time"
 ] as const;
 
 /** A number for the report: integers as is, others to 6 significant digits, non-finite "none". */
@@ -529,21 +548,14 @@ function initiationSection(x: ReportInput): string[] {
 }
 
 function sizeRevisionSection(x: ReportInput): string[] {
-  const s = x.calibration.size;
   const v = x.calibration.revision;
   const clamp = x.tallies['sc.revision.ratio-clamp'];
   const carried = x.tallies['sc.revision.carried-excluded'];
   return [
     REPORT_SECTIONS[5],
     '',
-    `### Size (tier ${s.provenance.tier}, n = ${num(s.provenance.n)})`,
-    '',
-    `Fill levels ${s.fillLevels.map(num).join(', ')}; bucket edges ${SIZE_EDGES.join(', ')}; calibration.method.sizeOverEnvelope = ${x.sizeOverEnvelope.fired} of ${x.sizeOverEnvelope.of} (r > 1 mapped to fill 1).`,
-    '',
-    ...table(
-      ['max stories up to', ...s.fillLevels.map((f) => `fill ${num(f)}`)],
-      s.byEnvelope.map((b) => [num(b.maxStoriesUpTo), ...b.probs])
-    ),
+    'Size: the developer’s choice among the lot’s building options (see Choice below; the ' +
+      'fill-level size model is retired).',
     '',
     `### Revision (tier ${v.provenance.tier}, n = ${num(v.provenance.n)})`,
     '',
@@ -591,7 +603,6 @@ function provenanceIndex(c: Calibration): [string, Provenance][] {
     ['initiation.provenance', c.initiation.provenance],
     ['pathwayForNew.provenance', c.pathwayForNew.provenance],
     ['ppaShare.provenance', c.ppaShare.provenance],
-    ['size.provenance', c.size.provenance],
     ['revision.provenance', c.revision.provenance],
     ['streamlinedForLocalProgram', c.streamlinedForLocalProgram],
     ['phaseGap.provenance', c.phaseGap.provenance]
@@ -605,6 +616,12 @@ function provenanceIndex(c: Calibration): [string, Provenance][] {
     );
   }
   if (c.affordableRoutes) out.push(['affordableRoutes.provenance', c.affordableRoutes.provenance]);
+  if (c.choice) {
+    for (const [k, p] of Object.entries(c.choice.provenance)) {
+      out.push([`choice.provenance.${k}`, p]);
+    }
+  }
+  if (c.heightTime) out.push(['heightTime.provenance', c.heightTime.provenance]);
   if (c.baselineFunding) {
     c.baselineFunding.provenance.forEach((p, i) =>
       out.push([`baselineFunding.provenance[${i}]`, p])
@@ -673,7 +690,6 @@ function constantsSection(x: ReportInput): string[] {
           value(x.cal[k])
         ]),
         ['MONTH_DAYS (definitional)', num(MONTH_DAYS)],
-        ['size bucket edges', SIZE_EDGES.join(', ')],
         ['revision ratio edges', REVISION_EDGES.join(', ')],
         ['FZP filings band', `${FZP_BAND[0]} to ${FZP_BAND[1]}`],
         ...Object.entries(INITIAL_EDGES).map(([f, e]) => [`initial bins: ${f}`, e.join(', ')])
@@ -743,7 +759,7 @@ function rulesSection(x: ReportInput): string[] {
         [
           'calibration.method.sizeOverEnvelope',
           x.sizeOverEnvelope.fired,
-          `${x.sizeOverEnvelope.of} measured size histories`
+          `${x.sizeOverEnvelope.of} choice records`
         ],
         ['calibration.window.preRoll', c['calibration.window.preRoll'], 'qualifying histories'],
         ['calibration.noFcd.flaggedPooled', c['calibration.noFcd.flaggedPooled'], 'pooled cells']
@@ -843,7 +859,8 @@ export function marketSection(m: MarketModel, r: MarketReport): string[] {
     ...(r.equalWeights
       ? [`- no private start of ${w0}-${w1} has a prototype: every prototype weighs the same`]
       : []),
-    `- unbinned private starts ${w0}-${w1}: ${num(r.unbinned.homes)} with homes not recorded; ${num(r.unbinned.stories)} of 25 homes or more with stories not recorded`,
+    `- private starts ${w0}-${w1} priced by their permit's construction type: ${num(r.priced.typed)}; binned (no type recorded): ${num(r.priced.binned)}`,
+    `- unpriced private starts ${w0}-${w1}: ${num(r.unbinned.homes)} with homes not recorded; ${num(r.unbinned.stories)} with stories not recorded where the price needs them`,
     `- typicalUncoveredShare = ${num(r.typicalUncoveredShare)}`,
     `- slope.perCostShare = ${num(m.slope.perCostShare)}`,
     `- typicalCostOverValue = ${num(r.typicalCostOverValue)}`,
@@ -1029,7 +1046,76 @@ export function siteChoiceSection(x: ReportInput): string[] {
   ];
 }
 
-/** The calibration report (spec §4.10): thirteen sections, deterministic. */
+/** Section 16: the choice spread, the affordable rule, the margin's overlap, prices and bands. */
+function choiceSection(x: ReportInput): string[] {
+  const c = x.calibration.choice;
+  const ht = x.calibration.heightTime;
+  const s = x.choice.spread;
+  const a = x.choice.affordable;
+  const m = x.choice.marginVsSlope;
+  if (!c || !ht) return [REPORT_SECTIONS[15], '', 'No choice model: none written.'];
+  const prices = c.prices[0].value;
+  const time = ht.steps[0].value;
+  const lower = (i: number) => (i === 0 ? 1 : ht.upTo[i - 1] + 1);
+  const band = (i: number) =>
+    ht.upTo[i] === 999 ? `${lower(i)}+` : `${lower(i)} to ${ht.upTo[i]}`;
+  return [
+    REPORT_SECTIONS[15],
+    '',
+    `### Choice spread (tier ${c.provenance.choiceSpread.tier}, n = ${num(s.n)})`,
+    '',
+    `choiceSpread = ${num(c.choiceSpread)}; fitted ${num(s.choiceSpread)}, log-likelihood ${num(s.logLik)}, search [${SPREAD_RANGE.join(', ')}]. Records: ${x.choice.measured} measured histories; ${x.choice.noPanelRow} without a panel row; ${x.choice.affordableLeftOut} in the affordable cohort left out (rule ${c.affordableRule}); ${s.excludedOver} over their limit left out; ${s.noOption} with no option gaining a home left out; ${s.n} in the likelihood. calibration.method.sizeOverEnvelope = ${x.sizeOverEnvelope.fired} of ${x.sizeOverEnvelope.of}.`,
+    '',
+    ...table(
+      ['choiceSpread', 'log-likelihood'],
+      PROFILE_SPREADS.map((v) => [v, s.profile.find((p) => p.spread === v)?.logLik ?? NaN])
+    ),
+    '',
+    `### Affordable rule: ${c.affordableRule} (tier ${c.provenance.affordableRule.tier})`,
+    '',
+    `Built height ÷ limit: affordable ${num(a.cohort.affordable.mean)} (n = ${a.cohort.affordable.n}, SE ${num(a.cohort.affordable.se)}), private ${num(a.cohort.private.mean)} (n = ${a.cohort.private.n}, SE ${num(a.cohort.private.se)}); difference ${num(a.diff)}, SE ${num(a.se)}, 2 SE = ${num(2 * a.se)}: ${a.rule}.`,
+    '',
+    '### The margin feature and the market slope',
+    '',
+    `Correlation of choiceMargin with the slope's cost share (uncoveredPerHome ÷ costPerHome of the best option's prototype) over ${num(m.n)} at-risk panel parcel-years: r = ${num(m.r)}.`,
+    '',
+    `### Prices (one step from ${isoOf(c.prices[0].from)})`,
+    '',
+    ...table(
+      ['anchor', 'stories', 'homes', 'cost per home', 'value per home'],
+      Object.entries(prices.anchors).map(([id, v]) => [
+        id,
+        v.stories,
+        v.homes,
+        v.costPerHome,
+        v.valuePerHome
+      ])
+    ),
+    '',
+    `aboveTopCostRatio ${num(prices.aboveTopCostRatio)} (permits above 24 stories ${x.choice.aboveTopN[0]}, 13 to 24 ${x.choice.aboveTopN[1]}); carrying rate ${num(prices.carrying.rate)} on drawn share ${num(prices.carrying.drawn)}.`,
+    '',
+    `### Height-band stage time (tier ${ht.provenance.tier}, one step from ${isoOf(ht.steps[0].from)})`,
+    '',
+    ...table(
+      ['stories', 'permitIssued ×', 'construction ×', 'construction months'],
+      ht.upTo.map((_, i) => [
+        band(i),
+        time.permitIssued[i],
+        time.construction[i],
+        time.constructionMonths[i]
+      ])
+    ),
+    '',
+    'Filed to issued (reported, not modelled):',
+    '',
+    ...table(
+      ['stories up to', 'median months', 'n'],
+      x.choice.filedToIssued.map((b) => [b.upTo, b.median, b.n])
+    )
+  ];
+}
+
+/** The calibration report (spec §4.10): its sections in order, deterministic. */
 export function calibrationReport(x: ReportInput): string {
   const sections = [
     header(x),
@@ -1048,7 +1134,8 @@ export function calibrationReport(x: ReportInput): string {
     ...(x.cars && x.cars.length > 0 ? [[REPORT_SECTIONS[13], '', ...x.cars]] : []),
     ...(x.carsBackcast && x.carsBackcast.length > 0
       ? [[REPORT_SECTIONS[14], '', ...x.carsBackcast]]
-      : [])
+      : []),
+    choiceSection(x)
   ];
   return sections.map((s) => s.join('\n')).join('\n\n') + '\n';
 }

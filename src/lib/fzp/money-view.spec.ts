@@ -6,7 +6,7 @@ import {
   owedAt,
   perAddedHome,
   type Money
-} from '$lib/sim/scenario/finance-score';
+} from '$lib/sim/world/score/finance';
 import { formatCount, formatPercent } from '$lib/scoreboard/format';
 import { INCOME_TIERS } from '$lib/timelapse/types';
 import { MARKET_FUNDING_SENTENCE } from '$lib/sim-page/funding-copy';
@@ -16,7 +16,7 @@ import type { MoneyView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import { dayFromUtc } from './time';
 import { closedLines, plainSources } from './money-view';
-import { TIER_SOURCES as TIERS } from '$lib/sim/scenario/finance-score';
+import { TIER_SOURCES as TIERS } from '$lib/sim/world/score/finance';
 import { formatDollars, formatDollarsExact, formatSourcePercent } from './format';
 import { marketSentence } from './market-view';
 import {

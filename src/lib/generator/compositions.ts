@@ -17,7 +17,9 @@ import {
   TOWER_COVERAGE,
   MIN_TOWER_PLATE_M2,
   MIN_TOWER_CORE_INSET_M,
-  TOWER_SEPARATION_M
+  TOWER_SEPARATION_M,
+  TOWERS_PLATE_MAX_M2,
+  TOWERS_SEPARATION_M
 } from './constants';
 import { domainArea, fitSimpleRegions, insideDomain } from './domain';
 import { massTypology, type MassOpts } from './massing';
@@ -50,7 +52,7 @@ export function referenceComposition(
     if (inset([ring], 1.5).length) band.regions.push(ring);
   }
   if (bands.some((b) => !b.regions.length)) return null;
-  if (mass.typology === 'tower' && !validTowerBands(site, bands))
+  if (mass.typology === 'tower' && !validTowerBands(site, bands, opts?.plates))
     return referenceComposition(site, 'midrise', opts?.fallbackStories ?? 12, draws, opts);
   if (!bandsSupported(bands)) return null;
   return { family: 'simple', typology: mass.typology, stories: mass.stories, bands };
@@ -96,15 +98,31 @@ export function validComposition(
     if (active.reduce((a, r) => a + signedArea(r), 0) - domainArea(slice.regions) > 0.001)
       return false;
   }
-  if (candidate.typology === 'tower' && !validTowerBands(site, bands)) return false;
+  if (candidate.typology === 'tower' && !validTowerBands(site, bands, towerPlates(reference)))
+    return false;
   return retainsCapacityAcrossHeights(candidate, reference);
 }
 
-/** Structural tower rules also apply to references; their geometry-budget exception remains. */
-function validTowerBands(site: Site, bands: FloorBand[]): boolean {
+/** Plates of a tower reference: the regions of its first tower band (several-tower form > 1). */
+function towerPlates(reference: OccupiedComposition): number {
+  return reference.bands.find((b) => b.firstFloor > 1)?.regions.length ?? 1;
+}
+
+/**
+ * Structural tower rules also apply to references; their geometry-budget exception remains. A
+ * tower of several plates (`MassOpts.plates`, or a candidate of such a reference) may hold that
+ * many plates of `TOWERS_PLATE_MAX_M2`, `TOWERS_SEPARATION_M` apart; one plate keeps
+ * `TOWER_PLATE_MAX_M2` and `TOWER_SEPARATION_M`.
+ */
+function validTowerBands(site: Site, bands: FloorBand[], plates = 1): boolean {
+  const several = plates > 1;
+  const plateArea = Math.min(
+    several ? TOWERS_PLATE_MAX_M2 : TOWER_PLATE_MAX_M2,
+    TOWER_COVERAGE * site.A
+  );
+  const separation = several ? TOWERS_SEPARATION_M : TOWER_SEPARATION_M;
   for (const slice of floorSlices(bands).filter((b) => b.firstFloor >= 6)) {
-    if (domainArea(slice.regions) > Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A) + 0.01)
-      return false;
+    if (domainArea(slice.regions) > Math.max(1, plates) * plateArea + 0.01) return false;
     if (
       slice.regions.some(
         (r) => signedArea(r) < MIN_TOWER_PLATE_M2 || !inset([r], MIN_TOWER_CORE_INSET_M).length
@@ -116,8 +134,8 @@ function validTowerBands(site: Site, bands: FloorBand[]): boolean {
         if (
           domainArea(
             intersectD(
-              inset([slice.regions[i]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
-              inset([slice.regions[j]], -TOWER_SEPARATION_M / 2 + 0.001, 4),
+              inset([slice.regions[i]], -separation / 2 + 0.001, 4),
+              inset([slice.regions[j]], -separation / 2 + 0.001, 4),
               FillRule.NonZero,
               4
             )

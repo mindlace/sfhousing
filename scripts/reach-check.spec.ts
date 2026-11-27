@@ -11,8 +11,8 @@ import { CATALOGUE, POLICY_KEYS, type PolicyKey } from '../src/lib/game/catalogu
 import { onKeys } from '../src/lib/game/offer';
 import { defaultGoal } from '../src/lib/goal/goal';
 import { baselineFixture } from '../src/lib/sim/levers/fixtures/finance';
-import miniCalibrationJson from '../src/lib/sim/scenario/fixtures/mini-calibration.json';
-import { miniMarket } from '../src/lib/sim/scenario/fixtures/mini-market';
+import miniCalibrationJson from '../src/lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '../src/lib/sim/world/fixtures/mini-market';
 import type { TimelineView } from '../src/lib/sim/world/score/types';
 import { parseCalibration } from '../src/lib/timelapse/model';
 import type { Calibration } from '../src/lib/timelapse/types';

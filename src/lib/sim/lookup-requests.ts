@@ -1,6 +1,6 @@
 // The page's pending request/answer promises for the worker's lookups (parcel summary, brushes,
-// outlines, lot-at, preview, glass lids, brush catalog), shared by ScenarioClient and
-// TimelineClient. Each answers `no-session` (or null) when the owner ends the session.
+// outlines, lot-at, preview, glass lids, brush catalog). Each answers `no-session`
+// (or null) when the owner ends the session.
 import type { ParcelId } from '$lib/data/parcel';
 import type { Day } from '$lib/timelapse/time';
 import type { BrushCatalog, BrushQuery } from './levers/brushes';
@@ -12,7 +12,7 @@ import type {
   LotOutlinesResult,
   PreviewResult,
   WorkerRequest
-} from './scenario/types';
+} from './timeline-protocol';
 
 const ended = 'the worker session ended before answering';
 const noSession = (): BrushLotsResult => ({ ok: false, reason: 'no-session', message: ended });

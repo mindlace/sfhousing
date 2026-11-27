@@ -3,6 +3,7 @@
  * Pipeline-internal: nothing here ships in `calibration.json`.
  */
 import type { ParcelId } from '../../../src/lib/data/parcel';
+import type { ConstructionType } from '../../project-records/types';
 import type {
   Day,
   ExitReason,
@@ -178,6 +179,11 @@ export interface PermitRow {
   construction_day: number | null;
   complete_day: number | null;
   status_day: number | null;
+  proposed_stories: number | null;
+  /** `revised_cost`, else `estimated_cost` (Rulings E2, PV1), dollars */
+  valuation: number | null;
+  /** DBI `proposed_construction_type` as a roman numeral */
+  construction_type: ConstructionType | null;
 }
 
 /** Aborts the calibration build (spec §4.13). */

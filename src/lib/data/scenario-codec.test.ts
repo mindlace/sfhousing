@@ -3,13 +3,11 @@ import { describe, expect, it } from 'vitest';
 import type { FeatureId } from '../timelapse/types';
 import { scenarioTiny } from './fixtures/scenario-tiny';
 import {
-  FILL_LEVELS,
   ScenarioFormatError,
   decodeScenarioPayload,
   encodeScenarioPayload,
   envelopeOf,
   featureValue,
-  fillStories,
   readScenarioParcels
 } from './scenario-codec';
 
@@ -45,7 +43,7 @@ const rejects = (b: Uint8Array, message: RegExp) => {
   expect(() => decodeScenarioPayload(b)).toThrow(message);
 };
 
-describe('sfh-scenario/1 codec', () => {
+describe('sfh-scenario/2 codec', () => {
   it('round-trips the tiny fixture', () => {
     const t = scenarioTiny();
     expect(decodeScenarioPayload(encodeScenarioPayload(t))).toEqual(t);
@@ -100,7 +98,6 @@ describe('sfh-scenario/1 codec', () => {
       'scenario',
       'rollYear',
       'count',
-      'fillLevels',
       'cells',
       'districts',
       'landUseClasses',
@@ -132,8 +129,7 @@ describe('sfh-scenario/1 codec', () => {
       'improvementShare',
       'landUseClass',
       'baseCap',
-      'baseYield',
-      'yield'
+      'fzpCap'
     ]);
   });
 
@@ -158,16 +154,9 @@ describe('sfh-scenario/1 codec', () => {
     expect(b[prefix.offset + first]).toBe(shared);
   });
 
-  it('derives potentialRatio and storiesGap', () => {
+  it('round-trips the FZP cap, none on Local Program parcels', () => {
     const d = decodeScenarioPayload(encodeScenarioPayload(scenarioTiny()));
-    const F = d.fillLevels.length;
-    for (let i = 0; i < d.count; i++) {
-      const units = Math.max(d.existingUnits[i], 1);
-      expect(d.potentialRatio.fzp[i]).toBe(Math.fround(d.yield[i * F + F - 1] / units));
-      expect(d.potentialRatio.base[i]).toBe(Math.fround(d.baseYield[i * F + F - 1] / units));
-      expect(d.storiesGap.fzp[i]).toBe(d.envelopeStories[i] - d.existingStories[i]);
-      expect(d.storiesGap.base[i]).toBe(d.baseStories[i] - d.existingStories[i]);
-    }
+    expect([...d.fzpCap]).toEqual([0xffff, 0xffff, 3, 2, 0xffff, 0xffff]);
   });
 
   describe('rejects bad input with ScenarioFormatError', () => {
@@ -179,10 +168,16 @@ describe('sfh-scenario/1 codec', () => {
       rejects(b, /bad magic/);
     });
 
-    it('major 2', () => {
+    it('unsupported major 1 (the fill-level format)', () => {
       const b = good();
-      new DataView(b.buffer).setUint16(4, 2, true);
-      rejects(b, /unsupported major version 2/);
+      new DataView(b.buffer).setUint16(4, 1, true);
+      rejects(b, /unsupported major 1 \(this decoder reads major 2\)/);
+    });
+
+    it('major 3', () => {
+      const b = good();
+      new DataView(b.buffer).setUint16(4, 3, true);
+      rejects(b, /unsupported major 3/);
     });
 
     it('header not JSON', () => {
@@ -243,20 +238,6 @@ describe('sfh-scenario/1 codec', () => {
         /district\[\d\] = \d is past its dictionary \(1\)/
       );
     });
-
-    it('fillLevels not ascending', () => {
-      rejects(
-        withHeader(good(), (h) => (h.fillLevels = [0.5, 0.25, 1])),
-        /fillLevels not ascending/
-      );
-    });
-
-    it('fillLevels ending at 0.9', () => {
-      rejects(
-        withHeader(good(), (h) => (h.fillLevels = [0.25, 0.5, 0.9])),
-        /fillLevels does not end at 1/
-      );
-    });
   });
 
   it('encode rejects an id suffix over 255 bytes', () => {
@@ -265,9 +246,9 @@ describe('sfh-scenario/1 codec', () => {
     expect(() => encodeScenarioPayload(t)).toThrow(ScenarioFormatError);
   });
 
-  it('encode rejects a yield above 65,535 instead of wrapping', () => {
+  it('encode rejects an fzpCap above 65,535 instead of wrapping', () => {
     const t = scenarioTiny();
-    t.yield = Object.assign([...t.yield], { 4: 65536 }) as unknown as Uint16Array;
+    t.fzpCap = Object.assign([...t.fzpCap], { 2: 65536 }) as unknown as Uint16Array;
     expect(() => encodeScenarioPayload(t)).toThrow(ScenarioFormatError);
   });
 
@@ -288,22 +269,21 @@ describe('sfh-scenario/1 codec', () => {
     expect(() => encodeScenarioPayload(t)).toThrow(/imputed\[0\] = 128 sets reserved bits/);
   });
 
-  it('featureValue covers every FeatureId × env', () => {
+  it('featureValue reads the choice row for the choice features and the columns for the rest', () => {
     const d = decodeScenarioPayload(encodeScenarioPayload(scenarioTiny()));
-    const table: [FeatureId, number, number][] = [
-      ['potentialRatio', 10 / 2, 4 / 2],
-      ['existingUnits', 2, 2],
-      ['lotAreaM2', 450, 450],
-      ['yearBuilt', 1925, 1925],
-      ['storiesGap', 6 - 2, 4 - 2],
-      ['improvementShare', Math.fround(0.35), Math.fround(0.35)],
-      ['rentControlLikely', 1, 1],
-      ['landUseClass', 1, 1]
+    const choice = { potentialRatio: 2.5, storiesGap: 3, choiceMargin: 0.1 };
+    const table: [FeatureId, number][] = [
+      ['potentialRatio', 2.5],
+      ['storiesGap', 3],
+      ['choiceMargin', 0.1],
+      ['existingUnits', 2],
+      ['lotAreaM2', 450],
+      ['yearBuilt', 1925],
+      ['improvementShare', Math.fround(0.35)],
+      ['rentControlLikely', 1],
+      ['landUseClass', 1]
     ];
-    for (const [f, fzp, base] of table) {
-      expect(featureValue(d, 0, f, 'fzp'), `${f} fzp`).toBe(fzp);
-      expect(featureValue(d, 0, f, 'base'), `${f} base`).toBe(base);
-    }
+    for (const [f, want] of table) expect(featureValue(d, 0, f, choice), f).toBe(want);
   });
 
   it('envelopeOf returns { maxStories: envelopeStories[i] }', () => {
@@ -311,16 +291,6 @@ describe('sfh-scenario/1 codec', () => {
     expect(envelopeOf(d, 0)).toEqual({ maxStories: 6 });
     expect(envelopeOf(d, 4)).toEqual({ maxStories: 24 });
     expect(envelopeOf(d, 5)).toEqual({ maxStories: 0 });
-  });
-
-  it('fillStories table', () => {
-    const over = (max: number) => FILL_LEVELS.map((f) => fillStories(f, max));
-    expect(over(4)).toEqual([1, 2, 3, 4, 4]);
-    expect(over(8)).toEqual([2, 4, 6, 7, 8]);
-    expect(over(24)).toEqual([6, 12, 18, 22, 24]);
-    expect(over(1)).toEqual([1, 1, 1, 1, 1]);
-    expect([...FILL_LEVELS].sort((a, b) => a - b)).toEqual([...FILL_LEVELS]);
-    expect(FILL_LEVELS[FILL_LEVELS.length - 1]).toBe(1);
   });
 
   it('readScenarioParcels inflates a Uint8Array body', async () => {

@@ -2,15 +2,14 @@
 // final months and the range of `rows`.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HORIZON } from '$lib/fzp/time';
-import { monthIndexer, monthsOf, shownSeries } from '$lib/sim/scenario/score';
-import { simulateDetailed } from '$lib/sim/scenario/simulate';
-import type { Schedule, SimInput } from '$lib/sim/scenario/types';
+import { monthIndexer } from '$lib/sim/world/score/targets';
+import type { Schedule, SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import { scheduleAt } from '../read';
 import { staticsOf, type Statics } from '../statics';
 import { benchInput, fixtureInput } from '../test/cities.node';
 import { Recorder, horizonMonth, runWorld } from '../test/run';
-import { everyStage, frameOf, oldInputOf, oneFrame } from '../test/timeline';
+import { everyStage, frameOf, oneFrame } from '../test/timeline';
 import { END_ALIVE, ORIGIN_MASTER, ORIGIN_SIM, type WorldEvent } from '../types';
 import { createWorldSeries } from './series';
 import { horizonOf } from './statics';
@@ -123,11 +122,6 @@ describe('WorldSeries on the fixture', () => {
           return series.rows(0, s.lastIndex);
         });
         expect(out[1]).toEqual(out[0]);
-        // And today's engine on the same calibration (rule 5 with entitled-day revisions).
-        const old = simulateDetailed(oldInputOf(varied), seed, HORIZON);
-        expect(out[0]).toEqual(
-          shownSeries(old, varied.asOf, HORIZON, monthsOf(varied.asOf, HORIZON))
-        );
       }
     };
     tryFrame(null);

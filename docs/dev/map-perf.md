@@ -147,6 +147,21 @@ Filter with `'sim-timeline\.bench'`, not a bare path: Playwright matches the fil
 
 ## Budgets
 
+### The building-choice build (2026-11-27, dataset `2026-11-27-247eaa0b`)
+
+The two cases below, "run with drops" and "purchase to ready", measured the points game's runs and were removed with it when the policy rounds replaced that game; the rows are a dated measurement.
+
+Apple M5 Pro, 15 cores, branch `feat/building-choice`, the dataset loaded into local R2 with `npm run pipeline -- upload 2026-11-27-247eaa0b --local`, port 4173 free. Both cases passed (`SFH_BENCH_DATASET=2026-11-27-247eaa0b npm run bench:map -- -g "run with drops|purchase to ready"`, 2 passed, DPR 2, Metal). A first pass ran right after the local upload at one-minute load 7 to 11 and is not of record; the pass of record began at load 1.93 (2.03 at its end), under the bar of 2.
+
+| Case                                                     | Line                                                                            | Label                                                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| run with drops (first pass, load 7 to 11, not of record) | `frames=3278 dropped=74302 collected=29806 p50=6.1ms p95=7.1ms bar=16.7ms PASS` | ballpark                                                                                |
+| run with drops                                           | `frames=3277 dropped=74302 collected=29811 p50=6.1ms p95=7.4ms bar=16.7ms PASS` | quiet, of record                                                                        |
+| purchase to ready (first pass, not of record)            | `node=stop-rail samples=815ms,779ms,747ms median=779ms buyS=4000ms`             | ballpark                                                                                |
+| purchase to ready                                        | `node=stop-rail samples=828ms,805ms,862ms median=828ms buyS=4000ms`             | quiet, of record; median below `buyS`, in line with the 2026-11-26 rows' 837 and 877 ms |
+
+`precomputeOf` on the same dataset (`node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir pipeline/out/2026-11-27-247eaa0b --case compile --runs 5`, its `precomputeViewMs`, fresh input objects, load 1.2): median **58.4 ms**, p90 63.5 ms, max 63.5 ms. The pre-branch figure is the 46.4 ms accepted in [ensemble-runner.md](ensemble-runner.md) (the 43 to 45 ms of [policy-timeline.md](policy-timeline.md) on the same city): Task 0 deferred its own baseline on a busy machine, so these are the baselines. 58.4 ms is 1.26 times 46.4 ms, within the 1.5 times bar (69.6 ms). No compact options.bin (Task 9c) is needed on this evidence.
+
 ### Budgets held to main (2026-11-26, main 083fb7ae)
 
 Apple M5 Pro; main `083fb7ae` against branch `dd688b51`, alternated main-1, branch-1, main-2, branch-2; one-minute load 1.54, 1.77, 1.89, 1.58 at the starts. Command: `npx vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1`. Figures are run 1, run 2. A budget is held to main: the branch at most 10% above main's figure on the mean of the two runs. Where main misses its own bar, that comparison is the whole bar: the written bar is not restated, its test stays failing on both trees, and the miss is main's, not this build's.
@@ -181,6 +196,8 @@ Apple M5 Pro; main `083fb7ae` against branch `dd688b51`, alternated main-1, bran
 | scenario.bench rev0 funded baseline                  | 4820 ms                             | 17132, 17182 ms   | 17251, 17600 ms   | fails on both trees; branch within 10%                            |
 | scenario.bench rev0 bench funding                    | 10130 ms                            | 24143, 24277 ms   | 24370, 24735 ms   | fails on both trees; branch within 10%                            |
 | declutter far setup                                  | 30 ms                               | 30.3 ms once      | none              | main fails once; branch met                                       |
+
+The `scenario.bench` rows are a dated measurement of a file since removed.
 
 Main's own engine misses these bars: the funded world-month, the scenario bench cases, host.perf's no-slice check (once on each tree), the swap install cadence, compile step(20), world.bench 48 worlds and declutter far setup (once). Finding for the owner: #154 (`083fb7ae`) made main miss them. Before it, main at `be6467dc` read 97.4 and 93.4 µs for the funded month; it now reads 337.6 and 327.7 µs, about 3.5 times slower, and the scenario bench is up to about 5 times slower than before #154. These are main's costs, recorded with main's figures and the bar; they are not this build's, and their tests are left failing on both trees (`funded-month.perf.spec.ts` keeps its 250 µs bar, its comment and its test name).
 

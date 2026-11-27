@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildFinance } from '$lib/sim/levers/finance';
 import { baselineFixture, fundingOnly } from '$lib/sim/levers/fixtures/finance';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { financeIndexOf } from '$lib/sim/scenario/funding';
-import { Treasury, type LedgerEvent } from '$lib/sim/scenario/money';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
-import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';
 import { monthFirstDay, monthLastDay, monthOfDay } from '../months';
 import { inForceAt, moneyLeversOf } from './combine';
@@ -67,33 +63,18 @@ function track(doc: SimPolicy4, n: number, finance: Finance = BASE()) {
 }
 
 /**
- * Checks that 120 months of arrivals of `doc` (levers constant over the run) are what `Treasury`
- * receives over the same days, each within its month; returns them as `[day, pool id, dollars]`.
+ * 120 months of arrivals of `doc` (levers constant over the run) as `[day, pool id, dollars]`;
+ * each arrival lands inside its own month.
  */
-function sameAsTreasury(doc: SimPolicy4, base: Finance) {
+function arrivalsOf(doc: SimPolicy4, base: Finance) {
   const N = 120;
   const rs = track(doc, N, structuredClone(base));
-  const fin = buildFinance(base, moneyLeversOf(inForceAt(doc, first(1))), AS_OF)!;
-  const events: LedgerEvent[] = [];
-  const days: Day[] = [];
-  const t = new Treasury(
-    financeIndexOf(fin),
-    AS_OF,
-    monthLastDay(AS_OF, N),
-    0,
-    (e) => events.push(e),
-    (d) => days.push(d)
-  );
-  for (const d of [...new Set(days)].sort((a, b) => a - b)) t.receive(d);
-  const want = events.map((e) => [e.day, e.pool, e.dollars]);
-  expect(want.length).toBeGreaterThan(10);
-
   const got = rs.flatMap(({ frame }) =>
     frame.arrivals
       .filter((a) => a.dollars !== 0)
       .map((a) => [a.day, frame.pools[a.pool].id, a.dollars])
   );
-  expect(got).toEqual(want);
+  expect(got.length).toBeGreaterThan(10);
   rs.forEach(({ frame }, k) => {
     const lo = k === 0 ? AS_OF : first(k + 1);
     for (const a of frame.arrivals) {
@@ -189,7 +170,7 @@ describe('offered (rule 7)', () => {
 });
 
 describe('arrivals', () => {
-  it('equal what Treasury receives, month by month, off days skipped', () => {
+  it('skip scale-0 baseline spans, month by month', () => {
     const fo = fundingOnly();
     const added = pool('u-pool-1', [
       ...fo.pools[0].inflows,
@@ -203,7 +184,7 @@ describe('arrivals', () => {
       ]),
       fund('f', added, fo.programmes)
     );
-    const got = sameAsTreasury(doc, BASE());
+    const got = arrivalsOf(doc, BASE());
     const cityB = got.filter(([d, p]) => p === 'city-b' && +d >= AS_OF + 700 && +d < AS_OF + 1200);
     expect(cityB).toEqual([]);
   });
@@ -216,7 +197,7 @@ describe('arrivals', () => {
       fund('f', pool('u-a', [{ kind: 'once', day: AS_OF + 30, dollars: 9 }]), []),
       termsPolicy('t', { guaranteeRateCut: 0.01 }) // miniFinance's guarantee needs it
     );
-    const got = sameAsTreasury(doc, base);
+    const got = arrivalsOf(doc, base);
     expect(got.filter(([, p]) => p === 'm-bank')).toEqual([]);
     expect(got.filter(([, p]) => p === 'u-a')).toEqual([[AS_OF + 30, 'u-a', 9]]);
   });

@@ -91,7 +91,12 @@ export const PROTOTYPE_BINNING: Sourced<null> = deepFreeze({
   }
 });
 
-/** The prototype a project of `stories` and `homes` is priced as. Fractions compare as given. */
+/**
+ * The prototype a project of `stories` and `homes` is priced as by the binning
+ * (PROTOTYPE_BINNING, tier 4). Kept for projects with no construction type: recorded rows, whose
+ * records may give none. A simulated start has an option and is priced by its type and stories
+ * (`optionPrototype`, src/lib/sim/choice/pricing.ts). Fractions compare as given.
+ */
 export function prototypeFor(stories: number, homes: number): Prototype {
   if (!Number.isFinite(stories) || !Number.isFinite(homes)) {
     throw new RangeError(`prototypeFor needs finite stories and homes; got ${stories}, ${homes}`);
@@ -136,11 +141,15 @@ function checkKind(kind: ProjectKind): void {
   }
 }
 
-/** What public money must cover per home: the shortfall plus land, or the affordable average. */
+/**
+ * What public money must cover per home: for market, max(0, cost + land − value), the shortfall
+ * plus land, and 0 (no public money needed) when the value covers both; for affordable, the
+ * affordable average.
+ */
 export function uncoveredPerHome(kind: ProjectKind, p: Prototype): Dollars {
   checkKind(kind);
   return kind === 'market'
-    ? p.shortfallPerHome + LAND_PER_HOME.value
+    ? Math.max(0, p.shortfallPerHome + LAND_PER_HOME.value)
     : AFFORDABLE.value.costPerHome - AFFORDABLE.value.ownPerHome;
 }
 

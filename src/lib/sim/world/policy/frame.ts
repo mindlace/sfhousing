@@ -1,6 +1,6 @@
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { StageScale } from '$lib/sim/levers/timers';
-import type { Precompute } from '$lib/sim/scenario/input';
+import type { Precompute } from '$lib/sim/world/input/build';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Pool, Programme, ResolvedTerms } from '$lib/timelapse/types';
 
@@ -25,6 +25,11 @@ export interface PolicyFrame {
   speedNew: { from: Day; scale: StageScale }[];
   /** The shift in the log-odds of starting. */
   market: number;
+  /**
+   * The cost step in force on the month's first day (`choiceStepAt` of the view's choice): start
+   * odds read `view.pre.byStep[choiceStep].logit`. Absent: the step in force at the dataset date.
+   */
+  choiceStep?: number;
   finance: FinanceFrame | null;
   /**
    * A log-odds shift per lot added to `z + market` for market starts (the parking a start no longer

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   REVIEW_VIEWS,
+  pickBuildings,
   renderReviewHtml,
   reviewStats,
   sampleBuildings,
@@ -136,5 +137,18 @@ describe('renderReviewHtml', () => {
 
   it('includes the tile bytes change as a percentage', () => {
     expect(html).toContain('+25.0%');
+  });
+});
+
+describe('pickBuildings', () => {
+  const row = (bid: string): RoofRow => ({ bid, lng: 0, lat: 0, n_step: 0, n_front: 0 });
+  const rows = [row('a'), row('b'), row('c')];
+
+  it('returns the named rows in bids order', () => {
+    expect(pickBuildings(rows, ['c', 'a']).map((r) => r.bid)).toEqual(['c', 'a']);
+  });
+
+  it('throws naming a bid that is not in roofs', () => {
+    expect(() => pickBuildings(rows, ['a', 'nope'])).toThrow(/unknown bid nope/);
   });
 });

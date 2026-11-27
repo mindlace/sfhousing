@@ -4,11 +4,12 @@
  * and zoning views are interned by content for the worker's life (rule 17). Worker-safe.
  */
 import type { ParcelId } from '$lib/data/parcel';
+import { choiceStepAt } from '$lib/sim/choice/choose';
 import type { LayerCtx } from '$lib/sim/levers/layers';
 import type { LeverCapacity } from '$lib/sim/levers/resolve';
 import { routeSharesOp, type StageScale } from '$lib/sim/levers/timers';
 import { LeverFormatError, type FinanceLevers } from '$lib/sim/levers/types';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { canonicalJson, PolicyFormatError } from '$lib/sim-page/policy';
 import { checkSpanDays } from '$lib/timeline/parse4';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
@@ -30,22 +31,13 @@ import type { PolicyFrame, PolicyTimeline, ZoningView } from './frame';
 import { digest128, frameIdOf, serialOf, VIEWS, type ViewInfo } from './intern';
 import { attachAttribution, createAttribution, type Attribution } from './limits';
 import { createMoneyTrack } from './money';
-import {
-  createViewJob,
-  touchedRows,
-  viewDigest,
-  type ViewJob,
-  type YieldSource
-} from './zoning-view';
-
-export type { YieldSource } from './zoning-view';
+import { createViewJob, touchedRows, viewDigest, type ViewJob } from './zoning-view';
 
 /** The worker's loaded dataset (S13, amended 2026-11-13). */
 export interface CompileCtx {
   input: SimInput;
   layers: LayerCtx;
   windowMonths: number;
-  yields: YieldSource;
   /** The clock that bounds a slice; default `performance.now`. */
   now?: () => number;
 }
@@ -57,18 +49,16 @@ export interface TimelineCompile {
    * under `base: 'preFzp'`, or a brush query with no entry in `lots`.
    */
   step(budgetMs: number): boolean;
-  /** Needs computed and needed over this compile's view jobs; failed cells those jobs need. */
+  /**
+   * Zoning views built and needed so far by this compile's jobs. `failedCells` is always empty:
+   * a view reads the option rows, never parcel chunks (the page's protocol keeps the field).
+   */
   progress(): { done: number; total: number; failedCells: string[] };
   /** Once month 1's frame exists; its `readyThrough()` grows as `step` is called. */
   result(): PolicyTimeline;
   /** Of the view in force in the window's last month (rule 23); once `step` returned true. */
   capacity(): LeverCapacity;
   unknownLots(): number;
-  /**
-   * The lots whose zoning changed and that have no yield record (yield 0, as today); the runner
-   * logs them. An S13 amendment approved by the conductor.
-   */
-  missingLots(): number;
 }
 
 /** The content digest of each view, computed once (it hashes every column). */
@@ -156,7 +146,7 @@ export function compileTimeline(
   ctx: CompileCtx,
   base: 'plan' | 'preFzp'
 ): TimelineCompile {
-  const { input, layers, yields } = ctx;
+  const { input, layers } = ctx;
   const W = ctx.windowMonths;
   if (!Number.isInteger(W) || W < 1)
     throw new RangeError(`compileTimeline: windowMonths ${W} is not a whole number of months`);
@@ -181,9 +171,8 @@ export function compileTimeline(
   const newCals = new Map<string, Calibration>();
   const held = new Map<string, { view: ZoningView; info: ViewInfo }>();
   const jobs = new Map<string, ViewJob>();
-  // Finished jobs are dropped (with their recompute maps); only their counts are kept.
-  const finished = { done: 0, total: 0 };
-  const missing = new Set<ParcelId>();
+  // Finished jobs are dropped; only their count is kept.
+  let finished = 0;
   const shared = new Map<number, Shared>();
   const touchedMemo = new Map<string, Int32Array>();
   // One per zoning state in force; each frame object this compile hands out points at one.
@@ -242,7 +231,7 @@ export function compileTimeline(
     }
     let job = jobs.get(k);
     if (job === undefined) {
-      job = createViewJob(input, layers, yields, now, st.zoning, base);
+      job = createViewJob(input, layers, now, st.zoning, base);
       jobs.set(k, job);
     }
     return job;
@@ -252,7 +241,6 @@ export function compileTimeline(
   function finish(st: State, job: ViewJob): void {
     const k = st.leverKey;
     const r = job.result();
-    for (const id of job.missing()) missing.add(id);
     const contentKey = canonicalJson({ ...serials, v: digestOf(r.view) });
     let view = VIEWS.get(contentKey);
     if (view === undefined) {
@@ -262,8 +250,7 @@ export function compileTimeline(
     VIEWS.put(k, view, r.info);
     setInfo(view, k, r.info);
     held.set(k, { view, info: r.info });
-    finished.done += job.done;
-    finished.total += job.total;
+    finished++;
     jobs.delete(k);
   }
 
@@ -292,8 +279,17 @@ export function compileTimeline(
     const day = monthFirstDay(asOf, m);
     const fin = money.month(m, moneyLeversAt(f));
     const mk = marketAt(day);
+    // The cost step in force on the month's first day: the start odds read its choice features.
+    const cs = choiceStepAt(v.view.pre.choice, day);
     const id = frameIdOf(
-      canonicalJson({ ...serials, v: digestOf(v.view), p: st.permKey, k: mk, f: fin?.key ?? null })
+      canonicalJson({
+        ...serials,
+        v: digestOf(v.view),
+        p: st.permKey,
+        k: mk,
+        c: cs,
+        f: fin?.key ?? null
+      })
     );
     let sh = shared.get(id);
     if (sh === undefined) {
@@ -315,6 +311,7 @@ export function compileTimeline(
       speed: sh.speed,
       speedNew: sh.speedNew,
       market: mk,
+      choiceStep: cs,
       finance: fin?.frame ?? null
     };
     const zk = activeKey(f.zoning);
@@ -379,28 +376,19 @@ export function compileTimeline(
         const left = budgetMs - (now() - t0);
         if (!first && left <= 0) return false;
         first = false;
-        // A view job's step that returns false has spent the budget or waits on cells.
+        // A view job's step that returns false has spent the budget.
         if (!advance(Math.max(0, left))) return false;
       }
       return true;
     },
     progress() {
-      let done = finished.done;
-      let total = finished.total;
-      const cells = new Set<string>();
-      for (const j of jobs.values()) {
-        done += j.done;
-        total += j.total;
-        for (const c of j.cellsNeeded()) cells.add(c);
-      }
-      return { done, total, failedCells: yields.failedCells().filter((c) => cells.has(c)) };
+      return { done: finished, total: finished + jobs.size, failedCells: [] };
     },
     result() {
       if (ready() === 0) throw new Error('compileTimeline: result() before month 1 exists');
       return timeline;
     },
     capacity: () => complete().capacity,
-    unknownLots: () => complete().unknownLots,
-    missingLots: () => missing.size
+    unknownLots: () => complete().unknownLots
   };
 }

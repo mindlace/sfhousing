@@ -1,12 +1,29 @@
-import type { SimInput } from '$lib/sim/scenario/types';
-import { goldenInput } from '$lib/sim/scenario/simulate.golden.cases';
+import { buildSimInput } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
+import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniOptions } from '$lib/sim/world/fixtures/mini-options';
+import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
+import { miniProjectsJson } from '$lib/sim/world/fixtures/mini-projects';
+import { parseCalibration } from '$lib/timelapse/model';
+import { parseProjectsFile } from '$lib/timelapse/projects';
+
+/** The mini city's FZP SimInput, built from the decoded files, finance included. */
+export function miniFzpInput(): SimInput {
+  const city = miniCity();
+  return buildSimInput({
+    parcels: city.parcels,
+    projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
+    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown),
+    options: miniOptions(city)
+  });
+}
 
 let memo: SimInput | null = null;
 
 /** The mini city's FZP input without public money. Browser-safe. */
 export function miniInput(): SimInput {
   if (!memo) {
-    const { finance: _finance, ...rest } = goldenInput();
+    const { finance: _finance, ...rest } = miniFzpInput();
     void _finance;
     memo = rest;
   }

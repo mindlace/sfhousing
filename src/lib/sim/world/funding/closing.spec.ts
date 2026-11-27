@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { dayFromUtc } from '$lib/fzp/time';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';
@@ -234,7 +234,14 @@ describe('withFunding and the closing hooks', () => {
 /** Enough for one affordable project on the mini city: its first award on the pool asks 2,713,804. */
 const ONE_PROJECT = 3_000_000;
 /** A seed whose project paid by CLOSE_POOL (on SOLO, `releaseDoc`) exits before construction after D. */
-const RELEASE_SEED = 3;
+const RELEASE_SEED = 80;
+/**
+ * A seed on whose mini city an application asks CLOSE_POOL in month 6 (picked from 1 to 60 on
+ * the option rows: few lots size up to a funded bundle early on).
+ */
+const EARLY_SEED = 12;
+/** A seed on whose mini city some lot still waits on CLOSE_POOL in months 48 and 60. */
+const WAITING_SEED = 2;
 const once = (day: Day, dollars: number): Inflow => ({ kind: 'once', day, dollars });
 
 /** The mini money's guarantee needs `guaranteeRateCut` once money levers are in force. */
@@ -560,7 +567,8 @@ describe('closeSpent: a spent pool closes', () => {
     const arrive = monthFirstDay(asOf, 6);
     const r = closing(
       docOf(closingPolicy(asOf, [{ from: 1, to: null, inflows: [once(arrive, 1)] }])),
-      24
+      24,
+      { seed: EARLY_SEED }
     );
     expect(r.waitingWith(6, CLOSE_GRANT)).toBeGreaterThan(0); // short in month 6: 1 dollar
     expect(r.closedDayAfter(6)).toBe(NO_DAY);
@@ -616,7 +624,8 @@ describe('closeSpent: a spent pool closes', () => {
           }
         ])
       ),
-      120
+      120,
+      { seed: WAITING_SEED }
     );
     expect(r.waitingWith(60, CLOSE_GRANT)).toBeGreaterThan(0);
     expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY);
@@ -678,11 +687,11 @@ describe('closeSpent: a spent pool closes', () => {
   });
 
   it('poolClosing false: no shut row; an application waits on a spent pool to the horizon', () => {
-    const r = closing(closingDocA, 48, { poolClosing: false });
+    const r = closing(closingDocA, 48, { poolClosing: false, seed: WAITING_SEED });
     expect(fundOf(r.world).pools.shutN).toBe(0);
     expect(r.waitingWith(48, CLOSE_GRANT)).toBeGreaterThan(0);
     // With closing on, the same document has no application on it by then.
-    expect(closing(closingDocA, 48).waitingWith(48, CLOSE_GRANT)).toBe(0);
+    expect(closing(closingDocA, 48, { seed: WAITING_SEED }).waitingWith(48, CLOSE_GRANT)).toBe(0);
   });
 
   it('grouped serving and the direct scan give the same closings and events', () => {
@@ -735,7 +744,7 @@ describe('closeSpent: a spent pool closes', () => {
       ...fin,
       programmes: fin.programmes.filter((g) => g.id !== 'm-bank-loan')
     });
-    const r = closing(doc, 120, { system, input: noLoan });
+    const r = closing(doc, 120, { system, input: noLoan, seed: WAITING_SEED });
     expect(r.closedDayOf(CLOSE_POOL)).toBe(NO_DAY);
     // Not vacuous: applications wait on the line after T, and closeSpent scanned it before.
     let waited = 0;

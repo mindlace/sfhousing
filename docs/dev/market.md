@@ -42,16 +42,24 @@ fitted on all starts, and the private level must restore the all-starts average 
 closes the gap.
 
 `typicalUncoveredShare = sum over prototypes p of w_p x uncoveredPerHome('market', p) / p.costPerHome`,
-where `w_p` is the binned private starts of 2021-2025 in prototype `p` over all binned private
-starts of those years. The prototypes are `PROTOTYPES` ([finance-model.md](finance-model.md)),
-iterated A to E. `typicalCostOverValue = sum w_p x costPerHome / (costPerHome - shortfallPerHome)`.
+where `w_p` is the priced private starts of 2021-2025 at price `p` over all priced private starts
+of those years. The prices are `PROTOTYPES` ([finance-model.md](finance-model.md)), A to E, then
+one row per Type I price between or above the anchors (`I<n>`, by stories) that a typed start has. `typicalCostOverValue = sum w_p x costPerHome / (costPerHome - shortfallPerHome)`.
 
 `marketModel` also counts the recent years' `PanelStart`s and throws when the count differs from
 `O`, so the cohort split is always of the same events.
 
-### Prototype binning of a start
+### Pricing a start: its type, else the binning
 
-Each panel start carries the history's cohort, gross homes and `storiesProposed`. Homes are the
+Each panel start carries the history's cohort, gross homes, `storiesProposed` and construction
+type: `projectTypes` (`panel.ts`) gives a project the type of its permit with the most proposed
+homes among those recording I, III or V (ties to the earliest filed, then the lowest permit
+number); II and IV are not modelled and count as untyped. A typed start is priced as the engine
+prices an option (`optionPrototype` on the anchors with the shipped step's `aboveTopCostRatio`):
+Type V as A (E under 25 homes), Type III as B, Type I as C, D or between them; a Type I start with
+no recorded stories is left out ("stories not recorded"). Only an untyped start is binned as
+below (building-choice spec, "Funded and affordable projects"). The report gives the typed and
+binned counts (`typedStarts`, `binnedStarts`). Homes are the
 first positive of `unitsAt.filed`, `unitsAt.permitFiled`, `unitsAt.complete` (gross proposed homes,
 which is what a prototype's `homes` counts), else `null`.
 
@@ -119,6 +127,13 @@ section 11):
   `costCoefficient` 11.4345, `priceCoefficient` 2.01297.
 - `crossCheck.logOdds` = -1.28933; the gap to `today.all` is 0.64737.
 
+**Building-choice refit** (Task 8; live build `2026-11-27-6264ccf1` from the uncommitted tree,
+not uploaded; `market.ts` unchanged). The start model gains the `choiceMargin` term and takes
+`potentialRatio` and `storiesGap` from the choice, so `today` is recomputed against it:
+`observed` 127 (private 118) in 2023-2025, so `today.all` = -0.545606 and `today.private` =
+-0.619108. The margin's correlation with the slope's cost share over the at-risk panel is
+r = -0.0046 (1,309,634 parcel-years), so the two barely overlap on today's single cost step.
+
 **Acceptance 7.3.** `|today.all - (-0.643571)| <= 0.10` (tier 4 tolerance). Outcome: met. The live
 value is -0.64196, 0.00161 from the expectation; observed is 129 as expected, and `implied` is
 245.126 against the spec's 245.521 (each year's implied is about 0.13 lower), so no difference needs
@@ -160,22 +175,20 @@ on a project's first filing.
 ## The engine contract
 
 `SimInput.market?: MarketStep[]` (`{ from, logOdds }`, declared in `src/lib/timelapse/types.ts` and
-`src/lib/sim/scenario/types.ts`). `[]` and absent both mean shift 0.
+`src/lib/sim/world/input/types.ts`). `[]` and absent both mean shift 0.
 
-- **Validation** (`checkInput`, memoised as today): `runEngine` throws a `RangeError` when a step's
-  `logOdds` is not finite, when steps are not strictly ascending by `from`, or when the first step
-  is after `asOf`.
+- **Contract.** Steps are finite, strictly ascending by `from`, and the first is not after `asOf`; the caller keeps it (`marketSteps` builds them that way).
 - **Steps in force.** The last step with `from <= asOf` gives the starting shift `s0`; steps after
   `asOf` apply from their `from`. **Month granularity**: a month falls under the step in force on
   its first day, `r + 1 + floor((T - 1) x MONTH_DAYS)`, as `regimes` already apply it.
 - **Precompute** (`precomputeOf`): `initiationLogit` (`src/lib/timelapse/model.ts`) returns the
   linear predictor `z`; `initiationHazard` is unchanged because `model-golden.json` locks it.
   `hazard = 1 / (1 + exp(-(z + s0)))`; with `s0 = 0`, `z + 0` is `z`, so hazards are bit-identical
-  to today's (a test asserts it). Each later step adds a `Float64Array` of `ln(1 - hazard)`; with
+  to the unshifted ones. Each later step adds a `Float64Array` of `ln(1 - hazard)`; with
   one step (Release 1) there is nothing extra.
 - **Composition with `regimes`.** The segment boundaries are the union of the regime days and the
   later step days, sorted and merged; each segment has a `(view, step)` pair and
-  `simulatedPass` fills the per-segment rates from it. With no later steps the path is today's.
+  `precomputeOf` fills the per-segment rates from it (`world/input/build.ts`). With no later steps there is one segment.
 - **`skipAbove`** stays a safe bound: `skipBounds` reads the same merged boundaries and rate
   arrays as the exact path, so a draw at or below the bound always takes the exact computation.
 - **Memoisation** is by `SimInput` identity: a different `market` array is a different input and
@@ -189,13 +202,12 @@ unchanged ([sim-levers.md](sim-levers.md)).
 
 ## `marketLevel`: the one rule for the level
 
-`marketLevel(calibration)` (`src/lib/sim/scenario/market.ts`) returns `'all'` or `'private'`. It
+`marketLevel(calibration)` (`src/lib/sim/world/input/market.ts`) returns `'all'` or `'private'`. It
 returns `'private'` exactly when the calibration has both `market` and `baselineFunding` (from
 Release 2; in Release 1 it returned `'all'` for every calibration), which is exactly when
 `buildSimInput` also sets `finance` ([finance-engine.md](finance-engine.md)). `buildSimInput` calls
 `marketSteps(calibration.market, projects.asOf, marketLevel(calibration))` and **omits the key**
-when that is empty, so existing inputs stay deep-equal to today's and `golden-seed1.json` is
-untouched. When `calibration.market` is absent it warns once
+when that is empty, so an input with no market stays deep-equal to one built without it. When `calibration.market` is absent it warns once
 (`calibration.json: no market model; the run uses the 2007-2025 average market`). The page's
 sentence and the dialog's "In force" line call the same function, so the engine and the page cannot
 state different levels.
@@ -225,7 +237,7 @@ crossCheck.logOdds| > 1`; the reproduction check; the hold-out failure.
 
 Count keys added to the build's counts (and so to `report.json`; they are not fields of the
 `calibration.market` object): `recentStarts`, `recentPrivate`, `recentAffordable`, `recentNoRecord`,
-`recentUnknown`, `weightStarts`, `unbinnedHomes`, `unbinnedStories`.
+`recentUnknown`, `weightStarts`, `typedStarts`, `binnedStarts`, `unbinnedHomes`, `unbinnedStories`.
 
 ## Hashed code
 

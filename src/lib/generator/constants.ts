@@ -20,9 +20,26 @@ export const COVERAGE: Record<ReplacementTypology, number> = {
   midrise: 0.75,
   tower: 0.8
 };
+/**
+ * Base-footprint coverage of the block form: the midrise massing, step-back as today, at the
+ * coverage of San Francisco's tall new buildings and to any height (building-choice plan, Task 2).
+ * Tier 0: see `BLOCK_COVERAGE_PROVENANCE` (provenance.ts).
+ */
+export const BLOCK_COVERAGE = 0.92;
 export const TOWER_COVERAGE = 0.35;
 export const TOWER_PLATE_MAX_M2 = 900;
 export const TOWER_PODIUM_STORIES = 5;
+/**
+ * Several towers on one lot (the tower form's plate grid): the largest floor of one tower, the
+ * Central SoMa residential cap of 12,000 gross square feet (1,114.8 m²). Tier 1: see
+ * `TOWERS_PLATE_MAX_PROVENANCE` (provenance.ts).
+ */
+export const TOWERS_PLATE_MAX_M2 = 12_000 * 0.3048 * 0.3048;
+/**
+ * Several towers on one lot: the separation between towers, 115 ft (35.05 m), the rule Central
+ * SoMa and Rincon Hill share. Tier 1: see `TOWERS_SEPARATION_PROVENANCE` (provenance.ts).
+ */
+export const TOWERS_SEPARATION_M = 115 * 0.3048;
 export const MIDRISE_STEPBACK_ABOVE = 6;
 export const MAX_STORIES = 80;
 export const MIN_SITE_M2 = 40;

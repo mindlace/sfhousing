@@ -4,7 +4,7 @@
  * ("Allowed up to 6 stories near Muni Metro"), and why a transit rule cannot be added. Pure TS.
  */
 import type { BrushCatalog, StopType } from '$lib/sim/levers/brushes';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import type { BrushLotsResult } from '$lib/sim/timeline-protocol';
 import { count, lotsText, type LotStatus, type PaintRow } from '$lib/paint/rows';
 import {
   bandsInnermostFirst,

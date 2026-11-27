@@ -8,7 +8,7 @@
  */
 import type { ParcelId } from '$lib/data/parcel';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import type { BrushLotsResult } from '$lib/sim/timeline-protocol';
 import { queriesOf4, type SimPolicy4 } from './policy4';
 
 export interface PolicySyncDeps {

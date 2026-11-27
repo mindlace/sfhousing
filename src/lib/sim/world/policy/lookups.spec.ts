@@ -2,7 +2,7 @@
 // `applyLevers(compileLevers(p)).plan.newProjects.scale`.
 import { describe, expect, it } from 'vitest';
 import { applyLevers } from '$lib/sim/levers/apply';
-import { allNeeds, fillNeeds, resolveEnvelopes } from '$lib/sim/levers/resolve';
+import { resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { sameScale, type StageScale } from '$lib/sim/levers/timers';
 import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
 import { compileLevers, DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
@@ -12,7 +12,7 @@ import { upgradePolicy } from '$lib/timeline/upgrade';
 import { compileTimeline } from './compile';
 import type { PolicyFrame } from './frame';
 import { newScale } from './lookups';
-import { fakeRows, miniCompileCtx } from './test/compile-fixtures';
+import { miniCompileCtx } from './test/compile-fixtures';
 
 const CTX = miniCompileCtx({ windowMonths: 6 });
 const ASOF = CTX.input.asOf;
@@ -34,8 +34,7 @@ describe('newScale', () => {
 
     const levers = compileLevers(p, none)!;
     const r = resolveEnvelopes(CTX.layers, levers, ASOF);
-    const want = applyLevers(CTX.input, CTX.layers, levers, fillNeeds(r, fakeRows(allNeeds(r))))
-      .plan.newProjects!.scale;
+    const want = applyLevers(CTX.input, CTX.layers, levers, r).plan.newProjects!.scale;
 
     const { doc } = reconcilePolicy4(upgradePolicy(p, ASOF), CAL, ASOF);
     const c = compileTimeline(doc, {}, CTX, 'plan');

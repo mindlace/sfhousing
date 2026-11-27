@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32 } from '../generator/seed';
-import { miniCity } from '../sim/scenario/fixtures/mini-parcels';
+import { miniCity } from '../sim/world/fixtures/mini-parcels';
 import { featureValue } from '../data/scenario-codec';
-import mini from '../sim/scenario/fixtures/mini-calibration.json';
+import mini from '../sim/world/fixtures/mini-calibration.json';
 import small from './fixtures/calibration-small.json';
 import { exp, log } from './math';
 import { readFileSync } from 'node:fs';
@@ -104,7 +104,8 @@ describe('initiationLogit', () => {
     for (let i = 0; i < p.count; i++) {
       if (p.hostable[i] !== 1) continue;
       const f = {} as Record<FeatureId, number>;
-      for (const term of m.terms) f[term.feature] = featureValue(p, i, term.feature, 'fzp');
+      const choice = { potentialRatio: 1.5, storiesGap: 2, choiceMargin: 0.1 };
+      for (const term of m.terms) f[term.feature] = featureValue(p, i, term.feature, choice);
       expect(1 / (1 + exp(-initiationLogit(m, f)))).toBe(initiationHazard(m, f));
       seen++;
     }
@@ -788,7 +789,7 @@ describe('parseCalibration', () => {
       import.meta.url
     );
     const parsed = parseCalibration(JSON.parse(readFileSync(file, 'utf8')));
-    expect(parsed.size.fillLevels).toHaveLength(5);
+    expect(parsed.choice?.prices).toHaveLength(1);
     expect(Object.keys(parsed.transitions)).toEqual([...PATHWAYS]);
   });
 
@@ -994,36 +995,6 @@ describe('parseCalibration', () => {
       'initiation non-finite coef',
       (c) => (c.initiation.terms[0].coef[1] = 'x'),
       'initiation.terms[0].coef[1]'
-    ],
-    // size
-    ['fillLevels not ending at 1', (c) => (c.size.fillLevels = [0.5, 0.9]), 'size.fillLevels'],
-    ['fillLevels descending', (c) => (c.size.fillLevels = [0.5, 0.25, 1]), 'size.fillLevels'],
-    ['fillLevels empty', (c) => (c.size.fillLevels = []), 'size.fillLevels'],
-    ['fillLevels zero', (c) => (c.size.fillLevels = [0, 1]), 'size.fillLevels'],
-    [
-      'probs length 4',
-      (c) => (c.size.byEnvelope[0].probs = [0.25, 0.25, 0.25, 0.25]),
-      'size.byEnvelope[0].probs'
-    ],
-    [
-      'probs sum 0.99',
-      (c) => (c.size.byEnvelope[0].probs = [0.1, 0.2, 0.3, 0.2, 0.19]),
-      'size.byEnvelope[0].probs'
-    ],
-    [
-      'probs negative',
-      (c) => (c.size.byEnvelope[0].probs = [-0.1, 0.4, 0.3, 0.2, 0.2]),
-      'size.byEnvelope[0].probs[0]'
-    ],
-    ['byEnvelope empty', (c) => (c.size.byEnvelope = []), 'size.byEnvelope'],
-    [
-      'byEnvelope descending',
-      (c) =>
-        (c.size.byEnvelope = [
-          { maxStoriesUpTo: 99, probs: [0.2, 0.2, 0.2, 0.2, 0.2] },
-          { maxStoriesUpTo: 9, probs: [0.2, 0.2, 0.2, 0.2, 0.2] }
-        ]),
-      'size.byEnvelope[1].maxStoriesUpTo'
     ],
     // revision
     [
@@ -1311,13 +1282,9 @@ describe('parseCalibration', () => {
     expect(parseCalibration(c)).toBe(c);
   });
 
-  it('A2: accepts valid fill levels that differ from FILL_LEVELS', () => {
+  it('ignores a size key (the retired fill-level size model)', () => {
     const c = clone();
-    c.size.fillLevels = [0.5, 1];
-    c.size.byEnvelope = [
-      { maxStoriesUpTo: 9, probs: [0.4, 0.6] },
-      { maxStoriesUpTo: 99, probs: [0.5, 0.5] }
-    ];
+    c.size = { fillLevels: [0.5, 1], byEnvelope: [] };
     expect(parseCalibration(c)).toBe(c);
   });
 

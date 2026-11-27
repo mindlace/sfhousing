@@ -179,7 +179,8 @@ function smallInitiationCases(cal: Calibration): GoldenCase[] {
       storiesGap: 0,
       improvementShare: 0,
       rentControlLikely: 0,
-      landUseClass: 0
+      landUseClass: 0,
+      choiceMargin: 0
     };
     return {
       fn: 'initiationHazard',
@@ -201,7 +202,8 @@ function syntheticInitiationCases(cal: Calibration): GoldenCase[] {
       storiesGap: ((i * 5) % 9) - 3,
       improvementShare: ((i * 29) % 97) / 97,
       rentControlLikely: i % 2,
-      landUseClass: i % 6
+      landUseClass: i % 6,
+      choiceMargin: 0
     };
     const described = (Object.keys(f) as FeatureId[]).map((k) => `${k}=${f[k]}`).join(' ');
     out.push({

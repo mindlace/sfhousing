@@ -1,0 +1,415 @@
+<article>
+  <header>
+    <h1>Shared pipeline cache plan</h1>
+    <p>Implements the shared pipeline cache spec: one cache per machine, a <code>boxes</code> that reuses earlier work, and <code>cache import</code> for the caches already on disk.</p>
+    <aside data-kind="note"><strong>For agentic workers</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps are checklist items; progress is kept in the workspace ledger, not in the plan.</aside>
+  </header>
+
+  <section id="sec-overview">
+    <h2>Overview</h2>
+    <ul>
+      <li><strong>Goal:</strong> a new worktree builds without downloading again, <code>boxes</code> finishes in seconds when its exact code, config and inputs have run before, and the 70 GB already on disk moves into the shared cache.</li>
+      <li><strong>Architecture:</strong> one resolver (<code>pipeline/lib/cache-root.ts</code>) gives every shared directory; writes into it go through temp-then-rename helpers (<code>pipeline/lib/atomic.ts</code>). The skip is a wrapper step (<code>pipeline/steps/boxes-reuse.ts</code>) around the unchanged <code>boxesCommand</code>, keyed by the artifact's own <code>inputs.json</code> and guarded by a lock file per key (<code>pipeline/lib/key-lock.ts</code>, <code>pipeline/lib/boxes-index.ts</code>). <code>cache import</code> (<code>pipeline/steps/cache-import.ts</code>) moves an old <code>pipeline/.cache</code> in and indexes its boxes artifact.</li>
+      <li><strong>Tech Stack:</strong> TypeScript on Node 24 (<code>node:fs</code>, <code>node:crypto</code>, <code>node:os</code>), Vitest pipeline project, no new dependencies.</li>
+      <li><strong>Spec:</strong> <a href="../specs/2026-11-26-shared-pipeline-cache-design.html">docs/superpowers/specs/2026-11-26-shared-pipeline-cache-design.html</a></li>
+    </ul>
+  </section>
+
+  <section id="sec-global-constraints">
+    <h2>Global Constraints</h2>
+    <ul>
+      <li>Cache root, in order: <code>SFH_CACHE_DIR</code> if set; otherwise <code>$XDG_CACHE_HOME/sfhousing</code>; otherwise <code>~/.cache/sfhousing</code>.</li>
+      <li>Shared under the root: <code>raw/</code>, <code>ept/</code>, <code>lidar-work/&lt;hash8&gt;/</code>, <code>boxes-index/</code>. Stay in the worktree's <code>pipeline/.cache</code>: <code>derived/</code>, <code>review/</code>, logs, <code>lidar-venv/</code> (<code>pipeline/steps/build.ts:79</code>, <code>scripts/building-review.ts:370-373</code>, <code>pipeline/lib/lidar/python.ts:13</code> are not touched).</li>
+      <li>A file in the shared cache is written to a temp name in the same directory, then renamed into place. A file whose sha256 name is already present is not written again.</li>
+      <li>A reused <code>building-boxes</code> entry is byte-for-byte the entry a full run with the same key wrote, <code>retrievedAt</code> included; the lock and the dataset version come out the same either way.</li>
+      <li>The skip prints exactly <code>boxes: reused &lt;key&gt;</code> and exits 0. <code>--force</code> skips the check and runs in full.</li>
+      <li><strong>Do not edit any file under <code>BOXES_CODE_PATHS</code></strong> (<code>pipeline/lib/version.ts:67-74</code>: <code>pipeline/lib/lidar</code>, <code>pipeline/steps/boxes.ts</code>, <code>pipeline/boxes-config.ts</code>, <code>pipeline/project-records/union-find.ts</code>, <code>pipeline/lib/road-lots.ts</code>, <code>pipeline/geom.ts</code>). The boxes code hash is in the skip key: it is <code>472f4d15c2df</code> today, the same as the locked artifact's, so an edit there would make every imported artifact a miss and make every build warn that the boxes are stale. New boxes-related modules live outside those paths.</li>
+      <li>Tests never touch <code>~/.cache/sfhousing</code>: the pipeline Vitest project points <code>SFH_CACHE_DIR</code> at a fresh temp dir in every worker (Task 1), and every default path is resolved at call time, never at import.</li>
+      <li>No new dependencies. Portable Node only (<code>linkSync</code>, <code>renameSync</code>, <code>process.kill(pid, 0)</code>).</li>
+      <li>Tests are deterministic: no real sleeps, no wall-clock waits, no retries. Anything that waits takes an injected <code>sleep</code>. Every test calls <code>expect</code>.</li>
+      <li>Messages to the user go to stdout (<code>console.log</code> or the injected <code>out</code>) unless they explain a non-zero exit.</li>
+      <li>Code style: 2-space indent, single quotes, no trailing commas, 100 columns. Conventional Commits, no attribution trailers.</li>
+    </ul>
+  </section>
+
+  <section id="sec-review-focus">
+    <h2>Review Focus</h2>
+    <ol>
+      <li><strong>A <code>boxes</code> run killed with Ctrl-C</strong> leaves <code>boxes-index/&lt;key&gt;.lock</code>. The next run must take the lock over when the holder's pid is dead on this host, not wait forever. Test: Task 3, <code>t3-s1</code> "breaks a lock whose holder is dead".</li>
+      <li><strong>An index entry whose files were since deleted or corrupted</strong> in <code>raw/</code> must fall back to a full run, never write a lock entry whose files are missing. Test: Task 3 <code>reusableEntry</code> cases and Task 4 "missing raw file runs in full".</li>
+      <li><strong>Two worktrees storing the same sha256 at once, or a crash mid-write</strong>, must never leave a short file under the sha name. Test: Task 1 <code>storeBytes</code> and <code>restoreRaw</code> cases (temp sibling, no rewrite of a present file, no <code>.part</code> name shared between processes).</li>
+      <li><strong><code>cache import</code> run twice, or on a cache the shared one already holds</strong>, must be a no-op that exits 0 and clears the local copies so the notice stops. Test: Task 5 "is idempotent and silences the notice".</li>
+      <li><strong>An odd environment</strong>: <code>SFH_CACHE_DIR</code> empty or relative, <code>XDG_CACHE_HOME</code> relative, or <code>SFH_CACHE_DIR</code> pointing at the worktree's own <code>pipeline/.cache</code>. Expected: empty is unset, relative <code>SFH_CACHE_DIR</code> resolves against the cwd, relative <code>XDG_CACHE_HOME</code> is ignored (XDG spec), and no notice fires when the local dir is the shared root. Test: Task 1 <code>cacheRoot</code> and <code>localCacheNotice</code> cases.</li>
+    </ol>
+  </section>
+
+  <section id="sec-files">
+    <h2>File Structure</h2>
+    <table id="tbl-files">
+      <caption>Files this plan creates or changes</caption>
+      <thead><tr><th scope="col">File</th><th scope="col">Responsibility</th><th scope="col">Task</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>pipeline/lib/cache-root.ts</code> (new)</th><td><code>cacheRoot()</code>, the shared directory names, the local-cache notice</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/atomic.ts</code> (new)</th><td>Temp-sibling names, atomic write, atomic move (files and directories, across volumes)</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/raw.ts</code></th><td><code>storeBytes</code>/<code>storeFile</code> atomic and skip-if-present</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/test/setup-cache-root.ts</code> (new), <code>vite.config.ts</code></th><td>Temp <code>SFH_CACHE_DIR</code> for the pipeline project</td><td>1</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/fetch.ts</code>, <code>pipeline/sources/lidar.ts</code>, <code>pipeline/cli.ts</code>, <code>scripts/data-transit.ts</code></th><td>Default paths from <code>sharedCache()</code>; the notice</td><td>1 (restore temp), 2</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/key-lock.ts</code> (new)</th><td>One exclusive lock file per key, stale-holder takeover</td><td>3</td></tr>
+        <tr><th scope="row"><code>pipeline/lib/boxes-index.ts</code> (new)</th><td>The skip key and the <code>boxes-index/&lt;key&gt;.json</code> record</td><td>3</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/boxes-reuse.ts</code> (new)</th><td>The skip around <code>boxesCommand</code>, <code>--force</code></td><td>4</td></tr>
+        <tr><th scope="row"><code>pipeline/steps/cache-import.ts</code> (new)</th><td><code>cache import &lt;dir&gt;</code></td><td>5</td></tr>
+        <tr><th scope="row"><code>docs/dev/pipeline.md</code>, <code>docs/dev/building-boxes.md</code>, <code>docs/dev/testing.md</code>, <code>CLAUDE.md</code></th><td>The cache, <code>SFH_CACHE_DIR</code>, the skip, <code>--force</code>, <code>cache import</code></td><td>6</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-task-1">
+    <h2>Task 1: Cache root and atomic writes</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>pipeline/lib/cache-root.ts</code>, <code>pipeline/lib/atomic.ts</code>, <code>pipeline/test/setup-cache-root.ts</code></li>
+      <li>Modify: <code>pipeline/lib/raw.ts:6-37</code>, <code>pipeline/steps/fetch.ts:79-113</code> (<code>restoreRaw</code> temp name only), <code>vite.config.ts:75-87</code> (pipeline project: <code>setupFiles: ['pipeline/test/setup-cache-root.ts']</code>)</li>
+      <li>Test: <code>pipeline/test/cache-root.test.ts</code>, <code>pipeline/test/atomic.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>archiveKeyFor</code>, <code>sha256File</code>, <code>LockFile</code> (<code>pipeline/lib/lock.ts:66,106,5</code>).</li>
+      <li>Produces, <code>pipeline/lib/cache-root.ts</code>:
+        <pre><code data-lang="ts">export function cacheRoot(env?: NodeJS.ProcessEnv, home?: string): string; // defaults process.env, os.homedir()
+export interface SharedCache { root: string; raw: string; ept: string; lidarWork: string; boxesIndex: string }
+export function sharedCache(root?: string): SharedCache; // default cacheRoot(); dirs raw, ept, lidar-work, boxes-index
+export const SHARED_DIRS: readonly ['raw', 'ept', 'lidar-work'];
+export const LOCAL_CACHE: string; // &lt;repo&gt;/pipeline/.cache
+export function localCacheNotice(local?: string, root?: string): string | null; // defaults LOCAL_CACHE, cacheRoot()</code></pre>
+      </li>
+      <li>Produces, <code>pipeline/lib/atomic.ts</code>:
+        <pre><code data-lang="ts">export function tempSibling(dest: string): string; // `${dest}.tmp-${pid}-${12 hex}`
+export function writeFileAtomic(dest: string, data: string | Uint8Array): void;
+export function moveIntoPlace(src: string, dest: string): void; // file or directory; src is gone afterwards</code></pre>
+      </li>
+    </ul>
+    <ol>
+      <li id="t1-s1"><input type="checkbox"> Write the failing tests in <code>pipeline/test/cache-root.test.ts</code>:
+        <pre><code data-lang="ts">it('resolves SFH_CACHE_DIR, then XDG_CACHE_HOME, then ~/.cache', () =&gt; {
+  expect(cacheRoot({ SFH_CACHE_DIR: '/ext/sfh', XDG_CACHE_HOME: '/x' }, '/h')).toBe('/ext/sfh');
+  expect(cacheRoot({ XDG_CACHE_HOME: '/x' }, '/h')).toBe('/x/sfhousing');
+  expect(cacheRoot({}, '/h')).toBe('/h/.cache/sfhousing');
+});
+it('treats empty as unset, resolves a relative SFH_CACHE_DIR, ignores a relative XDG', () =&gt; {
+  expect(cacheRoot({ SFH_CACHE_DIR: '' }, '/h')).toBe('/h/.cache/sfhousing');
+  expect(cacheRoot({ SFH_CACHE_DIR: 'rel' }, '/h')).toBe(resolve('rel'));
+  expect(cacheRoot({ XDG_CACHE_HOME: 'rel' }, '/h')).toBe('/h/.cache/sfhousing');
+});
+it('names the shared dirs', () =&gt; {
+  expect(sharedCache('/c')).toEqual({ root: '/c', raw: '/c/raw', ept: '/c/ept',
+    lidarWork: '/c/lidar-work', boxesIndex: '/c/boxes-index' });
+});
+it('runs the pipeline tests against a temp root, never ~/.cache/sfhousing', () =&gt; {
+  expect(basename(cacheRoot())).toMatch(/^sfh-cache-test-/);
+  expect(cacheRoot()).not.toBe(join(homedir(), '.cache/sfhousing'));
+});
+it('notices a local raw, ept or lidar-work, and nothing else', () =&gt; {
+  // tmp local with raw/x and ept/ (non-empty), derived/ and lidar-venv/ present
+  expect(localCacheNotice(local, '/c')).toBe(
+    `${local} holds raw, ept: move them to /c with npm run pipeline -- cache import ${local}`);
+  // only derived/ and lidar-venv/, or empty raw/: null; local === root: null
+});</code></pre>
+      </li>
+      <li id="t1-s2"><input type="checkbox"> Write the failing tests in <code>pipeline/test/atomic.test.ts</code>: <code>tempSibling</code> is in the same directory and differs between two calls; <code>writeFileAtomic</code> leaves only the destination (no <code>.tmp-</code> sibling) and replaces an existing file; <code>moveIntoPlace</code> moves a file and a directory tree; with a <code>rename</code> that throws <code>EXDEV</code> (inject via <code>vi.spyOn(fs, 'renameSync')</code> failing once) it copies to a temp sibling, renames, and removes <code>src</code>. <code>storeBytes</code> into a dir that already has the sha name does not rewrite it (assert the mtime and inode unchanged); <code>storeFile</code> of a duplicate removes the source and keeps the existing file; <code>restoreRaw</code>'s download path is a <code>tempSibling</code> (assert the fake R2 <code>get</code> receives a path matching <code>/\.tmp-\d+-[0-9a-f]{12}$/</code>).</li>
+      <li id="t1-s3"><input type="checkbox"> Run them and see them fail
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/cache-root.test.ts pipeline/test/atomic.test.ts</code></pre>
+        Expected: FAIL, cannot resolve <code>../lib/cache-root</code> and <code>../lib/atomic</code>.</li>
+      <li id="t1-s4"><input type="checkbox"> Implement <code>pipeline/lib/cache-root.ts</code> and <code>pipeline/lib/atomic.ts</code> with the signatures above. <code>localCacheNotice</code> lists, in <code>SHARED_DIRS</code> order, the dirs that exist and are non-empty; it returns null when <code>resolve(local) === resolve(root)</code>. <code>moveIntoPlace</code> on <code>EXDEV</code> uses <code>copyFileSync</code> (file) or <code>cpSync(..., { recursive: true })</code> (directory) into <code>tempSibling(dest)</code>, renames, then removes <code>src</code>; on any error it removes the temp.</li>
+      <li id="t1-s5"><input type="checkbox"> Make <code>storeBytes</code> skip the write when <code>&lt;rawDir&gt;/&lt;sha&gt;</code> exists, else <code>writeFileAtomic</code>; make <code>storeFile</code> remove <code>file</code> when the destination exists, else <code>moveIntoPlace</code> (it replaces <code>renameSyncSafe</code>). In <code>restoreRaw</code> replace <code>`${dest}.part`</code> with <code>tempSibling(dest)</code>.</li>
+      <li id="t1-s6"><input type="checkbox"> Create <code>pipeline/test/setup-cache-root.ts</code>: always set <code>process.env.SFH_CACHE_DIR = mkdtempSync(join(tmpdir(), 'sfh-cache-test-'))</code> (overwriting any developer value) and remove it in an <code>afterAll</code>. Register it in the pipeline project's <code>setupFiles</code>.</li>
+      <li id="t1-s7"><input type="checkbox"> Run the two files and the existing raw-cache users and see them pass
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/cache-root.test.ts pipeline/test/atomic.test.ts pipeline/test/live-raw.test.ts pipeline/test/lidar-source.test.ts</code></pre>
+        Expected: PASS, no stderr.</li>
+      <li id="t1-s8"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add pipeline/lib/cache-root.ts pipeline/lib/atomic.ts pipeline/lib/raw.ts pipeline/steps/fetch.ts pipeline/test/setup-cache-root.ts pipeline/test/cache-root.test.ts pipeline/test/atomic.test.ts vite.config.ts
+git commit -m "feat(pipeline): shared cache root and atomic raw writes"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-2">
+    <h2>Task 2: Point every shared path at the cache root</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>pipeline/steps/fetch.ts:21,119</code> (drop the <code>RAW_DIR</code> constant; default <code>sharedCache().raw</code> inside <code>fetchAll</code>), <code>pipeline/sources/lidar.ts:36-37,132-137,161-163</code> (drop <code>CACHE</code>/<code>EPT_CACHE</code>; add <code>eptDir</code> to <code>LidarOpts</code>), <code>pipeline/cli.ts:27</code> (and its uses at :67, :106, :214; the notice in <code>main</code>), <code>scripts/data-transit.ts:31</code></li>
+      <li>Test: <code>pipeline/test/cache-wiring.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>sharedCache()</code>, <code>localCacheNotice()</code> (Task 1).</li>
+      <li>Produces: <code>LidarOpts.eptDir?: string</code> (default <code>sharedCache().ept</code>); <code>LidarOpts.workDir</code> default becomes <code>join(sharedCache().lidarWork, hash8)</code>. <code>RAW_DIR</code> and <code>EPT_CACHE</code> are no longer exported (rg confirms no other importer).</li>
+    </ul>
+    <ol>
+      <li id="t2-s1"><input type="checkbox"> Write the failing tests in <code>pipeline/test/cache-wiring.test.ts</code>:
+        <ul>
+          <li><code>'fetch --restore without rawDir lands in the shared raw dir'</code>: the fake R2 of <code>lidar-source.test.ts:190-213</code>, <code>fetchAll({ lockPath, lidarLockPath, r2, restore: true })</code> returns 0 and <code>existsSync(join(process.env.SFH_CACHE_DIR!, 'raw', sha))</code> is true.</li>
+          <li><code>'fetchLidar defaults its work and EPT dirs to the shared cache'</code>: with the <code>fakeRun</code> of <code>lidar-source.test.ts:21-48</code> (copy it) and no <code>workDir</code>, the recorded args have <code>--out</code> followed by <code>join(sharedCache().lidarWork, hash8)</code> and <code>--cache</code> followed by <code>sharedCache().ept</code>, where <code>hash8</code> is the first 8 hex of <code>sha256(lidarUpstreamVersion())</code>.</li>
+          <li><code>'an explicit eptDir wins'</code>: <code>--cache</code> is followed by the given dir and <code>sharedCache().ept</code> is not created.</li>
+        </ul>
+      </li>
+      <li id="t2-s2"><input type="checkbox"> Run and see it fail
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/cache-wiring.test.ts</code></pre>
+        Expected: FAIL, the file lands under <code>pipeline/.cache/raw</code> and <code>--cache</code> names <code>pipeline/.cache/ept</code>.</li>
+      <li id="t2-s3"><input type="checkbox"> Wire the defaults: <code>fetchAll</code>, <code>fetchLidar</code> (resolve <code>workDir</code> and <code>eptDir</code> at call time), <code>cli.ts</code> (a <code>raw()</code> helper returning <code>sharedCache().raw</code> in place of <code>RAW</code>), <code>scripts/data-transit.ts</code> (<code>sharedCache().raw</code>). In <code>cli.ts</code> <code>main()</code>, before running any step except <code>cache</code>, print <code>localCacheNotice()</code> with <code>console.log</code> when it is not null. Update the <code>fetch</code> help string's <code>.cache/raw</code> to <code>the shared raw cache</code>.</li>
+      <li id="t2-s4"><input type="checkbox"> Run and see it pass, then the whole lidar and fetch suite
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/cache-wiring.test.ts pipeline/test/lidar-source.test.ts pipeline/test/doctor.test.ts pipeline/test/lidar-python.test.ts</code></pre>
+        Expected: PASS. <code>LIDAR_VENV</code> tests still expect <code>pipeline/.cache/lidar-venv</code>.</li>
+      <li id="t2-s5"><input type="checkbox"> Check no shared path is left hard-coded
+        <pre><code data-lang="sh">rg -n "pipeline/\.cache/(raw|ept|lidar-work)|'\.cache', '(raw|ept)'" pipeline scripts -g '!pipeline/test/fixtures/**' -g '!*.md'</code></pre>
+        Expected: no hits outside comments that describe the old layout (fix those comments too).</li>
+      <li id="t2-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add pipeline/steps/fetch.ts pipeline/sources/lidar.ts pipeline/cli.ts scripts/data-transit.ts pipeline/test/cache-wiring.test.ts
+git commit -m "feat(pipeline): read and write raw, ept and lidar-work in the shared cache"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-3">
+    <h2>Task 3: Lock per key and the boxes index</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>pipeline/lib/key-lock.ts</code>, <code>pipeline/lib/boxes-index.ts</code> (not under <code>pipeline/lib/lidar</code>: see Global Constraints)</li>
+      <li>Test: <code>pipeline/test/key-lock.test.ts</code>, <code>pipeline/test/boxes-index.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>writeFileAtomic</code> (Task 1); <code>BoxesInputs</code>, <code>BOXES_ID</code>, <code>BOXES_FILES</code>, <code>boxesUpstreamVersion</code> (<code>pipeline/lib/lidar/artifact.ts:10-15,35-40,69-73</code>); <code>canonicalJson</code>, <code>verifyRaw</code>, <code>LockEntry</code>, <code>LockFile</code> (<code>pipeline/lib/lock.ts</code>).</li>
+      <li>Produces, <code>pipeline/lib/key-lock.ts</code>:
+        <pre><code data-lang="ts">export interface LockHolder { pid: number; host: string; startedAt: string }
+export interface KeyLockDeps {
+  sleep?: (ms: number) =&gt; Promise&lt;void&gt;; // default setTimeout promise
+  isAlive?: (pid: number) =&gt; boolean;     // default process.kill(pid, 0), ESRCH = dead
+  host?: string;                          // default os.hostname()
+  pollMs?: number;                        // default 5000
+  onWait?: (holder: LockHolder) =&gt; void;  // called once, on the first wait
+}
+export async function withKeyLock&lt;T&gt;(lockFile: string, fn: () =&gt; Promise&lt;T&gt;, deps?: KeyLockDeps): Promise&lt;T&gt;;</code></pre>
+      </li>
+      <li>Produces, <code>pipeline/lib/boxes-index.ts</code>:
+        <pre><code data-lang="ts">export interface BoxesIndexRecord {
+  schema: 1;
+  key: string;             // 64 hex
+  upstreamVersion: string; // entry.upstreamVersion, for people reading the dir
+  requires: string[];      // entry.files' sha256, in entry order
+  entry: LockEntry;        // the exact building-boxes lock entry
+}
+export function boxesKey(inputs: BoxesInputs): string; // sha256(canonicalJson(inputs) + '\n')
+export function inputsFileOf(entry: LockEntry): LockFile; // the BOXES_FILES.inputs file; throws if absent
+export function indexFile(indexDir: string, key: string): string; // &lt;indexDir&gt;/&lt;key&gt;.json
+export function lockFileFor(indexDir: string, key: string): string; // &lt;indexDir&gt;/&lt;key&gt;.lock
+export function writeBoxesIndex(indexDir: string, key: string, entry: LockEntry): void;
+export function readBoxesIndex(indexDir: string, key: string): BoxesIndexRecord | null;
+export async function reusableEntry(indexDir: string, key: string, rawDir: string, byName: boolean): Promise&lt;LockEntry | null&gt;;</code></pre>
+      </li>
+    </ul>
+    <aside data-kind="decision"><strong>Builder's call</strong> The key is <code>sha256(canonicalJson(inputs) + '\n')</code>, which is the sha256 of the <code>inputs.json</code> a full run writes (<code>pipeline/steps/boxes.ts</code> writes exactly those bytes). It carries the full code, config and input hashes that <code>upstreamVersion</code> abbreviates to 12 hex, it is a safe file name, and <code>cache import</code> reads it off an existing artifact without recomputing anything.</aside>
+    <aside data-kind="decision"><strong>Builder's call</strong> The lock is taken by writing the holder JSON to a <code>tempSibling</code> and <code>linkSync</code>-ing it to <code>&lt;key&gt;.lock</code> (fails with <code>EEXIST</code> atomically, and a lock file is never half-written). A holder on this host whose pid is dead, or an unparsable lock file, is stale: remove it and try again. Known limit: two waiters breaking the same stale lock at the same instant can both proceed; on one machine after a crash this is rare enough to accept.</aside>
+    <ol>
+      <li id="t3-s1"><input type="checkbox"> Write the failing tests in <code>pipeline/test/key-lock.test.ts</code> (all with injected <code>sleep</code>, <code>isAlive</code>, <code>host</code>):
+        <ul>
+          <li><code>'runs fn under the lock and removes it'</code>: during <code>fn</code> the lock file parses to <code>{ pid: process.pid, host, startedAt }</code>; afterwards it is gone; the result is returned.</li>
+          <li><code>'removes the lock when fn throws'</code>: rejects with the same error; lock gone.</li>
+          <li><code>'waits for a live holder'</code>: a lock file with <code>{ pid: 999999, host: 'h' }</code>, <code>isAlive: () =&gt; true</code>, a <code>sleep</code> that deletes the lock file on its first call; <code>fn</code> runs once, <code>sleep</code> was called once with <code>pollMs</code>, <code>onWait</code> was called once with that holder.</li>
+          <li><code>'breaks a lock whose holder is dead'</code>: same file, <code>isAlive: () =&gt; false</code>; <code>fn</code> runs and <code>sleep</code> is never called.</li>
+          <li><code>'breaks an unparsable lock'</code>: lock file content <code>'x'</code>; <code>sleep</code> never called.</li>
+          <li><code>'never breaks a holder on another host'</code>: holder host <code>'other'</code>, <code>isAlive: () =&gt; false</code>; <code>sleep</code> is called (the second call deletes the file).</li>
+        </ul>
+      </li>
+      <li id="t3-s2"><input type="checkbox"> Write the failing tests in <code>pipeline/test/boxes-index.test.ts</code>:
+        <ul>
+          <li><code>'the key is the sha256 of the inputs.json a run writes'</code>: for the mini fixture's <code>building-boxes</code> entry (<code>pipeline/test/fixtures/mini/sources.lock.json</code>, raw by name under <code>pipeline/test/fixtures/mini/raw</code>), <code>boxesKey(JSON.parse(inputsBytes))</code> equals <code>inputsFileOf(entry).sha256</code>.</li>
+          <li><code>'writes and reads a record'</code>: after <code>writeBoxesIndex(dir, key, entry)</code>, <code>readBoxesIndex</code> returns <code>{ schema: 1, key, upstreamVersion: entry.upstreamVersion, requires: entry.files.map((f) =&gt; f.sha256), entry }</code>, the file ends in <code>'\n'</code>, and no <code>.tmp-</code> file is left.</li>
+          <li><code>'reusableEntry returns the entry when every file is present'</code> (a temp copy of the mini raw, <code>byName</code> true): deep-equals <code>entry</code>.</li>
+          <li><code>'reusableEntry is null'</code> for: no record; a record whose <code>key</code> field differs; a file deleted from raw; a file whose bytes changed; <code>requires</code> not matching <code>entry.files</code>; unparsable JSON.</li>
+        </ul>
+      </li>
+      <li id="t3-s3"><input type="checkbox"> Run and see them fail
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/key-lock.test.ts pipeline/test/boxes-index.test.ts</code></pre>
+        Expected: FAIL, modules not found.</li>
+      <li id="t3-s4"><input type="checkbox"> Implement <code>withKeyLock</code> and the boxes-index functions with the signatures above. <code>writeBoxesIndex</code> writes <code>JSON.stringify(record, null, 2) + '\n'</code> via <code>writeFileAtomic</code>, creating <code>indexDir</code>. <code>reusableEntry</code> uses <code>verifyRaw({ sources: [record.entry] }, rawDir, { byName })</code>.</li>
+      <li id="t3-s5"><input type="checkbox"> Run and see them pass (same command). Expected: PASS.</li>
+      <li id="t3-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add pipeline/lib/key-lock.ts pipeline/lib/boxes-index.ts pipeline/test/key-lock.test.ts pipeline/test/boxes-index.test.ts
+git commit -m "feat(pipeline): lock per key and the boxes index"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-4">
+    <h2>Task 4: <code>boxes</code> reuses earlier work</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>pipeline/steps/boxes-reuse.ts</code></li>
+      <li>Modify: <code>pipeline/cli.ts:99-112</code> (the <code>boxes</code> step)</li>
+      <li>Test: <code>pipeline/test/boxes-reuse.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>boxesCommand</code>, <code>BoxesCommandOpts</code> (<code>pipeline/steps/boxes.ts:364-385</code>, unchanged); <code>boxesInputsOf</code>, <code>BOXES_ID</code> (<code>artifact.ts:57-61</code>); <code>boxesCodeHash</code> (<code>pipeline/lib/version.ts</code>); <code>readLock</code>, <code>writeLock</code>, <code>verifyRaw</code>; <code>readLidarLock</code> (<code>pipeline/sources/lidar.ts:74</code>); Task 3's <code>withKeyLock</code>, <code>boxesKey</code>, <code>lockFileFor</code>, <code>reusableEntry</code>, <code>writeBoxesIndex</code>, <code>inputsFileOf</code>; Task 1's <code>sharedCache</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface BoxesReuseOpts extends BoxesCommandOpts {
+  indexDir: string | null; // null: no skip and no index (the --fixture run)
+  force?: boolean;         // --force: run in full, then rewrite the index record
+  lockDeps?: KeyLockDeps;
+}
+export async function boxesReusing(
+  o: BoxesReuseOpts,
+  run?: (o: BoxesCommandOpts) =&gt; Promise&lt;number&gt; // default boxesCommand
+): Promise&lt;number&gt;;</code></pre>
+      </li>
+    </ul>
+    <p>Flow (the order is the spec's): <code>indexDir</code> null → <code>run(o)</code>. Missing lock, or <code>verifyRaw</code> failing on the main lock minus <code>building-boxes</code> or on the LiDAR lock → <code>run(o)</code>, which prints its usual errors. Otherwise compute <code>key = boxesKey(boxesInputsOf(lock, lidarLock, await boxesCodeHash(o.repoRoot)))</code> and, inside <code>withKeyLock(lockFileFor(indexDir, key), ..., { ...lockDeps, onWait })</code>: unless <code>force</code>, a <code>reusableEntry</code> hit writes <code>writeLock(o.lockPath, { sources: [...main.sources, entry] })</code>, prints <code>boxes: reused &lt;key&gt;</code> and returns 0. Else <code>run(o)</code>; on 0, read the lock's <code>building-boxes</code> entry and write the index when <code>inputsFileOf(entry).sha256 === key</code>, else print <code>boxes: not indexed: the run's inputs &lt;sha&gt; are not &lt;key&gt;</code> (the tree changed during the run). <code>onWait</code> prints <code>boxes: waiting for pid &lt;pid&gt; on &lt;host&gt; (&lt;first 12 of key&gt;)</code>.</p>
+    <aside data-kind="decision"><strong>Builder's call</strong> The skip is a wrapper, not an edit to <code>boxes.ts</code>, so the boxes code hash stays <code>472f4d15c2df</code> (Global Constraints). The cost: on a miss the raw files are verified twice (seconds, against a 54-minute run).</aside>
+    <ol>
+      <li id="t4-s1"><input type="checkbox"> Write the failing tests in <code>pipeline/test/boxes-reuse.test.ts</code>. Set-up: a temp copy of the mini fixture's locks and raw (as <code>miniCopy()</code> in <code>boxes-command.test.ts:351-363</code>, <code>byName</code> true) with the <code>building-boxes</code> entry stripped from the copy's lock, a temp <code>indexDir</code>, and a fake <code>run</code> that writes three files under <code>building-boxes/</code> in raw (an <code>inputs.json</code> of <code>canonicalJson(boxesInputsOf(lock, lidarLock, await boxesCodeHash(process.cwd()))) + '\n'</code> and two small stand-in parquet files), writes the lock with a matching entry stamped <code>new Date().toISOString()</code>, counts its calls and returns 0.
+        <ul>
+          <li><code>'a miss runs in full and indexes the entry'</code>: calls 1; <code>readBoxesIndex(indexDir, key)!.entry</code> deep-equals the lock's entry.</li>
+          <li><code>'a hit restores the same lock without running'</code>: after the first call, save the lock text, strip the entry again, call again: calls still 1, <code>out</code> lines include <code>`boxes: reused ${key}`</code>, the lock text equals the saved text byte for byte, return 0.</li>
+          <li><code>'--force runs in full'</code>: with a record present and <code>force: true</code>, calls 2.</li>
+          <li><code>'no indexDir: no skip, no index'</code>: calls 1 twice over; <code>indexDir</code> not created.</li>
+          <li><code>'missing raw file runs in full'</code>: record present, one of its files deleted: calls 2.</li>
+          <li><code>'a failed run writes no index'</code>: fake returns 1: return 1, no record.</li>
+          <li><code>'a run whose inputs moved is not indexed'</code>: fake writes an <code>inputs.json</code> with another <code>code</code>: no record, the <code>boxes: not indexed</code> line printed.</li>
+          <li><code>'a second run for the same key waits, then reuses'</code>: start two <code>boxesReusing</code> calls together; the fake <code>run</code> awaits a gate; the second call's <code>lockDeps.sleep</code> is <code>() =&gt; firstDone</code> (a promise resolved after the first call returns) and <code>isAlive</code> is <code>() =&gt; true</code>; open the gate. Calls 1; the second returns 0 and prints <code>boxes: reused</code>.</li>
+          <li><code>'with the real derivation, a rerun is byte-identical'</code> (timeout 180_000): <code>run</code> is the real <code>boxesCommand</code>, <code>now</code> 2026-11-01 for the first call and 2026-11-02 for the second (strip the entry in between); the second prints <code>boxes: reused</code> and the lock text equals the first's, <code>retrievedAt</code> <code>2026-11-01T00:00:00.000Z</code> included.</li>
+        </ul>
+      </li>
+      <li id="t4-s2"><input type="checkbox"> Run and see them fail
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/boxes-reuse.test.ts</code></pre>
+        Expected: FAIL, module not found.</li>
+      <li id="t4-s3"><input type="checkbox"> Implement <code>boxesReusing</code> in <code>pipeline/steps/boxes-reuse.ts</code>.</li>
+      <li id="t4-s4"><input type="checkbox"> Wire the CLI: the <code>boxes</code> step calls <code>boxesReusing({ ...the current opts, indexDir: fixture ? null : sharedCache().boxesIndex, force: args.flags.force === true })</code>. Help: <code>derive the building boxes ... and lock the building-boxes artifact; reuses an earlier run with the same code, config and inputs [--force: run in full] [--fixture: the mini fixture]</code>.</li>
+      <li id="t4-s5"><input type="checkbox"> Run the new file and the existing boxes tests and see them pass
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/boxes-reuse.test.ts pipeline/test/boxes-command.test.ts</code></pre>
+        Expected: PASS.</li>
+      <li id="t4-s6"><input type="checkbox"> Confirm the boxes code hash did not move
+        <pre><code data-lang="sh">git diff --stat main -- pipeline/lib/lidar pipeline/steps/boxes.ts pipeline/boxes-config.ts pipeline/project-records/union-find.ts pipeline/lib/road-lots.ts pipeline/geom.ts
+npx tsx -e "import('./pipeline/lib/version.ts').then(async (m) =&gt; console.log((await m.boxesCodeHash(process.cwd())).slice(0, 12)))"</code></pre>
+        Expected: an empty diff, then <code>472f4d15c2df</code>.</li>
+      <li id="t4-s7"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add pipeline/steps/boxes-reuse.ts pipeline/cli.ts pipeline/test/boxes-reuse.test.ts
+git commit -m "feat(pipeline): boxes reuses a run with the same code, config and inputs"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-5">
+    <h2>Task 5: <code>cache import &lt;dir&gt;</code></h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Create: <code>pipeline/steps/cache-import.ts</code></li>
+      <li>Modify: <code>pipeline/cli.ts</code> (a <code>cache</code> step)</li>
+      <li>Test: <code>pipeline/test/cache-import.test.ts</code></li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: <code>sharedCache</code>, <code>SHARED_DIRS</code>, <code>localCacheNotice</code>, <code>moveIntoPlace</code> (Task 1); <code>writeBoxesIndex</code>, <code>readBoxesIndex</code>, <code>boxesKey</code>, <code>inputsFileOf</code> (Task 3); <code>BOXES_ID</code>, <code>boxesUpstreamVersion</code>; <code>readLock</code>, <code>verifyRaw</code>, <code>sha256File</code>.</li>
+      <li>Produces:
+        <pre><code data-lang="ts">export interface CacheImportOpts {
+  from: string;          // an old pipeline/.cache
+  to?: SharedCache;      // default sharedCache()
+  lockPath?: string;     // default &lt;from&gt;/../sources.lock.json (the old worktree's lock)
+  out?: (line: string) =&gt; void;
+  err?: (line: string) =&gt; void;
+}
+export interface CacheImportReport {
+  raw: { moved: number; duplicate: number; mismatched: string[]; left: string[] };
+  ept: { moved: number; duplicate: number };
+  lidarWork: { moved: number; duplicate: number; partial: number };
+  boxesIndex: string | null; // the key written, or null
+}
+export async function cacheImport(o: CacheImportOpts): Promise&lt;{ code: number; report: CacheImportReport }&gt;;</code></pre>
+      </li>
+    </ul>
+    <p>Rules. <strong>raw/</strong>: a regular file named by 64 hex is a duplicate when the shared raw has that name (the local copy is removed), else it is moved when its sha256 matches its name, else it is left and listed in <code>mismatched</code>; anything else (<code>.part</code>, <code>.tmp-</code>, subdirectories) is left and listed in <code>left</code>. <strong>ept/</strong>: each file (relative path kept) is moved when absent from the shared <code>ept/</code>, else the local copy is removed. <strong>lidar-work/</strong>: per <code>&lt;hash8&gt;/&lt;tile&gt;</code> directory, moved when absent, else removed; dot-named partial tile directories (<code>.&lt;tile&gt;.tmp</code>) are removed and counted in <code>partial</code>. Each of the three local directories is removed once empty. <code>derived/</code>, <code>review/</code>, logs and <code>lidar-venv/</code> are never touched. <strong>boxes-index</strong>: when the lock at <code>lockPath</code> has a <code>building-boxes</code> entry, every file of it verifies in the shared raw, its <code>inputs.json</code> parses to inputs with <code>boxesUpstreamVersion(inputs) === entry.upstreamVersion</code> and <code>boxesKey(inputs) === inputsFileOf(entry).sha256</code>, write the record unless one exists for that key. Exit 0; 1 when <code>mismatched</code> is non-empty; 2 when <code>from</code> is not a directory or resolves to the shared root or inside it.</p>
+    <aside data-kind="decision"><strong>Builder's call</strong> A raw file the shared cache already has is deleted from the old dir rather than left behind: the two are the same bytes by name, and leaving them would keep the notice firing and the disk full.</aside>
+    <p>Output, one line each: <code>raw: &lt;n&gt; moved, &lt;n&gt; already shared, &lt;n&gt; mismatched, &lt;n&gt; left</code>; <code>ept: &lt;n&gt; moved, &lt;n&gt; already shared</code>; <code>lidar-work: &lt;n&gt; moved, &lt;n&gt; already shared, &lt;n&gt; partial removed</code>; then <code>boxes-index: wrote &lt;key&gt;</code>, <code>boxes-index: &lt;key&gt; already indexed</code> or <code>boxes-index: no building-boxes entry in &lt;lockPath&gt;</code> (or the failed check, named). Mismatched names go to <code>err</code>.</p>
+    <ol>
+      <li id="t5-s1"><input type="checkbox"> Write the failing tests in <code>pipeline/test/cache-import.test.ts</code>. Set-up: an old worktree in a temp dir, <code>&lt;wt&gt;/pipeline/.cache</code> with raw files A and B (sha-named), A already in the shared raw, C named by a sha that is not its content, <code>x.part</code>; <code>ept/ept.json</code>, <code>ept/n/0-0-0-0.laz</code> (also already shared), <code>ept/h/0-0-0-0.json</code>; <code>lidar-work/abcd1234/0_0/tile.json</code> and <code>lidar-work/abcd1234/.1_1.tmp/</code>; <code>derived/v/x</code> and <code>lidar-venv/bin/python</code>. A <code>&lt;wt&gt;/pipeline/sources.lock.json</code> whose <code>building-boxes</code> entry names three sha-named raw files (an <code>inputs.json</code> of <code>canonicalJson(inputs) + '\n'</code> for some <code>BoxesInputs</code>, <code>upstreamVersion: boxesUpstreamVersion(inputs)</code>).
+        <ul>
+          <li><code>'moves the shared dirs and leaves the worktree dirs'</code>: B, the three artifact files, <code>ept/ept.json</code>, <code>ept/h/0-0-0-0.json</code> and <code>lidar-work/abcd1234/0_0/tile.json</code> are now under the shared root; local A and the local duplicate laz are gone; C and <code>x.part</code> stay; <code>derived/v/x</code> and <code>lidar-venv/bin/python</code> stay; report counts match; code 1 with C's name on <code>err</code>.</li>
+          <li><code>'indexes the old worktree's boxes artifact'</code>: <code>report.boxesIndex</code> is the inputs file's sha256 and <code>readBoxesIndex(shared.boxesIndex, key)!.entry</code> deep-equals the lock's entry.</li>
+          <li><code>'is idempotent and silences the notice'</code>: a set-up without C and <code>x.part</code>: first run code 0; second run code 0, all counts 0, <code>boxes-index: &lt;key&gt; already indexed</code>; <code>localCacheNotice(from, shared.root)</code> is null and <code>raw/</code>, <code>ept/</code>, <code>lidar-work/</code> are gone from <code>from</code>.</li>
+          <li><code>'skips the index when the artifact does not check out'</code>: an entry whose <code>upstreamVersion</code> does not match its <code>inputs.json</code>: <code>boxesIndex</code> null, no record.</li>
+          <li><code>'refuses the shared root itself'</code>: <code>from: shared.root</code> and <code>from: shared.raw</code> both return code 2 and move nothing.</li>
+        </ul>
+      </li>
+      <li id="t5-s2"><input type="checkbox"> Run and see them fail
+        <pre><code data-lang="sh">npx vitest run --project pipeline pipeline/test/cache-import.test.ts</code></pre>
+        Expected: FAIL, module not found.</li>
+      <li id="t5-s3"><input type="checkbox"> Implement <code>cacheImport</code> with the rules above.</li>
+      <li id="t5-s4"><input type="checkbox"> Add the CLI step <code>cache</code>: <code>cache import &lt;dir&gt; [--lock &lt;path&gt;]</code> calls <code>cacheImport({ from: resolve(dir), lockPath })</code> and returns its code; anything else prints <code>usage: cache import &lt;dir&gt; [--lock &lt;sources.lock.json&gt;] (shared cache: &lt;cacheRoot()&gt;)</code> and returns 2. Help: <code>move an old pipeline/.cache's raw, ept and lidar-work into the shared cache and index its boxes artifact &lt;dir&gt; [--lock &lt;path&gt;]</code>.</li>
+      <li id="t5-s5"><input type="checkbox"> Run and see them pass (same command). Expected: PASS.</li>
+      <li id="t5-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add pipeline/steps/cache-import.ts pipeline/cli.ts pipeline/test/cache-import.test.ts
+git commit -m "feat(pipeline): cache import moves an old pipeline/.cache into the shared cache"</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section id="sec-task-6">
+    <h2>Task 6: Docs, full verification and the move on this machine</h2>
+    <h3>Files</h3>
+    <ul>
+      <li>Modify: <code>docs/dev/pipeline.md</code> (Commands table: <code>boxes [--fixture] [--force]</code>, a <code>cache import &lt;dir&gt; [--lock &lt;path&gt;]</code> row, the <code>fetch</code> row's <code>.cache/raw</code>; "Finishing a branch" line 63: a new worktree needs <code>fetch --restore</code> only when this machine has never fetched the files; line 65's <code>boxes</code> note mentions the reuse; "Where things land" line 84: the shared root with <code>raw/</code>, <code>ept/</code>, <code>lidar-work/</code>, <code>boxes-index/</code>, and drop <code>pipeline/.cache/norm</code>, which builds keep in a temp dir (<code>pipeline/steps/build.ts:224-233</code>); line 110's <code>lidar-work</code> and <code>ept</code> paths; a short "Shared cache" section: resolution order, <code>SFH_CACHE_DIR</code>, what stays per worktree, temp-then-rename writes, the notice, <code>cache import</code>).</li>
+      <li>Modify: <code>docs/dev/building-boxes.md</code> (line 13 and "The artifact and its recorded inputs": the skip, its key, <code>boxes-index/&lt;key&gt;.json</code>, the per-key lock and waiting, <code>--force</code>; "Tuning loop" line 109: <code>fetch --restore</code> once per machine, not per worktree; line 126's <code>pipeline/.cache/ept</code> becomes the shared <code>ept/</code>).</li>
+      <li>Modify: <code>docs/dev/testing.md</code> (Vitest section: the pipeline project sets <code>SFH_CACHE_DIR</code> to a temp dir per worker in <code>pipeline/test/setup-cache-root.ts</code>), <code>CLAUDE.md</code> (Commands row for <code>npm run pipeline -- &lt;cmd&gt;</code>: add <code>cache</code>).</li>
+    </ul>
+    <h3>Interfaces</h3>
+    <ul>
+      <li>Consumes: the commands, flags and output lines of Tasks 1 to 5, as written there.</li>
+      <li>Produces: nothing for code.</li>
+    </ul>
+    <ol>
+      <li id="t6-s1"><input type="checkbox"> Find every doc line that names a shared path
+        <pre><code data-lang="sh">rg -n "pipeline/\.cache/(raw|ept|lidar-work|norm)|\.cache/raw|fetch --restore" docs/dev CLAUDE.md README.md</code></pre>
+        Update each to the shared cache. Lines about <code>derived/</code>, <code>review/</code> and <code>lidar-venv/</code> stay as they are.</li>
+      <li id="t6-s2"><input type="checkbox"> Write the doc changes listed under Files, in the docs' terse style.</li>
+      <li id="t6-s3"><input type="checkbox"> Run the generated-section check and the full pipeline suite
+        <pre><code data-lang="sh">npm run test:pipeline</code></pre>
+        Expected: PASS (including <code>pipeline/test/quality.test.ts</code> and the golden), no new stderr.</li>
+      <li id="t6-s4"><input type="checkbox"> Run lint and types
+        <pre><code data-lang="sh">npm run lint &amp;&amp; npm run check</code></pre>
+        Expected: both exit 0.</li>
+      <li id="t6-s5"><input type="checkbox"> Confirm no test wrote to the real shared cache
+        <pre><code data-lang="sh">ls ~/.cache/sfhousing 2&gt;&amp;1</code></pre>
+        Expected: <code>No such file or directory</code> (it does not exist on this machine before step 7).</li>
+      <li id="t6-s6"><input type="checkbox"> Commit
+        <pre><code data-lang="sh">git add docs/dev/pipeline.md docs/dev/building-boxes.md docs/dev/testing.md CLAUDE.md
+git commit -m "docs: the shared pipeline cache, the boxes reuse and cache import"</code></pre>
+      </li>
+      <li id="t6-s7"><input type="checkbox"> <strong>Controller only, by hand, not in any test:</strong> move this machine's caches into <code>~/.cache/sfhousing</code>, starting with <code>building-steps</code> (70 GB; same volume, so renames). From this worktree:
+        <pre><code data-lang="sh">W=/Users/mindlace/Projects/sfhousing/.claude/worktrees
+npm run pipeline -- cache import $W/building-steps/pipeline/.cache
+npm run pipeline -- cache import $W/better-building-shapes/pipeline/.cache
+npm run pipeline -- cache import $W/agent-a999f3489ba529714/pipeline/.cache
+npm run pipeline -- cache import $W/remove-scenario-engine/pipeline/.cache
+npm run pipeline -- cache import $W/sim-step-engine/pipeline/.cache</code></pre>
+        Expected: <code>building-steps</code> prints <code>boxes-index: wrote &lt;key&gt;</code> (its lock's entry is the one this tree locks: <code>code=472f4d15c2df</code>, <code>retrievedAt</code> <code>2026-11-14T11:55:36.324Z</code>); each exits 0. <code>replay-validation</code> holds only <code>replay/</code> and is skipped. The main checkout has no <code>pipeline/.cache</code>.</li>
+      <li id="t6-s8"><input type="checkbox"> <strong>Controller only:</strong> prove the skip on the real artifact
+        <pre><code data-lang="sh">npm run pipeline -- fetch --restore --lidar
+npm run pipeline -- boxes
+git diff --exit-code pipeline/sources.lock.json</code></pre>
+        Expected: <code>restore: 0 downloaded, &lt;n&gt; already present</code>; <code>boxes: reused &lt;key&gt;</code> in seconds; no lock diff.</li>
+      <li id="t6-s9"><input type="checkbox"> <strong>Controller only:</strong> this branch changes <code>pipeline/</code>, so it changes the dataset version. Before signoff follow <code>docs/dev/pipeline.md</code> "Finishing a branch that changes the dataset": <code>npm run pipeline -- build</code>, <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> (exit 0), then upload. The shared raw cache from step 7 means no download.</li>
+    </ol>
+  </section>
+
+  <section id="sec-open-questions">
+    <h2>Open questions</h2>
+    <aside data-kind="question"><strong>Question</strong> Is the spec's key complete enough for the anti-goal? The key covers what the artifact records: the <code>BOXES_CODE_PATHS</code> code hash, <code>BOXES</code>, and six sources (<code>artifact.ts:19-25</code>). But <code>boxes</code> also runs the normalisation and the SQL from <code>05_macros</code> through <code>50_clip</code> (<code>boxes.ts:415-421</code>, <code>pipeline/lib/sql.ts:28-40</code>), which read sources the artifact does not record (for example the basemap's land mask in <code>45_land.sql</code>, which clips parcels before <code>50_clip</code>), and a DuckDB version. A change there gives a cold run different bytes while the key stays the same, so the skip would restore the old artifact. This was already true of the stale warnings; the skip turns a warning gap into a silent reuse. <strong>Recommendation:</strong> ship the spec's key now (this plan), and widen it later in the artifact itself (add the missing sources and the shared code paths to <code>boxesInputsOf</code> and <code>BOXES_CODE_PATHS</code>) on a branch that reruns <code>boxes</code> anyway. Widening it only in the index would make every pipeline branch rerun the 54 minutes, and would make this branch's own edits to <code>raw.ts</code> and <code>sources/lidar.ts</code> miss every imported artifact.</aside>
+  </section>
+
+  <section id="sec-self-review">
+    <h2>Self-review</h2>
+    <ul>
+      <li><strong>Spec coverage:</strong> <code>cacheRoot()</code> and its order (Task 1); every hard-coded path named in the spec (Task 2); shared vs worktree table (Tasks 1, 2, Global Constraints); temp-then-rename and no rewrite of a present sha (Task 1); lock per key, wait then skip (Tasks 3, 4); the skip after verifying raw, the exact entry, <code>boxes: reused &lt;key&gt;</code>, <code>--force</code> (Task 4); <code>cache import</code>, renames on one volume, sha checks, duplicates, the boxes index from an old artifact, the one-line notice (Tasks 2, 5); the import run on this machine (Task 6); tests on a temp root (Task 1); docs (Task 6). The code hash keeps excluding <code>pipeline/.cache</code>: unchanged, and the shared root lies outside the repo.</li>
+      <li><strong>Names checked across tasks:</strong> <code>sharedCache</code>, <code>SharedCache</code>, <code>tempSibling</code>, <code>writeFileAtomic</code>, <code>moveIntoPlace</code>, <code>withKeyLock</code>, <code>KeyLockDeps</code>, <code>boxesKey</code>, <code>inputsFileOf</code>, <code>lockFileFor</code>, <code>reusableEntry</code>, <code>writeBoxesIndex</code>, <code>readBoxesIndex</code>, <code>boxesReusing</code>, <code>cacheImport</code>.</li>
+    </ul>
+  </section>
+</article>

@@ -11,7 +11,7 @@ import { PR_RULES } from '../lib/quality-rules/pr';
 import { deriveProjects, serializeHistories, serializeProjects } from '../project-records/derive';
 import { PROJECT_SOURCE_IDS } from '../project-records/types';
 import { BuildError } from '../steps/build';
-import { PERMITS_COLUMNS, writeProjectRecords } from '../steps/projects';
+import { PERMITS_COLUMNS, untypedProjects, writeProjectRecords } from '../steps/projects';
 import {
   MINI_ASOF,
   MINI_PARCELS,
@@ -197,6 +197,7 @@ describe('writeProjectRecords', () => {
     expect(counts['projects.asOf']).toBe(MINI_ASOF);
     expect(counts['projects.bytes']).toBe(Buffer.byteLength(projects));
     expect(counts['permits.rows']).toBe(want.permits.length);
+    expect(counts['projects.no_type']).toBe(untypedProjects(want.file.projects, want.permits));
     expect(r.checks.map((c) => [c.id, c.ok])).toEqual([
       ['V21', true],
       ['V22', true],
@@ -230,7 +231,10 @@ describe('writeProjectRecords', () => {
       ['issued_day', 'INTEGER'],
       ['construction_day', 'INTEGER'],
       ['complete_day', 'INTEGER'],
-      ['status_day', 'INTEGER']
+      ['status_day', 'INTEGER'],
+      ['proposed_stories', 'INTEGER'],
+      ['valuation', 'DOUBLE'],
+      ['construction_type', 'VARCHAR']
     ]);
     expect(PERMITS_COLUMNS.map(([n, t]) => [n, t])).toEqual(
       cols.map((c) => [c.column_name, c.column_type])
@@ -335,5 +339,19 @@ describe('writeProjectRecords', () => {
   it('fails V21 when the coverage bound is above what the records give', async () => {
     const r = await run({ profile: { ...FIXTURE_PROFILE, pipelineCoverageMin: 1.01 } }).result;
     expect(r.checks.find((c) => c.id === 'V21')?.ok).toBe(false);
+  });
+});
+
+describe('untypedProjects', () => {
+  it('counts the projects with no permit of type I, III or V', () => {
+    const projects = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+    const permits = [
+      { project_id: 'a', construction_type: 'V' as const },
+      { project_id: 'a', construction_type: null },
+      { project_id: 'b', construction_type: 'II' as const },
+      { project_id: 'c', construction_type: null }
+    ];
+    // a has a Type V permit; b only Type II (not modelled); c none; d no permit at all
+    expect(untypedProjects(projects, permits)).toBe(3);
   });
 });

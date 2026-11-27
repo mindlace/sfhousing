@@ -3,7 +3,7 @@
 // whenever it holds one. The rule reads only the line's own columns, so a cloned world (cold
 // caches) compacts in the same months as the original and the worlds stay equal.
 import { beforeAll, describe, expect, it } from 'vitest';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import { emptyWorld } from '../columns';
 import { staticsOf } from '../statics';
 import { benchInput } from '../test/cities.node';
@@ -13,7 +13,7 @@ import { leaveLine } from './apply';
 import { KIND_AFFORDABLE, addLineRow, fundOf, initFunding, type FundLine } from './columns';
 import { COMPACT_MIN, compact, isWaiting } from './line-index';
 import { createFundingSystem } from './system';
-import { withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
+import { withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
 import { benchMoney, oneMoneyTimeline, type MonthEvent } from './test/fixtures';
 
 /** A funded line of `n` rows, row i on lot i. */
@@ -70,10 +70,10 @@ describe('amortized compaction on the bench city (synthCity, bench baseline mone
     withFederalYearly(bench.finance!, bench.asOf, 300_000_000)
   );
   const core = withFunding(createFundingSystem());
-  // The line first holds an eighth of gone rows in month 325 (seed 1; R2's finite odds at full
-  // coverage spread the applications, so it fills later than it did).
-  const SPLIT = 300;
-  const LAST = 340;
+  // The line first holds an eighth of gone rows in month 289 (seed 1, on the option rows; the next
+  // time is after month 480).
+  const SPLIT = 260;
+  const LAST = 300;
 
   function tail(world: World, due: Due, seed: number, from: number) {
     const events: MonthEvent[] = [];
@@ -105,7 +105,7 @@ describe('amortized compaction on the bench city (synthCity, bench baseline mone
     for (let m = 1; m <= SPLIT; m++) core.step(world, due, statics, timeline, seed, { event() {} });
   });
 
-  it('seed 1: a clone at month 300 steps to month 340 as the original; gone rows wait, then go', () => {
+  it('seed 1: a clone at month 260 steps to month 300 as the original; gone rows wait, then go', () => {
     expect(world.month).toBe(SPLIT);
     const copy = structuredClone(world);
     // The due list is not part of the world: the copy's is planned again (world-core rule 20).

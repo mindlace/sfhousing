@@ -16,7 +16,7 @@ import { TYPOLOGY_ORDER, type Theme, type TimedPackedCell } from '../types';
 import { timelineLookups } from '../fixtures/timeline-lookups';
 import { localFrame } from '$lib/generator/geo';
 import type { GeneratedBuilding, TypologyId } from '$lib/generator';
-import type { Massing, Schedule } from '$lib/sim/scenario/types';
+import type { Massing, Schedule } from '$lib/sim/world/input/types';
 
 const SIZE = 64;
 const CENTRE: [number, number] = [-122.42, 37.77];

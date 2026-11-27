@@ -1,43 +1,42 @@
-// Plan 2 Task 10, sim runs plan 1 Task 1: compiling a filled lever resolution into the plan's
+// Plan 2 Task 10, sim runs plan 1 Task 1: compiling a lever resolution into the plan's
 // and the twin's SimInputs.
 import { describe, expect, it } from 'vitest';
 import { chanceTable, parseCalibration, typicalMonths } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
-import miniCalibrationJson from '../scenario/fixtures/mini-calibration.json';
-import { miniCity } from '../scenario/fixtures/mini-parcels';
-import { miniMarket } from '../scenario/fixtures/mini-market';
-import { miniPolicy } from '../scenario/fixtures/mini-policy';
-import { MINI_HORIZON, miniProjectsJson } from '../scenario/fixtures/mini-projects';
-import { buildSimInput } from '../scenario/input';
-import { applyPolicies, baseZoning } from '../scenario/policy';
-import { REFERENCES, monthsOf } from '../scenario/score';
-import { simulateDetailed, simulateNet } from '../scenario/simulate';
-import type { SimInput } from '../scenario/types';
+import miniCalibrationJson from '../world/fixtures/mini-calibration.json';
+import { miniOptions } from '../world/fixtures/mini-options';
+import { miniCity } from '../world/fixtures/mini-parcels';
+import { miniMarket } from '../world/fixtures/mini-market';
+import { miniPolicy } from '../world/fixtures/mini-policy';
+import { miniProjectsJson } from '../world/fixtures/mini-projects';
+import { buildSimInput } from '../world/input/build';
+import { REFERENCES } from '../world/score/targets';
+import type { SimInput } from '../world/input/types';
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance';
 import { applyLevers, lookupsOf, twinInput } from './apply';
 import { buildFinance } from './finance';
 import { baselineFixture, fundingOnly } from './fixtures/finance';
 import type { LayerCtx } from './layers';
-import { fillNeeds, resolveEnvelopes } from './resolve';
+import { resolveEnvelopes } from './resolve';
 import { scaleTable, timersOp } from './timers';
 import { DEFAULT_LEVERS, type Compare, type SimLevers } from './types';
-
-const H = MINI_HORIZON;
-const seeds = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 function setup(): { base: SimInput; ctx: LayerCtx } {
   const city = miniCity();
   const base = buildSimInput({
     parcels: city.parcels,
     projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown)
+    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown),
+    options: miniOptions(city)
   });
-  return { base, ctx: { parcels: city.parcels, policy: miniPolicy(city) } };
+  return {
+    base,
+    ctx: { parcels: city.parcels, policy: miniPolicy(city), options: miniOptions(city) }
+  };
 }
 
 function compile(base: SimInput, ctx: LayerCtx, levers: SimLevers) {
-  const filled = fillNeeds(resolveEnvelopes(ctx, levers, base.asOf), new Map());
-  return applyLevers(base, ctx, levers, filled);
+  return applyLevers(base, ctx, levers, resolveEnvelopes(ctx, levers, base.asOf));
 }
 
 const clone = (patch: Partial<SimLevers> = {}): SimLevers => ({
@@ -47,22 +46,7 @@ const clone = (patch: Partial<SimLevers> = {}): SimLevers => ({
 
 describe('applyLevers: the default levers', () => {
   const { base, ctx } = setup();
-  const { plan, twin, references } = compile(base, ctx, clone());
-  const months = monthsOf(base.asOf, H);
-  const preFzp = applyPolicies([baseZoning], base);
-
-  it('reproduce the base run and the baseZoning twin, seeds 1-20', () => {
-    expect(plan.inFlightScale).toBeUndefined();
-    // `newProjects` is set, so in-flight schedules carry the cohort flag (Call 15); nothing else
-    const unflag = (r: ReturnType<typeof simulateDetailed>) => ({
-      ...r,
-      schedules: r.schedules.map(({ inFlight: _, ...s }) => s)
-    });
-    for (const seed of seeds(20)) {
-      expect(unflag(simulateDetailed(plan, seed, H))).toEqual(simulateDetailed(base, seed, H));
-      expect(simulateNet(twin, seed, H, months)).toEqual(simulateNet(preFzp, seed, H, months));
-    }
-  });
+  const { references } = compile(base, ctx, clone());
 
   it("show every reference with compare 'preFzp'", () => {
     expect(references).toBe(REFERENCES);
@@ -79,12 +63,10 @@ describe('applyLevers: the default levers', () => {
 describe('twins', () => {
   it("the 'fzp' twin is FZP as written", () => {
     const { base, ctx } = setup();
-    const months = monthsOf(base.asOf, H);
     const twin = twinInput(base, ctx, 'fzp');
     expect(Array.from(twin.parcels.envelopeStories)).toEqual(
       Array.from(base.parcels.envelopeStories)
     );
-    expect(simulateNet(twin, 7, H, months)).toEqual(simulateNet(base, 7, H, months));
     expect(twin.inFlightScale).toBeUndefined();
     expect(twinInput(base, ctx, 'fzp')).toBe(twin); // memoised
   });

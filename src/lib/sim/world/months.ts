@@ -1,6 +1,6 @@
 import * as timeModule from '$lib/timelapse/time';
 import type { Day } from '$lib/timelapse/time';
-import { addMonths, firstOfMonth } from '$lib/sim/scenario/dates';
+import { addMonths, firstOfMonth } from '$lib/sim/world/dates';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).

@@ -4,7 +4,6 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { FILL_LEVELS } from '../../../src/lib/data/scenario-codec';
 import { parseCalibration } from '../../../src/lib/timelapse/model';
 import { parseProjectsFile } from '../../../src/lib/timelapse/projects';
 import type { Calibration, ProjectHistoriesFile } from '../../../src/lib/timelapse/types';
@@ -20,10 +19,13 @@ import { CALIBRATION_JSON, MARKET_JSON, readPermits, sameRuns } from '../../step
 import { parseMarketFile } from '../../enrichment/market-schema';
 import { parseFundingFile } from '../../enrichment/funding-schema';
 import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
+import { CCCI_CSV } from '../fixtures/mini/ccci-raw';
+import { annualCostIndex } from '../../sources/dgs';
 import { checkDataset, type InvariantResult } from '../../steps/check';
 import { fixture } from '../../steps/fixture';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
 import { PARCELS_BIN, readParcelsBin } from '../../steps/scenario';
+import { OPTIONS_BIN, PANEL_OPTIONS_BIN, readOptionsBin } from '../../steps/options';
 
 const REPO = join(import.meta.dirname, '../../..');
 const skipTiles = !(await which('tippecanoe'));
@@ -177,25 +179,11 @@ describe('calibration invariants on fixture-0', () => {
   it('V25 fails on a probability sum above 1', async () => {
     const d = copy();
     editCal(d, (c) => {
-      c.size.byEnvelope[0].probs[0] += 0.5;
+      c.revision.at[0].ratio.probs[0] += 0.5;
     });
     const r = (await run(d)).find((x) => x.id === 'V25')!;
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/does not parse/);
-  });
-
-  it('V25 fails on fill levels that parse but differ from FILL_LEVELS', async () => {
-    const d = copy();
-    editCal(d, (c) => {
-      c.size.fillLevels = [0.5, 1];
-      for (const e of c.size.byEnvelope) e.probs = [0.4, 0.6];
-    });
-    expect(() =>
-      parseCalibration(JSON.parse(readFileSync(join(d, CALIBRATION_JSON), 'utf8')))
-    ).not.toThrow();
-    const r = (await run(d)).find((x) => x.id === 'V25')!;
-    expect(r.ok).toBe(false);
-    expect(r.detail).toMatch(/fillLevels \[0.5, 1\] differ from FILL_LEVELS/);
   });
 
   it('V25 fails when asOf differs from projects.json', async () => {
@@ -218,8 +206,8 @@ describe('calibration invariants on fixture-0', () => {
 
   it('checkV25 compares asOf with the histories day when given', () => {
     const asOf = (JSON.parse(json) as Calibration).asOf;
-    expect(checkV25(json, json.length, FILL_LEVELS, asOf, asOf)).toEqual([]);
-    expect(checkV25(json, json.length, FILL_LEVELS, asOf, asOf + 1)).toHaveLength(1);
+    expect(checkV25(json, json.length, asOf, asOf)).toEqual([]);
+    expect(checkV25(json, json.length, asOf, asOf + 1)).toHaveLength(1);
   });
 
   it('fundingOutcomes holds on the fixture calibration and names the three outcomes', () => {
@@ -331,7 +319,7 @@ describe('calibration invariants on fixture-0', () => {
     const ps = c.baselineFunding!.programmes;
     [ps[0], ps[1]] = [ps[1], ps[0]];
     const text = JSON.stringify(c);
-    const problems = checkV25(text, text.length, FILL_LEVELS, asOf, asOf, false);
+    const problems = checkV25(text, text.length, asOf, asOf, false);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(
       /^baselineFunding programmes \[baseline-city-ocoh, baseline-city-debt,/
@@ -421,7 +409,10 @@ describe('calibration invariants on fixture-0', () => {
         panel: await duckPanelSource(db),
         parcels: readParcelsBin(join(outDir, PARCELS_BIN)),
         inFlight: projects.projects,
-        fillLevels: FILL_LEVELS,
+        options: readOptionsBin(join(outDir, OPTIONS_BIN)),
+        panelOptions: readOptionsBin(join(derived, PANEL_OPTIONS_BIN)),
+        // the build's location value provenance, as the build passed it
+        locationValue: (JSON.parse(json) as Calibration).choice!.provenance.locationValue,
         datasetVersion: 'fixture-0',
         market: {
           file: parseMarketFile(JSON.parse(readFileSync(MARKET_JSON, 'utf8')), MARKET_JSON),
@@ -429,6 +420,7 @@ describe('calibration invariants on fixture-0', () => {
         },
         funding: parseFundingFile(JSON.parse(readFileSync(FUNDING_JSON, 'utf8')), FUNDING_JSON),
         mohcd: MOHCD_RAW,
+        costIndex: annualCostIndex(CCCI_CSV),
         // The car step's model as the build wrote it (the mini city has a Census population).
         cars: { model: (JSON.parse(json) as Calibration).cars ?? null, report: [] }
       };

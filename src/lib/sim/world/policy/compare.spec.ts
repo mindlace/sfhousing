@@ -4,7 +4,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import { applyLevers, lookupsOf, twinInput } from '$lib/sim/levers/apply';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { buildFinance } from '$lib/sim/levers/finance';
-import { fillNeeds, resolveEnvelopes } from '$lib/sim/levers/resolve';
+import { resolveEnvelopes } from '$lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, type SimLevers } from '$lib/sim/levers/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import { resolvePreset } from '$lib/sim-page/timing';
@@ -181,13 +181,11 @@ describe('comparisonOf (rule 22)', () => {
     const p = f.view.parcels;
     const q = twin.parcels;
     expect(p.count).toBe(q.count);
-    for (const col of ['envelopeStories', 'hostable', 'localProgram', 'yield'] as const) {
+    for (const col of ['envelopeStories', 'hostable', 'localProgram', 'fzpCap'] as const) {
       expect(Array.from(p[col] as ArrayLike<number>)).toEqual(
         Array.from(q[col] as ArrayLike<number>)
       );
     }
-    expect(Array.from(p.potentialRatio.fzp)).toEqual(Array.from(q.potentialRatio.fzp));
-    expect(Array.from(p.storiesGap.fzp)).toEqual(Array.from(q.storiesGap.fzp));
     expect(f.calibration).toEqual(twin.calibration);
     expect(f.market).toBe(twin.market?.[0].logOdds ?? 0);
     const want = buildFinance(c.input.finance, DEFAULT_LEVERS.finance, c.input.asOf)!;
@@ -212,8 +210,8 @@ describe('lookupsAt', () => {
       c
     ).frameAt(1);
     const levers: SimLevers = { ...DEFAULT_LEVERS, timers: r.presetTimers.map((x) => ({ ...x })) };
-    const filled = fillNeeds(resolveEnvelopes(c.layers, levers, c.input.asOf), new Map());
-    const want = applyLevers(c.input, c.layers, levers, filled).lookups;
+    const res = resolveEnvelopes(c.layers, levers, c.input.asOf);
+    const want = applyLevers(c.input, c.layers, levers, res).lookups;
     const got = lookupsAt(frame);
     expect(got.inFlight).toEqual(want.inFlight);
     expect(got.fresh).toEqual(want.fresh);

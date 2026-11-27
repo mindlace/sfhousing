@@ -1,5 +1,6 @@
 import type { ParcelRecord } from '../data/parcel';
 import type { Envelope } from '../plan/types';
+import type { BuildingForm } from '../sim/choice/types';
 import type { AssembledSite } from './assemble';
 import { drawComposition } from './composition-variety';
 import {
@@ -63,6 +64,8 @@ export function combineLots(
     total += b.floorAreaM2;
     if (b.stories > stories) stories = b.stories;
   }
+  // form-massed lots (`generateForm`) carry plates; the district sums them
+  const formed = lots.some((b) => b.plates !== undefined);
   let typology = lots[0].typology;
   for (const t of TYPOLOGY_ORDER) {
     const area = byTypology.get(t);
@@ -79,19 +82,25 @@ export function combineLots(
     units,
     floorAreaM2: round1(total),
     replacesExisting: true,
+    ...(formed ? { plates: lots.reduce((n, b) => n + (b.plates ?? 0), 0) } : {}),
     lots: lots.map((b) => ({
       typology: b.typology,
       stories: b.stories,
-      floorAreaM2: b.floorAreaM2
+      floorAreaM2: b.floorAreaM2,
+      ...(b.plates !== undefined ? { plates: b.plates } : {})
     }))
   };
 }
 
-/** Paint and yields: every non-open-space lot at env.maxStories, max buildout. */
+/**
+ * Paint and yields: every non-open-space lot at env.maxStories, max buildout. With `form`, every
+ * lot is massed at that form and stories (`generateForm`), and a lot it does not fit is left out.
+ */
 export function generateDistrict(
   parcel: ParcelRecord,
   env: Envelope,
-  seed: number
+  seed: number,
+  form?: BuildingForm
 ): GeneratedBuilding | 'not-district' | null {
   if (!parcel.eligible) return null;
   if (env === null || typeof env !== 'object') return null;
@@ -109,7 +118,13 @@ export function generateDistrict(
   let units = 0;
   for (const lot of layout.lots) {
     // lots are under DISTRICT_MIN_M2, so this never recurses into the district path
-    const b = generate(lotRecord(parcel, lot), { maxStories: S }, lotSeed(seed, lot.key), 'max');
+    const b = generate(
+      lotRecord(parcel, lot),
+      { maxStories: S },
+      lotSeed(seed, lot.key),
+      'max',
+      form ? { form } : undefined
+    );
     if (!b) continue;
     built.push(b);
     units += b.units;

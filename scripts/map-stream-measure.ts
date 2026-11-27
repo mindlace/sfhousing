@@ -11,7 +11,7 @@ import { performance } from 'node:perf_hooks';
 import { parseManifest } from '../src/lib/data/manifest';
 import { createMapStream } from '../src/lib/sim/world/map-stream';
 import { createWorld, planDue, step } from '../src/lib/sim/world/index';
-import type { SimInput } from '../src/lib/sim/scenario/types';
+import type { SimInput } from '../src/lib/sim/world/input/types';
 import { staticsOf, type Statics } from '../src/lib/sim/world/statics';
 import { benchInput, liveInput } from '../src/lib/sim/world/test/cities.node.js';
 import { benchRecords, dirRecords } from '../src/lib/sim/world/test/map-stream-cities.node.js';

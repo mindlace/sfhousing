@@ -7,8 +7,8 @@ import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generat
 import { SLOT_FLAG, type TimelineUpdate } from '$lib/map/types';
 import type { FetchLike } from '$lib/sim/chunks';
 import { createLru } from '$lib/sim/lru';
-import { scenarioUrls } from '$lib/sim/scenario/load';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
+import { simInputUrls } from '$lib/sim/world/input/load';
+import type { LedgerEvent } from '$lib/sim/world/types';
 import type { TimelineHostRequest, TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import { fundingOnly } from '$lib/sim/levers/fixtures/finance';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
@@ -93,7 +93,7 @@ beforeAll(async () => {
   };
   const r = await loadDataset(
     manifest,
-    scenarioUrls(manifest)!,
+    simInputUrls(manifest)!,
     createChunkSet(manifest, deps),
     deps,
     createLru<string, GeneratedBuilding | null>(1000),
@@ -807,12 +807,10 @@ describe('the host', () => {
     expect(viewOf(chunks, plain.statics)).toEqual(viewOf([plain.chunk], plain.statics));
   });
 
-  it('a failed needed chunk is reported and retryChunks completes the compile', async () => {
+  it('a failed chunk does not hold the compile; it is reported and retryChunks loads it', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const f = datasetFetch(FIXTURE);
-    const manifest = structuredClone(f.manifest);
-    delete (manifest.scenarios!.fzp as { gross?: string }).gross;
-    const cell = manifest.chunks[0];
+    const cell = f.manifest.chunks[0];
     let failures = 2;
     const fetch: FetchLike = (url) => {
       if (url === cell.url && failures > 0) {
@@ -822,7 +820,6 @@ describe('the host', () => {
       return f.fetch(url);
     };
     const ids = ((await (await f.fetch(cell.url)).json()) as { id: ParcelId[] }).id.slice(0, 8);
-    const rec = ids[0];
     const paint: CustomBrush = {
       id: 'paint',
       kind: 'paint',
@@ -839,19 +836,17 @@ describe('the host', () => {
       spans: [span(asOf, 13, null, { tag: 'brushes', brushes: [paint] })]
     });
     const lots = { [queryKey(customQuery(paint))]: ids };
-    const h = makeHost({ manifest, fetch, retryDelaysMs: [1] });
+    const h = makeHost({ fetch, retryDelaysMs: [1] });
     h.open({ policy: doc, lots, months: 40 });
-    const failed = () => h.of('compiling').some((c) => c.failedCells.includes(cell.cellId));
-    await h.run(failed);
-    // idles rather than spinning, and nothing is compiled while the chunk is missing
-    expect(await h.idle()).toBe(true);
-    expect(h.of('compiled')).toEqual([]);
-    expect(h.of('chunks').at(-1)!.failed).toEqual([cell.cellId]);
-    expect(rec).toBeDefined();
+    h.prefetchAll();
+    await h.run(() => h.of('chunks').some((c) => c.failed.includes(cell.cellId)));
+    // the painted lots' homes are their option rows': the compile never waits on a chunk
+    await h.run(() => h.of('compiled').length > 0);
+    expect(h.of('compiling').every((c) => c.failedCells.length === 0)).toBe(true);
     h.handle({ type: 'retryChunks' });
     await h.runAll();
     expect(h.errors()).toEqual([]);
-    expect(h.of('compiling').at(-1)!.failedCells).toEqual([]);
+    expect(h.of('chunks').at(-1)!.failed).toEqual([]);
     expect(h.of('compiled')).toHaveLength(1);
     expect(warn).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledWith(

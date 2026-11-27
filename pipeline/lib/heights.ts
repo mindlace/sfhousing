@@ -78,3 +78,24 @@ export function parseHeightDistrict(s: string): HeightDistrict {
 export function storiesFromFt(ft: number): number {
   return Math.min(MAX_STORIES, Math.floor(ft / 10));
 }
+
+/**
+ * Planning Code Sec. 261(b)(1) (tier 1): no portion of a dwelling in an RH-1, RH-1(D) or RH-1(S)
+ * District may exceed 35 ft, whatever the mapped height district (Planning ZAB No. 5: "In RH-1
+ * districts, regardless of the mapped height limit, the maximum allowable height is 35 feet").
+ * The slope exceptions (40 ft or 30 ft) and the 30-ft front envelope of Sec. 261(c) are not
+ * modelled. http://sf-ca.elaws.us/code/plco_art2.5_sec261
+ */
+export const RH1_HEIGHT_FT = 35;
+const RH1_FAMILY = /^RH-1(\((D|S)\))?$/;
+
+/** True when every component of `zoningCode` ('|'-split) is RH-1, RH-1(D) or RH-1(S). */
+export function isRh1Family(zoningCode: string | null): boolean {
+  if (zoningCode === null || zoningCode.trim() === '') return false;
+  return zoningCode.split('|').every((z) => RH1_FAMILY.test(z.trim()));
+}
+
+/** The base height a lot may build to: the height district's, at most 35 ft on RH-1 lots. */
+export function baseHeightFt(baseFt: number, zoningCode: string | null): number {
+  return isRh1Family(zoningCode) ? Math.min(baseFt, RH1_HEIGHT_FT) : baseFt;
+}

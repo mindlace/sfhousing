@@ -108,12 +108,14 @@ describe('render boxes', () => {
     expect(result.counts['boxes.outside_footprint']).toBe(0);
     expect(result.counts['boxes.missing_buildings']).toBe(0);
     expect(result.counts['boxes.artifact_unknown_bids']).toBe(0);
-    expect(result.counts['boxes.step.max_per_building']).toBeLessThanOrEqual(4);
+    expect(result.counts['boxes.step.over_cap']).toBe(0);
+    // bpier's part was rejected, so it is drawn as its LiDAR boxes only.
+    expect(of('bpier').some((b) => b.src === 'part' || b.src === 'box')).toBe(false);
     // F16: the single-box fallbacks are counted on the composed table, by src.
     const [{ n }] = await db.all<{ n: number }>(
       "SELECT count(*)::INTEGER AS n FROM render_boxes WHERE src = 'box'"
     );
-    expect(n).toBe(4);
+    expect(n).toBe(3);
     expect(result.counts['boxes.src.box']).toBe(n);
     expect(result.counts['boxes.src.part']).toBe(9);
     const [{ p }] = await db.all<{ p: number }>('SELECT count(*)::INTEGER AS p FROM render_pieces');
@@ -156,6 +158,46 @@ describe('render boxes', () => {
     };
     await compare('', 'true');
     await compare(', height_m, base_m, hs', "src = 'box'");
+  });
+
+  it("low_export is today's export plus the parts buildings' render boxes", async () => {
+    const cols = await db.all<{ column_name: string }>('DESCRIBE low_export');
+    expect(cols.map((c) => c.column_name)).toEqual([
+      'parcel_id',
+      'bid',
+      'k',
+      'height_m',
+      'base_m',
+      'hs',
+      'geojson4326'
+    ]);
+    const parts = "SELECT bid FROM render_boxes WHERE src = 'part'";
+    const print = async (sql: string) =>
+      (
+        await db.all<{ h: string }>(
+          `SELECT md5(string_agg(concat_ws('|', parcel_id, bid, k, height_m, base_m, hs, geojson4326),
+                  ';' ORDER BY parcel_id NULLS LAST, bid, k)) AS h FROM (${sql})`
+        )
+      )[0].h;
+    expect(
+      await print(`SELECT *, 0 AS k FROM (SELECT parcel_id, bid, height_m, base_m, hs, geojson4326
+        FROM low_export WHERE bid NOT IN (${parts}))`)
+    ).toBe(
+      await print(`SELECT *, 0 AS k FROM (SELECT parcel_id, bid, height_m, base_m, hs, geojson4326
+        FROM buildings_export WHERE bid NOT IN (${parts}))`)
+    );
+    const [{ n }] = await db.all<{ n: number }>(
+      `SELECT count(*)::INTEGER AS n FROM low_export WHERE bid NOT IN (${parts})`
+    );
+    expect(n).toBeGreaterThan(0);
+    const b14 = (t: string) =>
+      print(
+        `SELECT parcel_id, bid, k, height_m, base_m, hs, geojson4326 FROM ${t} WHERE bid = 'b14'`
+      );
+    expect(await b14('low_export')).toBe(await b14('render_export'));
+    // bpier's parts were rejected: its row is the export's, once.
+    const pier = await db.all<{ k: number }>("SELECT k FROM low_export WHERE bid = 'bpier'");
+    expect(pier).toEqual([{ k: 0 }]);
   });
 
   it('derived files', async () => {
@@ -223,7 +265,11 @@ describe('render boxes without the artifact or with a parts fallback', () => {
       "SELECT src FROM render_boxes WHERE bid = 'b14' ORDER BY k"
     );
     expect(b14.map((b) => b.src)).toEqual(Array(8).fill('part'));
-    expect(r.counts['boxes.src.box']).toBe(4);
+    expect(r.counts['boxes.src.box']).toBe(3);
+    const low = await db.all<{ k: number }>(
+      "SELECT k FROM low_export WHERE bid = 'b14' ORDER BY k"
+    );
+    expect(low.map((r) => r.k)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 });
 

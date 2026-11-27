@@ -2,12 +2,12 @@
 // waiting applications re-made or lapsed under the new frame, a lapsed kind's new spell, and what
 // a change leaves alone.
 import { describe, expect, it } from 'vitest';
-import { lineKey } from '$lib/sim/scenario/funded';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/scenario/fixtures/tiny-queue';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { seedHash, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { lineKey } from '$lib/sim/world/rules/funding';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/world/fixtures/tiny-queue';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import { seedHash, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, Programme } from '$lib/timelapse/types';
@@ -538,10 +538,11 @@ describe('rule 5 in a stepped world: a programme opening at month m', () => {
     )
   );
 
-  it('seeds 1 to 6: lots whose affordable total passed earlier (spell spent) never apply, from m on', () => {
+  it('seeds 1 to 12: lots whose affordable total passed earlier (spell spent) never apply, from m on', () => {
     let spentAll = 0;
     let fromM = 0;
-    for (let seed = 1; seed <= 6; seed++) {
+    // seeds 7, 9 and 10 spend a spell before m on the option rows
+    for (let seed = 1; seed <= 12; seed++) {
       const { sys, joined } = spied();
       const w = worldOf(sys, s, t, seed);
       w.stepTo(m - 1);
@@ -806,6 +807,9 @@ describe('an application whose lot-month began before a change of money', () => 
           key: lineKey(c0.keyDay, hs.rank[lot], 'affordable'),
           bundle: 'gA',
           f: c0.f,
+          btype: c0.btype,
+          cstep: c0.cstep,
+          price: c0.price,
           units: c0.units,
           stories: c0.stories,
           level: c0.level,
@@ -842,6 +846,9 @@ describe('serve finds only applications the frame offers', () => {
           key: lineKey(s.asOf + 1, s.rank[lot], 'affordable'),
           bundle: 'no-such-programme',
           f: 0,
+          btype: 0,
+          cstep: 0,
+          price: '',
           units: 5,
           stories: 4,
           level: 1,

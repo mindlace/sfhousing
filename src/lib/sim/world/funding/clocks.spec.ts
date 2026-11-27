@@ -1,28 +1,23 @@
 // world-funding Task 3: the market and affordable funded clocks (spec rules 2, 3, 4, 5, 7).
 import { describe, expect, it } from 'vitest';
-import { runOf } from '$lib/sim/scenario/engine';
 import { PROTOTYPES } from '$lib/sim/finance';
-import { miniFinance } from '$lib/sim/scenario/fixtures/mini-finance';
-import {
-  NEVER_KEY_DAY,
-  drawsOf,
-  financePreOf,
-  kindLatentInto,
-  latentsWith,
-  newKindOut
-} from '$lib/sim/scenario/funded';
-import { financeIndexOf } from '$lib/sim/scenario/funding';
-import { lastInitiationMonth, precomputeOf } from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
+import { NEVER_KEY_DAY, financeIndexOf } from '$lib/sim/world/rules/funding';
+import { lastInitiationMonth, precomputeOf } from '$lib/sim/world/input/build';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS, type Day } from '$lib/timelapse/time';
 import type { ProjectKind } from '$lib/timelapse/types';
-import { monthFirstDay, monthOfDay } from '../months';
+import { monthFirstDay } from '../months';
 import { lotEntity, ordinaryStart } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { changingAt, frameOf, limited } from '../test/timeline';
-import { STABLE_FROM, kindClock, logSurvival, sizeIn, type Spell } from './clocks';
+import { STABLE_FROM, kindClock, logSurvival, type Spell } from './clocks';
+import { allowedCount, capFrom, choiceRow, mostHomes, pickOption } from '$lib/sim/choice/choose';
+import type { ChoiceModel } from '$lib/sim/choice/types';
+import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
+import { frameIdOf } from '../policy/intern';
 import { financeFrameOf, fundedMini, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -52,88 +47,6 @@ function eachSpell(
 }
 
 describe('kindClock', () => {
-  it.each([
-    ['without a market', 0],
-    ['with a market step at asOf', 0.35]
-  ])('on one frame equals the old kernel for every lot, attempt 0 (%s)', (_name, logOdds) => {
-    const base = fundedMini();
-    const asOf = base.asOf;
-    const fin: Finance = { ...miniFinance(asOf), off: [] };
-    const input: SimInput = {
-      ...fundedMini(fin),
-      ...(logOdds !== 0 ? { market: [{ from: asOf, logOdds }] } : {})
-    };
-    const fp = financePreOf(input);
-    expect(fp.days).toEqual([]); // no finance segment days: one frame is the whole old grid
-    const t = oneMoneyTimeline(input, fin);
-    expect(t.changes()).toEqual([]);
-    expect(t.frameAt(1).market).toBe(logOdds);
-    const statics = staticsOf(input);
-    const pre = precomputeOf(input);
-    const out = newKindOut();
-    const horizon = 1_099_511_627_776; // past every day the clocks give
-    let compared = 0;
-    let applying = 0;
-    let levelOne = 0;
-    for (let seed = 1; seed <= 5; seed++) {
-      const run = runOf(input, seed, horizon, true);
-      const sh = seedHash(seed);
-      pre.candidates.forEach((i, c) => {
-        const e = input.parcels.existingUnits[i];
-        const d = drawsOf(streamOf(sh, pre.entity[c], 0));
-        const lat = latentsWith(run, fp, i, asOf, e, d);
-        const spell = spellOf(statics, sh, i, asOf, e);
-        for (const kind of KINDS) {
-          const [u, v] = kind === 'market' ? [d.uO, d.vO] : [d.uA, d.vA];
-          kindLatentInto(out, run, fp, i, lat.size, kind, asOf, u, v, lat.TO, -1, null);
-          const k = kindClock(statics, t, 1, sh, spell, kind);
-          // A bundle at level 1 starts at the finite ordinary odds at full coverage here, the
-          // old kernel's rate is -Infinity there (retired engine, ruling option C): the key,
-          // bundle and level still agree; T and day are compared below level 1 only.
-          expect({ keyDay: k.keyDay, bundle: k.bundle, level: k.level }).toEqual({
-            keyDay: out.keyDay,
-            bundle: out.bundle,
-            level: out.level
-          });
-          if (k.level === 1) {
-            levelOne++;
-            compared++;
-            if (k.day !== null) applying++;
-            continue;
-          }
-          expect({
-            T: k.T,
-            day: k.day,
-            keyDay: k.keyDay,
-            bundle: k.bundle,
-            level: k.level
-          }).toEqual({
-            T: out.T,
-            day: out.day,
-            keyDay: out.keyDay,
-            bundle: out.bundle,
-            level: out.level
-          });
-          if (k.T !== 0) {
-            expect([k.f, k.units, k.stories, k.protoId]).toEqual([
-              out.f,
-              out.units,
-              out.stories,
-              out.protoId
-            ]);
-            expect(k.viewMonth).toBe(1);
-          }
-          expect(k.month).toBe(k.day === null ? 0 : monthOfDay(asOf, k.day));
-          compared++;
-          if (k.day !== null) applying++;
-        }
-      });
-    }
-    expect(compared).toBeGreaterThan(100);
-    expect(applying).toBeGreaterThan(0);
-    expect(levelOne).toBeGreaterThan(0);
-  });
-
   it('a market clock with nothing shifting is the ordinary clock', () => {
     const base = fundedMini();
     const asOf = base.asOf;
@@ -225,9 +138,9 @@ describe('kindClock', () => {
     const fb = financeIndexOf(b);
     const market = a.programmes.flatMap((g, i) => (g.reach === 'market' ? [i] : []));
     for (const p of PROTOTYPES) {
-      expect(fa.price('market', market, p.id).coverage).toBeGreaterThan(1);
-      expect(fb.price('market', market, p.id).coverage).toBeGreaterThan(
-        fa.price('market', market, p.id).coverage
+      expect(fa.price('market', market, p).coverage).toBeGreaterThan(1);
+      expect(fb.price('market', market, p).coverage).toBeGreaterThan(
+        fa.price('market', market, p).coverage
       );
     }
     const input = fundedMini(a);
@@ -387,26 +300,99 @@ describe('logSurvival', () => {
   });
 });
 
-describe('sizeIn', () => {
-  it('draws the size as the old kernel does, against own and other existing homes', () => {
+describe('the size and price of a funded latent (building-choice Task 10)', () => {
+  /** The mini with `affordableRule` set to `rule`. */
+  function withRule(rule: ChoiceModel['affordableRule']): SimInput {
+    const base = fundedMini();
+    const choice = { ...base.calibration.choice!, affordableRule: rule };
+    return { ...base, calibration: { ...base.calibration, choice } };
+  }
+
+  it("an affordable latent sizes to the most homes under 'most-homes', to the draw under 'market'", () => {
+    for (const rule of ['most-homes', 'market'] as const) {
+      const input = withRule(rule);
+      const t = oneMoneyTimeline(input, input.finance!);
+      const statics = staticsOf(input);
+      const ot = input.options;
+      let sized = 0;
+      let differ = 0;
+      eachSpell(input, 5, input.asOf, (spell, sh) => {
+        const k = kindClock(statics, t, 1, sh, spell, 'affordable');
+        if (k.T === 0 || k.f < 0) return;
+        const view = t.frameAt(k.viewMonth).view;
+        const lot = spell.lot;
+        const allowed = allowedCount(ot, lot, view.parcels.envelopeStories[lot]);
+        const cap = capFrom(view.parcels.fzpCap[lot]);
+        const most = mostHomes(ot, lot, allowed, cap, spell.existing);
+        const cum = new Float32Array(allowed);
+        choiceRow(
+          view.pre.choice,
+          view.pre.choiceStep,
+          lot,
+          allowed,
+          cap,
+          spell.existing,
+          'market',
+          cum
+        );
+        const drawn = pickOption(cum, allowed, drawOn(spell.stream, P.SIZE, 0));
+        expect(k.f).toBe(rule === 'most-homes' ? most : drawn);
+        expect(k.btype).toBe(ot.type[ot.offset[lot] + k.f]);
+        sized++;
+        if (most !== drawn) differ++;
+      });
+      expect(sized).toBeGreaterThan(0);
+      expect(differ).toBeGreaterThan(0);
+    }
+  });
+
+  it('a clock records the cost step of the frame that sized it and prices on that step', () => {
     const input = fundedMini();
-    const asOf = input.asOf;
-    const fp = financePreOf(input);
-    const statics = staticsOf(input);
-    const pre = precomputeOf(input);
-    const t = oneMoneyTimeline(input, input.finance!);
-    const f1 = t.frameAt(1);
-    const run = runOf(input, 1, asOf + 365 * 30, true);
-    let sized = 0;
-    pre.candidates.forEach((i, c) => {
-      const d = drawsOf(streamOf(run.sh, pre.entity[c], 0));
-      for (const e of [input.parcels.existingUnits[i], 0]) {
-        const want = latentsWith(run, fp, i, asOf, e, d).size[0];
-        const got = sizeIn(statics, f1.view, f1.calibration, i, e, d.uS);
-        expect(got === null ? null : { ...got }).toEqual(want === null ? null : { ...want });
-        if (got !== null) sized++;
+    const choice = input.calibration.choice!;
+    const step0 = choice.prices[0];
+    const anchors = structuredClone(step0.value.anchors);
+    for (const id of ['A', 'B', 'C', 'D', 'E'] as const) anchors[id].costPerHome *= 1.25;
+    const from = monthFirstDay(input.asOf, 1) + 3;
+    const two: SimInput = {
+      ...input,
+      calibration: {
+        ...input.calibration,
+        choice: { ...choice, prices: [step0, { from, value: { ...step0.value, anchors } }] }
+      }
+    };
+    const base = oneMoneyTimeline(two, two.finance!);
+    const frames = new Map<number, PolicyFrame>();
+    // frames from month 4 read cost step 1, as a compile sets it from the month's first day
+    const t: PolicyTimeline = {
+      frameAt: (m) => {
+        if (m < 4) return base.frameAt(m);
+        let f = frames.get(m);
+        if (f === undefined) {
+          const b = base.frameAt(m);
+          frames.set(m, (f = { ...b, id: frameIdOf(`clocks-step|${b.id}`), choiceStep: 1 }));
+        }
+        return f;
+      },
+      changes: () => [...new Set([...base.changes(), 4])].sort((a, b) => a - b),
+      touched: (m) => (m === 4 ? null : base.touched(m)),
+      readyThrough: () => Number.MAX_SAFE_INTEGER
+    };
+    const statics = staticsOf(two);
+    const seen = [0, 0];
+    eachSpell(two, 3, two.asOf, (spell, sh) => {
+      for (const kind of KINDS) {
+        const k = kindClock(statics, t, 12, sh, spell, kind);
+        if (k.T === 0 || k.proto === null) continue;
+        const cstep = k.viewMonth >= 4 ? 1 : 0;
+        expect(k.cstep).toBe(cstep);
+        const shipped = PROTOTYPES.some((p) => p === k.proto);
+        // step 0 is the shipped anchors; step 1 never is
+        expect(shipped).toBe(cstep === 0 && k.proto.id.length === 1);
+        if (cstep === 1) expect(k.price.endsWith('@1')).toBe(kind === 'market');
+        seen[cstep]++;
       }
     });
-    expect(sized).toBeGreaterThan(0);
+    expect(seen[0]).toBeGreaterThan(0);
+    expect(seen[1]).toBeGreaterThan(0);
   });
 });

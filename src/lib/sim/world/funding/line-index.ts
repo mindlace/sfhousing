@@ -2,14 +2,21 @@
 // (lot, kind) pairs, each lot's waiting rows, and the waiting rows grouped by award rule for
 // grouped serving. One per `FundLine` object, valid while its `version` is the line's; a
 // structuredClone of the world is a new object and builds its own, so clones stay exact.
-import { prototypeFor, type PrototypeId } from '$lib/sim/finance';
 import { KIND_MARKET, compactLine, type FundLine } from './columns';
 
-/** Waiting rows sharing one award rule (`line.ts` groupKey): kind, bundle ids and market prototype. */
+/**
+ * Waiting rows sharing one award rule (`line.ts` groupKey): kind, bundle ids and, for market, the
+ * price tag (PriceKey and price step, `line-price.ts`).
+ */
 export interface Group {
   kind: number;
-  /** The market prototype; null for affordable, whose pricing ignores the prototype. */
-  protoId: PrototypeId | null;
+  /** The market price tag; '' for affordable, whose pricing ignores the prototype. */
+  price: string;
+  /**
+   * The first member's line row as it joined, to price the group by (`sizedPrototype`): every
+   * member of a tag is priced alike.
+   */
+  rep: { btype: number; stories: number; units: number; cstep: number; viewMonth: number };
   /** Programme ids joined with ','. */
   bundle: string;
   /** Members by `seq`, ascending; a member that left keeps its place, marked in the trees. */
@@ -132,13 +139,20 @@ export function compact(line: FundLine): void {
 
 function addRow(c: LineIndex, line: FundLine, i: number): Group {
   const kind = line.kind[i];
-  const protoId = kind === KIND_MARKET ? prototypeFor(line.stories[i], line.units[i]).id : null;
-  const key = `${kind}|${protoId ?? ''}|${line.bundle[i]}`;
+  const price = kind === KIND_MARKET ? line.price[i] : '';
+  const key = `${kind}|${price}|${line.bundle[i]}`;
   let g = c.byKey.get(key);
   if (g === undefined) {
     g = {
       kind,
-      protoId,
+      price,
+      rep: {
+        btype: line.btype[i],
+        stories: line.stories[i],
+        units: line.units[i],
+        cstep: line.cstep[i],
+        viewMonth: line.viewMonth[i]
+      },
       bundle: line.bundle[i],
       seqs: [],
       units: [],

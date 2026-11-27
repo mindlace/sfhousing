@@ -19,7 +19,7 @@
 - A cell whose chunks are not loaded waits and stays dirty.
 - Revision 0 is the first update and every `snapshot`; every other update is the next number, across rewinds.
 - Demolitions: a lot and the day a project enters construction on it. Revision 0 carries all known; later updates carry those new or changed in `demolish`. Sent as soon as known, even while the lot's cell waits for its chunk, so the old building can disappear before the new one is drawn (revision 0 already does). A lot can appear in `demolish` more than once; the pump keeps the earliest ([map-interfaces.md](map-interfaces.md), "Timeline demolitions after revision 0").
-- Flags: each slot carries `flagsOf`'s answer for its row in `slotFlags`, read at pack time. They are part of the row's sent key (`scheduleKey(s, flags)`: the stage days, end, revisions and `|f<flags>`), so a rewind repacks a cell whose row kept its schedule but changed its flags.
+- Flags: each slot carries `flagsOf`'s answer for its row in `slotFlags`, read at pack time. They are part of the row's sent key (`scheduleKey(s, flags)`: the stage days, end, revisions with their options and `|f<flags>`), so a rewind repacks a cell whose row kept its schedule but changed its flags.
 - `rewind` compares the projects last sent with the restored world. A project gone or with a changed row (its schedule or its flags) dirties its cell; a cell left with no project goes into `removedCells`. A lot whose demolition no longer holds goes in `restore`; a lot whose day changed goes in `restore` and then `demolish`. Unchanged cells are not sent again.
 - `snapshot` is unbudgeted. Cells waiting on chunks stay dirty. Pending restore and removals are superseded.
 - Pipeline projects at the dataset date go out in the first updates.
@@ -36,7 +36,7 @@ The stream composes `createCityFeed` (`src/lib/sim/world/city-feed.ts`, worker-s
 
 ## Massing memo
 
-One massing per project revision, keyed by the revision's content, so never stale. Kept to 60,000, then LRU. After a rewind, massings of removed projects stay until evicted.
+One massing per project revision, keyed by the revision's content (its day, units, stories and, on a simulated revision, its option), so never stale. A simulated revision draws its option (`generateForm` at the option's form and stories, see [building-choice.md](building-choice.md)). Kept to 60,000, then LRU. After a rewind, massings of removed projects stay until evicted.
 
 ## Draining and `complete`
 
@@ -56,4 +56,4 @@ Seed 1, 480 months, quiet machine (lock held), Apple M5 Pro.
 
 ## Tests
 
-`map-stream.spec.ts`, `map-stream.rewind.spec.ts`, `map-stream.equality.spec.ts` (also on the live city under `SFH_WORLD_LIVE`: 1,931 schedules equal `simulateDetailed`). Timing: `map-stream.perf.spec.ts` (`npm run test:perf`), `scripts/map-stream-measure.ts`, `scripts/map-stream-live.ts`.
+`map-stream.spec.ts`, `map-stream.rewind.spec.ts`. Timing: `map-stream.perf.spec.ts` (`npm run test:perf`), `scripts/map-stream-measure.ts`, `scripts/map-stream-live.ts`.

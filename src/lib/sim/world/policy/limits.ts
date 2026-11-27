@@ -172,7 +172,7 @@ export function limitsAt(frame: PolicyFrame, row: number): FrameLimits {
 }
 
 /**
- * The city inputs of `frame`, as the old host's `cityOf` hands them to `createCityBuild` and
+ * The city inputs of `frame`, as `cityOf` hands them to `createCityBuild` and
  * `lidStep` to `createLidBuild`: over `resolveEnvelopes` of the zoning in force (unfilled),
  * `stories` = the plan table's stories (a protected lot at FZP), `countable` = `countableMask`,
  * `sources` = `limitSources` (the one `limitsAt` reads). For the runner's `heights` and
@@ -203,7 +203,7 @@ export function cityInputAt(frame: PolicyFrame): FrameCityInput {
   const t = res.plan.table;
   r.city = Object.freeze({
     stories: t.stories,
-    countable: countableMask(t, layers.parcels.eligible, res.plan.needs, rows),
+    countable: countableMask(t, layers.parcels.eligible, rows),
     sources: r.sources
   });
   return r.city;

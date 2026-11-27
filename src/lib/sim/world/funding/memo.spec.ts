@@ -10,9 +10,9 @@
 // against `fundableAny` and lots with a row are seen to take the unchanged path.
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
-import type { LedgerEvent } from '$lib/sim/scenario/money';
-import { miniCalibrationWithRoutes } from '$lib/sim/scenario/fixtures/mini-finance';
-import type { SimInput } from '$lib/sim/scenario/types';
+import type { LedgerEvent } from '$lib/sim/world/types';
+import { miniCalibrationWithRoutes } from '$lib/sim/world/fixtures/mini-finance';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import type { Effect, Policy, SimPolicy4 } from '$lib/timeline/policy4';
 import type { Pool, Programme, ProjectKind } from '$lib/timelapse/types';
@@ -44,13 +44,19 @@ const CHANGE = 120;
  * moved (the counts are unchanged). The synthCity values were re-recorded on 2026-11-25 for the
  * fallback award (rule 16 as amended): an application short on one pool is awarded on the others,
  * so many more lots start (counts about eight times larger). The live values were re-recorded the
- * same day, on dataset 2026-11-25-76c90397 (`SFH_WORLD_LIVE` set to its directory).
+ * same day, on dataset 2026-11-25-76c90397 (`SFH_WORLD_LIVE` set to its directory). The synthCity
+ * values were re-recorded on 2026-11-26 for the developer's choice (building-choice Task 9): a
+ * start's size is an option of the bench city's synthetic rows and its start odds read the choice
+ * features, so fewer lots start (counts about a third lower). The live values need a dataset with
+ * options.bin and are re-recorded with it. The synthCity values were re-recorded on 2026-11-27 for
+ * pricing by option (building-choice Task 10): a funded application is priced by its option's type
+ * and stories instead of the binning, so some awards and their days move (counts within 0.3%).
  */
 const RECORDED: Record<string, string> = {
-  'synthCity baseline 1': 'ed887a96/59690',
-  'synthCity baseline 2': 'a51a14cb/61033',
-  'synthCity bench 1': '4eb1f5dc/61114',
-  'synthCity bench 2': '719ab2ae/62687',
+  'synthCity baseline 1': 'a718f663/42134',
+  'synthCity baseline 2': 'fed62ec3/42512',
+  'synthCity bench 1': 'd9de43c9/43896',
+  'synthCity bench 2': '827c2441/44428',
   'live 1': '6fc8002e/6097',
   'live 2': '641fdd82/6626',
   'live 3': 'b6d521ff/5982'

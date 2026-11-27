@@ -4,28 +4,20 @@
  * then custom paint in document order (it sets N uncapped, raising or lowering; a later stroke
  * wins), then protected lots, which are not redevelopable (partner ruling 2026-10-29): each is
  * reset to its FZP row with `hostable` 0, so no new project initiates there (Call 21: in-flight
- * projects carry on). Rows moved off their FZP and base rows need a yield recompute (`Need`);
- * the caller computes those with `envelopeRow` and hands them back to `fillNeeds`. Worker-safe.
+ * projects carry on). A lot's homes at any (stories, cap) are its options' (options.bin), so no
+ * envelope needs a recompute. Capacity is rule A: the most homes an allowed option holds after the
+ * cap, less the homes there now. Worker-safe.
  */
+import type { OptionTable } from '$lib/data/option-table';
 import { NULL_CAP } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import type { EnvelopeRow } from '$lib/data/envelope-row';
+import { allowedCount, capFrom, topHomes } from '$lib/sim/choice/choose';
 import type { Day } from '$lib/timelapse/types';
 import { stockTable, type EnvelopeTable, type LayerCtx } from './layers';
 import type { Protections, SimLevers } from './types';
 
-/** A lot whose final (stories, cap) is on neither its FZP nor its base row: its yield is computed outside. */
-export interface Need {
-  row: number;
-  stories: number;
-  cap: number | null;
-}
-export const needKey = (n: Need): string => `${n.row}:${n.stories}:${n.cap ?? 'n'}`;
-
-/** A Need row's yield and hostable are 0 until `fillNeeds`. */
 export interface ResolvedTable {
   table: EnvelopeTable;
-  needs: Need[];
 }
 
 export interface Resolution {
@@ -65,18 +57,25 @@ function copyTable(t: EnvelopeTable): EnvelopeTable {
     count: t.count,
     stories: t.stories.slice(),
     cap: t.cap.slice(),
-    yield: t.yield.slice(),
     hostable: t.hostable.slice()
   };
 }
 
 function resolvePlan(ctx: LayerCtx, levers: SimLevers, protect: Int32Array | null): ResolvedTable {
-  const F = ctx.parcels.fillLevels.length;
-  const index = ctx.parcels.index;
+  const { index, eligible } = ctx.parcels;
   const fzp = stockTable(ctx, 'fzp');
   const table = copyTable(fzp);
-  const touched = new Uint8Array(table.count);
 
+  /**
+   * A lot moved off its FZP row may host when it is eligible and keeps at least one story; one
+   * that lands back on its FZP row (same stories, no cap either way) keeps the FZP row's flag.
+   */
+  const set = (i: number, stories: number) => {
+    table.stories[i] = stories;
+    table.cap[i] = NULL_CAP;
+    const same = stories === fzp.stories[i] && fzp.cap[i] === NULL_CAP;
+    table.hostable[i] = same ? fzp.hostable[i] : eligible[i] === 1 && stories >= 1 ? 1 : 0;
+  };
   // Rules: max over the rules naming the lot, so their order does not matter.
   const highest = new Map<number, number>();
   for (const e of levers.rules)
@@ -85,56 +84,21 @@ function resolvePlan(ctx: LayerCtx, levers: SimLevers, protect: Int32Array | nul
       if (i === undefined) continue;
       highest.set(i, Math.max(highest.get(i) ?? 0, e.stories));
     }
-  for (const [i, n] of highest)
-    if (n > table.stories[i]) {
-      table.stories[i] = n;
-      table.cap[i] = NULL_CAP;
-      touched[i] = 1;
-    }
+  for (const [i, n] of highest) if (n > table.stories[i]) set(i, n);
   // Paint: sets N, in document order.
   for (const e of levers.paint)
     for (const id of e.lots) {
       const i = index.get(id);
-      if (i === undefined) continue;
-      table.stories[i] = e.stories;
-      table.cap[i] = NULL_CAP;
-      touched[i] = 1;
+      if (i !== undefined) set(i, e.stories);
     }
   if (protect)
-    // Not redevelopable: the FZP row, never hostable, and never a Need.
+    // Not redevelopable: the FZP row, never hostable.
     for (const i of protect) {
       table.stories[i] = fzp.stories[i];
       table.cap[i] = fzp.cap[i];
-      table.yield.set(fzp.yield.subarray(i * F, i * F + F), i * F);
       table.hostable[i] = 0;
-      touched[i] = 0;
     }
-
-  // The SB 79 and current-law rows follow other yield rules than `envelopeRow` (sim-levers.md,
-  // "Resolution order"), so only the FZP and base rows are reused.
-  const candidates = [fzp, stockTable(ctx, 'base')];
-  const needs: Need[] = [];
-  for (let i = 0; i < table.count; i++) {
-    if (!touched[i]) continue;
-    const stories = table.stories[i];
-    const cap = table.cap[i];
-    if (stories === fzp.stories[i] && cap === fzp.cap[i]) continue; // still the FZP row
-    if (stories === 0) {
-      table.yield.fill(0, i * F, i * F + F);
-      table.hostable[i] = 0;
-      continue;
-    }
-    const hit = candidates.find((t) => t.stories[i] === stories && t.cap[i] === cap);
-    if (hit) {
-      table.hostable[i] = hit.hostable[i];
-      table.yield.set(hit.yield.subarray(i * F, i * F + F), i * F);
-      continue;
-    }
-    table.yield.fill(0, i * F, i * F + F);
-    table.hostable[i] = 0;
-    needs.push({ row: i, stories, cap: cap === NULL_CAP ? null : cap });
-  }
-  return { table, needs };
+  return { table };
 }
 
 export function resolveEnvelopes(ctx: LayerCtx, levers: SimLevers, asOf: Day): Resolution {
@@ -153,43 +117,47 @@ export function resolveEnvelopes(ctx: LayerCtx, levers: SimLevers, asOf: Day): R
   };
 }
 
-/** Every Need in the resolution, once per key, sorted by (row, stories, cap). */
-export function allNeeds(r: Resolution): Need[] {
-  const seen = new Map<string, Need>();
-  for (const p of [r.plan, r.unprotected]) for (const n of p.needs) seen.set(needKey(n), n);
-  const capOf = (n: Need) => n.cap ?? Infinity;
-  return [...seen.values()].sort(
-    (a, b) => a.row - b.row || a.stories - b.stories || capOf(a) - capOf(b)
+/**
+ * Rule A's capacity of one lot: the most homes after the cap among the options its envelope allows,
+ * less the homes there now, never below 0. What a lot can hold, not what a developer builds.
+ */
+export function lotCapacity(
+  t: OptionTable,
+  lot: number,
+  stories: number,
+  cap: number,
+  existing: number
+): number {
+  return Math.max(
+    0,
+    topHomes(t, lot, allowedCount(t, lot, stories), capFrom(cap), existing) - existing
   );
 }
 
-/** A copy of the resolution with every Need's yield and hostable written in. Throws on a missing row. */
-export function fillNeeds(r: Resolution, rows: ReadonlyMap<string, EnvelopeRow>): Resolution {
-  const fill = (p: ResolvedTable): ResolvedTable => {
-    const t = p.table;
-    const F = t.count === 0 ? 0 : t.yield.length / t.count;
-    const table = copyTable(t);
-    for (const n of p.needs) {
-      const row = rows.get(needKey(n));
-      if (!row) throw new Error(`fillNeeds: no envelope row for need ${needKey(n)}`);
-      if (row.yield.length !== F)
-        throw new Error(`fillNeeds: need ${needKey(n)} has ${row.yield.length} yields, not ${F}`);
-      table.yield.set(row.yield, n.row * F);
-      table.hostable[n.row] = row.hostable ? 1 : 0;
-    }
-    return { table, needs: p.needs };
-  };
-  const plan = fill(r.plan);
-  return { ...r, plan, unprotected: r.unprotected === r.plan ? plan : fill(r.unprotected) };
-}
-
-/** Static net capacity: Σ over hostable lots of max(0, full-fill yield − existing homes). */
-export function netCapacity(t: EnvelopeTable, parcels: ScenarioParcels): number {
-  const F = parcels.fillLevels.length;
+/** Static net capacity (rule A): Σ over the table's hostable lots of `lotCapacity`. */
+export function netCapacity(
+  t: EnvelopeTable,
+  parcels: ScenarioParcels,
+  options: OptionTable
+): number {
   let sum = 0;
   for (let i = 0; i < t.count; i++)
-    if (t.hostable[i] === 1) sum += Math.max(0, t.yield[i * F + F - 1] - parcels.existingUnits[i]);
+    if (t.hostable[i] === 1)
+      sum += lotCapacity(options, i, t.stories[i], t.cap[i], parcels.existingUnits[i]);
   return sum;
+}
+
+/**
+ * Rule A's capacity of a zoning view: `netCapacity` over its own envelope, cap and hosting
+ * columns. The room box, `leverCapacity` and the runner's `capacity()` count the same way.
+ */
+export function capacityOf(view: {
+  parcels: ScenarioParcels;
+  pre: { choice: { t: OptionTable } };
+}): number {
+  const p = view.parcels;
+  const t = { count: p.count, stories: p.envelopeStories, cap: p.fzpCap, hostable: p.hostable };
+  return netCapacity(t, p, view.pre.choice.t);
 }
 
 /**
@@ -202,11 +170,10 @@ export interface LeverCapacity {
   protectedLots: number;
 }
 
-/** Call on a filled resolution: an unfilled Need counts as no capacity. */
-export function leverCapacity(r: Resolution, parcels: ScenarioParcels): LeverCapacity {
+export function leverCapacity(r: Resolution, ctx: LayerCtx): LeverCapacity {
   return {
-    plan: netCapacity(r.plan.table, parcels),
-    withoutProtections: netCapacity(r.unprotected.table, parcels),
+    plan: netCapacity(r.plan.table, ctx.parcels, ctx.options),
+    withoutProtections: netCapacity(r.unprotected.table, ctx.parcels, ctx.options),
     protectedLots: r.protectedRows.length
   };
 }

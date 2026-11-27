@@ -1,17 +1,27 @@
 // world-funding Task 10: shadow starts and displaced homes (spec rule 20).
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { miniFinance, withFederalYearly } from '$lib/sim/scenario/fixtures/mini-finance';
-import { lineKey } from '$lib/sim/scenario/funded';
-import { sizeCumAgainst } from '$lib/sim/scenario/input';
-import { P, drawOn, seedHash, streamOf } from '$lib/sim/scenario/rng';
+import {
+  allowedCount,
+  capFrom,
+  choiceRow,
+  mostHomes,
+  optionHomes,
+  pickOption,
+  topHomes
+} from '$lib/sim/choice/choose';
+import { miniFinance, withFederalYearly } from '$lib/sim/world/fixtures/mini-finance';
+import { lineKey } from '$lib/sim/world/rules/funding';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
-import { addProject, ensureLot, lotRow } from '../columns';
+import { addProject, ensureLot, lotRow, revisionsOf } from '../columns';
 import { monthFirstDay, monthLastDay } from '../months';
-import type { PolicyTimeline } from '../policy/frame';
+import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
+import { frameIdOf } from '../policy/intern';
 import { lotEntity, ordinaryStart } from '../rates';
+import type { SimInput } from '../input/types';
 import { staticsOf } from '../statics';
+import { runWorld } from '../test/run';
 import {
   LOT_FREE,
   LOT_LIVE,
@@ -37,7 +47,10 @@ const statics = staticsOf(input);
 const asOf = statics.asOf;
 const fin = miniFinance(asOf);
 const timeline = oneMoneyTimeline(input, fin);
-const F = FILL_LEVELS.length;
+const T = input.options;
+/** The options `lot`'s envelope allows in `input` and its cap. */
+const allowedOf = (lot: number) => allowedCount(T, lot, input.parcels.envelopeStories[lot]);
+const capOf = (lot: number) => capFrom(input.parcels.fzpCap[lot]);
 const AFF = 'm-city-grant,federal-grant';
 /** 40 years of model months. */
 const MONTHS = 480;
@@ -51,15 +64,16 @@ interface Case {
 
 /**
  * The mini city with `miniFinance`, seeds 1 to 12, 20 years; the same with the federal pool at
- * 20,000,000 a year, 20 years, on seeds (57 to 176, picked from 1 to 300) where an award comes
- * before an ordinary start later in its month (T3: rule 16 as amended awards at once while any
- * pool can pay, so few such cases remain); and with the random finances of seeds 31 to 40 (`randomFinance`), 40 years, where
- * funded projects exit and their lots start again before the ordinary start their award pre-empted.
+ * 20,000,000 a year, 20 years, on seeds (14 to 367, picked from 1 to 400 on the option rows) where
+ * an award comes before an ordinary start later in its month (T3: rule 16 as amended awards at
+ * once while any pool can pay, so few such cases remain); and with the random finances of seeds 31
+ * to 40 (`randomFinance`), 40 years, where funded projects exit and their lots start again before
+ * the ordinary start their award pre-empted.
  */
 const capped = oneMoneyTimeline(input, withFederalYearly(fin, asOf, 20_000_000));
 const CASES: Case[] = [
   ...Array.from({ length: 12 }, (_, i) => ({ seed: i + 1, t: timeline, through: 240 })),
-  ...[57, 79, 126, 153, 168, 176].map((seed) => ({ seed, t: capped, through: 240 })),
+  ...[14, 37, 291, 297, 347, 367].map((seed) => ({ seed, t: capped, through: 240 })),
   ...Array.from({ length: 10 }, (_, i) => {
     const finance = randomFinance(31 + i);
     return { seed: 31 + i, t: oneMoneyTimeline({ ...input, finance }, finance), through: MONTHS };
@@ -158,31 +172,116 @@ function expected(
     expect(s.month).toBe(m);
     const g = t.frameAt(Math.min(s.frameMonth, m));
     const parcels = g.view.parcels;
-    const own = parcels.existingUnits[lot];
-    const cum =
-      existing === own
-        ? g.view.pre.sizeCum.subarray(lot * F, lot * F + F)
-        : sizeCumAgainst(
-            {
-              parcels,
-              projects: statics.projects,
-              calibration: g.calibration,
-              asOf,
-              districtMaxStories: statics.districtMaxStories
-            },
-            lot,
-            existing
-          );
+    const choice = g.view.pre.choice;
+    const allowed = allowedCount(choice.t, lot, parcels.envelopeStories[lot]);
+    const cap = capFrom(parcels.fzpCap[lot]);
+    const cum = new Float32Array(Math.max(1, allowed));
+    choiceRow(
+      choice,
+      g.choiceStep ?? g.view.pre.choiceStep,
+      lot,
+      allowed,
+      cap,
+      existing,
+      'market',
+      cum
+    );
     const u = drawOn(streamOf(sh, lotEntity(statics, lot), k), P.SIZE, 0);
-    let f = 0;
-    while (f < F && !(u < cum[f])) f++;
-    return { month: m, day: s.day, units: f === F ? null : parcels.yield[lot * F + f] - existing };
+    const f = pickOption(cum, allowed, u);
+    const units = f < 0 ? null : optionHomes(choice.t, choice.t.offset[lot] + f, cap, existing);
+    return { month: m, day: s.day, units: units === null ? null : units - existing };
   }
   return null;
 }
 
 const displacedOf = (events: readonly MonthEvent[], row: number) =>
   events.filter((e) => e.kind === 'displaced' && e.row === row);
+
+/**
+ * The month a second cost step (cheaper Type I) takes effect in `withCostStep`: on its 6th day,
+ * so frames read it from the next month on while starts later in this month fall after it.
+ */
+const COST_MONTH = 60;
+
+/**
+ * `input` with a second price step from day 5 of month `COST_MONTH` (Type I's cost per home halved,
+ * Types V and III half as dear again), and `timeline`'s frames carrying it: from the next month each frame reads cost step 1,
+ * as a compile sets `choiceStep` from the step in force on the month's first day.
+ */
+function withCostStep() {
+  const choice = input.calibration.choice!;
+  const step0 = choice.prices[0];
+  const anchors = structuredClone(step0.value.anchors);
+  // On C and D the value then exceeds cost plus land: those options need no public money.
+  for (const id of ['C', 'D'] as const) anchors[id].costPerHome *= 0.5;
+  for (const id of ['A', 'B', 'E'] as const) anchors[id].costPerHome *= 1.5;
+  const from = monthFirstDay(asOf, COST_MONTH) + 5;
+  const two: SimInput = {
+    ...input,
+    calibration: {
+      ...input.calibration,
+      choice: { ...choice, prices: [step0, { from, value: { ...step0.value, anchors } }] }
+    }
+  };
+  const base = oneMoneyTimeline(two, fin);
+  const frames = new Map<number, PolicyFrame>();
+  const frameAt = (m: number): PolicyFrame => {
+    if (m <= COST_MONTH) return base.frameAt(m);
+    let f = frames.get(m);
+    if (f === undefined) {
+      const b = base.frameAt(m);
+      f = { ...b, id: frameIdOf(`cost-step-1|${b.id}`), choiceStep: 1 };
+      frames.set(m, f);
+    }
+    return f;
+  };
+  const changes = [...new Set([...base.changes(), COST_MONTH + 1])].sort((a, b) => a - b);
+  const t: PolicyTimeline = {
+    frameAt,
+    changes: () => changes,
+    touched: (m) => (m === COST_MONTH + 1 ? null : base.touched(m)),
+    readyThrough: () => Number.MAX_SAFE_INTEGER
+  };
+  return { input: two, t, from };
+}
+
+describe('shadow starts under a second cost step', () => {
+  it("a shadow displaces the homes its ordinary start draws (the frame's cost step)", () => {
+    const { input: two, t, from } = withCostStep();
+    const st = staticsOf(two);
+    expect(two.options).toBe(input.options);
+    expect(t.frameAt(COST_MONTH).view.pre.byStep).toHaveLength(2);
+    let matched = 0;
+    // starts on or after the step's day in a month whose frame still reads step 0
+    let between = 0;
+    // seed 26 displaces on day 7 of month 60, after the step's day under a step-0 frame, and its
+    // draw picks another option at step 1 than at step 0
+    for (let seed = 1; seed <= 40; seed++) {
+      const c: Case = { seed, t, through: 240 };
+      const { events, seen } = run(c);
+      // the same attempt's ordinary start, made by the world itself on the same frames
+      const plain = runWorld(st, t, seed, 240);
+      const p = plain.projects;
+      for (const a of seen) {
+        if (a.k !== 0 || a.r !== asOf) continue;
+        const got = events.filter((e) => e.kind === 'displaced' && e.row === a.row);
+        if (got.length !== 1 || got[0].month < COST_MONTH) continue;
+        const d = got[0] as MonthEvent & { kind: 'displaced'; day: Day; units: number };
+        let row = -1;
+        for (let q = 0; q < p.n && row < 0; q++)
+          if (p.origin[q] === ORIGIN_SIM && p.src[q] === a.lot && p.sub[q] === 0) row = q;
+        if (row < 0 || p.existing[row] !== a.existing) continue;
+        const first = revisionsOf(p, row, Number.MAX_SAFE_INTEGER)[0];
+        expect(first.day).toBe(d.day);
+        expect(d.units).toBe(first.units - a.existing);
+        matched++;
+        if (d.month === COST_MONTH && d.day >= from) between++;
+      }
+    }
+    expect(matched).toBeGreaterThan(0);
+    expect(between).toBeGreaterThan(0);
+  });
+});
 
 describe('shadow starts (rule 20)', () => {
   it('displaces on the ordinary start day, in its month, with the homes that start would have added', () => {
@@ -338,13 +437,16 @@ function freshWorld(): World {
   return w;
 }
 
-/** Free lots (no row in a new world) whose top level has at least 2 homes, in rank order. */
+/** The most homes an allowed option gives `lot` (as against its own existing homes). */
+const topOf = (lot: number) =>
+  topHomes(T, lot, allowedOf(lot), capOf(lot), input.parcels.existingUnits[lot]);
+
+/** Free lots (no row in a new world) whose largest allowed option has 2 homes or more, by rank. */
 const LOTS = (() => {
   const w = freshWorld();
   const out: number[] = [];
-  const y = input.parcels.yield;
   for (let lot = 0; lot < statics.parcelId.length; lot++) {
-    if (lotRow(w.lots, lot) >= 0 || y[lot * F + F - 1] < 2) continue;
+    if (lotRow(w.lots, lot) >= 0 || topOf(lot) < 2) continue;
     out.push(lot);
   }
   return out.sort((a, b) => statics.rank[a] - statics.rank[b]);
@@ -361,9 +463,10 @@ function fundedRow(world: World, lot: number, k: number): number {
   return row;
 }
 
-/** An affordable application of `lot` at its top level, applied on `applied`. */
+/** An affordable application of `lot` at its most-homes option, applied on `applied`. */
 function application(lot: number, applied: Day) {
-  const f = F - 1;
+  const f = mostHomes(T, lot, allowedOf(lot), capOf(lot), input.parcels.existingUnits[lot]);
+  const j = T.offset[lot] + f;
   return {
     lot,
     kind: KIND_AFFORDABLE,
@@ -372,8 +475,11 @@ function application(lot: number, applied: Day) {
     key: lineKey(applied, statics.rank[lot], 'affordable'),
     bundle: AFF,
     f,
-    units: input.parcels.yield[lot * F + f],
-    stories: fillStories(FILL_LEVELS[f], input.parcels.envelopeStories[lot]),
+    btype: T.type[j],
+    cstep: 0,
+    price: '',
+    units: optionHomes(T, j, capOf(lot), input.parcels.existingUnits[lot]),
+    stories: T.stories[j],
     level: 1,
     viewMonth: 1
   };
@@ -459,18 +565,17 @@ describe('shadows by hand', () => {
     expect(() => stepShadows(ctxAt(world, e.month + 1, []))).toThrow(/before/);
   });
 
-  it('when no size level gains a home, the shadow ends in its month without a displacement', () => {
+  it('when no option gains a home, the shadow ends in its month without a displacement', () => {
     let checked = 0;
     for (const lot of LOTS) {
-      // Existing homes at the lot's largest level: no level gains a home.
-      let top = 0;
-      for (let f = 0; f < F; f++) top = Math.max(top, input.parcels.yield[lot * F + f]);
+      // Existing homes at the lot's largest option: no option gains a home.
+      const top = topOf(lot);
       const e = expected(SEED, lot, asOf, 0, top, 1, MONTHS);
       if (e === null || e.month < 2) continue;
       expect(e.units).toBeNull();
       const g = timeline.frameAt(e.month);
       const uS = drawOn(streamOf(seedHash(SEED), lotEntity(statics, lot), 0), P.SIZE, 0);
-      expect(sizeIn(statics, g.view, g.calibration, lot, top, uS)).toBeNull();
+      expect(sizeIn(g.view, g.choiceStep, lot, top, uS)).toBeNull();
       const world = freshWorld();
       const { line } = fundOf(world);
       addShadow(line, lot, fundedRow(world, lot, 0), 0, asOf, top);

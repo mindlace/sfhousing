@@ -7,7 +7,7 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import '../../routes/layout.css';
 import type { BrushCatalog } from '$lib/sim/levers/brushes';
-import type { BrushLotsResult } from '$lib/sim/scenario/types';
+import type { BrushLotsResult } from '$lib/sim/timeline-protocol';
 import { ruleChangeLabel } from './brush-summary';
 import {
   DEFAULT_BANDS,

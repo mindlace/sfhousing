@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATASET_VERSION_RE } from '../src/lib/data/manifest';
+import { sharedCache } from '../pipeline/lib/cache-root';
 import { readLock } from '../pipeline/lib/lock';
 import { wranglerTarget } from '../pipeline/lib/r2';
 import { fetchAll } from '../pipeline/steps/fetch';
@@ -28,7 +29,7 @@ async function main(): Promise<number> {
   const work = mkdtempSync(join(tmpdir(), 'sfh-transit-'));
   try {
     const lockPath = join(work, 'transit.lock.json');
-    const rawDir = join(ROOT, 'pipeline/.cache/raw');
+    const rawDir = sharedCache().raw;
     const code = await fetchAll({ only: GTFS_IDS.join(','), lockPath, rawDir });
     if (code !== 0) return code;
     const fetched = readLock(lockPath);

@@ -10,26 +10,24 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { parseManifest } from '$lib/data/manifest';
-import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { decodeParcelChunk } from '$lib/data/parcel-chunk';
+import type { ParcelId } from '$lib/data/parcel';
 import {
   createLotIndex,
   parseNeighborhoods,
   resolveBrushRows,
   type BrushData
 } from '$lib/sim/levers/brushes';
-import { createYieldRecompute, type GrossCache } from '$lib/sim/levers/recompute';
 import {
   benchBaseline,
   benchBaselineFunding,
   benchFunding,
   benchMarket,
   benchRoutes
-} from '$lib/sim/scenario/fixtures/bench-finance';
-import { synthCity, synthPolicy, type SynthCity } from '$lib/sim/scenario/fixtures/synth-city';
-import { buildSimInput } from '$lib/sim/scenario/input';
-import { loadScenario, scenarioUrls } from '$lib/sim/scenario/load';
-import type { SimInput } from '$lib/sim/scenario/types';
+} from '$lib/sim/world/fixtures/bench-finance';
+import { synthCity, synthPolicy, type SynthCity } from '$lib/sim/world/fixtures/synth-city';
+import { buildSimInput } from '$lib/sim/world/input/build';
+import { loadSimInput, simInputUrls } from '$lib/sim/world/input/load';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { decodeTransit } from '$lib/data/transit-codec';
 import { customQuery, queryKey, type CustomBrush } from '$lib/sim-page/policy';
 import {
@@ -43,12 +41,7 @@ import type { Day } from '$lib/timelapse/time';
 import { reconcilePolicy4 } from '$lib/timeline/reconcile4';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
-import {
-  compileTimeline,
-  type CompileCtx,
-  type TimelineCompile,
-  type YieldSource
-} from './compile';
+import { compileTimeline, type CompileCtx, type TimelineCompile } from './compile';
 import { span } from './test/fixtures';
 
 const TIMEOUT = 600_000;
@@ -57,22 +50,6 @@ const SLICE_MS = 20;
 const WINDOW = 480;
 const now = () => performance.now();
 const f1 = (x: number) => x.toFixed(1);
-
-/** A `YieldSource` over chunk records with today's `createYieldRecompute`. */
-function chunkYields(records: Map<ParcelId, ParcelRecord>): YieldSource {
-  return {
-    recompute: (parcels, needs) => {
-      const gross: GrossCache = new Map();
-      return createYieldRecompute(
-        parcels,
-        needs,
-        { record: (id) => records.get(id), cellLoaded: () => true, now },
-        gross
-      );
-    },
-    failedCells: () => []
-  };
-}
 
 interface Run {
   compile: TimelineCompile;
@@ -132,13 +109,11 @@ describe('compile slice on the bench city', () => {
 
   beforeAll(() => {
     city = synthCity();
-    const records = new Map<ParcelId, ParcelRecord>();
-    for (const chunk of city.chunks.values())
-      for (const r of decodeParcelChunk(chunk as never)) records.set(r.id, r);
     const base = buildSimInput({
       parcels: city.parcels,
       projects: parseProjectsFile(structuredClone(city.projects)),
-      calibration: parseCalibration(structuredClone(city.calibration))
+      calibration: parseCalibration(structuredClone(city.calibration)),
+      options: city.options
     });
     const calibration = {
       ...base.calibration,
@@ -154,9 +129,8 @@ describe('compile slice on the bench city', () => {
     };
     ctx = {
       input,
-      layers: { parcels: city.parcels, policy: synthPolicy(city) },
+      layers: { parcels: city.parcels, policy: synthPolicy(city), options: city.options },
       windowMonths: WINDOW,
-      yields: chunkYields(records),
       now
     };
   }, TIMEOUT);
@@ -235,9 +209,9 @@ describe('compile slice on the live city', () => {
       );
       const prefix = `/data/${manifest.datasetVersion}/`;
       const pathOf = (url: string) => join(LIVE_DIR, url.slice(prefix.length));
-      const urls = scenarioUrls(manifest);
+      const urls = simInputUrls(manifest);
       if (!urls?.policy) throw new Error('manifest has no policy.bin');
-      const loaded = await loadScenario(
+      const loaded = await loadSimInput(
         {
           fetch: async (url) => ({
             ok: true,
@@ -257,19 +231,14 @@ describe('compile slice on the live city', () => {
           warn: () => {}
         },
         urls,
-        () => false,
-        { policy: true }
+        () => false
       );
       if (!('fzp' in loaded)) throw new Error(`load failed: ${loaded.code}`);
       const input = loaded.fzp;
-      const layers = { parcels: input.parcels, policy: loaded.policy! };
-      const records = new Map<ParcelId, ParcelRecord>();
-      for (const c of manifest.chunks)
-        for (const r of decodeParcelChunk(JSON.parse(readFileSync(pathOf(c.url), 'utf8'))))
-          records.set(r.id, r);
+      const layers = { parcels: input.parcels, policy: loaded.policy, options: loaded.options };
       const data: BrushData = {
         parcels: input.parcels,
-        policy: loaded.policy!,
+        policy: loaded.policy,
         transit: decodeTransit(JSON.parse(readFileSync(pathOf(manifest.transit!), 'utf8'))),
         neighborhoods: parseNeighborhoods(
           JSON.parse(readFileSync(pathOf(manifest.neighborhoods), 'utf8'))
@@ -295,7 +264,6 @@ describe('compile slice on the live city', () => {
         input,
         layers,
         windowMonths: WINDOW,
-        yields: chunkYields(records),
         now
       });
       const max = Math.max(...r.calls);

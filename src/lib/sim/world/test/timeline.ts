@@ -1,11 +1,10 @@
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
 import type { StageScale } from '$lib/sim/levers/timers';
-import { precomputeOf } from '$lib/sim/scenario/input';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { precomputeOf } from '$lib/sim/world/input/build';
+import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
-import { PATHWAYS, STAGE_ORDER, type Calibration, type MarketStep } from '$lib/timelapse/types';
+import { PATHWAYS, STAGE_ORDER, type Calibration } from '$lib/timelapse/types';
 import type { FinanceFrame, PolicyFrame, PolicyTimeline, ZoningView } from '../policy/frame';
 
 export const IDENTITY: StageScale = { discretionary: {}, streamlined: {}, permitOnly: {} };
@@ -104,28 +103,6 @@ export function scaleProduct(a: StageScale, b: StageScale): StageScale {
   return out;
 }
 
-export interface OldOpts {
-  inFlightScale?: StageScale;
-  newScale?: StageScale;
-  newCalibration?: Calibration;
-  market?: MarketStep[];
-  regimes?: { day: Day; parcels: ScenarioParcels }[];
-}
-
-/** The input today's engine runs for the same policy (Open question 4: `newProjects` always set). */
-export function oldInputOf(base: SimInput, o: OldOpts = {}): SimInput {
-  return {
-    ...base,
-    newProjects: {
-      calibration: o.newCalibration ?? base.calibration,
-      scale: o.newScale ?? IDENTITY
-    },
-    ...(o.inFlightScale ? { inFlightScale: o.inFlightScale } : {}),
-    ...(o.market ? { market: o.market } : {}),
-    ...(o.regimes ? { regimes: o.regimes } : {})
-  };
-}
-
 /** Every timed stage of every route scaled by `v`. */
 export function everyStage(v: number): StageScale {
   const out = { discretionary: {}, streamlined: {}, permitOnly: {} } as Record<
@@ -136,39 +113,29 @@ export function everyStage(v: number): StageScale {
   return out as unknown as StageScale;
 }
 
-const F = FILL_LEVELS.length;
-
-/** A copy of `input.parcels` upzoned on `rows`; every other column is shared. */
+/**
+ * A copy of `input.parcels` upzoned on `rows` (two more stories, the Local Program switched);
+ * every other column is shared.
+ */
 export function upzoned(input: SimInput, rows: Int32Array): ScenarioParcels {
   const p = input.parcels;
-  const yieldCol = p.yield.slice();
   const envelopeStories = p.envelopeStories.slice();
-  const fzp = p.potentialRatio.fzp.slice();
   const localProgram = p.localProgram.slice();
   for (const r of rows) {
-    for (let k = 0; k < F; k++) yieldCol[r * F + k] = Math.min(65535, yieldCol[r * F + k] * 2);
     envelopeStories[r] = Math.min(255, envelopeStories[r] + 2);
-    fzp[r] *= 1.5;
     localProgram[r] = localProgram[r] ? 0 : 1;
   }
-  return {
-    ...p,
-    yield: yieldCol,
-    envelopeStories,
-    localProgram,
-    potentialRatio: { ...p.potentialRatio, fzp }
-  };
+  return { ...p, envelopeStories, localProgram };
 }
 
 /** The rows where any column `upzoned` changes differs. */
 export function touchedRows(a: ScenarioParcels, b: ScenarioParcels): Int32Array {
   const out: number[] = [];
   for (let r = 0; r < a.count; r++) {
-    let differs =
+    const differs =
       a.envelopeStories[r] !== b.envelopeStories[r] ||
-      a.localProgram[r] !== b.localProgram[r] ||
-      a.potentialRatio.fzp[r] !== b.potentialRatio.fzp[r];
-    for (let k = 0; !differs && k < F; k++) differs = a.yield[r * F + k] !== b.yield[r * F + k];
+      a.fzpCap[r] !== b.fzpCap[r] ||
+      a.localProgram[r] !== b.localProgram[r];
     if (differs) out.push(r);
   }
   return Int32Array.from(out);

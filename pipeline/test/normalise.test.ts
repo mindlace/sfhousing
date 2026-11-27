@@ -215,7 +215,7 @@ describe('normalise mini fixture', () => {
     }>(
       `SELECT id, building_id, roof_shape, roof_height, height FROM src_overture_parts ORDER BY id`
     );
-    expect(rows.map((r) => r.id)).toEqual(['p10', 'p14a', 'p14b', 'p14c', 'p14leg']);
+    expect(rows.map((r) => r.id)).toEqual(['p10', 'p14a', 'p14b', 'p14c', 'p14leg', 'ppier']);
     const b = rows.find((r) => r.id === 'p14b')!;
     expect(b.roof_shape).toBe('pyramidal');
     expect(b.roof_height).toBe(8);

@@ -10,7 +10,7 @@ import type { ParcelId } from '$lib/data/parcel';
 import type { PackedCell } from '$lib/map/types';
 import type { PlanOp } from '$lib/plan';
 import type { BrushQuery } from '$lib/sim/levers/brushes';
-import type { BrushLotsResult, PreviewResult } from '$lib/sim/scenario/types';
+import type { BrushLotsResult, PreviewResult } from '$lib/sim/timeline-protocol';
 import { customQuery, type Stroke } from './policy';
 
 export interface StrokePreviewDeps {

@@ -5,11 +5,11 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseManifest, type Manifest } from '../src/lib/data/manifest';
-import { scenarioUrls } from '../src/lib/sim/scenario/load';
+import { simInputUrls } from '../src/lib/sim/world/input/load';
 
 /**
- * Paths relative to /data/<version>/: manifest.json, scenarioUrls' parcels, projects and
- * calibration (and policy, gross when present), and every manifest.chunks[].url. Throws on a URL
+ * Paths relative to /data/<version>/: manifest.json, simInputUrls' parcels, projects and
+ * calibration (and policy, options when present), and every manifest.chunks[].url. Throws on a URL
  * outside the version.
  */
 export function liveFiles(manifest: Manifest): string[] {
@@ -19,9 +19,9 @@ export function liveFiles(manifest: Manifest): string[] {
     return url.slice(prefix.length);
   };
   const out = new Set<string>(['manifest.json']);
-  const urls = scenarioUrls(manifest);
+  const urls = simInputUrls(manifest);
   if (urls) {
-    for (const u of [urls.parcels, urls.projects, urls.calibration, urls.policy, urls.gross]) {
+    for (const u of [urls.parcels, urls.projects, urls.calibration, urls.policy, urls.options]) {
       if (u) out.add(rel(u));
     }
   }

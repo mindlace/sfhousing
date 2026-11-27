@@ -3,10 +3,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseManifest } from '$lib/data/manifest';
-import { synthCity } from '$lib/sim/scenario/fixtures/synth-city';
-import { buildSimInput } from '$lib/sim/scenario/input';
-import { loadScenario, scenarioUrls } from '$lib/sim/scenario/load';
-import type { SimInput } from '$lib/sim/scenario/types';
+import { synthCity } from '$lib/sim/world/fixtures/synth-city';
+import { buildSimInput } from '$lib/sim/world/input/build';
+import { loadSimInput, simInputUrls } from '$lib/sim/world/input/load';
+import type { SimInput } from '$lib/sim/world/input/types';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 
@@ -29,7 +29,8 @@ export function benchInput(): SimInput {
       buildSimInput({
         parcels: city.parcels,
         projects: parseProjectsFile(structuredClone(city.projects)),
-        calibration: parseCalibration(structuredClone(city.calibration))
+        calibration: parseCalibration(structuredClone(city.calibration)),
+        options: city.options
       })
     );
   }
@@ -38,7 +39,7 @@ export function benchInput(): SimInput {
 
 const loaded = new Map<string, Promise<SimInput>>();
 
-/** A dataset directory loaded through `loadScenario` with file-backed fetches. */
+/** A dataset directory loaded through `loadSimInput` with file-backed fetches. */
 export function liveInput(dir: string): Promise<SimInput> {
   let hit = loaded.get(dir);
   if (!hit) {
@@ -52,9 +53,9 @@ async function readDir(dir: string): Promise<SimInput> {
   const manifest = parseManifest(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')));
   const prefix = `/data/${manifest.datasetVersion}/`;
   const pathOf = (url: string) => join(dir, url.slice(prefix.length));
-  const urls = scenarioUrls(manifest);
+  const urls = simInputUrls(manifest);
   if (!urls) throw new Error(`no scenarios.fzp in ${dir}`);
-  const result = await loadScenario(
+  const result = await loadSimInput(
     {
       fetch: async (url: string) => ({
         ok: true,

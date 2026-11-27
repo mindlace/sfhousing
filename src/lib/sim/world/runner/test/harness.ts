@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseManifest, type Manifest } from '$lib/data/manifest';
 import type { FetchLike } from '$lib/sim/chunks';
-import type { FetchBytesLike } from '$lib/sim/scenario/load';
+import type { FetchBytesLike } from '$lib/sim/world/input/load';
 
-/** How an injected failure fails one fetch attempt (as the scenario host harness's `Failure`). */
+/** How an injected failure fails one fetch attempt (a fetch failure: status, reject or bad body). */
 export type Failure = { status: number } | 'reject' | 'body';
 
 export interface MapFetch {

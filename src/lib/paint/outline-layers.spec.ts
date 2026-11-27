@@ -4,7 +4,7 @@ import type { OverlayCtors } from '$lib/brush/overlay';
 import { M_PER_DEG_LAT, M_PER_DEG_LNG } from '$lib/plan/geometry';
 import { TOKENS, hexToRgba } from '$lib/map/palette';
 import type { LotOutlines } from '$lib/sim/outlines';
-import type { LotOutlinesResult } from '$lib/sim/scenario/types';
+import type { LotOutlinesResult } from '$lib/sim/timeline-protocol';
 import { paintedOutlineLayers } from './outline-layers';
 
 type Pt = [number, number];

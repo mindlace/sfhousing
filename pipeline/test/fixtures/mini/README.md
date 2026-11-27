@@ -63,7 +63,7 @@ Extras:
 - Retired parcel `3512096` x[E+3, E+7] y[22, 28] (`date_rec_drop` 2024-06-30, no land use or roll row):
   its centroid lies in lot 15's water part, so lineage matches it to lot 15 on the original polygon.
 - One active parcel with no `mapblklot` (`blklot` `3512097`, x[150,160]): dropped and counted.
-- Overture extras: `bpier` x[20,40] y[-40,-32] h=6 (outside parcels, inside neighborhoods, kept);
+- Overture extras: `bpier` x[20,40] y[-40,-32] h=6 (outside parcels, inside neighborhoods, kept; its part `ppier` and LiDAR tower are Salesforce in small, see Parts and LiDAR);
   `bunder` in lot 1 with `is_underground=true` (dropped); `bmarin` y[400,410] (outside neighborhoods,
   dropped); `besri` in lot 6 (piece < 2 m2, dropped); `bbay` on lot 15's water side (its dry piece).
 - Footprints: `mblr` `SF3512013` (lot 13, exactly b13), `SF3512001` on lot 1 with IoU < 0.5 vs b01 (unused),
@@ -106,7 +106,7 @@ Point` x[E−50, E+50] y[-100,100].
 | `src_footprints`     | 3    | SF3512013, SF3512001, CN0000001                                                                                 |
 | `src_neighborhoods`  | 3    | Bayview Hunters Point, Mission, Noe Valley                                                                      |
 | `src_overture`       | 14   | b01 b02 b03 b04 b06 b10 b13 b14 broad + bpier bunder bmarin besri bbay                                          |
-| `src_overture_parts` | 5    | p10, p14a, p14b, p14c, p14leg (see Parts)                                                                       |
+| `src_overture_parts` | 6    | p10, p14a, p14b, p14c, p14leg, ppier (see Parts)                                                                |
 | `src_height_bulk`    | 8    | the eight districts                                                                                             |
 | `src_parcel_attrs`   | 25   | as `src_parcels`                                                                                                |
 | `src_roll`           | 41   | 2025: 19 (lots 1, 2 x3, 3–8, 10, 11, 14–19, 21); 2024: those less 3, + 13 + `3512099` = 20; 2023: lots 3, 4 = 2 |
@@ -118,15 +118,16 @@ Point` x[E−50, E+50] y[-100,100].
 ## Parts
 
 `overture-building-parts` (optional source; same release as `overture-buildings`, both `fixture` here) has
-five parts. Local metres, as the lots:
+six parts. Local metres, as the lots:
 
-| part     | building | extent              | height | other                                                      | exercises                                     |
-| -------- | -------- | ------------------- | ------ | ---------------------------------------------------------- | --------------------------------------------- |
-| `p14a`   | `b14`    | x[132,138] y[5,25]  | 20     |                                                            | podium over the whole footprint               |
-| `p14b`   | `b14`    | x[133,137] y[15,24] | 60     | `roof_shape` `pyramidal`, `roof_height` 8, `min_height` 20 | tower with a roof                             |
-| `p14c`   | `b14`    | x[132,134] y[5,7]   | none   |                                                            | a part without a height (not counted)         |
-| `p14leg` | `b14`    | x[139,140] y[26,27] | 10     |                                                            | outside the footprint, inside lot 14          |
-| `p10`    | `b10`    | x[95,100] y[5,25]   | 18     |                                                            | covers half of `b10`: x[100,105] is uncovered |
+| part     | building | extent              | height | other                                                      | exercises                                                  |
+| -------- | -------- | ------------------- | ------ | ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `p14a`   | `b14`    | x[132,138] y[5,25]  | 20     |                                                            | podium over the whole footprint                            |
+| `p14b`   | `b14`    | x[133,137] y[15,24] | 60     | `roof_shape` `pyramidal`, `roof_height` 8, `min_height` 20 | tower with a roof                                          |
+| `p14c`   | `b14`    | x[132,134] y[5,7]   | none   |                                                            | a part without a height (not counted)                      |
+| `p14leg` | `b14`    | x[139,140] y[26,27] | 10     |                                                            | outside the footprint, inside lot 14                       |
+| `p10`    | `b10`    | x[95,100] y[5,25]   | 18     |                                                            | covers half of `b10`: x[100,105] is uncovered              |
+| `ppier`  | `bpier`  | x[20,40] y[-40,-32] | 20     | `roof_shape` `skillion`, `roof_height` 10 (drawn top 15)   | under the LiDAR (median 36): disputed and rejected (boxes) |
 
 ## LiDAR
 
@@ -136,18 +137,19 @@ five parts. Local metres, as the lots:
 `no_lidar` fallback). The scene is in absolute EPSG:7131 metres, with the LiDAR sitting at footprint +
 (1.0, -0.3) m. Heights are above local ground.
 
-| what    | scene                                                                                                                      |
-| ------- | -------------------------------------------------------------------------------------------------------------------------- |
-| ground  | 20.00 m; a 1:10 slope rising east over x[130,140] (21 m east of it), under `b14`, whose part heights do not read the LiDAR |
-| `b01`   | flat 12 m                                                                                                                  |
-| `b02`   | 15 m; its Mission-St face (y = 5, Mission St at y = -8) stands 1.5 m higher (16.5 m) over a 1.2 m band                     |
-| `b03`   | hag 0 (a building newer than the flight)                                                                                   |
-| `b04`   | 12 m (4 floors) with a veg tree x[36,40] y[12,16] overhanging its roof by 2 m at +5 m (hag 17 m)                           |
-| `b06`   | 9 m courtyard (the hole x[54,56] y[12,18] stays at hag 0)                                                                  |
-| `b10`   | 18 m, with a 4 x 9 m region (36 m2) at 26 m over x[100.5,104.5] y[10,19], inside the uncovered half                        |
-| `b13`   | gable: eave 6 m, ridge 10 m, ridge along y (x = 125)                                                                       |
-| `b14`   | drawn as its parts: 20 m podium, tower body 52 m under an 8 m pyramidal roof (apex 60 m)                                   |
-| `broad` | 4 m                                                                                                                        |
+| what    | scene                                                                                                                                                                                |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ground  | 20.00 m; a 1:10 slope rising east over x[130,140] (21 m east of it), under `b14`, whose part heights do not read the LiDAR                                                           |
+| `b01`   | flat 12 m                                                                                                                                                                            |
+| `b02`   | 15 m; its Mission-St face (y = 5, Mission St at y = -8) stands 1.5 m higher (16.5 m) over a 1.2 m band                                                                               |
+| `b03`   | hag 0 (a building newer than the flight)                                                                                                                                             |
+| `b04`   | 12 m (4 floors) with a veg tree x[36,40] y[12,16] overhanging its roof by 2 m at +5 m (hag 17 m)                                                                                     |
+| `b06`   | 9 m courtyard (the hole x[54,56] y[12,18] stays at hag 0)                                                                                                                            |
+| `b10`   | 18 m, with a 4 x 9 m region (36 m2) at 26 m over x[100.5,104.5] y[10,19], inside the uncovered half                                                                                  |
+| `b13`   | gable: eave 6 m, ridge 10 m, ridge along y (x = 125)                                                                                                                                 |
+| `b14`   | drawn as its parts: 20 m podium, tower body 52 m under an 8 m pyramidal roof (apex 60 m)                                                                                             |
+| `broad` | 4 m                                                                                                                                                                                  |
+| `bpier` | Salesforce in small: 12 m over its footprint x[20,40] y[-40,-32], then 24, 36, 48 and 60 m over x[22,38], [24,36], [26,34] and [28,32], full depth: four terraces 2 m per side apart |
 
 `make-fixture.ts` writes `sources.lock.json` from scratch, so it drops any `building-boxes` entry; it then
 prints `run npm run pipeline -- boxes --fixture, then fixture --update-golden`.

@@ -11,7 +11,7 @@ import { fnv1a32, generate, type GeneratedBuilding } from '../../generator';
 import { decodeParcelChunk } from '../../data/parcel-chunk';
 import type { ParcelId } from '../../data/parcel';
 import { STAGE_ORDER, type Stage } from '../../timelapse/types';
-import type { Schedule } from '../../sim/scenario/types';
+import type { Schedule } from '../../sim/world/input/types';
 import { packTimedCell, type TimedPackInput } from '../pack-timed';
 import { timelineLookups } from './timeline-lookups';
 

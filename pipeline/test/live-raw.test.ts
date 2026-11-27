@@ -75,14 +75,14 @@ describe('live raw layout (<rawDir>/<sha256>, no extension)', () => {
         'datasf-historic-status': 21,
         'sfbos-sb79-exemptions': 3,
         'overture-buildings': 14,
-        'overture-building-parts': 5,
+        'overture-building-parts': 6,
         'protomaps-basemap': 2
       });
       await loadNormalised(db, norm);
       const [r] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture');
       expect(r.n).toBe(14);
       const [pr] = await db.all<{ n: number }>('SELECT count(*) n FROM src_overture_parts');
-      expect(pr.n).toBe(5);
+      expect(pr.n).toBe(6);
       // Extensionless CSV pages still parse with the header and SODA quoting.
       const [roll] = await db.all<{ n: number; u: number }>(
         `SELECT count(DISTINCT parcel_number) n, sum(number_of_units) u FROM src_roll

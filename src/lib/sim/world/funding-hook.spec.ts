@@ -1,12 +1,13 @@
 // The hook `world-funding` plugs into (S12; rules 15 to 18), driven by a stub `FundingSystem` on
 // the mini city with a `FinanceFrame` that has no pools, no programmes and no arrivals.
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
+import { allowedCount, capFrom, mostHomes, optionHomes } from '$lib/sim/choice/choose';
 import { MARKET_TERMS, resolveTerms } from '$lib/sim/finance/terms';
-import { P, drawOn, seedHash } from '$lib/sim/scenario/rng';
+import { P, drawOn, seedHash } from '$lib/sim/world/rules/rng';
 import { sampleAdvance } from '$lib/timelapse/model';
 import { STAGE_ORDER, type Stage } from '$lib/timelapse/types';
 import { lotRow } from './columns';
+import { heightMultiplier } from './stage';
 import { initDraw, skipBound, startRates } from './rates';
 import { scheduleAt } from './read';
 import { withFunding } from './world';
@@ -26,7 +27,6 @@ import {
 
 const input = miniInput();
 const statics = staticsOf(input);
-const F = FILL_LEVELS.length;
 const finance: FinanceFrame = {
   pools: [],
   programmes: [],
@@ -166,22 +166,24 @@ function isFree(w: World, lot: number): boolean {
   return i < 0 || w.lots.state[i] === LOT_FREE;
 }
 
-/** The highest level of the lot in the view that has homes, or -1. */
-function topLevel(frame: PolicyFrame, lot: number): number {
-  const y = frame.view.parcels.yield;
-  for (let f = F - 1; f >= 0; f--) if (y[lot * F + f] > 0) return f;
-  return -1;
+/** The lot's option with the most homes in the view (as against no existing homes), or -1. */
+function topOption(frame: PolicyFrame, lot: number): number {
+  const p = frame.view.parcels;
+  const t = frame.view.pre.choice.t;
+  return mostHomes(t, lot, allowedCount(t, lot, p.envelopeStories[lot]), capFrom(p.fzpCap[lot]), 0);
 }
 
 function fundedStart(ctx: StepCtx, lot: number, certain: boolean): FundedStart {
   const parcels = ctx.frame.view.parcels;
-  const f = topLevel(ctx.frame, lot);
+  const t = ctx.frame.view.pre.choice.t;
+  const f = topOption(ctx.frame, lot);
+  const j = t.offset[lot] + f;
   return {
     kind: 'market',
     view: ctx.frame.view,
     f,
-    units: parcels.yield[lot * F + f],
-    stories: fillStories(FILL_LEVELS[f], parcels.envelopeStories[lot]),
+    units: optionHomes(t, j, capFrom(parcels.fzpCap[lot]), 0),
+    stories: t.stories[j],
     applied: ctx.firstDay,
     programmes: ['bond', 'loan'],
     granted: 1000,
@@ -206,7 +208,8 @@ describe('withFunding', () => {
   it('calls the hooks in system order', () => {
     const stub = new Stub();
     const after = { ...funded, id: 5, speed: everyStage(0.8) };
-    const T = 24;
+    // long enough for ordinary starts after the change (system 6) on the option rows
+    const T = 60;
     const out = new Both(stub);
     run(stub, changingAt(13, funded, after, new Int32Array(0)), T, out);
     const zero = stub.names(0);
@@ -232,7 +235,7 @@ describe('withFunding', () => {
     const stub = new Stub();
     const awarded = new Set<number>();
     stub.onServe = (ctx) => {
-      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0);
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topOption(ctx.frame, l) >= 0);
       if (lot !== undefined)
         awarded.add(ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, false)));
     };
@@ -288,7 +291,7 @@ describe('withFunding', () => {
   it('hands the hooks a StepCtx and nothing more', () => {
     const stub = new Stub();
     stub.onServe = (ctx) => {
-      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0);
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topOption(ctx.frame, l) >= 0);
       if (lot !== undefined) ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, false));
     };
     run(stub, oneFrame(funded), 12);
@@ -316,7 +319,7 @@ describe('withFunding', () => {
     stub.onEvent = (ctx, e) => {
       if (tried > 0 || e.kind !== 'enter') return;
       tried++;
-      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0)!;
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topOption(ctx.frame, l) >= 0)!;
       expect(() => ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, true))).toThrow(
         /system 3/
       );
@@ -349,7 +352,7 @@ describe('withFunding', () => {
       let n = 0;
       for (const lot of byRank) {
         if (n === 2) break;
-        if (!isFree(ctx.world, lot) || topLevel(ctx.frame, lot) < 0) continue;
+        if (!isFree(ctx.world, lot) || topOption(ctx.frame, lot) < 0) continue;
         const row = ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, true));
         expect(row).toBeGreaterThanOrEqual(0);
         rows.push(row);
@@ -378,7 +381,11 @@ describe('withFunding', () => {
         const st = seen[j] as Exclude<Stage, 'complete'>;
         const t = funded.newCalibration.transitions[s.pathway][st]!;
         const days = sampleAdvance(t, drawOn(stream, P.STAGE_TIME, STAGE_ORDER.indexOf(st))).days;
-        expect(s.entered[seen[j + 1]]! - s.entered[st]!).toBe(Math.floor(0.8 * days));
+        // the height band scales the drawn time (a funded start's stories are known)
+        const ht = funded.newCalibration.heightTime;
+        const mult = heightMultiplier(ht, st, s.revisions[0].stories ?? NaN, s.entered[st]!);
+        const length = mult === 1 ? days : days * mult;
+        expect(s.entered[seen[j + 1]]! - s.entered[st]!).toBe(Math.floor(0.8 * length));
         pairs++;
       }
       expect(s.revisions.length).toBe(1);
@@ -416,7 +423,7 @@ describe('withFunding', () => {
     let lot = -1;
     stub.onServe = (ctx) => {
       if (ctx.month !== 1) return;
-      lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0)!;
+      lot = byRank.find((l) => isFree(ctx.world, l) && topOption(ctx.frame, l) >= 0)!;
       row = ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, true));
     };
     let lastDay = 0;
@@ -495,7 +502,7 @@ describe('startProject guards', () => {
     const stub = new Stub();
     stub.onServe = (ctx) => {
       if (ctx.month !== 1) return;
-      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0)!;
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topOption(ctx.frame, l) >= 0)!;
       ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, true));
       expect(() => ctx.startProject(lot, ctx.firstDay, fundedStart(ctx, lot, true))).toThrow(
         /not free/
@@ -514,7 +521,7 @@ describe('startProject guards', () => {
     const stub = new Stub();
     stub.onServe = (ctx) => {
       if (ctx.month !== 1) return;
-      const lot = byRank.find((l) => isFree(ctx.world, l) && topLevel(ctx.frame, l) >= 0)!;
+      const lot = byRank.find((l) => isFree(ctx.world, l) && topOption(ctx.frame, l) >= 0)!;
       for (const bad of [['a,b'], ['']]) {
         const n = ctx.world.projects.n;
         expect(() =>

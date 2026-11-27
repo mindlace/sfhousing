@@ -3,18 +3,13 @@
 // function the hashed folders export; the parcels and the protection are parameters (the frame
 // in use), never levers.
 //
-// Mirrors the old host (src/lib/sim/scenario/scenario-host.ts), so timeline-ui can retire it:
-// - createBrushService: scenario-host.ts:372-392 (files, waiters), 1462-1485 (noSession, the
-//   request check), 1565-1635 (filesFor, startBrush, answerBrush), 1637-1694 (brushFile,
-//   fetchBrushFile), 501-505 (waiters answered no-session at the end).
-// - lotOutlinesResult: scenario-host.ts:1501-1509.
-// - previewResult: scenario-host.ts:1533-1562.
-// - lotAtResult: scenario-host.ts:1445-1457.
-// - lidLotsOf: scenario-host.ts:1111-1133; cityTransfer, lidsTransfer: scenario-host.ts:432-466.
-// - buildableStories: scenario-host.ts:1391-1405.
-// - cardDepsOf: scenario-host.ts:255-256, 1330-1342 (qualityRules, building, logOnce), 1356
-//   (record); `building`'s readiness check is `Geometry.allReady` (scenario/geometry.ts:231-240)
-//   over the chunk set's ready cells.
+// - createBrushService: the brush files and their waiters, the request check, filesFor,
+//   startBrush, answerBrush, brushFile and fetchBrushFile; waiters are answered no-session at the
+//   end.
+// - lotOutlinesResult, previewResult, lotAtResult, lidLotsOf, cityTransfer, lidsTransfer and
+//   buildableStories.
+// - cardDepsOf: qualityRules, building, logOnce and record; `building`'s readiness check is
+//   every cell of the chunk set's ready cells.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
 import type { Manifest } from '$lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
@@ -22,12 +17,16 @@ import type { PolicyParcels } from '$lib/data/policy-codec';
 import { scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import { decodeTransit } from '$lib/data/transit-codec';
+import type { OptionTable } from '$lib/data/option-table';
 import {
   fnv1a32,
   lotBuildableStories,
   type generate,
+  type generateForm,
   type GeneratedBuilding
 } from '$lib/generator';
+import { allowedCount, capFrom, mostHomes } from '$lib/sim/choice/choose';
+import { BUILDING_FORMS } from '$lib/sim/choice/types';
 import { toLngLat } from '$lib/generator/geo';
 import { LID_PAD_M, type LidLot } from '$lib/map/height/lids';
 import type { HeightCity, HeightLids, LabelSet } from '$lib/map/height/types';
@@ -48,17 +47,16 @@ import {
 import type { LimitOwner } from '$lib/sim/levers/source';
 import type { Lru } from '$lib/sim/lru';
 import { packOutlines } from '$lib/sim/outlines';
-import { lotAtPoint } from '$lib/sim/scenario/lot-at';
-import { brushQueryProblem, datasetUrl, fetchWithRetry } from '$lib/sim/scenario/load';
-import { massingFor, simKey } from '$lib/sim/scenario/massing';
+import { lotAtPoint } from '$lib/sim/world/runner/lot-at';
+import { brushQueryProblem, datasetUrl, fetchWithRetry } from '$lib/sim/world/input/load';
+import { massingFor, simKey } from '$lib/sim/world/massing';
+import type { Massing, Schedule } from '$lib/sim/world/input/types';
 import type {
   BrushLotsResult,
   LotAtResult,
   LotOutlinesResult,
-  Massing,
-  PreviewResult,
-  Schedule
-} from '$lib/sim/scenario/types';
+  PreviewResult
+} from '$lib/sim/timeline-protocol';
 import type { TimelineHostResponse } from '$lib/sim/timeline-protocol';
 import type { CardDeps } from '../score/types';
 import type { Dataset } from './dataset';
@@ -266,16 +264,19 @@ export function lotOutlinesResult(
 
 /**
  * The buildings the first `maxLots` requested lots could hold at `stories`, packed as one cell
- * (`'preview'`). Per lot, in order: a repeat is skipped; a lot absent from `parcels` or with
- * `protectedRow(row)` builds nothing; one whose record is not loaded is `missing`. The generator
- * memo (`simKey`) is the one the timeline's massings share.
+ * (`'preview'`): each lot's most-homes option (`mostHomes`) among those the painted stories
+ * allow, after the lot's unit cap, massed at its form and stories. Per lot, in order: a repeat is
+ * skipped; a lot absent from `parcels`, with `protectedRow(row)` or with no option gaining a
+ * home builds nothing; one whose record is not loaded is `missing`. The generator memo
+ * (`simKey`) is the one the timeline's massings share.
  */
 export function previewResult(o: {
   parcels: ScenarioParcels;
+  options: OptionTable;
   protectedRow(row: number): boolean;
   records: Map<ParcelId, ParcelRecord>;
   memo: Lru<string, GeneratedBuilding | null>;
-  gen: typeof generate;
+  genForm: typeof generateForm;
   lots: readonly ParcelId[];
   stories: number;
   maxLots: number;
@@ -296,10 +297,17 @@ export function previewResult(o: {
       continue;
     }
     if (o.stories <= 0) continue;
-    const key = simKey(id, o.stories);
+    const t = o.options;
+    const existing = plan.existingUnits[i];
+    const k = mostHomes(t, i, allowedCount(t, i, o.stories), capFrom(plan.fzpCap[i]), existing);
+    if (k < 0) continue;
+    const j = t.offset[i] + k;
+    const form = BUILDING_FORMS[t.form[j]];
+    const key = simKey(id, form, t.stories[j], t.plates[j]);
     let b = o.memo.get(key);
     if (b === undefined) {
-      b = o.gen(scenarioRecordOf(plan, i, rec), { maxStories: o.stories }, fnv1a32(id), 'max');
+      const f = o.genForm(scenarioRecordOf(plan, i, rec), form, t.stories[j], fnv1a32(id));
+      b = f === null ? null : f.building;
       o.memo.set(key, b);
     }
     if (b) items.push({ building: b, existingUnits: plan.existingUnits[i] });
@@ -401,9 +409,12 @@ export function lidsTransfer(l: HeightLids): ArrayBuffer[] {
 
 // --- the card ---
 
+/** The memo key of the typology generator's building on a lot at a story limit. */
+const typologyKey = (parcelId: ParcelId, stories: number) => `g|${parcelId}|${stories}`;
+
 /**
- * The stories `parcelId` can build under `allowed`: the generator's (`simKey` memo, the call the
- * preview and the timeline share) on the lot's scenario record from `parcels`, else
+ * The stories `parcelId` can build under `allowed`: the typology generator's (`typologyKey`
+ * memo) on the lot's scenario record from `parcels`, else
  * `lotBuildableStories(polygon, allowed, existingUnits)`. The lot must be in `parcels` and its
  * record loaded (the card checks both first).
  */
@@ -422,7 +433,7 @@ export function buildableStories(
   const rec = o.records.get(parcelId);
   if (i === undefined || rec === undefined)
     throw new RangeError(`buildableStories: ${parcelId} has no row or no loaded record`);
-  const key = simKey(parcelId, allowed);
+  const key = typologyKey(parcelId, allowed);
   let b = o.memo.get(key);
   if (b === undefined) {
     b = o.gen(
@@ -455,7 +466,7 @@ export function cardDepsOf(
     building: (sc, k) => (scheduleReady(ds, sc) ? massingFor(sc, k, ds.massing) : NOT_DRAWN),
     logOnce: (key, msg) => logOnce(`card:${key}`, msg),
     record: (id) => ds.chunks.records.get(id) ?? null,
-    // Null where nothing can be built (today's `LotLimits.buildable`, scenario-host.ts:1405);
+    // Null where nothing can be built (today's `LotLimits.buildable`);
     // `cardAt` passes it through to `limits.buildable`.
     buildable: (id, allowed, existingUnits) =>
       buildableStories(
@@ -468,8 +479,8 @@ export function cardDepsOf(
 }
 
 /**
- * True when `s` has a T11 parcel and every T11 parcel's cell is loaded (`Geometry.allReady`,
- * scenario/geometry.ts:231-240): only then is it massed, as the map would draw it.
+ * True when `s` has a T11 parcel and every T11 parcel's cell is loaded (`Geometry.allReady`):
+ * only then is it massed, as the map would draw it.
  */
 export function scheduleReady(ds: Dataset, s: Schedule): boolean {
   const P = ds.massing.input.parcels;

@@ -1,7 +1,7 @@
 // Policy build step (sim data layers, plan 1): runs the policy SQL and writes
-// `scenarios/fzp/policy.bin` (codec `sfh-policy/1`), one row per parcel in parcels.bin order: the
-// zoning use district, the historic resource status, the SB 79 exemptions, the FZP yield cap, and
-// the SB 79 and current-law columns. SB 79 as written is the statute envelope at the parcel's best
+// `scenarios/fzp/policy.bin` (codec `sfh-policy/2`), one row per parcel in parcels.bin order: the
+// zoning use district, the historic resource status, the SB 79 exemptions, and the SB 79 and
+// current-law columns. A layer's homes are the lot's building options at its stories and cap. SB 79 as written is the statute envelope at the parcel's best
 // TOD stop standard, capped at the statute density; current law is FZP plus Planning Code §207.11
 // (Ord. 082-26 §5) with the City's exemptions.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,16 +20,12 @@ import {
   type PolicyParcels
 } from '../../src/lib/data/policy-codec';
 import { idsHash } from '../../src/lib/data/column-file';
-import {
-  FILL_LEVELS,
-  scenarioRecordOf,
-  type ScenarioParcels
-} from '../../src/lib/data/scenario-codec';
-import { scenarioYield } from '../../src/lib/data/scenario-yield';
+import { optionsOfRow, type OptionTops } from '../../src/lib/data/envelope-row';
+import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { Provenance } from '../../src/lib/timelapse/types';
-import { currentLawRow, envelopeRow, s207Row } from '../lib/current-law';
+import { currentLawRow, envelopeRow, s207HeightFt, s207Row } from '../lib/current-law';
 import { fzpYieldCapOf } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import { parseHeightDistrict } from '../lib/heights';
@@ -129,7 +125,8 @@ function provenance(capDay: Day): PolicyParcels['provenance'] {
         'nearest stop point of each tier (200 ft, ¼ mile, ½ mile); the tallest standard wins. ' +
         'Stories are 10 ft each of its height and the cap is its du/ac × lot acres, rounded up. ' +
         'The lot must be scenario-eligible, zoned residential, mixed or commercial, not hold more ' +
-        'than 2 homes likely rent-controlled (built before 1979; occupancy not modelled), and yield at least 5 homes at full fill; fill levels below 5 are 0.'
+        'than 2 homes likely rent-controlled (built before 1979; occupancy not modelled), and ' +
+        'have a building option of at least 5 homes within the stories and the cap.'
     ),
     currentLaw: prov(
       3,
@@ -146,7 +143,7 @@ function provenance(capDay: Day): PolicyParcels['provenance'] {
         SRC.attrs,
         SRC.historic
       ],
-      'The FZP envelope, cap and yields of parcels.bin (the FZP yield cap is none on Local ' +
+      'The FZP envelope and cap of parcels.bin (the FZP cap is none on Local ' +
         `Program parcels and the base-zoning cap on ${capDate} elsewhere), raised by Planning ` +
         'Code §207.11 (Ord. 082-26 §5) where it applies. §207.11 applies within ½ mile of an ' +
         'SB 79 TOD stop (the SB 79 tiers and bands), on a scenario-eligible lot that is in ' +
@@ -156,7 +153,8 @@ function provenance(capDay: Day): PolicyParcels['provenance'] {
         'density of its tier and band (Planning’s reading of (b)(8)); the density-bonus ' +
         'condition (b)(5) is not modelled. There a base height under 40 ft becomes 40 ft (4 ' +
         'stories) and the cap is the larger of the FZP cap and half the SB 79 density × lot ' +
-        'acres, rounded half up. A lot takes §207.11 when its full-fill yield is larger and it ' +
+        'acres, rounded half up. A lot takes §207.11 when its building options hold more homes ' +
+        'within the stories and cap and it ' +
         'can host a project; a tie keeps FZP.'
     )
   };
@@ -171,7 +169,6 @@ export function policyDump(p: PolicyParcels): unknown {
     datasetVersion: p.datasetVersion,
     count: p.count,
     idsHash: p.idsHash,
-    fillLevels: [...p.fillLevels],
     currentLawRule: p.currentLawRule,
     tierSource: p.tierSource,
     useDistricts: [...p.useDistricts],
@@ -183,17 +180,14 @@ export function policyDump(p: PolicyParcels): unknown {
     ),
     useDistrict: a(p.useDistrict),
     historic: a(p.historic),
-    fzpYieldCap: a(p.fzpYieldCap),
     todTier: a(p.todTier),
     todBand: a(p.todBand),
     sb79Status: a(p.sb79Status),
     sb79Stories: a(p.sb79Stories),
     sb79Cap: a(p.sb79Cap),
-    sb79Yield: a(p.sb79Yield),
     s207Status: a(p.s207Status),
     currentStories: a(p.currentStories),
     currentCap: a(p.currentCap),
-    currentYield: a(p.currentYield),
     hostableSb79: a(p.hostableSb79),
     hostableCurrent: a(p.hostableCurrent),
     currentFromS207: a(p.currentFromS207),
@@ -230,7 +224,9 @@ interface PolicyRow {
 
 /**
  * The policy build step. Needs the scenario step's tables (sc_zoning, sc_district) and its
- * `scenarios/fzp/parcels.bin`, and `records` as writeScenario took them. Runs runPolicySql, writes
+ * `scenarios/fzp/parcels.bin`, `records` as writeScenario took them, and `options`: per
+ * parcels.bin row, the lot's building options (options.bin, or the scenario step's candidates
+ * through `candidateTops`). Runs runPolicySql, writes
  * `<outDir>/scenarios/fzp/policy.bin` and reports sd.historic.no-row and sd.exempt.unmatched into
  * `buildCounts` (T14), and sd.sb79.zone-unlisted and sd.sb79.tier2-unmatched. Reads `<outDir>/transit.json` (the transit step's)
  * for the SB 79 TOD stops. Returns the policy.* counts and warnings. Throws when the written file does
@@ -243,6 +239,7 @@ export async function writePolicy(a: {
   records: { rec: ParcelRecord; cellId: string }[];
   capDay: Day;
   buildCounts: Record<string, number>;
+  options: OptionTops;
 }): Promise<{ counts: Record<string, number>; warnings: string[] }> {
   const { db } = a;
   const warnings: string[] = [];
@@ -284,7 +281,8 @@ export async function writePolicy(a: {
     return r;
   };
   const n = s.count;
-  const F = s.fillLevels.length;
+  if (a.options.offset.length !== n + 1)
+    throw new Error(`policy: options have ${a.options.offset.length - 1} rows, parcels.bin ${n}`);
   const codeOf = (r: PolicyRow) => r.zoning_code ?? '';
   const useDistricts = [...new Set(s.id.map((id) => codeOf(rowOf(id))))].sort(cmp);
   const districtIdx = new Map(useDistricts.map((d, i) => [d, i]));
@@ -296,24 +294,20 @@ export async function writePolicy(a: {
     datasetVersion: a.datasetVersion,
     count: n,
     idsHash: idsHash(s.id),
-    fillLevels: [...FILL_LEVELS],
     currentLawRule: CURRENT_LAW_RULE,
     tierSource: TIER_SOURCE,
     useDistricts,
     provenance: provenance(a.capDay),
     useDistrict: new Uint16Array(n),
     historic: new Uint8Array(n),
-    fzpYieldCap: new Uint16Array(n),
     todTier: new Uint8Array(n),
     todBand: new Uint8Array(n),
     sb79Status: new Uint8Array(n).fill(SB79_STATUSES.indexOf('outside')),
     sb79Stories: new Uint8Array(n),
     sb79Cap: new Uint16Array(n).fill(NULL_CAP),
-    sb79Yield: new Uint16Array(n * F),
     s207Status: new Uint8Array(n).fill(S207_STATUSES.indexOf('outside')),
     currentStories: new Uint8Array(n),
     currentCap: new Uint16Array(n).fill(NULL_CAP),
-    currentYield: new Uint16Array(n * F),
     hostableSb79: new Uint8Array(n),
     hostableCurrent: new Uint8Array(n),
     currentFromS207: new Uint8Array(n),
@@ -336,7 +330,7 @@ export async function writePolicy(a: {
     's207.base_ft_mismatch',
     'current.from_s207',
     'current.net_capacity',
-    'current.yield_mismatch'
+    'current.fzp_mismatch'
   ])
     c[`policy.${k}`] = 0;
   c['policy.sb79.stops.tier1'] = stops.filter((x) => x.tier === 1).length;
@@ -365,7 +359,8 @@ export async function writePolicy(a: {
       p.exemptTemporary[i] = 1;
       inc('exempt.temporary');
     }
-    // Exactly the cap writeScenario capped `yield` with (same zoning, lot area, R-4 and LP flag).
+    // The FZP cap: parcels.bin's `fzpCap`, recomputed here (same zoning, lot area, R-4 and LP
+    // flag); a difference is counted in policy.current.fzp_mismatch.
     const cap = fzpYieldCapOf(
       r.zoning_code,
       s.lotAreaM2[i],
@@ -373,9 +368,7 @@ export async function writePolicy(a: {
       s.localProgram[i] === 1,
       a.capDay
     );
-    if (cap !== null && !(Number.isInteger(cap) && cap >= 0 && cap < NULL_CAP))
-      throw new Error(`policy: parcel ${s.id[i]} fzpYieldCap ${cap} does not fit u16`);
-    p.fzpYieldCap[i] = cap === null ? NULL_CAP : cap;
+    const binCap = s.fzpCap[i] === NULL_CAP ? null : s.fzpCap[i];
 
     // SB 79 as written (ruling 3: the exemption flags are not read here).
     const best = bestStandard(reach.get(s.id[i]) ?? {});
@@ -386,15 +379,8 @@ export async function writePolicy(a: {
       p.todBand[i] = best.band;
       if (zone === 'unlisted') zoneUnlisted.push(s.id[i]);
     }
-    const rec = recOf.get(s.id[i]);
-    if (!rec) throw new Error(`policy: parcel ${s.id[i]} has no record`);
-    const view = scenarioRecordOf(s, i, rec);
-    const gross = new Map<number, number>();
-    const grossAt = (stories: number) => {
-      let g = gross.get(stories);
-      if (g === undefined) gross.set(stories, (g = scenarioYield(view, stories, null)));
-      return g;
-    };
+    if (!recOf.has(s.id[i])) throw new Error(`policy: parcel ${s.id[i]} has no record`);
+    const options = optionsOfRow(a.options, i);
     const sb = sb79Row({
       best,
       eligible: s.eligible[i] === 1,
@@ -402,7 +388,7 @@ export async function writePolicy(a: {
       rentControlLikely: s.rentControlLikely[i] === 1,
       lotAreaM2: s.lotAreaM2[i],
       existingUnits: s.existingUnits[i],
-      grossAt
+      options
     });
     p.sb79Status[i] = statusIdx.get(sb.status)!;
     inc(`sb79.${sb.status}`);
@@ -410,42 +396,38 @@ export async function writePolicy(a: {
     if (sb.cap !== null && !(sb.cap >= 0 && sb.cap < NULL_CAP))
       throw new Error(`policy: parcel ${s.id[i]} sb79Cap ${sb.cap} does not fit u16`);
     p.sb79Cap[i] = sb.cap === null ? NULL_CAP : sb.cap;
-    for (let k = 0; k < F; k++) {
-      if (sb.yield[k] > 0xffff)
-        throw new Error(`policy: parcel ${s.id[i]} sb79Yield ${sb.yield[k]} does not fit u16`);
-      p.sb79Yield[i * F + k] = sb.yield[k];
-    }
     if (sb.status === 'applies') {
       p.hostableSb79[i] = 1;
-      if (sb.uncappedTop > sb.yield[F - 1]) inc('sb79.cap_binds');
-      c['policy.sb79.net_capacity'] += Math.max(0, sb.yield[F - 1] - s.existingUnits[i]);
+      if (sb.uncappedTop > sb.top) inc('sb79.cap_binds');
+      c['policy.sb79.net_capacity'] += Math.max(0, sb.top - s.existingUnits[i]);
     }
 
-    // Current law: FZP plus §207.11 (ruling 1). The FZP row is parcels.bin's; the step also
-    // recomputes it with envelopeRow and counts any difference (policy.current.yield_mismatch).
-    const fzp = {
+    // Current law: FZP plus §207.11 (ruling 1). The FZP row is parcels.bin's stories and cap on
+    // the options; the step counts a cap or hostable flag that differs from parcels.bin's
+    // (policy.current.fzp_mismatch).
+    const fzp = envelopeRow({
       stories: s.envelopeStories[i],
-      cap,
-      yield: Array.from(s.yield.subarray(i * F, (i + 1) * F)),
-      hostable: s.hostable[i] === 1
-    };
-    const again = envelopeRow({
-      stories: fzp.stories,
-      cap,
+      cap: binCap,
       eligible: s.eligible[i] === 1,
       existingUnits: s.existingUnits[i],
-      grossAt
+      options
     });
-    if (again.hostable !== fzp.hostable || again.yield.some((y, k) => y !== fzp.yield[k]))
-      inc('current.yield_mismatch');
+    if (cap !== binCap || fzp.hostable !== (s.hostable[i] === 1)) inc('current.fzp_mismatch');
     // V33 reads the applicable height and R-4 flag from parcels.bin's district string: the Local
     // Program height on a Local Program lot, else the base height.
     const hd = parseHeightDistrict(s.districts[s.district[i]]);
     const lp = s.localProgram[i] === 1;
     const binHeightFt = hd.kind === 'height' ? (lp ? (hd.lpFt ?? hd.baseFt) : hd.baseFt) : null;
     const binR4 = hd.kind === 'height' && hd.r4;
-    const heightFt = lp ? (r.lp_ft ?? r.base_ft) : r.base_ft;
-    if (binHeightFt !== heightFt || binR4 !== r.r4) inc('s207.base_ft_mismatch');
+    const mappedFt = lp ? (r.lp_ft ?? r.base_ft) : r.base_ft;
+    if (binHeightFt !== mappedFt || binR4 !== r.r4) inc('s207.base_ft_mismatch');
+    // §207.11 reads the code height limit: 35 ft on an RH-1 lot off the Local Program.
+    const heightFt = s207HeightFt({
+      localProgram: lp,
+      baseFt: r.base_ft,
+      lpFt: r.lp_ft,
+      zoningCode: r.zoning_code
+    });
     const s207 = s207Row({
       best,
       eligible: s.eligible[i] === 1,
@@ -455,10 +437,10 @@ export async function writePolicy(a: {
       exempt: r.permanent || r.temporary,
       fzpStories: fzp.stories,
       fzpHeightFt: heightFt,
-      fzpCap: cap,
+      fzpCap: binCap,
       lotAreaM2: s.lotAreaM2[i],
       existingUnits: s.existingUnits[i],
-      grossAt
+      options
     });
     p.s207Status[i] = s207Idx.get(s207.status)!;
     inc(`s207.${s207.status}`);
@@ -468,16 +450,10 @@ export async function writePolicy(a: {
     if (cur.cap !== null && !(cur.cap >= 0 && cur.cap < NULL_CAP))
       throw new Error(`policy: parcel ${s.id[i]} currentCap ${cur.cap} does not fit u16`);
     p.currentCap[i] = cur.cap === null ? NULL_CAP : cur.cap;
-    for (let k = 0; k < F; k++) {
-      if (cur.yield[k] > 0xffff)
-        throw new Error(`policy: parcel ${s.id[i]} currentYield ${cur.yield[k]} does not fit u16`);
-      p.currentYield[i * F + k] = cur.yield[k];
-    }
     p.hostableCurrent[i] = cur.hostable ? 1 : 0;
     p.currentFromS207[i] = cur.fromS207 ? 1 : 0;
     if (cur.fromS207) inc('current.from_s207');
-    if (cur.hostable)
-      c['policy.current.net_capacity'] += Math.max(0, cur.yield[F - 1] - s.existingUnits[i]);
+    if (cur.hostable) c['policy.current.net_capacity'] += Math.max(0, cur.top - s.existingUnits[i]);
   }
   c['policy.sb79.tod_share'] = n === 0 ? 0 : Math.round((1e4 * inReach) / n);
 

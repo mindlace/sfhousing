@@ -67,14 +67,34 @@ Then `world.month += 1`, `world.frame = frame.id`. Without a funding system, or 
 `frame.finance` is null, systems 2, 5 and 7 and every hook call are skipped.
 
 At a start the route shares (`newCalibration`), Local Program (`frame.view.parcels.localProgram`)
-and size come from the frame of the model month holding the lot-month's first day, not the start
-day's. Stage outcomes and lengths are drawn on the step's frame: `newCalibration` for a project not
-filed at the dataset date, `calibration` otherwise.
+and the building come from the frame of the model month holding the lot-month's first day, not the
+start day's. Stage outcomes and lengths are drawn on the step's frame: `newCalibration` for a
+project not filed at the dataset date, `calibration` otherwise.
+
+**The building** (building-choice, [building-choice.md](building-choice.md)). A start chooses one of
+the lot's options (`SimInput.options`, options.bin): the view's envelope allows the row's prefix up
+to `envelopeStories` (`allowedCount`), their homes are clipped by the view's cap (`fzpCap`), and
+the choice row is built for the cost step of that frame (`frame.choiceStep`, else the step at the
+dataset date; the funded clocks and the shadows read the same step) against the homes there now (0 once the lot is demolished in the run). `u = drawOn(stream, P.SIZE, 0)` picks the
+option (`pickOption`); none gaining a home makes the lot `LOT_DONE`. The row records the option's
+index in the lot's row (`level`, a `Uint16Array`), its type (`btype`, `NO_BTYPE` 255 for rows with
+no option), the cap (`optCap`), the envelope (`env`), and `top`, the most homes among the allowed
+options; units and stories are the option's. A funded start brings its option index in
+`FundedStart.f`.
+
+**Revisions** of a simulated row keep the ratio draw: units = clamp(round(ratio × units),
+existing + 1, the most homes among the allowed options of the row's type), and the row moves to the
+same-type option with the fewest homes that holds them (`level`), stories following it. Pipeline
+rows revise as before.
+
+**Durations by height** (`heightMultiplier`, `stage.ts`). `enterStage` multiplies the time still to
+run of a `permitIssued` or `construction` stage (the drawn length less the days already spent) by
+the band multiplier of the row's latest stories, on the `heightTime` step in force on the stage
+entry. Rows with unknown stories (NaN), other stages and a calibration without `heightTime` get 1.
 
 Pipeline phases filed after the dataset date take their caps and existing homes from month 1's view
-(`world.ts:228`, `pipeline.ts:395-404`), not the view in force when they file. Today's engine does
-the same: `staticOf` (`scenario/engine.ts`) reads only `input.parcels`, and dated regimes reach
-only simulated projects (`scenario/types.ts:110-117`).
+(`world.ts:228`, `pipeline.ts:395-404`), not the view in force when they file; dated regimes reach
+only simulated projects.
 
 **Speed.** A stage's scale is `speed` times each `speedNew` entry that reaches the project, clamped
 to `[MIN_SCALE, MAX_SCALE]` (`stage.ts` `speedOf`). An entry reaches it when its filing day is
@@ -94,8 +114,12 @@ from `timeline.changes()`, up to the month being stepped), the last continuing w
 the lot's `INIT` threshold on attempt k. A lot with no chance under every frame it reads is not
 planned.
 
+A start's odds read the view's initiation logits at the frame's cost step (`frame.choiceStep`,
+`logitsAt`; the compiler sets it from the step in force on the month's first day, and a frame
+without one reads `pre.logit`, the step at the dataset date).
+
 A frame change in month m replans (rule 7): the lots in `timeline.touched(m)`; every free lot when
-`touched(m)` is null or `market` changed; and, with a funding system plugged in, every free lot
+`touched(m)` is null or `market` or `choiceStep` changed; and, with a funding system plugged in, every free lot
 when this month's frame or last month's has `finance`. The whole-city replan is the costly month
 (see Cost). Live rows whose speed changed are re-anchored on the month's first day.
 
@@ -120,15 +144,13 @@ only the entries still due that month.
 
 ## Readers
 
-`scheduleAt(world, statics, row, day)` and `masterAt(…)` (`read.ts`) give a row as today's
+`scheduleAt(world, statics, row, day)` and `masterAt(…)` (`read.ts`) give a row as its
 `Schedule` or `Master`, as seen on `day`: nothing dated after `day`, `end.kind` `'open'` until it
 ends. A phase row read before its filing day gives null from both. `funding` comes from what
 `startProject` stored.
 
 `scheduleAt` sets `inFlight: true` on every row that runs on `calibration` (pipeline rows filed at
-the dataset date, and phases) and never sets `regime`. To compare, the referee runs the old engine
-with an identity `newProjects` (`calibration`, identity scale; `test/timeline.ts` `oldInputOf`) and
-strips `regime` from its schedules (`frames.referee.spec.ts`); main's ruling Q4.
+the dataset date, and phases) and never sets `regime`.
 
 ## The funding hook
 
@@ -152,8 +174,8 @@ counts as 0, as does an answer for an already-applied month.
 
 `StepCtx.startProject(lot, day, funded)` is the one way a project begins. It throws unless the lot
 has no row or is `LOT_FREE`, and throws during system 3. With `funded` null, `day` must be the lot's
-ordinary start, and it returns -1 when no size level gains a home (the lot becomes `LOT_DONE`, no
-row). With `funded`, `day` must fall in this month and a programme id that is empty or holds `','`
+ordinary start, and it returns -1 when no allowed option gains a home (the lot becomes
+`LOT_DONE`, no row). With `funded`, `day` must fall in this month and a programme id that is empty or holds `','`
 throws (ids are stored joined with `','`). `StepCtx.displace(row, lot, day, units)` throws unless
 `row` is a funded start on `lot` and `day` is in this month. `StepCtx.due` is guarded: hooks cannot
 `take`, nor `put` into a month already taken. A `certain` funded start advances through every
@@ -178,8 +200,8 @@ zone's predicted spaces per new market home with month 0's in whole steps of `SP
 and, where the step count moved, records an entry `(zone, month + 1, delta)` in `CarColumns.shift*`.
 `timelineOf` is then `parkingTimeline(base, …)`: from an entry's month on, the frame is the base
 frame with `parking`, a `ParkingShift` (`policy/frame.ts`), and an id of its own. A lot's shift is
-`lotShift`: `signedOddsShift(-delta × cost per space)` of the parking type of the prototype at the
-lot's top qualifying fill level, on the frame's slope (`finance.slope`, else
+`lotShift`: `signedOddsShift(-delta × cost per space)` of the parking type of the prototype of the
+lot's most likely option (the argmax of its choice row), on the frame's slope (`finance.slope`, else
 `calibration.market.slope.perCostShare`). Entry months are frame changes: system 1 replans the
 changed zones' lots (`touched`; the union with the base's when both change in one month), and a
 funded month replans every lot as before. `ordinaryStart`, `eachFreeLot` and the funded market
@@ -191,7 +213,7 @@ returns its argument: every event equals the run without cars (`cars.property.sp
 
 Memory: a parking state is per zone only (each zone's steps, the zones changed, a zones ×
 prototypes table per slope): O(zones × refreshes) per world, asserted in `parking.property.spec.ts`.
-Rates of a zone with a shift are memoised per (`view.pre`, market, zone key) over the zone's lots,
+Rates of a zone with a shift are memoised per (the view's logits at the cost step, market, zone key) over the zone's lots,
 shared across worlds, and cleared when the memo holds 8 times the city's lots. `skipBound` keeps
 only its two latest bounds per (timeline, statics): a funded world asks for one at every frame
 change (a parking-only change no longer triggers a whole-city replan: below). Funding's
@@ -212,12 +234,6 @@ cars (`docs/dev/cars.md`, Measured cost); it was 8.7 s with cars on before.
 
 All colocated in `src/lib/sim/world/`. Server project (signoff) unless noted.
 
-- **Referee** (exact against `simulateDetailed`): `referee.spec.ts` (one frame, all rows),
-  `referee.variants.spec.ts` (market, speed, `speedNew`, route shares), `pipeline.referee.spec.ts`
-  (pipeline, masters, phases), `frames.referee.spec.ts` (a zoning change equals a dated regime, a
-  market change a dated market step; on the bench city, seeds 1 to 5, a change at month 13 that
-  cuts phase parcels' yields, with phases filing after it). Bench and fixture cities, seeds 1 to
-  20; live seeds 1 to 5.
 - **Properties**: `frames.property.spec.ts` (speed and zoning changes), `due.property.spec.ts`
   (carried vs rebuilt list, window extension, `structuredClone` copies, skip shortcut, no frame
   past `readyThrough`), `order.property.spec.ts` (event order, rule 2's lot-table permutation),

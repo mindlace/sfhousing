@@ -1,6 +1,6 @@
 import { debtService } from '$lib/sim/finance';
-import { displacedShare, perAddedHome, type Money } from '$lib/sim/scenario/finance-score';
-import { targetsOf, tierTargetsOf } from '$lib/sim/scenario/score';
+import { displacedShare, perAddedHome, type Money } from '$lib/sim/world/score/finance';
+import { targetsOf, tierTargetsOf } from '$lib/sim/world/score/targets';
 import type {
   CarRow,
   CarsView,

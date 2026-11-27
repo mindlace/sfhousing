@@ -1,5 +1,5 @@
 /**
- * Compiles a filled lever `Resolution` into the plan's and the twin's `SimInput`s (plan 2 Task
+ * Compiles a lever `Resolution` into the plan's and the twin's `SimInput`s (plan 2 Task
  * 10), and the stage lookups each cohort reads. The plan runs on the resolved envelopes and the
  * unscaled calibration: timers reach the engine only as scales (`inFlightScale` for in-flight
  * rows, the `'all'` timers; `newProjects.scale` for new projects, every timer), and the engine
@@ -11,18 +11,12 @@
  * whole input. Worker-safe and pure.
  */
 import { chanceTable, typicalMonths } from '$lib/timelapse/model';
-import { applyPolicies, baseZoning } from '../scenario/policy';
-import { REFERENCES } from '../scenario/score';
-import type { SimInput, TimelineScore } from '../scenario/types';
+import { applyPolicies, baseZoning } from '../world/input/policy';
+import { REFERENCES } from '../world/score/targets';
+import type { SimInput, TimelineScore } from '../world/input/types';
 import { buildFinance } from './finance';
 import type { LayerCtx } from './layers';
-import {
-  allNeeds,
-  leverCapacity,
-  resolveEnvelopes,
-  type LeverCapacity,
-  type Resolution
-} from './resolve';
+import { leverCapacity, resolveEnvelopes, type LeverCapacity, type Resolution } from './resolve';
 import {
   isIdentity,
   routeSharesOp,
@@ -62,13 +56,13 @@ function bare(input: SimInput): SimInput {
   return rest;
 }
 
-/** The plan input for `levers` under the filled resolution (its Needs already written in). */
-function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, filled: Resolution): SimInput {
+/** The plan input for `levers` under their resolution. */
+function planOf(base: SimInput, ctx: LayerCtx, levers: SimLevers, r: Resolution): SimInput {
   const lp = localProgramColumn(ctx, levers);
   const inFlight = scaleTable(levers.timers, 'inFlight');
   // No `timersOp`: the engine scales time itself, on the unscaled transitions. Rescaling the
   // calibration as well would apply every timer twice.
-  const plan = bare(applyPolicies([envelopeOp(filled.plan.table, lp)], base));
+  const plan = bare(applyPolicies([envelopeOp(r.plan.table, lp, ctx.options)], base));
   const newCal = applyPolicies([routeSharesOp(levers.routeShares)], plan).calibration;
   // No baseline finance leaves the key out, so a run without public money is as before (F9).
   const finance = buildFinance(base.finance, levers.finance, base.asOf);
@@ -100,10 +94,7 @@ export function twinInput(base: SimInput, ctx: LayerCtx, compare: Compare): SimI
   if (compare === 'preFzp') {
     twin = bare(applyPolicies([baseZoning], base));
   } else {
-    const r = resolveEnvelopes(ctx, DEFAULT_LEVERS, base.asOf);
-    const needs = allNeeds(r).length;
-    if (needs > 0) throw new Error(`twinInput: the FZP twin has ${needs} needs`);
-    twin = planOf(base, ctx, DEFAULT_LEVERS, r);
+    twin = planOf(base, ctx, DEFAULT_LEVERS, resolveEnvelopes(ctx, DEFAULT_LEVERS, base.asOf));
   }
   byKey.set(compare, twin);
   return twin;
@@ -136,7 +127,7 @@ export function lookupsOf(plan: SimInput): LeverLookups {
 }
 
 /**
- * The plan and twin inputs for `levers` (ruling 3). `filled` is `fillNeeds`' output for these
+ * The plan and twin inputs for `levers` (ruling 3). `r` is `resolveEnvelopes`' output for these
  * levers. References (ruling 3): the existing ones are FZP-versus-pre-FZP estimates on
  * `planEffect.*`, so all are shown against pre-FZP zoning and only the `completedNet` ones
  * against FZP as written.
@@ -145,15 +136,15 @@ export function applyLevers(
   base: SimInput,
   ctx: LayerCtx,
   levers: SimLevers,
-  filled: Resolution
+  r: Resolution
 ): LeverInputs {
-  const plan = planOf(base, ctx, levers, filled);
+  const plan = planOf(base, ctx, levers, r);
   return {
     plan,
     twin: twinInput(base, ctx, levers.compare),
     lookups: lookupsOf(plan),
-    capacity: leverCapacity(filled, base.parcels),
-    unknownLots: filled.unknownLots,
+    capacity: leverCapacity(r, ctx),
+    unknownLots: r.unknownLots,
     references:
       levers.compare === 'preFzp'
         ? REFERENCES

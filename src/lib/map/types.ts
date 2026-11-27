@@ -94,7 +94,7 @@ export interface TimelineUpdate {
   /** After revision 0: lots whose demolition no longer holds (applied before `demolish`). Ignored in revision 0. */
   restore?: ParcelId[];
   swap?: true; // revision 0 only: install over the cells on the map instead of clearing them
-  complete?: boolean; // the run has packed every loaded cell (the scenario worker sets it)
+  complete?: boolean; // the run has packed every loaded cell (the timeline worker sets it)
   city?: CityDelta; // absent: no marker changed (and, in a revision 0, no feed: the page clears it)
 }
 

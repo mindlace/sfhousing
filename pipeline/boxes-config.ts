@@ -8,6 +8,11 @@ export const BOXES = {
   tileSizeM: 500,
   tilePadM: 20,
   vegFracMin: 0.35,
+  // Derive keeps a vegetation-flagged cell inside a footprint as building at this height above
+  // ground or more: this cloud has no vegetation classes, so the flag is the multi-return rule,
+  // which glass curtain walls trip (Salesforce Tower, 60% of its cells); no SF tree in a footprint
+  // is this tall. Tier 3 (measured on Salesforce, 2026-11-26).
+  vegKeepAboveM: 60,
   // Registration: search +-3 m at 0.1 m, cluster touch tolerance 1.5 m.
   regSearchM: 3,
   regStepM: 0.1,
@@ -36,6 +41,16 @@ export const BOXES = {
   stepGapM: 2.5,
   stepCap: 4,
   treeRoughM: 1.0,
+  // Terraces: a building whose raised cells' p95 - p5 reaches taperMinRiseM is sliced into
+  // stacked terraces instead of a main roof and steps. Levels start at the p5 and are
+  // max(stepGapM, rise / taperTiers) apart; a level samples cells taperSampleFrac of a band above
+  // it, without rough cells at taperRoughM. A level's region that is its parent's only child and
+  // keeps taperMergeShare of its area extends the parent's terrace. The cap is taperTiers x 2.
+  taperMinRiseM: 40,
+  taperTiers: 16,
+  taperMergeShare: 0.98,
+  taperRoughM: 4,
+  taperSampleFrac: 0.5,
   // Roofs.
   roofBinM: 0.5,
   roofMainShareMin: 0.25,
@@ -55,6 +70,13 @@ export const BOXES = {
   // Landmark parts: 5 roof tiers.
   partTiers: 5,
   partTierShapes: ['pyramidal', 'dome', 'cone', 'onion'],
+  // Parts the LiDAR disputes: a checked part whose drawn top lies under the median raised LiDAR
+  // height over the cells it alone shows by more than max(partTolM, partTolFrac x top) is
+  // disputed (LiDAR under the top is a lattice or open frame, trusted); the parts are rejected
+  // when the disputed ones cover partRejectShare of all parts.
+  partTolM: 5,
+  partTolFrac: 0.1,
+  partRejectShare: 0.25,
   // The uncovered area loses slivers under 2x this wide (an opening): part and footprint edges
   // that should coincide differ by mm to cm after the lng/lat round trip.
   partSliverM: 0.05,

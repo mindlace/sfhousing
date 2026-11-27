@@ -18,7 +18,7 @@ import {
   mulberry32,
   placeBuilding
 } from './synthetic-city';
-import type { Schedule } from '$lib/sim/scenario/types';
+import type { Schedule } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import { EXIT_ORDER, PATHWAYS, pathwayStages, type Stage } from '$lib/timelapse/types';
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseManifest } from '../src/lib/data/manifest';
-import { scenarioUrls } from '../src/lib/sim/scenario/load';
+import { simInputUrls } from '../src/lib/sim/world/input/load';
 import { liveFiles } from './map-stream-live';
 
 const manifest = parseManifest(
@@ -18,7 +18,7 @@ describe('liveFiles', () => {
   it('lists the manifest, the scenario files and every chunk, relative to the version', () => {
     const files = liveFiles(manifest);
     const prefix = `/data/${manifest.datasetVersion}/`;
-    const urls = scenarioUrls(manifest)!;
+    const urls = simInputUrls(manifest)!;
     expect(files).toContain('manifest.json');
     for (const u of [urls.parcels, urls.projects, urls.calibration]) {
       expect(files).toContain(u.slice(prefix.length));

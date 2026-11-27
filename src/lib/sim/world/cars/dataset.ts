@@ -2,7 +2,7 @@
 // `loadDataset`) and shared by both /sim worlds, as the world core it plugs into
 // (`withFunding(funding, cars)`). Null for a dataset without cars.bin or without
 // `calibration.cars`, and when switched off (`reach-check --cars off`): the worlds then run as before the car model.
-import type { Loaded } from '$lib/sim/scenario/load';
+import type { Loaded } from '$lib/sim/world/input/load';
 import type { CarSystem } from '../types';
 import { createCarSystem } from './system';
 

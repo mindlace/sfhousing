@@ -27,6 +27,8 @@ import { every, tripTables, type TripSpec } from '../../gtfs-builder';
 import { synthTile, type SynthScene } from '../../lidar-synth';
 import { CENSUS_SOURCES } from '../../../census-config';
 import { censusPages } from './census-raw';
+import { CCCI_CSV } from './ccci-raw';
+import { DGS_CCCI_ID, DGS_CCCI_LABEL, DGS_CCCI_LICENSE, DGS_CCCI_URL } from '../../../sources/dgs';
 import { MOHCD_RAW, PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
@@ -583,7 +585,14 @@ const overtureParts = [
     min_height: 20
   }),
   part('p14c', 'b14', null, polygon(rect(132, 5, 134, 7))),
-  part('p14leg', 'b14', 10, polygon(rect(139, 26, 140, 27)))
+  part('p14leg', 'b14', 10, polygon(rect(139, 26, 140, 27))),
+  // bpier is Salesforce in small: the part draws a 20 m skillion over the whole footprint (top 15
+  // at the eave side), under the LiDAR's stepped tower (median 36 m), so the part is drawn too low,
+  // disputed and rejected.
+  part('ppier', 'bpier', 20, polygon(rect(20, -40, 40, -32)), {
+    roof_shape: 'skillion',
+    roof_height: 10
+  })
 ];
 
 // ---- street centerlines (3psu-pn9h; sim data layers) ----
@@ -969,6 +978,32 @@ for (const page of await censusPages()) {
   });
 }
 
+// The mini city's cost index (dgs-ccci; ccci-raw.ts): invented values in the fetcher's CSV layout.
+{
+  const name = `${DGS_CCCI_ID}.csv`;
+  const file = path.join(rawDir, name);
+  fs.writeFileSync(file, CCCI_CSV);
+  const sha256 = await sha256File(file);
+  entries.push({
+    id: DGS_CCCI_ID,
+    files: [
+      {
+        url: `https://fixture.invalid/${name}`,
+        sha256,
+        bytes: Buffer.byteLength(CCCI_CSV),
+        archiveKey: archiveKeyFor(sha256, name),
+        name
+      }
+    ],
+    retrievedAt: '2026-10-10T00:00:00.000Z',
+    upstreamVersion: 'fixture',
+    rowCount: CCCI_CSV.trim().split('\n').length - 1,
+    license: DGS_CCCI_LICENSE,
+    label: DGS_CCCI_LABEL,
+    homepage: DGS_CCCI_URL
+  });
+}
+
 // Non-vector sources: the committed basemap extract and glyph PBFs (downloaded once, see README).
 async function binaryEntry(
   id: string,
@@ -1107,7 +1142,14 @@ fs.writeFileSync(
           return 52 + 8 * (1 - u);
         }
       },
-      { ring: R(47, 43, 53, 49), top: 4 }
+      { ring: R(47, 43, 53, 49), top: 4 },
+      // bpier, Salesforce in small: a 12 m base and four terraces 24, 36, 48 and 60 m high, each
+      // set back 2 m per side (in x) from the one below, over the whole depth of the footprint.
+      { ring: R(20, -40, 40, -32), top: 12 },
+      { ring: R(22, -40, 38, -32), top: 24 },
+      { ring: R(24, -40, 36, -32), top: 36 },
+      { ring: R(26, -40, 34, -32), top: 48 },
+      { ring: R(28, -40, 32, -32), top: 60 }
     ],
     // A 3 m tree beside b04 whose crown overhangs its roof by 2 m at +5 m (17 m above ground).
     veg: [{ ring: R(36, 12, 40, 16), top: 17 }]

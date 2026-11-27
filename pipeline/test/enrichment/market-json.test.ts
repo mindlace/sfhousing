@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseMarketFile } from '../../enrichment/market-schema';
 import { CalibrationError } from '../../lib/fzp-cal/types';
-import { REFERENCES } from '../../../src/lib/sim/scenario/score';
+import { REFERENCES } from '../../../src/lib/sim/world/score/targets';
 
 const MARKET_JSON_PATH = resolve(__dirname, '../../enrichment/market.json');
 const raw = () => JSON.parse(readFileSync(MARKET_JSON_PATH, 'utf8')) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any

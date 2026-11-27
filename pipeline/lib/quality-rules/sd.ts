@@ -877,46 +877,6 @@ export const SD_RULES: readonly QualityRule[] = [
     ...SHARES,
     unitsWeighted: false
   },
-  // Observation rules take tier 4: QualityRule.tier admits only 2–4 and the design's table gives
-  // "—" (ledger SD rulings 2026-10-17).
-  {
-    ...SD,
-    id: 'sd.yield.nonmonotone',
-    source: 'parcels.bin',
-    field: 'yield',
-    kind: 'shape',
-    action: 'none',
-    tier: 4,
-    valueTier: null,
-    maskBit: null,
-    label:
-      'Counts parcels whose units by fill level fall at some higher fill level; changes nothing',
-    denominator: 'parcels',
-    ...SHARES,
-    unitsWeighted: false
-  },
-  // Share override approved (partner, DQ-4, 2026-10-17): measured 7.62% live (11,584 of 152,113),
-  // as the design measured (11,585, RA1); an observation of the yield table that changes nothing,
-  // known rather than a new shape. Warn above 9%, fail above 15%.
-  {
-    ...SD,
-    id: 'sd.yield.zero-hostable',
-    source: 'parcels.bin',
-    field: 'yield',
-    kind: 'shape',
-    action: 'none',
-    tier: 4,
-    valueTier: null,
-    maskBit: null,
-    label:
-      'Counts eligible parcels with an envelope of at least one story whose top-fill yield is 0; ' +
-      'changes nothing',
-    // Eligible in the scenario (T11 flags bit 5, sd.landuse.none-with-units).
-    denominator: 'eligible parcels with envelopeStories ≥ 1',
-    warnShare: 0.09,
-    failShare: 0.15,
-    unitsWeighted: false
-  },
   // ---- Policy step (pipeline/sql/82_policy.sql, reported by pipeline/steps/policy.ts) ----
   // A parcel with no 3tsw-4idn row (or only rows without a code) ships historic '' and is not
   // historic-protected (ruling 4). Kind `missing`, so the 0.05 default.
