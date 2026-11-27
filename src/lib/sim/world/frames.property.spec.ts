@@ -4,17 +4,24 @@
 // a month's last day; a re-anchored stage that ends in the change month.
 import { isDeepStrictEqual } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import {
+  allowedCount,
+  capFrom,
+  choiceRow,
+  choiceStepAt,
+  optionHomes,
+  pickOption
+} from '$lib/sim/choice/choose';
 import { precomputeOf } from '$lib/sim/world/input/build';
-import { seedHash } from '$lib/sim/world/rules/rng';
+import { P, drawOn, seedHash, streamOf } from '$lib/sim/world/rules/rng';
 import type { SimInput } from '$lib/sim/world/input/types';
 import type { Day } from '$lib/timelapse/time';
 import type { Stage } from '$lib/timelapse/types';
 import { emptyWorld, ensureLot, lotRow } from './columns';
 import { DueList, planDue } from './due';
 import { monthFirstDay, monthLastDay, monthOfDay } from './months';
-import type { PolicyFrame, PolicyTimeline } from './policy/frame';
-import { ordinaryStart } from './rates';
+import type { PolicyFrame, PolicyTimeline, ZoningView } from './policy/frame';
+import { lotEntity, ordinaryStart } from './rates';
 import { masterAt, scheduleAt } from './read';
 import { reanchor, rowSpeed } from './stage';
 import { staticsOf, type Statics } from './statics';
@@ -36,7 +43,6 @@ import { createWorld, step } from './world';
 
 const M = 121;
 const FAR: Day = 0x7fffffff;
-const F = FILL_LEVELS.length;
 const PROPERTY_SEEDS = [1, 2, 3, 4, 5];
 
 /** An event without its row (`Omit` spread over the union). */
@@ -201,10 +207,12 @@ describe('a frame change in mid-run, bench city', () => {
   );
 
   it('a start straddling the change takes its lot-month’s view', () => {
-    const p2 = upzoned(
-      input,
-      precomputeOf(input).candidates.filter((_, i) => i % 10 === 0)
-    );
+    // Every tenth candidate down to one story: a straddling start's size then differs by view.
+    const envelopeStories = input.parcels.envelopeStories.slice();
+    precomputeOf(input)
+      .candidates.filter((_, i) => i % 10 === 0)
+      .forEach((r) => (envelopeStories[r] = 1));
+    const p2 = { ...input.parcels, envelopeStories };
     const touched = touchedRows(input.parcels, p2);
     const isTouched = new Set(touched);
     const g = frameOf(input, {
@@ -214,7 +222,8 @@ describe('a frame change in mid-run, bench city', () => {
     const t = changingAt(M, f, g, touched);
     const asOf = input.asOf;
     let found = 0;
-    for (const seed of SEEDS) {
+    // straddling starts are a few in a hundred seeds on the option rows
+    for (const seed of Array.from({ length: 100 }, (_, i) => i + 1)) {
       // Stopped after month m, each lot's row still holds the free day and attempt of the start on it.
       const w = runWorld(statics, t, seed, M);
       const p = w.projects;
@@ -226,12 +235,27 @@ describe('a frame change in mid-run, bench city', () => {
         const day = Math.min(...(Object.values(s.entered) as number[]));
         if (monthOfDay(asOf, day) !== M) continue;
         const li = w.lots.lot.indexOf(lot);
+        // a start that already ended within month m has left a later attempt on its lot
+        if (p.sub[row] !== w.lots.k[li]) continue;
         const plan = ordinaryStart(statics, t, M, seedHash(seed), lot, w.lots.r[li], w.lots.k[li]);
         expect(plan?.day).toBe(day);
         if (plan!.frameMonth !== M - 1) continue;
-        const level = p.level[row];
-        expect(s.revisions[0].units).toBe(input.parcels.yield[lot * F + level]);
-        if (p2.yield[lot * F + level] !== input.parcels.yield[lot * F + level]) found++;
+        // the size draw against the option rows of each view, as `startRow` makes it
+        const stream = streamOf(seedHash(seed), lotEntity(statics, lot), w.lots.k[li]);
+        const pick = (v: ZoningView) => {
+          const allowed = allowedCount(v.pre.choice.t, lot, v.parcels.envelopeStories[lot]);
+          const cap = capFrom(v.parcels.fzpCap[lot]);
+          const existing = v.parcels.existingUnits[lot];
+          const cum = new Float32Array(Math.max(1, allowed));
+          const step = choiceStepAt(v.pre.choice, day);
+          choiceRow(v.pre.choice, step, lot, allowed, cap, existing, 'market', cum);
+          const k = pickOption(cum, allowed, drawOn(stream, P.SIZE, 0));
+          return k < 0
+            ? null
+            : optionHomes(v.pre.choice.t, v.pre.choice.t.offset[lot] + k, cap, existing);
+        };
+        expect(s.revisions[0].units).toBe(pick(f.view));
+        if (pick(g.view) !== pick(f.view)) found++;
       }
       if (found > 0) break;
     }

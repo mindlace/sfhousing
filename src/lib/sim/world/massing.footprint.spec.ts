@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { FILL_LEVELS, fillStories } from '$lib/data/scenario-codec';
-import { fnv1a32, generate, generateForUnits } from '$lib/generator';
+import { fnv1a32, generate, generateForm, generateForUnits } from '$lib/generator';
 import { MAX_STORIES } from '$lib/generator/constants';
 import { localFrame } from '$lib/generator/geo';
 import { rect } from '$lib/generator/fixtures/district';
@@ -11,6 +10,7 @@ import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import { createLru } from '../lru';
+import { miniOptions } from './fixtures/mini-options';
 import { miniCity, MINI_SAME_CELL_PAIR } from './fixtures/mini-parcels';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
 import { MINI_AS_OF, miniProjectsJson } from './fixtures/mini-projects';
@@ -26,14 +26,15 @@ import {
   type MassingCtx
 } from './massing';
 import type { Massing, Schedule, SimInput } from './input/types';
+import { BUILDING_FORMS } from '$lib/sim/choice/types';
 
 const city = miniCity();
 const input: SimInput = buildSimInput({
   parcels: city.parcels,
   projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration
+  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration,
+  options: miniOptions(city)
 });
-const NO_CAP = 0xffff;
 
 /** `massingFor` for every revision, index-aligned with `schedule.revisions`. */
 const massingsFor = (schedule: Schedule, ctx: MassingCtx): Massing[] =>
@@ -49,6 +50,7 @@ const rec = (id: ParcelId): ParcelRecord => {
 function makeCtx(over: Partial<MassingCtx> = {}) {
   const gen = vi.fn(generate);
   const genForUnits = vi.fn(generateForUnits);
+  const genForm = vi.fn(generateForm);
   const logged: string[] = [];
   const seen = new Set<string>();
   const ctx: MassingCtx = {
@@ -57,6 +59,7 @@ function makeCtx(over: Partial<MassingCtx> = {}) {
     memo: createLru(1000),
     gen,
     genForUnits,
+    genForm,
     // The ctx owns the once-per-project rule; this is a faithful stand-in.
     logOnce(projectId, msg) {
       if (seen.has(projectId)) return;
@@ -65,7 +68,7 @@ function makeCtx(over: Partial<MassingCtx> = {}) {
     },
     ...over
   };
-  return { ctx, gen, genForUnits, logged };
+  return { ctx, gen, genForUnits, genForm, logged };
 }
 
 const DAY = MINI_AS_OF;
@@ -89,6 +92,13 @@ function schedule(over: Partial<Schedule> & Pick<Schedule, 'projectId' | 'parcel
 
 const pairSchedule = (over: Partial<Schedule> = {}) =>
   schedule({ projectId: 'PRJ:pair', parcelIds: [...MINI_SAME_CELL_PAIR], ...over });
+
+/** A simulated revision at option f of the lot's row: its homes, stories and index. */
+const optionRev = (id: ParcelId, f: number) => {
+  const t = input.options;
+  const j = t.offset[city.parcels.index.get(id)!] + f;
+  return { day: DAY, units: t.homes[j], stories: t.stories[j], option: f };
+};
 
 describe('cellAnchorParcel and footprintParcel', () => {
   it('the cell anchor is the smallest ParcelId present in T11', () => {
@@ -122,7 +132,7 @@ describe('cellAnchorParcel and footprintParcel', () => {
 
 describe('keys', () => {
   it('simKey and pipeKey have the contract shape', () => {
-    expect(simKey('0026T003', 7)).toBe('s|0026T003|7');
+    expect(simKey('0026T003', 'tower', 20, 2)).toBe('s|0026T003|tower|20|2');
     expect(pipeKey(5, 40, 6, ['b', 'a'], {})).toBe('p|5|40|6|a,b|-|-|-');
     expect(pipeKey(5, 40, null, ['a'], { storyLimit: 9, curatedStories: 6 })).toBe(
       'p|5|40|-|a|9|6|-'
@@ -215,44 +225,46 @@ describe('massingFor: generator results', () => {
     );
   });
 
-  it('a simulated project is massed on the scenario record with its stories as the envelope', () => {
+  it("a simulated project is massed on the scenario record at its option's form and stories", () => {
     const id = '3512012'; // chunk says 1 existing unit, T11 says 2
     const i = city.parcels.index.get(id)!;
+    const t = input.options;
     const s = schedule({
       projectId: `SIM:${id}`,
       origin: 'simulated',
       parcelIds: [id],
-      revisions: [{ day: DAY, units: 12, stories: 4 }]
+      revisions: [optionRev(id, 0)]
     });
-    const { ctx, gen } = makeCtx();
+    const { ctx, gen, genForm } = makeCtx();
     const m = massingFor(s, 0, ctx);
-    expect(gen).toHaveBeenCalledTimes(1);
-    const [recArg, env, seed, mode] = gen.mock.calls[0];
+    expect(gen).not.toHaveBeenCalled();
+    expect(genForm).toHaveBeenCalledTimes(1);
+    const [recArg, form, stories, seed] = genForm.mock.calls[0];
     expect(rec(id).existingUnits).not.toBe(city.parcels.existingUnits[i]);
     expect(recArg.existingUnits).toBe(city.parcels.existingUnits[i]);
     expect(recArg.existingFloorAreaM2).toBe(city.parcels.existingFloorAreaM2[i]);
-    expect(env).toEqual({ maxStories: 4 });
+    expect(form).toBe(BUILDING_FORMS[t.form[t.offset[i]]]);
+    expect(stories).toBe(t.stories[t.offset[i]]);
     expect(seed).toBe(fnv1a32(id));
-    expect(mode).toBe('max');
     expect('parts' in m && m.source).toBe('scenario');
   });
 
-  it('the simulated memo is keyed by parcel and stories, not by seed or project', () => {
+  it('the simulated memo is keyed by the option, not by seed or project', () => {
     const id = '3512012';
-    const mk = (projectId: string, stories: number) =>
-      schedule({
-        projectId,
-        origin: 'simulated',
-        parcelIds: [id],
-        revisions: [{ day: DAY, units: 12, stories }]
-      });
-    const { ctx, gen } = makeCtx();
-    massingFor(mk('SIM:a', 4), 0, ctx);
-    massingFor(mk('SIM:b', 4), 0, ctx);
-    expect(gen).toHaveBeenCalledTimes(1);
-    massingFor(mk('SIM:a', 5), 0, ctx);
-    expect(gen).toHaveBeenCalledTimes(2);
-    expect(ctx.memo.get(simKey(id, 4))).toBeDefined();
+    const t = input.options;
+    const j = t.offset[city.parcels.index.get(id)!];
+    expect(t.offset[city.parcels.index.get(id)! + 1] - j).toBeGreaterThan(1);
+    const mk = (projectId: string, f: number) =>
+      schedule({ projectId, origin: 'simulated', parcelIds: [id], revisions: [optionRev(id, f)] });
+    const { ctx, genForm } = makeCtx();
+    massingFor(mk('SIM:a', 0), 0, ctx);
+    massingFor(mk('SIM:b', 0), 0, ctx);
+    expect(genForm).toHaveBeenCalledTimes(1);
+    massingFor(mk('SIM:a', 1), 0, ctx);
+    expect(genForm).toHaveBeenCalledTimes(2);
+    expect(
+      ctx.memo.get(simKey(id, BUILDING_FORMS[t.form[j]], t.stories[j], t.plates[j]))
+    ).toBeTruthy();
   });
 
   it('pipeline projects hit the memo across seeds and inputs, and a cleared memo regenerates', () => {
@@ -386,17 +398,17 @@ describe('failures, logging and packing', () => {
   });
 
   it('a simulated project missing a scenario row falls back to its footprint', () => {
-    const { ctx, logged, gen } = makeCtx({
+    const { ctx, logged, genForm } = makeCtx({
       input: { ...input, parcels: { ...input.parcels, index: new Map() } }
     });
     const s = schedule({
       projectId: 'SIM:x',
       origin: 'simulated',
       parcelIds: ['3512012'],
-      revisions: [{ day: DAY, units: 12, stories: 4 }]
+      revisions: [optionRev('3512012', 0)]
     });
     expect(massingFor(s, 0, ctx)).toEqual(footprintOf(rec('3512012')));
-    expect(gen).not.toHaveBeenCalled();
+    expect(genForm).not.toHaveBeenCalled();
     expect(logged).toHaveLength(1);
   });
 
@@ -448,33 +460,30 @@ describe('failures, logging and packing', () => {
 });
 
 describe('simulated massing on the scenario record (IA-8)', () => {
-  it('every uncapped parcel at every fill level holds exactly yield[f] units', () => {
+  it("draws every option of every lot, holding exactly the option's homes at its stories", () => {
     const parcels = input.parcels;
+    const t = input.options;
     const { ctx } = makeCtx();
-    let exact = 0;
     let compared = 0;
     for (let i = 0; i < parcels.count; i++) {
-      if (parcels.baseCap[i] !== NO_CAP) continue;
       const id = parcels.id[i];
-      for (let f = 0; f < FILL_LEVELS.length; f++) {
-        const y = parcels.yield[i * FILL_LEVELS.length + f];
-        if (y === 0) continue;
-        const stories = fillStories(FILL_LEVELS[f], parcels.envelopeStories[i]);
+      if (!city.records.has(id)) continue;
+      for (let f = 0; f < t.offset[i + 1] - t.offset[i]; f++) {
+        const j = t.offset[i] + f;
         const s = schedule({
           projectId: `SIM:${id}`,
           origin: 'simulated',
           parcelIds: [id],
-          revisions: [{ day: DAY, units: y, stories }]
+          revisions: [{ day: DAY, units: t.homes[j], stories: t.stories[j], option: f }]
         });
         const m = massingFor(s, 0, ctx);
-        if (!('parts' in m)) throw new Error(`${id} f${f}: no building`);
-        expect(m.units).toBe(y);
-        expect(m.stories).toBeLessThanOrEqual(stories);
-        if (m.stories === stories) exact++;
+        if (!('parts' in m)) throw new Error(`option ${f} of ${id} draws no building`);
+        expect(m.units).toBe(t.homes[j]);
+        expect(m.stories).toBe(t.stories[j]);
+        expect(m.plates ?? 0).toBe(t.plates[j]);
         compared++;
       }
     }
     expect(compared).toBeGreaterThan(50);
-    expect(exact).toBeGreaterThan(0);
   });
 });

@@ -1,5 +1,5 @@
 // Family Zoning Plan Local Program envelope in stories (spec §4.4). Pure: no I/O.
-import { storiesFromFt, type HeightDistrict } from './heights';
+import { baseHeightFt, storiesFromFt, type HeightDistrict } from './heights';
 
 /**
  * Large-lot rule: 8,000 sf in square metres (8000 * 0.09290304 = 743.22, spec rounds to 743.2).
@@ -20,7 +20,9 @@ export type LocalProgramEnvelope = {
 /**
  * Envelope in stories for one parcel.
  *
- * - `baseStories = stories(baseFt)`; 0 for a `none` district (tier 3, `storiesFromFt`).
+ * - `baseStories = stories(baseFt)`; 0 for a `none` district (tier 3, `storiesFromFt`). On an
+ *   RH-1-family lot (`zoningCode`) the base height is at most 35 ft, Sec. 261(b)(1) (tier 1,
+ *   `baseHeightFt`); the Local Program height is not capped.
  * - `localProgram = r4 ∧ ¬excluded` (tier 2: the R-4 map is tier 0, exclusions are approximated
  *   from the roll, spec §4.4 table).
  * - For a Local Program parcel `lpFt' = max(baseFt, lpFt)` (lpFt null reads as baseFt), then
@@ -31,12 +33,14 @@ export function localProgramEnvelope(a: {
   district: HeightDistrict;
   lotAreaM2: number;
   excluded: boolean;
+  /** The lot's zoning code (sc_zoning); absent or null: no zoning height limit. */
+  zoningCode?: string | null;
 }): LocalProgramEnvelope {
   const { district } = a;
   if (district.kind === 'none') {
     return { baseStories: 0, envelopeStories: 0, localProgram: false, largeLot65: false };
   }
-  const baseStories = storiesFromFt(district.baseFt);
+  const baseStories = storiesFromFt(baseHeightFt(district.baseFt, a.zoningCode ?? null));
   const localProgram = district.r4 && !a.excluded;
   if (!localProgram) {
     return { baseStories, envelopeStories: baseStories, localProgram: false, largeLot65: false };

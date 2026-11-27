@@ -501,7 +501,8 @@ describe('plan world money, a pool that closes and opens', () => {
       TERMS
     );
     const c = cityOf(input, 150, doc);
-    const r = run(c, 1);
+    // seed 2 closes CLOSE_POOL twice within the window on the option rows
+    const r = run(c, 2);
     const through = r.series.finalThrough();
     const rows = moneyRowsOf(r.feed, extrasOf(r.series), 0, through);
     const p = fundOf(r.world).pools;

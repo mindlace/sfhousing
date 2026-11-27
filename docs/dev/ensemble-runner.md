@@ -10,7 +10,7 @@
 | `src/lib/sim/world/host.ts`            | Sessions, checks, the shared requests                                                                          |
 | `src/lib/sim/world/runner/runner.ts`   | Compiles, ensembles, slices, posts, edits, heights                                                             |
 | `src/lib/sim/world/runner/ensemble.ts` | One ensemble: units, feed logs, copies (`COPY_MONTHS`)                                                         |
-| `src/lib/sim/world/runner/dataset.ts`  | Chunk set, load, car system and world core, `MassingCtx`, `CompileCtx` and its `YieldSource`                   |
+| `src/lib/sim/world/runner/dataset.ts`  | Chunk set, load, car system and world core, `MassingCtx`, `CompileCtx`                                         |
 | `src/lib/sim/world/runner/lookups.ts`  | Brushes, outlines, preview, `lotAt`, lid lots, card deps                                                       |
 | `src/lib/sim/world/runner/warm.ts`     | Warm-ahead queue: one (row, revision) massing per unit (D12)                                                   |
 | `src/lib/sim/router.ts`                | Routes `openTimeline`, `setPolicy`, `viewMonth`, `resyncMap` to the timeline host                              |
@@ -35,7 +35,7 @@ A flush (`MapStream.flush(world, statics, 20)`) is a task of its own, at most ev
 
 Heights first: the city build of the zoning at the last `viewMonth`, then a wanted lid view. Then, for the ensemble with the lower month (the plan on a tie), a compile step when its next frame is not ready (rule 11), else its next unit; a world steps only while its ensemble is not ahead of the other (rules 6, 16). While a compile is unfinished it also gets one step in every slice with room; one that does not fit is owed and is the first unit of the next slice, never of two in a row.
 
-A compile is stalled (it waits for `chunkArrived`) only when `step` returned false within its budget with neither `readyThrough()` nor `progress().done` moved. This supersedes plan Appendix A row 22 ("done did not move"): the view job's twin, resolve, apply and precompute units move neither count and can each spend the whole budget.
+A compile is stalled (it waits for `chunkArrived`) only when `step` returned false within its budget with neither `readyThrough()` nor `progress().done` moved. This supersedes plan Appendix A row 22 ("done did not move"): the view job's twin, resolve, apply and precompute units can each spend the whole budget. Since building-choice Task 9 a view reads the option rows (`options.bin`) and never waits on a parcel chunk, so a compile returns false only when its budget is spent and no longer stalls; `progress()` counts the zoning views built and needed, and its `failedCells` is always empty.
 
 ### The world core and the car system
 
@@ -91,7 +91,7 @@ A `cells` post transfers every buffer it carries, each once: `packTimedTransfera
 
 ### Failure
 
-A throw in a unit posts `error` `'timeline'` at the current rev and stops filling until the next `setPolicy` or `openTimeline`; the lookups keep answering. A compile throw other than `LeverFormatError` is the same (D11). A rejected load is `internal`. Chunk failures go out as `compiling.failedCells` and `chunks`; `retryChunks` works as today.
+A throw in a unit posts `error` `'timeline'` at the current rev and stops filling until the next `setPolicy` or `openTimeline`; the lookups keep answering. A compile throw other than `LeverFormatError` is the same (D11). A rejected load is `internal`. Chunk failures go out as `chunks` (`compiling.failedCells` stays empty: no compile reads a chunk); `retryChunks` works as today.
 
 ## The client
 

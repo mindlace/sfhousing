@@ -1,5 +1,4 @@
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
 import { MAX_SCALE, MIN_SCALE } from '$lib/sim/levers/types';
 import type { StageScale } from '$lib/sim/levers/timers';
 import { precomputeOf } from '$lib/sim/world/input/build';
@@ -114,39 +113,29 @@ export function everyStage(v: number): StageScale {
   return out as unknown as StageScale;
 }
 
-const F = FILL_LEVELS.length;
-
-/** A copy of `input.parcels` upzoned on `rows`; every other column is shared. */
+/**
+ * A copy of `input.parcels` upzoned on `rows` (two more stories, the Local Program switched);
+ * every other column is shared.
+ */
 export function upzoned(input: SimInput, rows: Int32Array): ScenarioParcels {
   const p = input.parcels;
-  const yieldCol = p.yield.slice();
   const envelopeStories = p.envelopeStories.slice();
-  const fzp = p.potentialRatio.fzp.slice();
   const localProgram = p.localProgram.slice();
   for (const r of rows) {
-    for (let k = 0; k < F; k++) yieldCol[r * F + k] = Math.min(65535, yieldCol[r * F + k] * 2);
     envelopeStories[r] = Math.min(255, envelopeStories[r] + 2);
-    fzp[r] *= 1.5;
     localProgram[r] = localProgram[r] ? 0 : 1;
   }
-  return {
-    ...p,
-    yield: yieldCol,
-    envelopeStories,
-    localProgram,
-    potentialRatio: { ...p.potentialRatio, fzp }
-  };
+  return { ...p, envelopeStories, localProgram };
 }
 
 /** The rows where any column `upzoned` changes differs. */
 export function touchedRows(a: ScenarioParcels, b: ScenarioParcels): Int32Array {
   const out: number[] = [];
   for (let r = 0; r < a.count; r++) {
-    let differs =
+    const differs =
       a.envelopeStories[r] !== b.envelopeStories[r] ||
-      a.localProgram[r] !== b.localProgram[r] ||
-      a.potentialRatio.fzp[r] !== b.potentialRatio.fzp[r];
-    for (let k = 0; !differs && k < F; k++) differs = a.yield[r * F + k] !== b.yield[r * F + k];
+      a.fzpCap[r] !== b.fzpCap[r] ||
+      a.localProgram[r] !== b.localProgram[r];
     if (differs) out.push(r);
   }
   return Int32Array.from(out);

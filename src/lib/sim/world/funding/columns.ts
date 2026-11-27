@@ -21,7 +21,14 @@ export interface FundLine extends LineColumns {
   key: Float64Array;
   /** Programme ids joined with ','. */
   bundle: string[];
-  f: Uint8Array;
+  /** The option's index in the lot's row of the option table (up to 1,022). */
+  f: Uint16Array;
+  /** The option's construction type (a code into `BUILDING_TYPES`). */
+  btype: Uint8Array;
+  /** The cost step the size was drawn at: its frame's `choiceStep`, else the dataset date's. */
+  cstep: Uint16Array;
+  /** A market row's price tag (`line-price.ts` priceTag): PriceKey and price step; '' affordable. */
+  price: string[];
   units: Int32Array;
   stories: Float64Array;
   level: Float64Array;
@@ -99,11 +106,11 @@ export interface FundPools extends PoolColumns {
   shutTo: Int32Array;
 }
 
-type Col = Int32Array | Uint8Array | Float64Array | string[];
+type Col = Int32Array | Uint8Array | Uint16Array | Float64Array | string[];
 
 const LINE_ROWS = [
-  'lot', 'kind', 'month', 'applied', 'keyDay', 'key', 'bundle', 'f', 'units', 'stories', 'level',
-  'viewMonth', 'gone', 'seq'
+  'lot', 'kind', 'month', 'applied', 'keyDay', 'key', 'bundle', 'f', 'btype', 'cstep', 'price',
+  'units', 'stories', 'level', 'viewMonth', 'gone', 'seq'
 ]; // prettier-ignore
 const SPELLS = ['spellLot', 'spellKind', 'spellK', 'spellR'];
 const SHADOWS = ['shadowLot', 'shadowRow', 'shadowK', 'shadowR', 'shadowExisting', 'shadowMonth'];
@@ -156,7 +163,10 @@ function emptyLine(): FundLine {
     keyDay: new Int32Array(0),
     key: new Float64Array(0),
     bundle: [],
-    f: new Uint8Array(0),
+    f: new Uint16Array(0),
+    btype: new Uint8Array(0),
+    cstep: new Uint16Array(0),
+    price: [],
     units: new Int32Array(0),
     stories: new Float64Array(0),
     level: new Float64Array(0),
@@ -291,6 +301,9 @@ export function addLineRow(line: FundLine): number {
   line.key[row] = 0;
   line.bundle[row] = '';
   line.f[row] = 0;
+  line.btype[row] = 0;
+  line.cstep[row] = 0;
+  line.price[row] = '';
   line.units[row] = 0;
   line.stories[row] = NaN;
   line.level[row] = 0;

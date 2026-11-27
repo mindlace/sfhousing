@@ -1,6 +1,5 @@
 // Closing a spent pool: when a pool last receives money, and the timeline view in which the
 // programmes of the world's closed pools are not offered.
-import { prototypeFor } from '$lib/sim/finance';
 import { asksOf, inflowArrivals } from '$lib/sim/world/rules/funding';
 import type { Day } from '$lib/timelapse/time';
 import type { Pool } from '$lib/timelapse/types';
@@ -19,6 +18,7 @@ import {
   type FundPools
 } from './columns';
 import type { FrameMoney } from './frame-money';
+import { linePrototype } from './line-price';
 import { kindOf, servingMoney } from './serve';
 
 /**
@@ -123,8 +123,7 @@ function askedPast(ctx: StepCtx, fm: FrameMoney, money: Map<number, number>): Se
       }
       if (bundle === null) continue;
       const units = line.units[i];
-      const protoId = prototypeFor(line.stories[i], units).id;
-      yield asksOf(fm.index, kindOf(line, i), bundle, protoId, units);
+      yield asksOf(fm.index, kindOf(line, i), bundle, linePrototype(ctx.timeline, line, i), units);
     }
   }
   return spentAmong(rows(), money);

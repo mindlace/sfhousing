@@ -34,6 +34,7 @@ function permit(number: string, over: Partial<Permit> = {}): Permit {
     completedDateDay: null,
     lastActivityDay: null,
     stories: null,
+    constructionType: null,
     existingUnits: null,
     proposedUnits: null,
     valuation: null,

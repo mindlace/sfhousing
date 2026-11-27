@@ -8,7 +8,10 @@ import {
   type BundleItem
 } from './instruments';
 import { AVERAGE_DRAWN, MARKET_TERMS } from './terms';
-import { costPerHome } from './prototypes';
+import { LAND_PER_HOME, PROTOTYPES, costPerHome, uncoveredPerHome } from './prototypes';
+import { coverage } from './instruments';
+import { optionPrototype } from '../choice/pricing';
+import type { PriceStep } from '../choice/types';
 import { B, BASELINE_BUNDLE, BASELINE_SPLIT, TERMS, TERMS_CUT } from './test/fixtures';
 
 const U = 861525;
@@ -346,5 +349,47 @@ describe('fundBundle guards', () => {
       for (const v of Object.values(it)) expect(v).toBeGreaterThanOrEqual(0);
     }
     expect(r.grantEquivalent).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('a price step where value exceeds cost plus land (building-choice Task 10)', () => {
+  it('needs no public money: uncovered 0, nothing offered or paid, no throw', () => {
+    // Type I at 18 stories on a step whose C and D cost half the Controller's: cost 443,577 a
+    // home against value 638,064, so cost + land 508,577 is below the value.
+    const step: PriceStep = {
+      anchors: Object.fromEntries(
+        PROTOTYPES.map((p) => [
+          p.id,
+          {
+            stories: p.stories,
+            homes: p.homes,
+            costPerHome: p.id === 'C' || p.id === 'D' ? p.costPerHome / 2 : p.costPerHome,
+            valuePerHome: p.costPerHome - p.shortfallPerHome
+          }
+        ])
+      ) as PriceStep['anchors'],
+      aboveTopCostRatio: 1.21,
+      carrying: { rate: 0.085, drawn: 0.55 }
+    };
+    const p = optionPrototype({ type: 'I', stories: 18, homes: 200 }, step);
+    expect(p.costPerHome + LAND_PER_HOME.value).toBeLessThan(p.costPerHome - p.shortfallPerHome);
+    expect(uncoveredPerHome('market', p)).toBe(0);
+    const items = [grant(0.5, 'goBond'), loan(0.3, 0, null, 'bank')];
+    const b = fundBundle(items, 'market', p, TERMS);
+    expect(b).toEqual({
+      items: items.map(() => ({
+        grantEquivalent: 0,
+        granted: 0,
+        lent: 0,
+        guaranteed: 0,
+        reserve: 0
+      })),
+      grantEquivalent: 0,
+      coverage: 0,
+      certain: false
+    });
+    expect(coverage(0, 'market', p)).toBe(0);
+    // A step whose value stays below cost + land is unchanged: Controller A.
+    expect(uncoveredPerHome('market', PROTOTYPES[0])).toBe(242_000);
   });
 });

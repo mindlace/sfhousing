@@ -9,28 +9,17 @@ describe('room to grow', () => {
     expect(storiesToM(1)).toBe(GROUND_FTF_M);
     expect(storiesToM(4)).toBeCloseTo(GROUND_FTF_M + 3 * FTF_M);
   });
-  it('countable: hostable or a Need row, eligible, >= 1 story, not protected', () => {
-    // rows: 0 hostable; 1 not hostable, not a need; 2 a Need (hostable 0); 3 protected hostable;
-    // 4 ineligible need; 5 stories 0
+  it('countable: hostable, eligible, >= 1 story, not protected', () => {
+    // rows: 0 hostable; 1 not hostable; 2 hostable at 6; 3 protected hostable; 4 ineligible
+    // hostable; 5 stories 0
     const t: EnvelopeTable = {
       count: 6,
       stories: Uint8Array.of(4, 4, 6, 4, 6, 0),
       cap: new Uint16Array(6),
-      yield: new Uint16Array(6),
-      hostable: Uint8Array.of(1, 0, 0, 1, 0, 1)
+      hostable: Uint8Array.of(1, 0, 1, 1, 1, 1)
     };
     const eligible = Uint8Array.of(1, 1, 1, 1, 0, 1);
-    expect([
-      ...countableMask(
-        t,
-        eligible,
-        [
-          { row: 2, stories: 6, cap: null },
-          { row: 4, stories: 6, cap: null }
-        ],
-        Int32Array.of(3)
-      )
-    ]).toEqual([1, 0, 1, 0, 0, 0]);
+    expect([...countableMask(t, eligible, Int32Array.of(3))]).toEqual([1, 0, 1, 0, 0, 0]);
   });
   it('glaze steps at 1, 3, 6 unused stories per area', () => {
     expect([0.5, 1, 2.9, 3, 6, 40].map((m) => glazeStep(m * 100, 100))).toEqual([0, 1, 1, 2, 3, 3]);

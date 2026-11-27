@@ -19,6 +19,7 @@ import { createTableFromRows, runSqlFile, type CellValue, type Duck } from '../l
 import { MIN_GROSS_M2_PER_UNIT } from '../lib/quality';
 import {
   HeightParseError,
+  baseHeightFt,
   normaliseHeight,
   parseHeightDistrict,
   storiesFromFt
@@ -141,7 +142,8 @@ async function writeParcelCaps(
     return [
       rec.id,
       lotAreaM2,
-      d.base_ft === null ? 0 : storiesFromFt(d.base_ft),
+      // the height district's stories, at most 35 ft on RH-1 lots (Sec. 261(b)(1), baseHeightFt)
+      d.base_ft === null ? 0 : storiesFromFt(baseHeightFt(d.base_ft, d.zoning_code)),
       cap(DENSITY_CAP_CHANGE_DAY - 1),
       cap(ORD_292_24_DAY - 1),
       cap(FZP_EFFECTIVE_DAY - 1),

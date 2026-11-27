@@ -85,7 +85,7 @@ function simulatedAt(w: World, statics: Statics, row: number, day: Day): Schedul
     pathway: PATHWAYS[p.pathway[row]],
     entered: enteredOf(w, row, day),
     end: endOf(w, row, day) as Schedule['end'],
-    revisions: revisionsOf(p, row, day),
+    revisions: revisionsOf(p, row, day, true),
     existingUnits: p.existing[row],
     multiPhase: false,
     phase: null

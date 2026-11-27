@@ -14,16 +14,19 @@ import {
   type PolicyParcels
 } from '../../src/lib/data/policy-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
-import { FILL_LEVELS, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import { envelopeRow, optionsOfRow, topHomesAt } from '../../src/lib/data/envelope-row';
+import type { OptionTable } from '../../src/lib/data/option-table';
 import type { InvariantProfile } from '../config';
 import { mostPermissive } from '../../src/lib/data/stock-layers';
-import { s207Envelope, s207Status } from '../lib/current-law';
+import { s207Envelope, s207HeightFt, s207Status } from '../lib/current-law';
 import { parseHeightDistrict, storiesFromFt } from '../lib/heights';
 import { reportedQuality } from '../lib/quality';
 import { rentControlExcluded, stopTiers, unitsFor, zoneClassOf } from '../lib/sb79';
-import { POLICY_BIN } from '../lib/scenario-files';
+import { OPTIONS_BIN, POLICY_BIN } from '../lib/scenario-files';
 import { MIN_UNITS, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
 import type { InvariantResult } from './check';
+import { readOptionsBin } from './options';
 
 /** V31 warns (still passes) above this size (plan Budget decision, tier 4). */
 export const POLICY_WARN_BYTES = 0.75e6;
@@ -40,7 +43,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 /**
  * V31 over `policy.bin`: present and named in the manifest; inflates and decodes against the
  * decoded parcels.bin `p`; datasetVersion is the manifest's; re-encoding is byte-identical;
- * fillLevels are FILL_LEVELS; `policy.use_district_mismatch` is 0; at least `historicJoinMin` of
+ * `policy.use_district_mismatch` is 0; at least `historicJoinMin` of
  * parcels have a historic code; at least `exemptJoinMin` of the exemption table rows match a parcel
  * (0 rows fails); at most `policyMaxBytes` on disk, warning above POLICY_WARN_BYTES.
  * `stableDetail` leaves byte counts out. Never throws.
@@ -91,9 +94,6 @@ function checkV31(
     } catch (e) {
       problems.push(`re-encoding the decoded payload fails: ${(e as Error).message}`);
     }
-    const fl = pol.fillLevels;
-    if (fl.length !== FILL_LEVELS.length || FILL_LEVELS.some((v, k) => fl[k] !== v))
-      problems.push(`fillLevels [${fl.join(', ')}] ≠ FILL_LEVELS`);
     const none = HISTORIC_CODES.indexOf('');
     const withCode = pol.historic.filter((h) => h !== none).length;
     const share = pol.count === 0 ? NaN : withCode / pol.count;
@@ -146,13 +146,25 @@ function decodedPolicy(outDir: string, p: ScenarioParcels | null): PolicyParcels
   }
 }
 
+/** options.bin decoded with one row per parcels.bin row, or the reason it cannot be. */
+function decodedOptions(outDir: string, p: ScenarioParcels | null): OptionTable | string {
+  try {
+    const t = readOptionsBin(join(outDir, OPTIONS_BIN));
+    if (p && t.count !== p.count)
+      return `${OPTIONS_BIN} has ${t.count} rows, parcels.bin ${p.count}`;
+    return t;
+  } catch (e) {
+    return (e as Error).message;
+  }
+}
+
 /** At most this many row ids are named per V32 problem. */
 const NAMED = 5;
 
 /**
  * V32, SB 79 as written: every `applies` row has the stories and statute cap of its tier and band
- * (`storiesFromFt`, `unitsFor` on parcels.bin's lot area) and yields of 0 or MIN_UNITS..cap; every
- * other row has 0 stories, no cap and zero yields; `hostableSb79` is `applies`; `todBand` (and
+ * (`storiesFromFt`, `unitsFor` on parcels.bin's lot area) and an options.bin option of at least
+ * MIN_UNITS homes within them (`topHomesAt`); every other row has 0 stories and no cap; `hostableSb79` is `applies`; `todBand` (and
  * `todTier`) is 0 exactly on `outside` rows; `rent-control` rows, and no `applies` row, satisfy
  * `rentControlExcluded` (more than 2 pre-1979 homes); `policy.sb79.stops.tier1` / `.tier2` reach the
  * profile minimums; at least `muniTier2MatchMin` of MUNI_TIER2_STOP_IDS match a stop
@@ -173,10 +185,11 @@ function checkV32(
     detail: problems.length === 0 ? ok : problems.join('; ')
   });
   const pol = decodedPolicy(outDir, p);
+  const opts = decodedOptions(outDir, p);
   let applies = 0;
   if (typeof pol === 'string') problems.push(pol);
+  else if (typeof opts === 'string') problems.push(opts);
   else {
-    const F = pol.fillLevels.length;
     const bad = new Map<string, string[]>();
     const flag = (what: string, i: number) => {
       const ids = bad.get(what) ?? [];
@@ -187,7 +200,6 @@ function checkV32(
       const status = SB79_STATUSES[pol.sb79Status[i]];
       const tier = pol.todTier[i];
       const band = pol.todBand[i];
-      const ys = Array.from(pol.sb79Yield.subarray(i * F, (i + 1) * F));
       if ((band === 0) !== (status === 'outside')) flag('todBand 0 iff outside', i);
       if ((tier === 0) !== (band === 0)) flag('todTier 0 iff todBand 0', i);
       if (pol.hostableSb79[i] !== (status === 'applies' ? 1 : 0)) flag('hostableSb79 ≠ applies', i);
@@ -197,7 +209,7 @@ function checkV32(
       if (status === 'rent-control' && !rc) flag('rent-control row not over 2 pre-1979 homes', i);
       if (status === 'applies' && rc) flag('applies row over 2 pre-1979 homes', i);
       if (status !== 'applies') {
-        if (pol.sb79Stories[i] !== 0 || pol.sb79Cap[i] !== NULL_CAP || ys.some((y) => y !== 0))
+        if (pol.sb79Stories[i] !== 0 || pol.sb79Cap[i] !== NULL_CAP)
           flag(`${status} row with an envelope`, i);
         continue;
       }
@@ -210,8 +222,14 @@ function checkV32(
       if (pol.sb79Stories[i] !== storiesFromFt(std.heightFt)) flag('sb79Stories ≠ statute', i);
       const cap = unitsFor(std.duPerAcre, p!.lotAreaM2[i]);
       if (pol.sb79Cap[i] !== cap) flag('sb79Cap ≠ statute density', i);
-      if (ys.some((y) => y > pol.sb79Cap[i])) flag('sb79Yield above sb79Cap', i);
-      if (ys.some((y) => y > 0 && y < MIN_UNITS)) flag(`sb79Yield in 1..${MIN_UNITS - 1}`, i);
+      const shipped = pol.sb79Cap[i] === NULL_CAP ? null : pol.sb79Cap[i];
+      const top = topHomesAt(
+        optionsOfRow(opts, i),
+        pol.sb79Stories[i],
+        shipped,
+        p!.existingUnits[i]
+      );
+      if (top < MIN_UNITS) flag(`applies with fewer than ${MIN_UNITS} homes`, i);
     }
     for (const [what, ids] of bad)
       problems.push(
@@ -264,14 +282,14 @@ function checkV32(
  * V33, current law (FZP + §207.11): for every row, recomputes `s207Status` (s207Status) from
  * parcels.bin (eligibility, lot area, FZP stories, and the applicable height (`lpFt` on a Local
  * Program lot, else `baseFt`) and R-4 flag of its height district string), the policy columns (TOD
- * tier and band, historic code, exemption flags, `fzpYieldCap`) and `zoneClassOf(useDistrict)`. A
- * `currentFromS207` row must be `applies`, have the s207Envelope stories and cap, and be the more
- * permissive layer (`mostPermissive` over the full-fill yield and hostable flag); every other row's
- * current columns must equal the FZP row (`envelopeStories`, `fzpYieldCap`, `yield`, `hostable`).
- * No `applies` row may have `fzpYieldCap` none (`applies with no FZP cap`).
- * `policy.s207.base_ft_mismatch` (the step's applicable height or R-4 flag ≠ the district string's)
- * and `policy.current.yield_mismatch` (the step's FZP recompute ≠ parcels.bin) must be 0: yields
- * are not regenerated here. Never throws.
+ * tier and band, historic code, exemption flags), parcels.bin's `fzpCap` and
+ * `zoneClassOf(useDistrict)`. A `currentFromS207` row must be `applies`, have the s207Envelope
+ * stories and cap, and be the more permissive layer (`mostPermissive` over the most homes of the
+ * options.bin row within each layer's stories and cap, and the hostable flags); every other row's
+ * current columns must equal the FZP row (`envelopeStories`, `fzpCap`, `hostable`). No `applies`
+ * row may have no FZP cap (`applies with no FZP cap`). `policy.s207.base_ft_mismatch` (the step's
+ * applicable height or R-4 flag ≠ the district string's) and `policy.current.fzp_mismatch` (the
+ * step's FZP cap or hostable flag ≠ parcels.bin's) must be 0. Never throws.
  */
 function checkV33(
   outDir: string,
@@ -285,11 +303,12 @@ function checkV33(
     detail: problems.length === 0 ? ok : problems.join('; ')
   });
   const pol = decodedPolicy(outDir, p);
+  const opts = decodedOptions(outDir, p);
   let applies = 0;
   let from = 0;
   if (typeof pol === 'string') problems.push(pol);
+  else if (typeof opts === 'string') problems.push(opts);
   else {
-    const F = pol.fillLevels.length;
     const bad = new Map<string, string[]>();
     const flag = (what: string, i: number) => {
       const ids = bad.get(what) ?? [];
@@ -301,10 +320,19 @@ function checkV33(
       const tier = pol.todTier[i] as Sb79Tier;
       const band = pol.todBand[i] as TodBand;
       const best = STANDARDS[tier]?.[band] ? { tier, band } : null; // todBand 0: outside
-      const fzpCap = pol.fzpYieldCap[i] === NULL_CAP ? null : pol.fzpYieldCap[i];
-      // The height of the envelope the project uses: lpFt on a Local Program lot, else baseFt.
+      const fzpCap = p!.fzpCap[i] === NULL_CAP ? null : p!.fzpCap[i];
+      // The height limit of the envelope the project uses: lpFt on a Local Program lot, else the
+      // code limit on baseFt (35 ft on RH-1, Sec. 261(b)(1)).
+      const code = pol.useDistricts[pol.useDistrict[i]];
       const fzpHeightFt =
-        hd.kind !== 'height' ? null : p!.localProgram[i] === 1 ? (hd.lpFt ?? hd.baseFt) : hd.baseFt;
+        hd.kind !== 'height'
+          ? null
+          : s207HeightFt({
+              localProgram: p!.localProgram[i] === 1,
+              baseFt: hd.baseFt,
+              lpFt: hd.lpFt,
+              zoningCode: code === '' ? null : code
+            });
       const want = s207Status({
         best,
         eligible: p!.eligible[i] === 1,
@@ -321,7 +349,6 @@ function checkV33(
       if (got !== want) flag(`s207Status ${want} expected, ${got} found`, i);
       if (want === 'applies') applies++;
       if (got === 'applies' && fzpCap === null) flag('applies with no FZP cap', i);
-      const top = (ys: ArrayLike<number>, k: number) => ys[k * F + F - 1];
       if (pol.currentFromS207[i] === 1) {
         from++;
         if (got !== 'applies' || best === null) {
@@ -342,27 +369,40 @@ function checkV33(
         });
         if (pol.currentStories[i] !== env.stories) flag('§207.11 stories ≠ currentStories', i);
         if (pol.currentCap[i] !== env.cap) flag('§207.11 cap ≠ currentCap', i);
-        const fzpTop = { yieldTop: top(p!.yield, i), hostable: p!.hostable[i] === 1 };
-        const curTop = {
-          yieldTop: top(pol.currentYield, i),
-          hostable: pol.hostableCurrent[i] === 1
-        };
-        if (mostPermissive(fzpTop, curTop) !== 'b')
+        const options = optionsOfRow(opts, i);
+        const units = p!.existingUnits[i];
+        const eligible = p!.eligible[i] === 1;
+        const fzpRow = envelopeRow({
+          stories: p!.envelopeStories[i],
+          cap: fzpCap,
+          eligible,
+          existingUnits: units,
+          options
+        });
+        const curRow = envelopeRow({
+          stories: pol.currentStories[i],
+          cap: pol.currentCap[i] === NULL_CAP ? null : pol.currentCap[i],
+          eligible,
+          existingUnits: units,
+          options
+        });
+        if (pol.hostableCurrent[i] !== (curRow.hostable ? 1 : 0))
+          flag('hostableCurrent ≠ its options', i);
+        if (mostPermissive(fzpRow, curRow) !== 'b')
           flag('currentFromS207 not more permissive than FZP', i);
         continue;
       }
-      let same =
+      const same =
         pol.currentStories[i] === p!.envelopeStories[i] &&
-        pol.currentCap[i] === pol.fzpYieldCap[i] &&
+        pol.currentCap[i] === p!.fzpCap[i] &&
         pol.hostableCurrent[i] === p!.hostable[i];
-      for (let k = i * F; same && k < (i + 1) * F; k++) same = pol.currentYield[k] === p!.yield[k];
       if (!same) flag('current ≠ FZP without §207.11', i);
     }
     for (const [what, ids] of bad)
       problems.push(
         `${what}: ${ids.length} rows (${ids.slice(0, NAMED).join(', ')}${ids.length > NAMED ? ', …' : ''})`
       );
-    for (const k of ['policy.s207.base_ft_mismatch', 'policy.current.yield_mismatch'])
+    for (const k of ['policy.s207.base_ft_mismatch', 'policy.current.fzp_mismatch'])
       if (counts[k] !== 0) problems.push(`${k} ${counts[k]} ≠ 0`);
     return done(
       `${pol.count} rows match §207.11 over FZP; ${applies} applies, ${from} from §207.11`

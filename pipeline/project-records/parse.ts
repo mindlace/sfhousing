@@ -9,6 +9,7 @@ import {
   type AddressRow,
   type Child,
   type Completion,
+  type ConstructionType,
   type HousingRow,
   type Parsed,
   type Permit,
@@ -49,6 +50,20 @@ export function dayOf(v: unknown, asOf: Day): Day | null {
 /** 'YYYY-MM-DD' of a day number. */
 export function isoOf(d: Day): string {
   return new Date(d * DAY_MS).toISOString().slice(0, 10);
+}
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V'] as const;
+
+/**
+ * DBI `proposed_construction_type`: the codes '1' to '5' (live, with a description such as
+ * 'constr type 1' or 'wood frame (5)' beside them) or the numerals themselves; null otherwise.
+ */
+export function constructionTypeOf(v: unknown): ConstructionType | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().toUpperCase();
+  const code = Number(t);
+  if (Number.isInteger(code) && code >= 1 && code <= 5 && t.length === 1) return ROMAN[code - 1];
+  return (ROMAN as readonly string[]).includes(t) ? (t as ConstructionType) : null;
 }
 
 /** SODA numbers are strings; non-finite, missing or empty become null. */
@@ -267,6 +282,7 @@ function parsePermits(
       completedDateDay: d.day(lead.completed_date),
       lastActivityDay: d.day(lead.last_permit_activity_date),
       stories: num(lead.number_of_proposed_stories),
+      constructionType: constructionTypeOf(lead.proposed_construction_type),
       existingUnits: num(lead.existing_units),
       proposedUnits: num(lead.proposed_units),
       // Ruling E2: the valuation that sets the Table B bracket is the value after project review

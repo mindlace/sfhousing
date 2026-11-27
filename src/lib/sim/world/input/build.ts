@@ -1,8 +1,18 @@
-// Assembling the SimInput from the three decoded scenario files (spec §4.2 steps 5-6) and the
-// per-input precompute (step 7): initiation hazards, log(1 − h) and renormalised size draws.
-// Worker-safe and pure apart from the identity-keyed memo.
+// Assembling the SimInput from the decoded scenario files (spec §4.2 steps 5-6) and the
+// per-input precompute (step 7): per cost step, each lot's choice expectations and initiation
+// logit, then hazards and log(1 − h). Worker-safe and pure apart from the identity-keyed memos.
+import { optionTableProblem, type OptionTable } from '$lib/data/option-table';
 import type { ParcelId } from '$lib/data/parcel';
-import { FILL_LEVELS, featureValue, type ScenarioParcels } from '$lib/data/scenario-codec';
+import { featureValue, type ScenarioParcels } from '$lib/data/scenario-codec';
+import {
+  allowedCount,
+  capFrom,
+  choiceCtxOf,
+  choiceStepAt,
+  expectations,
+  featuresOf,
+  type ChoiceCtx
+} from '$lib/sim/choice/choose';
 import { exp, log as ln } from '$lib/timelapse/math';
 import { initiationLogit } from '$lib/timelapse/model';
 import type { ProjectsFile } from '$lib/timelapse/projects';
@@ -19,7 +29,7 @@ import {
 import { simEntity } from '../rules/rng';
 import type { SimInput } from './types';
 
-type ScenarioFile = 'parcels.bin' | 'projects.json' | 'calibration.json';
+type ScenarioFile = 'parcels.bin' | 'projects.json' | 'calibration.json' | 'options.bin';
 
 /** A decoded file that cannot run: the host maps it to `scenario-invalid`. */
 export class SimInputError extends Error {
@@ -32,36 +42,27 @@ export class SimInputError extends Error {
   }
 }
 
-/** The first index where `levels` differs from T11 `FILL_LEVELS`, or -1 (ruling A2). */
-function fillLevelsMismatch(levels: readonly number[]): number {
-  const n = Math.max(levels.length, FILL_LEVELS.length);
-  for (let k = 0; k < n; k++) if (levels[k] !== FILL_LEVELS[k]) return k;
-  return -1;
-}
-
-function checkFillLevels(file: ScenarioFile, name: string, levels: readonly number[]): void {
-  const k = fillLevelsMismatch(levels);
-  if (k >= 0) {
-    throw new SimInputError(
-      file,
-      `${name} [${levels.join(', ')}] differs from FILL_LEVELS ` +
-        `[${FILL_LEVELS.join(', ')}] at index ${k}`
-    );
-  }
-}
-
 /**
- * The FZP SimInput (spec §4.2 step 6). Throws `SimInputError` when the calibration's (or
- * T11's) fill levels differ from `FILL_LEVELS`. The run's `asOf` is `projects.asOf`; a different
- * `calibration.asOf` is logged once.
+ * The FZP SimInput (spec §4.2 step 6). Throws `SimInputError` when the calibration has no
+ * choice model or height-time model, or the option table is not parcels.bin's. The run's `asOf`
+ * is `projects.asOf`; a different `calibration.asOf` is logged once.
  */
 export function buildSimInput(
-  files: { parcels: ScenarioParcels; projects: ProjectsFile; calibration: Calibration },
+  files: {
+    parcels: ScenarioParcels;
+    projects: ProjectsFile;
+    calibration: Calibration;
+    options: OptionTable;
+  },
   warn?: (msg: string) => void
 ): SimInput {
-  const { parcels, projects, calibration } = files;
-  checkFillLevels('calibration.json', 'size.fillLevels', calibration.size.fillLevels);
-  checkFillLevels('parcels.bin', 'fillLevels', parcels.fillLevels);
+  const { parcels, projects, calibration, options } = files;
+  if (!calibration.choice) throw new SimInputError('calibration.json', 'no choice model (choice)');
+  if (!calibration.heightTime) {
+    throw new SimInputError('calibration.json', 'no height-time model (heightTime)');
+  }
+  const problem = optionTableProblem(options, parcels);
+  if (problem !== null) throw new SimInputError('options.bin', problem);
   if (calibration.asOf !== projects.asOf) {
     warn?.(
       `calibration.json: asOf ${isoOf(calibration.asOf)} differs from projects.json asOf ` +
@@ -77,6 +78,7 @@ export function buildSimInput(
   const m = calibration.market;
   return {
     parcels,
+    options,
     projects: projects.projects,
     calibration,
     asOf: projects.asOf,
@@ -96,43 +98,71 @@ export function buildSimInput(
   };
 }
 
+/** One cost step's choice columns (`Precompute.byStep`), per lot row of the input's parcels. */
+export interface ChoiceStepColumns {
+  /** The step's first day (`ChoiceCtx.from`). */
+  from: Day;
+  /** `expectations` at the envelope and cap against the existing homes; 0 where none gains. */
+  expHomes: Float32Array;
+  expStories: Float32Array;
+  margin: Float32Array;
+  /** 1 where the lot is hostable and some allowed option gains a home. */
+  gains: Uint8Array;
+  /** The best option's index in the lot's row (`expectations().best`), -1 where none gains. */
+  best: Int32Array;
+  /**
+   * The unshifted initiation linear predictor on this step's choice features, -Infinity where the
+   * row gets no hazard (not hostable, no gaining option, or a non-finite feature).
+   */
+  logit: Float64Array;
+}
+
 export interface Precompute {
   /**
    * monthly initiation hazard per parcel under `s0`, the market step in force at `asOf` (0 without
-   * a market); 0 = never initiates
+   * a market), and the cost step in force at `asOf`; 0 = never initiates
    */
   hazard: Float64Array;
   /** log(1 − hazard[i]) from math.ts */
   log1mh: Float64Array;
   /**
-   * The unshifted initiation linear predictor `z = initiationLogit(model, features)` per row (no
-   * market step added; finance-engine spec 4.4 adds the step itself), −Infinity where the row gets
-   * no hazard (not hostable, a non-finite feature, or no size level gains a home). Per view through
+   * `byStep[choiceStep].logit`: the initiation linear predictor at the cost step in force at
+   * `asOf` (no market step added; finance-engine spec 4.4 adds the step itself). Per view through
    * `regimes[v − 1].logit`.
    */
   logit: Float64Array;
+  /** The choice context of the input's option table and calibration (`choiceCtxOf`). */
+  choice: ChoiceCtx;
+  /** The cost step in force at `asOf` (`choiceStepAt`). */
+  choiceStep: number;
   /**
-   * per later market step m (`from` > `asOf`), log(1 − hazard) under that step's shift; [] when
-   * none
+   * Per cost step of `choice.from` (the memo keyed by (lot, step)): the lot's choice expectations
+   * and its logit on them.
+   */
+  byStep: ChoiceStepColumns[];
+  /**
+   * per later market step m (`from` > `asOf`), log(1 − hazard) under that step's shift at the
+   * cost step in force at `asOf`; [] when none
    */
   stepLog1mh: Float64Array[];
   /**
-   * The merged segment list: `days` = regime days ∪ later market days, ascending, equal days
-   * merged; for segment j (0 .. days.length) its regime view (0 = this input's parcels) and its
-   * log1mh array. Without later market steps: days = regime days, view[j] = j, log1mh[j] =
+   * log(1 − h) per row at cost step `c` under market step `m` (0 = the step in force at `asOf`,
+   * m ≥ 1 = `stepLog1mh[m − 1]`'s): `log1mh` and `stepLog1mh` themselves at `choiceStep`,
+   * memoised otherwise.
+   */
+  stepRates(c: number, m: number): Float64Array;
+  /**
+   * The merged segment list: `days` = regime days ∪ later market days ∪ later cost-step days,
+   * ascending, equal days merged; for segment j (0 .. days.length) its regime view (0 = this
+   * input's parcels) and its log1mh array, read at the market and cost steps in force on its first
+   * day. Without later steps: days = regime days, view[j] = j, log1mh[j] =
    * j === 0 ? log1mh : regimes[j − 1].log1mh.
    */
   segments: { days: Day[]; view: number[]; log1mh: Float64Array[] };
-  /**
-   * count × F: per parcel, cumulative renormalised size probabilities over the levels with
-   * yield[f] > existingUnits (a level that does not qualify adds nothing); the last qualifying
-   * level and every level after it are exactly 1. A row is all 0 when no level qualifies.
-   */
-  sizeCum: Float32Array;
   parcelIndexOf(id: ParcelId): number; // -1 if absent
   /**
-   * the rows that can initiate (hostable, hazard > 0, log1mh < 0 under some market step),
-   * ascending; with regimes, the rows that can initiate in any view
+   * the rows that can initiate (hostable, a gaining option, a hazard under some market or cost
+   * step), ascending; with regimes, the rows that can initiate in any view
    */
   candidates: Int32Array;
   /** `simEntity` of each candidate's parcel id, index-aligned with `candidates` */
@@ -150,6 +180,15 @@ export interface Precompute {
    * candidates. [] without regimes.
    */
   regimes: Precompute[];
+}
+
+/** The choice context of `input`: its option table under its calibration's choice models. */
+export function choiceCtxFor(input: SimInput): ChoiceCtx {
+  const { choice, heightTime } = input.calibration;
+  if (!choice || !heightTime) {
+    throw new SimInputError('calibration.json', 'no choice or height-time model');
+  }
+  return choiceCtxOf(input.options, choice, heightTime);
 }
 
 const memo = new WeakMap<SimInput, Precompute>();
@@ -298,67 +337,17 @@ export function skipBounds(
   return out;
 }
 
-/** The size bucket: the first `byEnvelope` entry with stories ≤ `maxStoriesUpTo`, else last. */
-function bucketOf(cal: Calibration, stories: number): number[] {
-  const rows = cal.size.byEnvelope;
-  for (const r of rows) if (stories <= r.maxStoriesUpTo) return r.probs;
-  return rows[rows.length - 1].probs;
-}
-
 /**
- * Fills row i of a `sizeCum`-shaped array `out` (at offset `at`) against `existing` units; false
- * when no level gains a home (the row stays 0).
- */
-function fillSizeRow(
-  p: ScenarioParcels,
-  i: number,
-  probs: number[],
-  existing: number,
-  out: Float32Array,
-  at: number
-): boolean {
-  const F = FILL_LEVELS.length;
-  let total = 0;
-  let last = -1;
-  for (let f = 0; f < F; f++) {
-    if (p.yield[i * F + f] > existing && probs[f] > 0) {
-      total += probs[f];
-      last = f;
-    }
-  }
-  if (last < 0) return false;
-  let acc = 0;
-  for (let f = 0; f < F; f++) {
-    if (f >= last) out[at + f] = 1;
-    else {
-      if (p.yield[i * F + f] > existing) acc += probs[f];
-      out[at + f] = acc / total;
-    }
-  }
-  return true;
-}
-
-/**
- * Parcel i's cumulative size row (as in `Precompute.sizeCum`) against `existing` units instead of
- * T11 `existingUnits[i]`: the size draw of a later project on a parcel already demolished in the
- * run (§4.4.6), which uses 0. All 0 when no level qualifies.
- */
-export function sizeCumAgainst(input: SimInput, i: number, existing: number): Float32Array {
-  const p = input.parcels;
-  const out = new Float32Array(FILL_LEVELS.length);
-  fillSizeRow(p, i, bucketOf(input.calibration, p.envelopeStories[i]), existing, out, 0);
-  return out;
-}
-
-/**
- * The per-input precompute (spec §4.2 step 7, §4.4.4), memoised by `SimInput` identity. Only
- * hostable parcels with a gaining size level get a hazard; a hostable parcel with a non-finite
- * term feature gets 0 (`initiationHazard` would silently use bin 0), reported in one warning.
- * Features read the `fzp` variant: a `baseZoning` view supplies its base columns there. With
- * `regimes`, `hazard`, `log1mh` and `sizeCum` stay `input.parcels`' and `regimes` holds each
- * view's. `market` (spec §4.8) adds the shift in force at `asOf` to every logit (`z + 0` is `z`
- * exactly, so without a market every hazard is `initiationHazard`'s), and each later step gets
- * its own `stepLog1mh` row set; `segments` merges the regime days and the later market days.
+ * The per-input precompute (spec §4.2 step 7, §4.4.4), memoised by `SimInput` identity. For each
+ * cost step, every hostable lot's choice row at its envelope (`allowedCount`) and cap
+ * (`fzpCap`) against its existing homes gives the expectations and the choice features
+ * (`featuresOf`, as the panel's `choiceFeatures`); a lot with no gaining option, or a non-finite
+ * term feature (reported in one warning), gets no logit. Features read the `fzp` variant: a
+ * `baseZoning` view supplies its base columns there. With `regimes`, `hazard`, `log1mh` and
+ * `byStep` stay `input.parcels`' and `regimes` holds each view's. `market` (spec §4.8) adds the
+ * shift in force at `asOf` to every logit (`z + 0` is `z` exactly, so without a market every hazard
+ * is `initiationHazard`'s), and each later step gets its own `stepLog1mh` row set; `segments`
+ * merges the regime days, the later market days and the later cost-step days.
  */
 export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Precompute {
   const hit = memo.get(input);
@@ -366,11 +355,21 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   const p = input.parcels;
   const model = input.calibration.initiation;
   const n = p.count;
-  const F = FILL_LEVELS.length;
+  const ctx = choiceCtxFor(input);
+  const t = input.options;
+  const c0 = choiceStepAt(ctx, input.asOf);
+  const byStep: ChoiceStepColumns[] = ctx.from.map((from) => ({
+    from,
+    expHomes: new Float32Array(n),
+    expStories: new Float32Array(n),
+    margin: new Float32Array(n),
+    gains: new Uint8Array(n),
+    best: new Int32Array(n).fill(-1),
+    logit: new Float64Array(n).fill(-Infinity)
+  }));
   const hazard = new Float64Array(n);
   const log1mh = new Float64Array(n);
-  const logit = new Float64Array(n).fill(-Infinity);
-  const sizeCum = new Float32Array(n * F);
+  const logit = byStep[c0].logit;
   // the market step in force at asOf (s0) and the later steps
   const steps = input.market ?? [];
   let s0 = 0;
@@ -383,28 +382,47 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
   }
   const later = steps.slice(k0 + 1);
   const M = later.length;
+  const shifts = [s0, ...later.map((s) => s.logOdds)];
   const stepLog1mh = later.map(() => new Float64Array(n));
   const features = {} as Record<FeatureId, number>;
   let bad = 0;
   let firstBad = '';
   for (let i = 0; i < n; i++) {
-    const probs = bucketOf(input.calibration, p.envelopeStories[i]);
-    const sized = fillSizeRow(p, i, probs, p.existingUnits[i], sizeCum, i * F);
     if (p.hostable[i] === 1) {
-      let finite = true;
-      for (const t of model.terms) {
-        const v = featureValue(p, i, t.feature, 'fzp');
-        if (!Number.isFinite(v)) {
-          if (bad === 0) firstBad = `${p.id[i]} ${t.feature}`;
-          bad++;
-          finite = false;
-          break;
+      const allowed = allowedCount(t, i, p.envelopeStories[i]);
+      const cap = capFrom(p.fzpCap[i]);
+      const existing = p.existingUnits[i];
+      let counted = false;
+      for (let c = 0; c < byStep.length; c++) {
+        const e = expectations(ctx, c, i, allowed, cap, existing);
+        // whether an option gains does not depend on the cost step
+        if (!e.gains) break;
+        const s = byStep[c];
+        s.expHomes[i] = e.homes;
+        s.expStories[i] = e.stories;
+        s.margin[i] = e.margin;
+        s.gains[i] = 1;
+        s.best[i] = e.best;
+        const choice = featuresOf(e, existing, p.existingStories[i]);
+        let finite = true;
+        for (const term of model.terms) {
+          const v = featureValue(p, i, term.feature, choice);
+          if (!Number.isFinite(v)) {
+            // a lot counts once, at whichever step its feature is non-finite
+            if (!counted) {
+              if (bad === 0) firstBad = `${p.id[i]} ${term.feature}`;
+              bad++;
+              counted = true;
+            }
+            finite = false;
+            break;
+          }
+          features[term.feature] = v;
         }
-        features[t.feature] = v;
+        if (finite) s.logit[i] = initiationLogit(model, features);
       }
-      if (finite && sized) {
-        const z = initiationLogit(model, features);
-        logit[i] = z;
+      const z = logit[i];
+      if (z !== -Infinity) {
         hazard[i] = 1 / (1 + exp(-(z + s0)));
         for (let m = 0; m < M; m++) {
           stepLog1mh[m][i] = ln(1 - 1 / (1 + exp(-(z + later[m].logOdds))));
@@ -418,15 +436,32 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
       `parcels.bin: hazard 0 for ${bad} parcel(s) with a non-finite feature; first: ${firstBad}`
     );
   }
+  const rateMemo = new Map<string, Float64Array>();
+  const stepRates = (c: number, m: number): Float64Array => {
+    if (c === c0) return m === 0 ? log1mh : stepLog1mh[m - 1];
+    const key = `${c}:${m}`;
+    let out = rateMemo.get(key);
+    if (!out) {
+      const z = byStep[c].logit;
+      const shift = shifts[m];
+      out = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
+        if (z[i] !== -Infinity) out[i] = ln(1 - 1 / (1 + exp(-(z[i] + shift))));
+      }
+      rateMemo.set(key, out);
+    }
+    return out;
+  };
   const regimes = regimeInputsOf(input).map((r) => precomputeOf(r, warn));
   const inRegime = new Uint8Array(regimes.length > 0 ? n : 0);
   for (const g of regimes) for (const i of g.candidates) inRegime[i] = 1;
   const laterStarts = (i: number) => {
     for (let m = 0; m < M; m++) if (stepLog1mh[m][i] < 0) return true;
+    for (let c = c0 + 1; c < byStep.length; c++) if (byStep[c].logit[i] !== -Infinity) return true;
     return false;
   };
   const isCandidate = (i: number) =>
-    (p.hostable[i] === 1 && ((hazard[i] > 0 && log1mh[i] < 0) || (M > 0 && laterStarts(i)))) ||
+    (p.hostable[i] === 1 && ((hazard[i] > 0 && log1mh[i] < 0) || laterStarts(i))) ||
     (regimes.length > 0 && inRegime[i] === 1);
   let m = 0;
   for (let i = 0; i < n; i++) if (isCandidate(i)) m++;
@@ -437,16 +472,20 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
     candidates[c] = i;
     entity[c++] = entityOf(p.id, i);
   }
-  const segments = segmentsOf(input, later, log1mh, stepLog1mh, regimes);
+  const laterCost = ctx.from.slice(c0 + 1);
+  const segments = segmentsOf(input, later, laterCost, c0, stepRates, regimes);
   const segmentBounds = regimeMonths(input.asOf, segments.days);
   const bounds = new Map<Day, Float64Array>();
   const pre: Precompute = {
     hazard,
     log1mh,
     logit,
+    choice: ctx,
+    choiceStep: c0,
+    byStep,
     stepLog1mh,
+    stepRates,
     segments,
-    sizeCum,
     parcelIndexOf: (id) => p.index.get(id) ?? -1,
     candidates,
     entity,
@@ -466,21 +505,22 @@ export function precomputeOf(input: SimInput, warn?: (msg: string) => void): Pre
 }
 
 /**
- * The merged segment list (`Precompute.segments`): the regime days and the later market days,
- * ascending with equal days merged. Segment j starts on `asOf` (j = 0) or `days[j − 1]` and runs
- * on the regime in force on that day (its view's precompute, which has the same market) at the
- * market step in force on that day (0 = the step at `asOf`).
+ * The merged segment list (`Precompute.segments`): the regime days, the later market days and
+ * the later cost-step days, ascending with equal days merged. Segment j starts on `asOf` (j = 0)
+ * or `days[j − 1]` and runs on the regime in force on that day (its view's precompute, which has
+ * the same market and cost steps) at the market step and the cost step in force on that day.
  */
 function segmentsOf(
   input: SimInput,
   later: readonly { from: Day }[],
-  log1mh: Float64Array,
-  stepLog1mh: Float64Array[],
+  laterCost: readonly Day[],
+  c0: number,
+  ownRates: Precompute['stepRates'],
   regimes: Precompute[]
 ): Precompute['segments'] {
   const rd = (input.regimes ?? []).map((g) => g.day);
   const md = later.map((s) => s.from);
-  const days = [...new Set([...rd, ...md])].sort((a, b) => a - b);
+  const days = [...new Set([...rd, ...md, ...laterCost])].sort((a, b) => a - b);
   const view: number[] = [];
   const rates: Float64Array[] = [];
   for (let j = 0; j <= days.length; j++) {
@@ -489,9 +529,10 @@ function segmentsOf(
     while (v < rd.length && rd[v] <= start) v++;
     let step = 0;
     while (step < md.length && md[step] <= start) step++;
-    const own = v === 0 ? { log1mh, stepLog1mh } : regimes[v - 1];
+    let c = c0;
+    while (c - c0 < laterCost.length && laterCost[c - c0] <= start) c++;
     view.push(v);
-    rates.push(step === 0 ? own.log1mh : own.stepLog1mh[step - 1]);
+    rates.push(v === 0 ? ownRates(c, step) : regimes[v - 1].stepRates(c, step));
   }
   return { days, view, log1mh: rates };
 }

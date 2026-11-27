@@ -1,11 +1,11 @@
 // Current law per lot (pipeline/lib/current-law.ts): §207.11 (Ord. 082-26 §5) over FZP.
 import { describe, expect, it } from 'vitest';
-import { FILL_LEVELS, fillStories } from '../../src/lib/data/scenario-codec';
-import { currentLawRow, envelopeRow, s207Row } from '../lib/current-law';
+import { currentLawRow, envelopeRow, s207HeightFt, s207Row } from '../lib/current-law';
 import { unitsFor } from '../lib/sb79';
 
 const ACRE = 4046.86;
-const grossAt = (stories: number) => stories * 10;
+/** One option per story count up to 12, 10 homes a story. */
+const options = Array.from({ length: 12 }, (_, k) => ({ stories: k + 1, homes: 10 * (k + 1) }));
 type Input = Parameters<typeof s207Row>[0];
 /** An RH lot at 30 ft with cap 2 on 1 acre, tier 1 half band: every condition holds. */
 const BASE: Input = {
@@ -20,7 +20,7 @@ const BASE: Input = {
   fzpCap: 2,
   lotAreaM2: ACRE,
   existingUnits: 0,
-  grossAt
+  options
 };
 const fzpOf = (a: Input) =>
   envelopeRow({
@@ -28,7 +28,7 @@ const fzpOf = (a: Input) =>
     cap: a.fzpCap,
     eligible: a.eligible,
     existingUnits: a.existingUnits,
-    grossAt: a.grossAt
+    options: a.options
   });
 
 describe('s207Row', () => {
@@ -38,7 +38,7 @@ describe('s207Row', () => {
     expect(r.status).toBe('applies');
     expect(r.stories).toBe(4);
     expect(r.cap).toBe(50);
-    expect(r.yield).toEqual(FILL_LEVELS.map((f) => Math.min(50, fillStories(f, 4) * 10)));
+    expect(r.top).toBe(40); // 4 stories × 10 homes, under the cap of 50
     expect(r.hostable).toBe(true);
   });
 
@@ -87,25 +87,26 @@ describe('s207Row', () => {
     expect(r.status).toBe('exempt');
     expect(r.stories).toBe(3);
     expect(r.cap).toBe(2);
-    expect(r.yield).toEqual(fzpOf(BASE).yield);
+    expect(r.top).toBe(fzpOf(BASE).top);
+    expect(r.top).toBe(2); // the FZP cap of 2
     expect(r.hostable).toBe(true);
   });
 });
 
 describe('currentLawRow', () => {
-  const fzp = { stories: 3, cap: 2, yield: [1, 2, 2, 2, 2], hostable: true };
+  const fzp = { stories: 3, cap: 2, top: 2, hostable: true };
   const s207 = (top: number, hostable = true) => ({
     status: 'applies' as const,
     stories: 4,
     cap: 50,
-    yield: [1, 2, 3, 4, top],
+    top,
     hostable
   });
-  it('takes §207.11 only with a larger hostable top', () => {
+  it('takes §207.11 only with more homes, hostable', () => {
     expect(currentLawRow(fzp, s207(3))).toEqual({
       stories: 4,
       cap: 50,
-      yield: [1, 2, 3, 4, 3],
+      top: 3,
       hostable: true,
       fromS207: true
     });
@@ -115,5 +116,45 @@ describe('currentLawRow', () => {
   it('keeps FZP when §207.11 does not apply', () => {
     const exempt = { ...s207(9), status: 'exempt' as const };
     expect(currentLawRow(fzp, exempt)).toEqual({ ...fzp, fromS207: false });
+  });
+});
+
+describe('envelopeRow', () => {
+  const row = (o: Partial<Parameters<typeof envelopeRow>[0]>) =>
+    envelopeRow({ stories: 3, cap: null, eligible: true, existingUnits: 0, options, ...o });
+  it('takes the most homes at or below the stories, clipped by the cap', () => {
+    expect(row({}).top).toBe(30);
+    expect(row({ cap: 25 }).top).toBe(25);
+    expect(row({ stories: 0 }).top).toBe(0);
+  });
+  it('hosts where an option tops the homes now before the cap (partner ruling, option c)', () => {
+    expect(row({ existingUnits: 29 }).hostable).toBe(true);
+    expect(row({ existingUnits: 30 }).hostable).toBe(false);
+    // a cap at or below the homes now allows no building, but the lot stays at risk
+    expect(row({ existingUnits: 5, cap: 5 })).toMatchObject({ top: 0, hostable: true });
+    expect(row({ eligible: false }).hostable).toBe(false);
+    expect(row({ stories: 0 }).hostable).toBe(false);
+  });
+});
+
+describe('s207HeightFt (the code height limit §207.11 reads)', () => {
+  it('reads 35 ft on an RH-1 lot in 40-X off the Local Program (Sec. 261(b)(1))', () => {
+    const h = { localProgram: false, baseFt: 40, lpFt: null };
+    expect(s207HeightFt({ ...h, zoningCode: 'RH-1' })).toBe(35);
+    expect(s207HeightFt({ ...h, zoningCode: 'RH-2' })).toBe(40);
+    expect(s207HeightFt({ ...h, localProgram: true, lpFt: 65, zoningCode: 'RH-1' })).toBe(65);
+    expect(
+      s207HeightFt({ localProgram: false, baseFt: null, lpFt: null, zoningCode: 'RH-1' })
+    ).toBe(null);
+  });
+
+  it('raises an RH-1 lot in 40-X to 40 ft (4 stories) under §207.11', () => {
+    const r = s207Row({
+      ...BASE,
+      fzpStories: 3,
+      fzpHeightFt: s207HeightFt({ localProgram: false, baseFt: 40, lpFt: null, zoningCode: 'RH-1' })
+    });
+    expect(r.status).toBe('applies');
+    expect(r.stories).toBe(4);
   });
 });

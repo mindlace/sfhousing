@@ -22,6 +22,7 @@ function permit(number: string, filedDay: number | null): Permit {
     completedDateDay: null,
     lastActivityDay: null,
     stories: null,
+    constructionType: null,
     existingUnits: null,
     proposedUnits: null,
     valuation: null,

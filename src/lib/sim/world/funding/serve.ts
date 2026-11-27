@@ -1,6 +1,6 @@
 // Serving the funding line and the award (spec rules 10, 11): one scan a month in line order,
 // each application tested against the pools as they stand, an award starting its funded project.
-import { PROTOTYPES, projectDollars, prototypeFor, type PrototypeId } from '$lib/sim/finance';
+import { projectDollars, type Prototype } from '$lib/sim/finance';
 import { pathwayFrom } from '$lib/sim/world/rules/stages';
 import { awardPasses, awardSet, coverageLevel, type Award } from '$lib/sim/world/rules/funding';
 import { seedHash, streamOf } from '$lib/sim/world/rules/rng';
@@ -14,6 +14,7 @@ import { closeSpent } from './closing';
 import { KIND_AFFORDABLE, fundOf, poolRowOf, type FundLine, type FundPools } from './columns';
 import { frameMoney, type FrameMoney } from './frame-money';
 import { firstAtMost, lineIndex, rowOfSeq, startAfter, type Group } from './line-index';
+import { linePrototype, sizedPrototype } from './line-price';
 import { availableOf, commitAward, heldOf, holdingReturns } from './pools';
 import { shadowAward } from './shadow';
 
@@ -95,9 +96,9 @@ function scanLine(ctx: StepCtx, opts: ServeOpts): void {
       const bundle = offeredBundle(fm, line, i);
       const kind = kindOf(line, i);
       const units = line.units[i];
-      const protoId = prototypeFor(line.stories[i], units).id;
-      if (!awardPasses(bundle, kind, protoId, units, avail, fm.index)) continue;
-      serveRow(ctx, fm, line, i, bundle, protoId, avail, rowOf);
+      const proto = linePrototype(ctx.timeline, line, i);
+      if (!awardPasses(bundle, kind, proto, units, avail, fm.index)) continue;
+      serveRow(ctx, fm, line, i, bundle, proto, avail, rowOf);
     }
     return;
   }
@@ -111,9 +112,12 @@ function scanLine(ctx: StepCtx, opts: ServeOpts): void {
       const bundle = fm.bundleIds(g.bundle);
       if (bundle === null) throw notOffered(g.bundle);
       const kind: ProjectKind = g.kind === KIND_AFFORDABLE ? 'affordable' : 'market';
-      // Affordable pricing ignores the prototype (`funding.ts` price): any id serves.
-      const protoId = g.protoId ?? ANY_PROTO;
-      h = threshold(g, (u) => awardPasses(bundle, kind, protoId, u, avail, fm.index));
+      // Every member of a group's price tag is priced alike, so its first member prices it;
+      // affordable pricing ignores the prototype (`funding.ts` price).
+      const r = g.rep;
+      const choice = ctx.timeline.frameAt(r.viewMonth).view.pre.choice;
+      const proto = sizedPrototype(choice, r.btype, r.stories, r.units, r.cstep);
+      h = threshold(g, (u) => awardPasses(bundle, kind, proto, u, avail, fm.index));
       hs.set(g, h);
     }
     return h;
@@ -139,9 +143,9 @@ function scanLine(ctx: StepCtx, opts: ServeOpts): void {
     if (i < 0 || line.gone[i] === 1)
       throw new Error(`serveLine: the line index names row seq ${bestSeq}, not waiting`);
     const bundle = offeredBundle(fm, line, i);
-    const protoId = prototypeFor(line.stories[i], line.units[i]).id;
-    if (!awardPasses(bundle, kindOf(line, i), protoId, line.units[i], avail, fm.index)) continue;
-    if (serveRow(ctx, fm, line, i, bundle, protoId, avail, rowOf)) hs.clear();
+    const proto = linePrototype(ctx.timeline, line, i);
+    if (!awardPasses(bundle, kindOf(line, i), proto, line.units[i], avail, fm.index)) continue;
+    if (serveRow(ctx, fm, line, i, bundle, proto, avail, rowOf)) hs.clear();
   }
 }
 
@@ -160,9 +164,6 @@ function offeredBundle(fm: FrameMoney, line: FundLine, i: number): number[] {
   if (bundle === null) throw notOffered(line.bundle[i]);
   return bundle;
 }
-
-/** A prototype id for groups whose pricing ignores it (affordable). */
-const ANY_PROTO: PrototypeId = PROTOTYPES[4].id;
 
 /**
  * The largest size from 1 to the group's largest live size at which `passes` holds (`line.ts`
@@ -195,7 +196,7 @@ function serveRow(
   line: FundLine,
   i: number,
   bundle: readonly number[],
-  protoId: PrototypeId,
+  proto: Prototype,
   avail: (q: number) => number,
   rowOf: readonly number[]
 ): boolean {
@@ -204,7 +205,7 @@ function serveRow(
     leaveLine(line, line.lot[i]);
     return false;
   }
-  awardRow(ctx, fm, line, i, bundle, protoId, avail, rowOf);
+  awardRow(ctx, fm, line, i, bundle, proto, avail, rowOf);
   return true;
 }
 
@@ -220,13 +221,13 @@ function awardRow(
   line: FundLine,
   i: number,
   bundle: readonly number[],
-  protoId: PrototypeId,
+  proto: Prototype,
   avail: (q: number) => number,
   rowOf: readonly number[]
 ): void {
   const { pools } = fundOf(ctx.world);
   const units = line.units[i];
-  const award = awardSet(bundle, kindOf(line, i), protoId, units, avail, fm.index);
+  const award = awardSet(bundle, kindOf(line, i), proto, units, avail, fm.index);
   if (award === null) throw new Error('serveLine: awardPasses and awardSet disagree');
   const asked: number[] = [];
   for (const q of award.asks.keys()) asked.push(rowOf[q]);

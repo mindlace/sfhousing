@@ -7,12 +7,12 @@
 // A new `openTimeline` (or `dispose`) ends the session: its timers are cancelled, nothing of it is
 // posted afterwards, and the requests still waiting on it are answered `no-session`.
 // Worker-bundle module: zod-free, DOM-free, $app-free.
-import type { GrossTable } from '$lib/data/gross-table';
 import type { Manifest } from '$lib/data/manifest';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ParcelId } from '$lib/data/parcel';
 import type { PolicyParcels } from '$lib/data/policy-codec';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
-import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import { generate, generateForm, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { cellsIntersecting, type FetchLike } from '$lib/sim/chunks';
 import { DEFAULT_RETRY_DELAYS_MS } from '$lib/sim/host';
 import { createLru } from '$lib/sim/lru';
@@ -71,10 +71,11 @@ export interface TimelineHostDeps {
   warn?(msg: string): void;
   generate?: typeof generate;
   generateForUnits?: typeof generateForUnits;
+  generateForm?: typeof generateForm;
   decodeParcels?(bytes: Uint8Array): Promise<ScenarioParcels>;
   decodePolicy?(bytes: Uint8Array, parcels: ScenarioParcels): Promise<PolicyParcels>;
-  decodeGross?(bytes: Uint8Array): Promise<GrossTable>;
-  /** Seam: the load itself (default `loadSimInput(…, { policy: true, cars: true })`). */
+  decodeOptions?(bytes: Uint8Array): Promise<OptionTable>;
+  /** Seam: the load itself (default `loadSimInput(…, { cars: true })`). */
   load?(urls: SimInputUrls): Promise<Loaded | LoadFailure>;
   /**
    * Default 'on': both worlds run the dataset's car system when it ships cars.bin and
@@ -123,6 +124,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
   const warn = deps.warn ?? ((msg: string) => console.warn(`[sim] ${msg}`));
   const gen = deps.generate ?? generate;
   const genForUnits = deps.generateForUnits ?? generateForUnits;
+  const genForm = deps.generateForm ?? generateForm;
   const previewMaxLots = deps.previewMaxLots ?? PREVIEW_MAX_LOTS;
 
   // Valid within one datasetVersion (content keys hold no version): kept across sessions of the
@@ -232,14 +234,19 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
       },
       decodeParcels: deps.decodeParcels,
       decodePolicy: deps.decodePolicy,
-      decodeGross: deps.decodeGross,
+      decodeOptions: deps.decodeOptions,
       load: deps.load,
       carsOff: deps.cars === 'off'
     };
     st.chunks = createChunkSet(manifest, dsDeps);
     s = st;
     post({ type: 'ready', rev, datasetVersion: version, chunkCount: manifest.chunks.length });
-    loadDataset(manifest, urls, st.chunks, dsDeps, memo, { gen, genForUnits, logOnce }).then(
+    loadDataset(manifest, urls, st.chunks, dsDeps, memo, {
+      gen,
+      genForUnits,
+      genForm,
+      logOnce
+    }).then(
       (r) => {
         if (!live(st)) return;
         if ('code' in r) return fail(st, r.code, r.message);
@@ -257,7 +264,7 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
     st.brush = createBrushService({
       manifest: st.manifest,
       parcels: ds.loaded.fzp.parcels,
-      policy: ds.loaded.policy!,
+      policy: ds.loaded.policy,
       fetch: deps.fetch,
       later: (fn, ms) => st.token.later(fn, ms),
       retryDelaysMs,
@@ -395,10 +402,11 @@ export function createTimelineHost(deps: TimelineHostDeps): TimelineHost {
         if (!s?.ds || frame === null) return noSession('previewBuildings', req.reqId, 'previews');
         const { result, transfer } = previewResult({
           parcels: s.ds.loaded.fzp.parcels,
+          options: s.ds.loaded.fzp.options,
           protectedRow: (row) => limitsAt(frame, row).protected,
           records: s.chunks.records,
           memo,
-          gen,
+          genForm,
           lots: req.lots,
           stories: req.stories,
           maxLots: previewMaxLots

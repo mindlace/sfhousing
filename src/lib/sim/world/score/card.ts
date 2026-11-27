@@ -47,6 +47,7 @@ function inputOf(statics: Statics, frame: PolicyFrame): SimInput {
   if (!input) {
     input = {
       parcels: frame.view.parcels,
+      options: frame.view.pre.choice.t,
       projects: statics.projects,
       asOf: statics.asOf,
       districtMaxStories: statics.districtMaxStories,

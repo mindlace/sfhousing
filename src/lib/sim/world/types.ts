@@ -31,8 +31,11 @@ export const RULE_NONE = 0;
 export const RULE_PIPELINE = 1;
 export const RULE_SIM = 2;
 export const NO_STOP = 255;
+/** `btype` of a row with no option (recorded rows, masters and phases). */
+export const NO_BTYPE = 255;
 
-export type Column = Int32Array | Uint32Array | Uint8Array | Float64Array | number[] | string[];
+export type Column =
+  Int32Array | Uint32Array | Uint16Array | Uint8Array | Float64Array | number[] | string[];
 
 /** Columns the funding side fills (`world-funding` narrows these); empty until then. */
 export interface LineColumns {
@@ -107,11 +110,19 @@ export interface ProjectColumns {
   existing: Int32Array;
   yieldCap: Int32Array;
   envelope: Int32Array;
-  level: Uint8Array;
+  /**
+   * A simulated row's option: its index in the lot's row of the option table, the latest one (a
+   * revision moves it; the revision table keeps only units and stories).
+   */
+  level: Uint16Array;
+  /** The option's construction type (a code into `BUILDING_TYPES`); `NO_BTYPE` for none. */
+  btype: Uint8Array;
+  /** The unit cap the option's homes were clipped by at the start; `NULL_CAP` for none. */
+  optCap: Uint16Array;
+  /** The envelope stories the start's options were allowed up to. */
   env: Int32Array;
+  /** The most homes among the options the start allowed (after the cap). */
   top: Int32Array;
-  /** `FILL_LEVELS.length` per row. */
-  yields: Int32Array;
   /** 0 = none. */
   phaseNext: Int32Array;
   phaseDay: Int32Array;
@@ -130,6 +141,8 @@ export interface ProjectColumns {
   revDay: Int32Array;
   revUnits: Int32Array;
   revStories: Float64Array;
+  /** A simulated row's option at the revision (`level` then); 0 on any other row. */
+  revLevel: Uint16Array;
   revPrev: Int32Array;
   /** Rows used in the displacement side table (like `n`). */
   dispN: number;
@@ -176,6 +189,7 @@ export interface Due {
 export interface FundedStart {
   kind: ProjectKind;
   view: ZoningView;
+  /** The option started: its index in the lot's row of the option table. */
   f: number;
   units: number;
   stories: number;

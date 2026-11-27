@@ -17,12 +17,16 @@ import type { PolicyParcels } from '$lib/data/policy-codec';
 import { scenarioRecordOf, type ScenarioParcels } from '$lib/data/scenario-codec';
 import type { TransitNetwork } from '$lib/data/transit';
 import { decodeTransit } from '$lib/data/transit-codec';
+import type { OptionTable } from '$lib/data/option-table';
 import {
   fnv1a32,
   lotBuildableStories,
   type generate,
+  type generateForm,
   type GeneratedBuilding
 } from '$lib/generator';
+import { allowedCount, capFrom, mostHomes } from '$lib/sim/choice/choose';
+import { BUILDING_FORMS } from '$lib/sim/choice/types';
 import { toLngLat } from '$lib/generator/geo';
 import { LID_PAD_M, type LidLot } from '$lib/map/height/lids';
 import type { HeightCity, HeightLids, LabelSet } from '$lib/map/height/types';
@@ -260,16 +264,19 @@ export function lotOutlinesResult(
 
 /**
  * The buildings the first `maxLots` requested lots could hold at `stories`, packed as one cell
- * (`'preview'`). Per lot, in order: a repeat is skipped; a lot absent from `parcels` or with
- * `protectedRow(row)` builds nothing; one whose record is not loaded is `missing`. The generator
- * memo (`simKey`) is the one the timeline's massings share.
+ * (`'preview'`): each lot's most-homes option (`mostHomes`) among those the painted stories
+ * allow, after the lot's unit cap, massed at its form and stories. Per lot, in order: a repeat is
+ * skipped; a lot absent from `parcels`, with `protectedRow(row)` or with no option gaining a
+ * home builds nothing; one whose record is not loaded is `missing`. The generator memo
+ * (`simKey`) is the one the timeline's massings share.
  */
 export function previewResult(o: {
   parcels: ScenarioParcels;
+  options: OptionTable;
   protectedRow(row: number): boolean;
   records: Map<ParcelId, ParcelRecord>;
   memo: Lru<string, GeneratedBuilding | null>;
-  gen: typeof generate;
+  genForm: typeof generateForm;
   lots: readonly ParcelId[];
   stories: number;
   maxLots: number;
@@ -290,10 +297,17 @@ export function previewResult(o: {
       continue;
     }
     if (o.stories <= 0) continue;
-    const key = simKey(id, o.stories);
+    const t = o.options;
+    const existing = plan.existingUnits[i];
+    const k = mostHomes(t, i, allowedCount(t, i, o.stories), capFrom(plan.fzpCap[i]), existing);
+    if (k < 0) continue;
+    const j = t.offset[i] + k;
+    const form = BUILDING_FORMS[t.form[j]];
+    const key = simKey(id, form, t.stories[j], t.plates[j]);
     let b = o.memo.get(key);
     if (b === undefined) {
-      b = o.gen(scenarioRecordOf(plan, i, rec), { maxStories: o.stories }, fnv1a32(id), 'max');
+      const f = o.genForm(scenarioRecordOf(plan, i, rec), form, t.stories[j], fnv1a32(id));
+      b = f === null ? null : f.building;
       o.memo.set(key, b);
     }
     if (b) items.push({ building: b, existingUnits: plan.existingUnits[i] });
@@ -395,9 +409,12 @@ export function lidsTransfer(l: HeightLids): ArrayBuffer[] {
 
 // --- the card ---
 
+/** The memo key of the typology generator's building on a lot at a story limit. */
+const typologyKey = (parcelId: ParcelId, stories: number) => `g|${parcelId}|${stories}`;
+
 /**
- * The stories `parcelId` can build under `allowed`: the generator's (`simKey` memo, the call the
- * preview and the timeline share) on the lot's scenario record from `parcels`, else
+ * The stories `parcelId` can build under `allowed`: the typology generator's (`typologyKey`
+ * memo) on the lot's scenario record from `parcels`, else
  * `lotBuildableStories(polygon, allowed, existingUnits)`. The lot must be in `parcels` and its
  * record loaded (the card checks both first).
  */
@@ -416,7 +433,7 @@ export function buildableStories(
   const rec = o.records.get(parcelId);
   if (i === undefined || rec === undefined)
     throw new RangeError(`buildableStories: ${parcelId} has no row or no loaded record`);
-  const key = simKey(parcelId, allowed);
+  const key = typologyKey(parcelId, allowed);
   let b = o.memo.get(key);
   if (b === undefined) {
     b = o.gen(

@@ -19,6 +19,7 @@ import { POLICY_BIN } from '../../lib/scenario-files';
 import { runSql } from '../../lib/sql';
 import { asOfFromLock } from '../../project-records/parse';
 import { readParcelRecords, writeNeighborhoods } from '../../steps/chunks';
+import { candidateTops } from '../../steps/options';
 import { readPolicyBin, writePolicy } from '../../steps/policy';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../../steps/scenario';
 import { transitTargetDate, writeTransit } from '../../steps/transit';
@@ -81,7 +82,8 @@ export function miniChain(): Promise<MiniChain> {
       datasetVersion: 'fixture-0',
       records,
       capDay,
-      buildCounts
+      buildCounts,
+      options: candidateTops(scenario.candidates.lots)
     });
     const parcels = readParcelsBin(join(outDir, PARCELS_BIN));
     const policy = readPolicyBin(join(outDir, POLICY_BIN), parcels);

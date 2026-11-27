@@ -26,7 +26,7 @@ import { runSql } from '../lib/sql';
 import {
   CARS_BIN,
   CAR_ZONES_JSON,
-  GROSS_BIN,
+  OPTIONS_BIN,
   PARCELS_BIN,
   POLICY_BIN,
   readParcelsBin
@@ -40,14 +40,17 @@ import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import { parseFixtureParkingFile, parseParkingFile } from '../enrichment/parking-schema';
 import { freewayLandSet, readFreewayLand } from '../lib/freeway-land';
-import { readFundingFile, writeCalibration } from './calibration';
+import type { Provenance } from '../../src/lib/timelapse/types';
+import { shippedStep } from '../lib/fzp-cal/shipped-step';
+import { locationValueByLot } from '../lib/location-value';
+import { readFundingFile, readPermits, writeCalibration } from './calibration';
 import { carsStep } from './cars';
 import { checkDataset, type InvariantResult } from './check';
 import { readParcelRecords, writeChunks, writeNeighborhoods, type ChunkOut } from './chunks';
-import { writeGross } from './gross';
+import { readOptionsBin, writeOptions } from './options';
 import { buildManifest, writeManifest } from './manifest';
 import { writePolicy } from './policy';
-import { writeProjectRecords } from './projects';
+import { PERMITS_PARQUET, writeProjectRecords } from './projects';
 import { writeRenderBoxes } from './render-boxes';
 import { writeScenario } from './scenario';
 import { installFonts, parcelIdsAtZoom, writeBasemap, writeBuildingsTiles } from './tiles';
@@ -291,20 +294,13 @@ export async function build(
         capDay: asOf,
         report,
         buildCounts: counts,
-        freewayLand
+        freewayLand,
+        // The candidate options of every row and panel key, for the hostable flags, the panel and
+        // the options step below (in parallel off fixture builds).
+        candidates: { workers: fixtureMode ? 0 : Math.max(1, availableParallelism() - 1) }
       })
     );
     report.warnings.push(...scenario.warnings);
-    // The gross table: after the scenario step (it reads parcels.bin and the chunks), in parallel
-    // off fixture builds (the fixture's few rows build faster than workers start).
-    const gross = await report.time('gross', () =>
-      writeGross({
-        outDir,
-        datasetVersion,
-        workers: fixtureMode ? 0 : Math.max(1, availableParallelism() - 1)
-      })
-    );
-    report.warnings.push(...gross.warnings);
     // Project-records spec §4.9: after the scenario step (it reads parcel_lineage and
     // scenario_panel), before the manifest and the invariants.
     const projects = await report.time('projects', () =>
@@ -325,6 +321,29 @@ export async function build(
       })
     );
     report.warnings.push(...projects.warnings);
+    // The options step: after the scenario step (its candidates) and the projects step (the
+    // permits and histories the shipped price and height-time step is fitted on).
+    let lvProvenance: Provenance | undefined;
+    const options = await report.time('options', async () => {
+      const candidates = scenario.candidates;
+      const lv = await locationValueByLot(db);
+      lvProvenance = lv.provenance;
+      const step = shippedStep({
+        histories: projects.histories,
+        permits: await readPermits(db, join(derivedDir, PERMITS_PARQUET)),
+        asOf,
+        cal: fixtureMode ? FIXTURE_CAL : LIVE_CAL
+      });
+      return writeOptions({
+        outDir,
+        derivedDir,
+        datasetVersion,
+        candidates,
+        step,
+        locationValue: lv.locationValue
+      });
+    });
+    report.warnings.push(...options.warnings);
     // Neighbourhoods and transit come before the car step (it reads the network's access grid);
     // transit needs neighborhoods.geojson for its clip.
     const neighborhoodsBytes = await writeNeighborhoods(db, outDir);
@@ -381,6 +400,7 @@ export async function build(
         lock,
         rawDir: opts.rawDir,
         byName,
+        locationValue: lvProvenance,
         cars: cars.model,
         carsReport: cars.report,
         carsBackcast: cars.backcast
@@ -392,7 +412,16 @@ export async function build(
     // Sim data layers: after the scenario step (it reads parcels.bin, sc_zoning and sc_district)
     // and transit, before the quality report. Its T14 rules go into the same counts.
     const policy = await report.time('policy', () =>
-      writePolicy({ db, outDir, datasetVersion, records, capDay: asOf, buildCounts: counts })
+      writePolicy({
+        db,
+        outDir,
+        datasetVersion,
+        records,
+        capDay: asOf,
+        buildCounts: counts,
+        // the options step's file, written above
+        options: readOptionsBin(join(outDir, OPTIONS_BIN))
+      })
     );
     report.warnings.push(...policy.warnings);
     // The basemap archive's raw path: the build copies it to basemap.pmtiles.
@@ -437,7 +466,7 @@ export async function build(
       transit: true,
       scenarios: SCENARIO_FILES.every((f) => existsSync(join(outDir, 'scenarios/fzp', f))),
       policy: existsSync(join(outDir, POLICY_BIN)),
-      gross: existsSync(join(outDir, GROSS_BIN)),
+      options: existsSync(join(outDir, OPTIONS_BIN)),
       cars: existsSync(join(outDir, CARS_BIN)) && existsSync(join(outDir, CAR_ZONES_JSON)),
       warn: (w) => report.warnings.push(w)
     });
@@ -452,7 +481,7 @@ export async function build(
       ...transit.counts,
       ...cars.counts,
       ...scenario.counts,
-      ...gross.counts,
+      ...options.counts,
       ...policy.counts,
       ...renderBoxes.counts,
       ...Object.fromEntries(overtureContrib.map((o) => [`overture.contrib.${o.dataset}`, o.n])),

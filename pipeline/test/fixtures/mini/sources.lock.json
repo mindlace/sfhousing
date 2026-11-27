@@ -359,10 +359,10 @@
     {
       "files": [
         {
-          "archiveKey": "sources/3335ebe87870a43f242ef82d0029b0cb5b6954b5730f78dc2362626f6ac63e71.json",
-          "bytes": 7125,
+          "archiveKey": "sources/994d516f4c7fdf3f66cd7497564ccd9fb8428a1a189e64464de5193d38e20ddd.json",
+          "bytes": 7257,
           "name": "datasf-permits-newcon.page-000.json",
-          "sha256": "3335ebe87870a43f242ef82d0029b0cb5b6954b5730f78dc2362626f6ac63e71",
+          "sha256": "994d516f4c7fdf3f66cd7497564ccd9fb8428a1a189e64464de5193d38e20ddd",
           "url": "https://fixture.invalid/datasf-permits-newcon.page-000.json"
         }
       ],
@@ -462,6 +462,24 @@
       "license": "PDDL-1.0",
       "retrievedAt": "2026-10-10T00:00:00.000Z",
       "rowCount": 2,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
+          "archiveKey": "sources/46e27759999582fdf4781a8e06c7c7d92d1f6603ada7980ee1be217c8b78d86c.csv",
+          "bytes": 496,
+          "name": "dgs-ccci.csv",
+          "sha256": "46e27759999582fdf4781a8e06c7c7d92d1f6603ada7980ee1be217c8b78d86c",
+          "url": "https://fixture.invalid/dgs-ccci.csv"
+        }
+      ],
+      "homepage": "https://www.dgs.ca.gov/RESD/Resources/Page-Content/Real-Estate-Services-Division-Resources-List-Folder/DGS-California-Construction-Cost-Index-CCCI",
+      "id": "dgs-ccci",
+      "label": "DGS California Construction Cost Index (CCCI), monthly",
+      "license": "Not stated by DGS; derived from ENR's Building Cost Index. Read by the choice-spread fit only, never committed or shipped.",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 40,
       "upstreamVersion": "fixture"
     },
     {

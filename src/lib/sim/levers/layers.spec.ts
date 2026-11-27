@@ -6,12 +6,13 @@ import {
   MINI_S207_ID,
   miniPolicy
 } from '../world/fixtures/mini-policy';
+import { miniOptions } from '../world/fixtures/mini-options';
 import { miniCity } from '../world/fixtures/mini-parcels';
 import { stockTable, type LayerCtx } from './layers';
 
 function ctx(): LayerCtx {
   const city = miniCity();
-  return { parcels: city.parcels, policy: miniPolicy(city) };
+  return { parcels: city.parcels, policy: miniPolicy(city), options: miniOptions(city) };
 }
 describe('miniPolicy', () => {
   it('survives an encode/decode round trip', () => {
@@ -35,8 +36,7 @@ describe('stockTable', () => {
     const t = stockTable(c, 'fzp');
     expect(t.count).toBe(c.parcels.count);
     expect(Array.from(t.stories)).toEqual(Array.from(c.parcels.envelopeStories));
-    expect(Array.from(t.cap)).toEqual(Array.from(c.policy.fzpYieldCap));
-    expect(Array.from(t.yield)).toEqual(Array.from(c.parcels.yield));
+    expect(Array.from(t.cap)).toEqual(Array.from(c.parcels.fzpCap));
     expect(Array.from(t.hostable)).toEqual(Array.from(c.parcels.hostable));
   });
   it('base reads the base columns', () => {
@@ -44,7 +44,6 @@ describe('stockTable', () => {
     const t = stockTable(c, 'base');
     expect(Array.from(t.stories)).toEqual(Array.from(c.parcels.baseStories));
     expect(Array.from(t.cap)).toEqual(Array.from(c.parcels.baseCap));
-    expect(Array.from(t.yield)).toEqual(Array.from(c.parcels.baseYield));
     expect(Array.from(t.hostable)).toEqual(Array.from(c.parcels.hostableBase));
   });
 });

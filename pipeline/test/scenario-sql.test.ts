@@ -351,11 +351,12 @@ describe('runScenarioSql on the mini fixture', () => {
       ludb_units: number;
       rec_floor_area_m2: number;
     }>(`SELECT * FROM sc_parcel WHERE id = '3512005'`);
-    // Lot 5: two parts, 10 x 18 + 10 x 8 = 260 m²; 65-X -> 6 stories; RH-1: 1 per lot before
-    // 2022-11-27, the fourplex rule after. Its chunk record has LUDB 1 unit and 80 m².
+    // Lot 5: two parts, 10 x 18 + 10 x 8 = 260 m²; 65-X, but RH-1 dwellings stop at 35 ft
+    // (Planning Code Sec. 261(b)(1)) -> 3 stories; RH-1: 1 per lot before 2022-11-27, the
+    // fourplex rule after. Its chunk record has LUDB 1 unit and 80 m².
     expect(p).toMatchObject({
       lot_area_m2: 260,
-      base_stories: 6,
+      base_stories: 3,
       cap_pre2022: 1,
       cap_prefzp: 4,
       ludb_units: 1,

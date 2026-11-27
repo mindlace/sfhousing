@@ -5,13 +5,16 @@ import {
   ADU_GROSS_M2,
   ADU_INSET_M,
   ADU_MAX_WIDTH_M,
+  COVERAGE,
   FTF_M,
   MIDRISE_STEPBACK_ABOVE,
   rulesFor,
   TOWER_COVERAGE,
   TOWER_INSET_M,
   TOWER_PLATE_MAX_M2,
-  TOWER_PODIUM_STORIES
+  TOWER_PODIUM_STORIES,
+  TOWERS_PLATE_MAX_M2,
+  TOWERS_SEPARATION_M
 } from './constants';
 import {
   canonicalRing,
@@ -125,12 +128,16 @@ function finish(typology: TypologyId, stories: number, parts: MassPart[]): Massi
 
 /**
  * Pipeline projects shrink the footprint (`coverageScale`, default 1) and keep a recorded story
- * count when a tower plate does not fit (`fallbackStories`, default 12). Omitted opts leave
- * every result identical.
+ * count when a tower plate does not fit (`fallbackStories`, default 12). A chosen form sets the
+ * base coverage (`coverage`: the block form's `BLOCK_COVERAGE` on the midrise massing) or the
+ * tower plates (`plates` above 1: that many plates on the plate grid, else null). Omitted opts
+ * leave every result identical.
  */
 export interface MassOpts {
   coverageScale?: number;
   fallbackStories?: number;
+  coverage?: number;
+  plates?: number;
 }
 
 /** §4.7 massing for replacement typologies. Selection (§4.5) is separate: `selectTypology`. */
@@ -142,7 +149,7 @@ export function massTypology(
   opts?: MassOpts
 ): Massing | null {
   const k = opts?.coverageScale ?? 1;
-  const F = baseFootprint(site, k * (rulesFor(typology).coverage * site.A));
+  const F = baseFootprint(site, k * ((opts?.coverage ?? rulesFor(typology).coverage) * site.A));
   if (F.length === 0) return null;
   if (typology === 'midrise') return massMidrise(site, F, stories, draws);
   if (typology === 'tower') return massTower(site, F, stories, draws, opts);
@@ -167,9 +174,55 @@ function massMidrise(_site: Site, F: PathsD, stories: number, draws: VarietyDraw
   ]);
 }
 
+/** Area of one tower's plate on the site: at most `TOWER_PLATE_MAX_M2`. */
+const plateArea = (site: Site) => Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
+
+/** Area of one plate of several towers on the site: at most `TOWERS_PLATE_MAX_M2`. */
+export const towersPlateArea = (site: Site) =>
+  Math.min(TOWERS_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
+
+/**
+ * The plate grid of several towers: square plates of area `At`, `TOWERS_SEPARATION_M` apart on
+ * the site's u/v axes, the grid centred on F inset `TOWER_INSET_M`. A plate is kept only when it
+ * lies wholly inside.
+ */
+function towerPlateGrid(site: Site, F: PathsD, At: number): PathsD {
+  const { c, u, v } = site;
+  const side = Math.sqrt(At);
+  const pitch = side + TOWERS_SEPARATION_M;
+  const Fin = inset(F, TOWER_INSET_M);
+  if (!Fin.length) return [];
+  const pu = project(Fin, c, u);
+  const pv = project(Fin, c, v);
+  const nu = Math.floor((pu.max - pu.min + TOWERS_SEPARATION_M) / pitch);
+  const nv = Math.floor((pv.max - pv.min + TOWERS_SEPARATION_M) / pitch);
+  const u0 = (pu.min + pu.max - (nu * pitch - TOWERS_SEPARATION_M)) / 2;
+  const v0 = (pv.min + pv.max - (nv * pitch - TOWERS_SEPARATION_M)) / 2;
+  const plates: PathsD = [];
+  for (let i = 0; i < nu; i++)
+    for (let j = 0; j < nv; j++) {
+      const a = u0 + i * pitch;
+      const b = v0 + j * pitch;
+      const piece = keepPieces(intersect([orientedRect(c, u, v, a, a + side, b, b + side)], Fin));
+      if (piece.length === 1 && totalArea(piece) >= 0.999 * At) plates.push(piece[0]);
+    }
+  return plates;
+}
+
+/**
+ * How many towers the site holds: the plate grid on the tower podium's footprint, plates of
+ * `TOWERS_PLATE_MAX_M2` `TOWERS_SEPARATION_M` apart (tier 1, Planning Code; provenance.ts).
+ * Below 2 the tower form keeps the single-plate massing.
+ */
+export function maxTowerPlates(site: Site): number {
+  const F = baseFootprint(site, COVERAGE.tower * site.A);
+  return F.length ? towerPlateGrid(site, F, towersPlateArea(site)).length : 0;
+}
+
 /**
  * §4.7 tower: podium floors 1–5 on F; tower plate (rectangle on u/v, area At) slid along u,
  * clipped to F inset 1 m. Retry centred; else largest piece ≥ 0.5·At; else midrise at 12.
+ * With `opts.plates` above 1: that many plates of the plate grid, or null when fewer fit.
  */
 function massTower(
   site: Site,
@@ -179,7 +232,12 @@ function massTower(
   opts?: MassOpts
 ): Massing | null {
   const { c, u, v } = site;
-  const At = (opts?.coverageScale ?? 1) * Math.min(TOWER_PLATE_MAX_M2, TOWER_COVERAGE * site.A);
+  const At = (opts?.coverageScale ?? 1) * plateArea(site);
+  if (opts?.plates !== undefined && opts.plates > 1) {
+    const grid = towerPlateGrid(site, F, (opts?.coverageScale ?? 1) * towersPlateArea(site));
+    if (grid.length < opts.plates) return null;
+    return towerMassing(F, grid.slice(0, opts.plates), stories);
+  }
   const depth = Math.sqrt(At * draws.towerAspect);
   const width = Math.sqrt(At / draws.towerAspect);
   const fu = project(F, c, u);
@@ -199,6 +257,11 @@ function massTower(
       else return massTypology(site, 'midrise', opts?.fallbackStories ?? 12, draws, opts);
     }
   }
+  return towerMassing(F, R, stories);
+}
+
+/** Podium floors 1–5 on F, the plates R above. */
+function towerMassing(F: PathsD, R: PathsD, stories: number): Massing {
   const podium = TOWER_PODIUM_STORIES;
   const topPodium = floorTop('tower', podium);
   const top = floorTop('tower', stories);

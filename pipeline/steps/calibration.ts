@@ -5,18 +5,20 @@
 // the eight sc.* T14 tallies and the calibration.* counts into the build's single counts object,
 // and writes scenarios/fzp/calibration.json and calibration-report.md (the latter to the derived
 // cache, not shipped). No network.
+import { readCostIndex } from '../sources/dgs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import type { CarModel } from '../../src/lib/sim/cars';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
-import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
+import type { Day, ProjectHistoriesFile, Provenance } from '../../src/lib/timelapse/types';
 import { parseFundingFile, type FundingFile } from '../enrichment/funding-schema';
 import { parseMarketFile, type MarketFile } from '../enrichment/market-schema';
 import { BuildError } from '../lib/build-error';
+import { RECORD_TARGETS_JSON } from '../lib/building-records';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
 import { calibrate, type CalOutput } from '../lib/fzp-cal/calibrate';
+import { locationValueByLot } from '../lib/location-value';
 import { duckPanelSource } from '../lib/fzp-cal/panel';
 import {
   CalibrationError,
@@ -26,6 +28,7 @@ import {
 } from '../lib/fzp-cal/types';
 import { recordQuality } from '../lib/quality';
 import type { InvariantResult } from './check';
+import { OPTIONS_BIN, PANEL_OPTIONS_BIN, readOptionsBin } from './options';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, readRows } from './projects';
 import { PARCELS_BIN, readParcelsBin } from './scenario';
 
@@ -52,7 +55,10 @@ export const PERMIT_ROW_COLUMNS: readonly (keyof PermitRow)[] = [
   'issued_day',
   'construction_day',
   'complete_day',
-  'status_day'
+  'status_day',
+  'proposed_stories',
+  'valuation',
+  'construction_type'
 ];
 
 const sqlStr = (s: string) => `'${s.replaceAll("'", "''")}'`;
@@ -152,6 +158,8 @@ export async function writeCalibration(o: {
   lock: Lock;
   rawDir: string;
   byName: boolean;
+  /** The location value's provenance; read again from the database when absent. */
+  locationValue?: Provenance;
   /** The car step's model (written as `cars`; null until it is complete) */
   cars?: CarModel | null;
   /** The car step's report lines: section 14 (none, no section) */
@@ -190,11 +198,14 @@ export async function writeCalibration(o: {
     panel: await duckPanelSource(o.db),
     parcels,
     inFlight: projects.projects,
-    fillLevels: FILL_LEVELS,
+    options: readOptionsBin(join(o.outDir, OPTIONS_BIN)),
+    panelOptions: readOptionsBin(join(o.derivedDir, PANEL_OPTIONS_BIN)),
+    locationValue: o.locationValue ?? (await locationValueByLot(o.db)).provenance,
     datasetVersion: o.datasetVersion,
     market,
     funding,
     mohcd,
+    costIndex: readCostIndex(o.lock, o.rawDir, o.byName),
     cars: { model: o.cars ?? null, report: o.carsReport ?? [], backcast: o.carsBackcast ?? [] }
   };
   const a = await calibrate(input, o.cal);
@@ -211,6 +222,8 @@ export async function writeCalibration(o: {
   writeFileSync(jsonPath, a.json);
   mkdirSync(o.derivedDir, { recursive: true });
   writeFileSync(join(o.derivedDir, CALIBRATION_REPORT_MD), a.reportMd);
+  // The record check's targets (building-choice spec, Acceptance): build-internal, never uploaded.
+  writeFileSync(join(o.derivedDir, RECORD_TARGETS_JSON), JSON.stringify(a.targets, null, 2) + '\n');
 
   const v28: InvariantResult = o.cal.backcastGate
     ? { id: 'V28', ...a.backcast }

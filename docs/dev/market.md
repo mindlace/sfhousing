@@ -42,16 +42,24 @@ fitted on all starts, and the private level must restore the all-starts average 
 closes the gap.
 
 `typicalUncoveredShare = sum over prototypes p of w_p x uncoveredPerHome('market', p) / p.costPerHome`,
-where `w_p` is the binned private starts of 2021-2025 in prototype `p` over all binned private
-starts of those years. The prototypes are `PROTOTYPES` ([finance-model.md](finance-model.md)),
-iterated A to E. `typicalCostOverValue = sum w_p x costPerHome / (costPerHome - shortfallPerHome)`.
+where `w_p` is the priced private starts of 2021-2025 at price `p` over all priced private starts
+of those years. The prices are `PROTOTYPES` ([finance-model.md](finance-model.md)), A to E, then
+one row per Type I price between or above the anchors (`I<n>`, by stories) that a typed start has. `typicalCostOverValue = sum w_p x costPerHome / (costPerHome - shortfallPerHome)`.
 
 `marketModel` also counts the recent years' `PanelStart`s and throws when the count differs from
 `O`, so the cohort split is always of the same events.
 
-### Prototype binning of a start
+### Pricing a start: its type, else the binning
 
-Each panel start carries the history's cohort, gross homes and `storiesProposed`. Homes are the
+Each panel start carries the history's cohort, gross homes, `storiesProposed` and construction
+type: `projectTypes` (`panel.ts`) gives a project the type of its permit with the most proposed
+homes among those recording I, III or V (ties to the earliest filed, then the lowest permit
+number); II and IV are not modelled and count as untyped. A typed start is priced as the engine
+prices an option (`optionPrototype` on the anchors with the shipped step's `aboveTopCostRatio`):
+Type V as A (E under 25 homes), Type III as B, Type I as C, D or between them; a Type I start with
+no recorded stories is left out ("stories not recorded"). Only an untyped start is binned as
+below (building-choice spec, "Funded and affordable projects"). The report gives the typed and
+binned counts (`typedStarts`, `binnedStarts`). Homes are the
 first positive of `unitsAt.filed`, `unitsAt.permitFiled`, `unitsAt.complete` (gross proposed homes,
 which is what a prototype's `homes` counts), else `null`.
 
@@ -118,6 +126,13 @@ section 11):
   2021-2025: A 3, B 15, C 2, D 10, E 179; 10 of 25 homes or more had no stories); cross-check slopes
   `costCoefficient` 11.4345, `priceCoefficient` 2.01297.
 - `crossCheck.logOdds` = -1.28933; the gap to `today.all` is 0.64737.
+
+**Building-choice refit** (Task 8; live build `2026-11-27-6264ccf1` from the uncommitted tree,
+not uploaded; `market.ts` unchanged). The start model gains the `choiceMargin` term and takes
+`potentialRatio` and `storiesGap` from the choice, so `today` is recomputed against it:
+`observed` 127 (private 118) in 2023-2025, so `today.all` = -0.545606 and `today.private` =
+-0.619108. The margin's correlation with the slope's cost share over the at-risk panel is
+r = -0.0046 (1,309,634 parcel-years), so the two barely overlap on today's single cost step.
 
 **Acceptance 7.3.** `|today.all - (-0.643571)| <= 0.10` (tier 4 tolerance). Outcome: met. The live
 value is -0.64196, 0.00161 from the expectation; observed is 129 as expected, and `implied` is
@@ -222,7 +237,7 @@ crossCheck.logOdds| > 1`; the reproduction check; the hold-out failure.
 
 Count keys added to the build's counts (and so to `report.json`; they are not fields of the
 `calibration.market` object): `recentStarts`, `recentPrivate`, `recentAffordable`, `recentNoRecord`,
-`recentUnknown`, `weightStarts`, `unbinnedHomes`, `unbinnedStories`.
+`recentUnknown`, `weightStarts`, `typedStarts`, `binnedStarts`, `unbinnedHomes`, `unbinnedStories`.
 
 ## Hashed code
 

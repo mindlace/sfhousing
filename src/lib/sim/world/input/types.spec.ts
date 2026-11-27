@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { OptionTable } from '$lib/data/option-table';
 import type { ScenarioParcels } from '$lib/data/scenario-codec';
 import type { ParcelId } from '$lib/data/parcel';
 import type { GeneratedBuilding } from '$lib/generator';
@@ -45,7 +46,7 @@ interface RowSchedule {
     | { kind: 'complete'; day: Day }
     | { kind: 'exit'; stage: Stage; reason: ExitReason; day: Day }
     | { kind: 'open' }; // still in progress at horizon
-  revisions: { day: Day; units: number; stories: number | null }[];
+  revisions: { day: Day; units: number; stories: number | null; option?: number }[];
   existingUnits: number;
   multiPhase: boolean;
   phase: {
@@ -69,6 +70,7 @@ interface RowSchedule {
 }
 type RowSimInput = {
   parcels: ScenarioParcels;
+  options: OptionTable; // building choice: the lots' options
   projects: InFlightProject[];
   calibration: Calibration;
   asOf: Day;

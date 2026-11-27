@@ -14,8 +14,6 @@ function t11Of(row: V18Row, baseCap: number | null): V18Panel {
     landUseClass: Uint8Array.of(row.land_use_class),
     imputed: Uint8Array.of(row.imputed),
     baseCap: Uint16Array.of(baseCap === null ? 0xffff : baseCap),
-    potentialRatio: { fzp: Float32Array.of(0), base: Float32Array.of(row.potential_ratio_base) },
-    storiesGap: { fzp: Int16Array.of(0), base: Int16Array.of(row.stories_gap_base) },
     hostableBase: Uint8Array.of(row.hostable_base ? 1 : 0)
   };
 }
@@ -31,43 +29,33 @@ const ROW: V18Row = {
   land_use_class: 0,
   imputed: 0,
   base_density_cap: 3,
-  potential_ratio_base: 3,
-  stories_gap_base: 2,
   hostable_base: true
 };
 
-describe('v18Compare (V18 cap-period exclusion, coordinator ruling 2026-10-18)', () => {
+describe('v18Compare (coordinator ruling 2026-10-18)', () => {
   it('equal rows with equal caps match', () => {
     expect(v18Compare(t11Of(ROW, 3), 0, ROW)).toEqual({ capPeriodDiffers: false, mismatch: false });
   });
 
-  it('a cap-period difference excludes the base-cap features and is counted', () => {
+  it('a cap-period difference is counted and compares nothing less (hostableBase reads no cap)', () => {
     // RM-1 on 1,614 sf: the panel's 2025 row (lien 2025-01-01) has max(3, 2) = 3, T11 (2026-01-11)
-    // the bare 2, so the capped base yields, and the ratios, differ: each correct for its date.
-    const t = t11Of(ROW, 2);
-    t.potentialRatio.base[0] = 2;
-    expect(v18Compare(t, 0, ROW)).toEqual({ capPeriodDiffers: true, mismatch: false });
+    // the bare 2, each correct for its date.
+    expect(v18Compare(t11Of(ROW, 2), 0, ROW)).toEqual({ capPeriodDiffers: true, mismatch: false });
   });
 
-  it('a base-ratio difference with equal caps still fails', () => {
-    const t = t11Of(ROW, 3);
-    t.potentialRatio.base[0] = 2;
-    expect(v18Compare(t, 0, ROW)).toEqual({ capPeriodDiffers: false, mismatch: true });
-  });
-
-  it('a mismatch unrelated to the cap still fails where the caps differ', () => {
-    for (const edit of [
-      (t: V18Panel) => (t.yearBuilt[0] = 1926),
-      (t: V18Panel) => (t.imputed[0] = 1),
-      (t: V18Panel) => (t.existingUnits[0] = 2),
-      (t: V18Panel) => (t.storiesGap.base[0] = 1),
-      (t: V18Panel) => (t.hostableBase[0] = 0)
-    ]) {
-      const t = t11Of(ROW, 2);
-      t.potentialRatio.base[0] = 2;
-      edit(t);
-      expect(v18Compare(t, 0, ROW)).toEqual({ capPeriodDiffers: true, mismatch: true });
-    }
+  it('a mismatch fails whether or not the caps differ', () => {
+    for (const cap of [2, 3])
+      for (const edit of [
+        (t: V18Panel) => (t.yearBuilt[0] = 1926),
+        (t: V18Panel) => (t.imputed[0] = 1),
+        (t: V18Panel) => (t.existingUnits[0] = 2),
+        (t: V18Panel) => (t.existingStories[0] = 1),
+        (t: V18Panel) => (t.hostableBase[0] = 0)
+      ]) {
+        const t = t11Of(ROW, cap);
+        edit(t);
+        expect(v18Compare(t, 0, ROW).mismatch).toBe(true);
+      }
   });
 
   it('a null cap on one side and a number on the other differ by period', () => {
@@ -80,18 +68,16 @@ describe('v18Compare (V18 cap-period exclusion, coordinator ruling 2026-10-18)',
     ).toEqual({ capPeriodDiffers: false, mismatch: false });
   });
 
-  it('freeway land compares the base features of the rule (0), not the panel', () => {
+  it('freeway land compares hostableBase with the rule (0), not the panel', () => {
     // The panel keeps freeway land eligible (calibration describes the past market); T11 applies
-    // the rule, so its hostableBase and base ratio are 0 while the panel's are not.
+    // the rule, so its hostableBase is 0 while the panel's is not.
     const t = t11Of(ROW, 3);
     t.hostableBase[0] = 0;
-    t.potentialRatio.base[0] = 0;
     expect(v18Compare(t, 0, ROW, true)).toEqual({ capPeriodDiffers: false, mismatch: false });
     expect(v18Compare(t, 0, ROW).mismatch).toBe(true);
     expect(v18Compare(t11Of(ROW, 3), 0, ROW, true).mismatch).toBe(true);
     const u = t11Of(ROW, 3);
     u.hostableBase[0] = 0;
-    u.potentialRatio.base[0] = 0;
     u.yearBuilt[0] = 1926;
     expect(v18Compare(u, 0, ROW, true).mismatch).toBe(true);
   });

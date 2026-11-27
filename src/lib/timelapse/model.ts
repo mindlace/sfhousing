@@ -557,7 +557,8 @@ const FEATURE_IDS = Object.keys({
   storiesGap: 0,
   improvementShare: 0,
   rentControlLikely: 0,
-  landUseClass: 0
+  landUseClass: 0,
+  choiceMargin: 0
 } satisfies Record<FeatureId, 0>);
 
 function fail(path: string, message: string): never {
@@ -742,39 +743,6 @@ function checkInitiation(v: unknown): void {
     }
   });
   checkProvenance(m.provenance, `${path}.provenance`);
-}
-
-function checkSize(v: unknown): void {
-  const path = 'size';
-  const s = record(v, path);
-  const levels = numbers(s.fillLevels, `${path}.fillLevels`);
-  if (levels.length === 0) fail(`${path}.fillLevels`, 'expected at least one fill level');
-  levels.forEach((x, i) => {
-    if (!(x > 0 && x <= 1))
-      fail(`${path}.fillLevels[${i}]`, `expected a value in (0, 1], got ${x}`);
-    if (i > 0 && !(x > levels[i - 1])) fail(`${path}.fillLevels`, 'expected strictly ascending');
-  });
-  if (levels[levels.length - 1] !== 1)
-    fail(`${path}.fillLevels`, 'expected the last level to be 1');
-  const rows = array(s.byEnvelope, `${path}.byEnvelope`);
-  if (rows.length === 0) fail(`${path}.byEnvelope`, 'expected at least one entry');
-  let prev = -Infinity;
-  rows.forEach((row, i) => {
-    const rp = `${path}.byEnvelope[${i}]`;
-    const r = record(row, rp);
-    const upTo = finite(r.maxStoriesUpTo, `${rp}.maxStoriesUpTo`);
-    if (upTo < prev) fail(`${rp}.maxStoriesUpTo`, 'expected ascending maxStoriesUpTo');
-    prev = upTo;
-    const probs = array(r.probs, `${rp}.probs`);
-    if (probs.length !== levels.length) {
-      fail(`${rp}.probs`, `expected length ${levels.length} (fillLevels), got ${probs.length}`);
-    }
-    checkSumsToOne(
-      probs.map((x, j) => unit(x, `${rp}.probs[${j}]`)),
-      `${rp}.probs`
-    );
-  });
-  checkProvenance(s.provenance, `${path}.provenance`);
 }
 
 /** Stages from `construction` on: no revision applies there (T4c). */
@@ -1106,9 +1074,8 @@ function checkBaselineFunding(v: unknown): void {
  * `CalibrationFormatError` naming the path of the first violation; otherwise returns the same
  * value, typed, or, when a baseline pool carries an older dataset's `uncapped` key, a copy with
  * that key dropped (an `uncapped: true` pool with no inflows gains one yearly inflow of
- * `LEGACY_UNCAPPED_DOLLARS` from `asOf`, no end). The input is never mutated. `size.fillLevels` is
- * checked internally only (ruling A2): equality with T11's `FILL_LEVELS` is V25's and
- * timelapse-sim's job.
+ * `LEGACY_UNCAPPED_DOLLARS` from `asOf`, no end). The input is never mutated. A `size` key (the fill-level size model,
+ * retired by building-choice) is not read.
  */
 export function parseCalibration(json: unknown): Calibration {
   const c = record(json, '$');
@@ -1118,7 +1085,6 @@ export function parseCalibration(json: unknown): Calibration {
   checkInitiation(c.initiation);
   checkPathwayMap(c.pathwayForNew, 'pathwayForNew', true);
   checkPathwayMap(c.ppaShare, 'ppaShare', false);
-  checkSize(c.size);
   checkRevision(c.revision);
   if (c.streamlinedForLocalProgram === undefined) fail('streamlinedForLocalProgram', 'missing');
   checkProvenance(c.streamlinedForLocalProgram, 'streamlinedForLocalProgram');

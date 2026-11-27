@@ -101,15 +101,15 @@ The attribution is keyed on the frame object (a `WeakMap` filled by `compileTime
 
 `cityInputAt(frame)` (`limits.ts`) gives a frame's `FrameCityInput { stories, countable, sources }`, the inputs `createCityBuild` takes (and `createLidBuild`: `stories`, `sources.source`, `sourceIds = sources.ruleIds`), for the runner's `heights` and `heightLids`. Over `resolveEnvelopes` of the zoning in force (unfilled): `stories` is the plan table's stories, a `Uint8Array` with protected lots at FZP; `countable` is `countableMask(table, parcels.eligible, needs, protectedRows)`, a `Uint8Array` of 0/1; `sources` is `limitSources`' `LimitSources` (`source: Uint16Array`, `ruleIds: string[]`), the same object `limitsAt` reads. `stories` equals the frame view's `envelopeStories` on the fixture. A `preFzp` compile's frames read FZP, as `limitsAt` does.
 
-The arrays are returned by reference, never copied: callers must not mutate them or transfer their buffers in a `postMessage` (copy first). They are shared by every caller of the zoning state and may come to share the dataset's stock columns (`stories` is a fresh copy today). It is keyed and throws as `limitsAt` (the frame object, `RangeError` for a frame no compile handed out; pass a frame of the timeline in use), computed on the first call and memoised on the attribution, so months sharing a zoning state share one result. Memory per zoning state once called: 2 bytes per lot row (`stories` and `countable`) plus the `sources` that `limitsAt` holds already (2 bytes per row); the rest of the resolution (yields, the unprotected plan) is dropped.
+The arrays are returned by reference, never copied: callers must not mutate them or transfer their buffers in a `postMessage` (copy first). They are shared by every caller of the zoning state and may come to share the dataset's stock columns (`stories` is a fresh copy today). It is keyed and throws as `limitsAt` (the frame object, `RangeError` for a frame no compile handed out; pass a frame of the timeline in use), computed on the first call and memoised on the attribution, so months sharing a zoning state share one result. Memory per zoning state once called: 2 bytes per lot row (`stories` and `countable`) plus the `sources` that `limitsAt` holds already (2 bytes per row); the rest of the resolution (the unprotected plan) is dropped.
 
 ## Compiling
 
 `compileTimeline(doc, lots, ctx, base)` returns a `TimelineCompile` (`compile.ts`). `step(budgetMs)` compiles frames in month order and returns true when the window is done; `result()` works once month 1 exists and its `readyThrough()` grows.
 
-`CompileCtx = { input, layers, windowMonths, yields: YieldSource, now? }`. `yields` gives the compiler the lot yields a changed zoning needs, as `createTableRecompute` or `createYieldRecompute` give them; the host builds it from the gross table or the chunk records it holds. `now` is the clock that bounds a slice (default `performance.now`). `TimelineCompile.missingLots()` counts the lots whose zoning changed and that have no yield record (yield 0, as today); the runner logs it. Also `progress()` (`done`, `total`, `failedCells`), `capacity()` and `unknownLots()` (the frame of the window's last month, once `step` returned true).
+`CompileCtx = { input, layers, windowMonths, now? }`: a changed zoning needs no recompute, since every envelope reads the lots' option rows (`input.options`, [building-choice.md](building-choice.md)). `now` is the clock that bounds a slice (default `performance.now`). Also `progress()` (`done`, `total`, `failedCells`, always empty), `capacity()` and `unknownLots()` (the frame of the window's last month, once `step` returned true).
 
-A zoning view is built per distinct zoning state (`zoning-view.ts`): `resolveEnvelopes`, the yield recompute of the needs, `fillNeeds`, `applyLevers`, then `precomputeOf`, in that order. Under `base: 'preFzp'` it starts from the zoning before the plan, takes no zoning policy (it throws), and its `capacity()` is a new definition not meant to be shown.
+A zoning view is built per distinct zoning state (`zoning-view.ts`): `resolveEnvelopes`, `applyLevers`, then `precomputeOf`, in that order. Under `base: 'preFzp'` it starts from the zoning before the plan, takes no zoning policy (it throws), and its `capacity()` is a new definition not meant to be shown.
 
 ### Frame identity and interning
 
@@ -123,7 +123,7 @@ A programme or pool not on offer is not part of the month's identity, so a fund 
 
 Slicing: a unit (a recompute step, `applyLevers`, `precomputeOf`) runs whole, so `step(budgetMs)` can overrun by one unit; see the risks below.
 
-`touched(m)` (`touchedRows`, memoised per view pair): for a month in `changes()`, the rows whose `envelopeStories`, `yield`, `hostable`, `localProgram`, `potentialRatio.fzp`, `storiesGap.fzp` or start rate (`pre.logit`) differ from the month before; empty when the view is the same object; null for month 1.
+`touched(m)` (`touchedRows`, memoised per view pair): for a month in `changes()`, the rows whose `envelopeStories`, `fzpCap`, `hostable`, `localProgram` or start rate (`pre.logit`) differ from the month before; empty when the view is the same object; null for month 1.
 
 ## The comparison
 

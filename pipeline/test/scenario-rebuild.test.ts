@@ -1,19 +1,17 @@
-// Reproducibility in the worker (scenario-data spec §4.7, §6, IA-8, AC 17): the stored yields of
-// parcels.bin are rebuilt from what the worker has, the decoded file and the chunk record, through
-// the codec's scenarioRecordOf, the shared scenarioYield and the §4.4 caps.
+// Reproducibility in the worker (scenario-data spec §4.7, §6, IA-8, AC 17): the stored caps and
+// hostable flags of parcels.bin are rebuilt from what the worker has, the decoded file and the
+// chunk record, through the codec's scenarioRecordOf, the shared candidate options and the §4.4
+// caps.
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
-import {
-  FILL_LEVELS,
-  fillStories,
-  scenarioRecordOf,
-  type ScenarioParcels
-} from '../../src/lib/data/scenario-codec';
-import { scenarioYield } from '../../src/lib/data/scenario-yield';
+import { topHomesAt } from '../../src/lib/data/envelope-row';
+import { scenarioRecordOf, type ScenarioParcels } from '../../src/lib/data/scenario-codec';
+import { fnv1a32 } from '../../src/lib/generator';
 import { FTF_M } from '../../src/lib/generator/constants';
+import { candidatesOf } from '../../src/lib/sim/choice/options';
 import { SQL_VARS } from '../config';
 import { FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import { readLock } from '../lib/lock';
@@ -25,10 +23,8 @@ import { readParcelRecords } from '../steps/chunks';
 import { PARCELS_BIN, readParcelsBin, writeScenario } from '../steps/scenario';
 import { MINI, miniDuck } from './helpers';
 
-const F = FILL_LEVELS.length;
-/** T11 `baseCap` "no cap" sentinel and the u16 yield ceiling (spec §2, §4.8). */
+/** T11 `baseCap` "no cap" sentinel (spec §2, §4.8). */
 const NULL_CAP = 0xffff;
-const U16_MAX = 0xffff;
 
 let p: ScenarioParcels;
 let recById: Map<string, ParcelRecord>;
@@ -60,8 +56,8 @@ beforeAll(async () => {
   zoning = new Map(rows.map((r) => [r.id, r]));
 });
 
-describe('scenario yields rebuild from parcels.bin and the chunk record (IA-8)', () => {
-  it('every parcel: yield and baseYield equal scenarioYield on scenarioRecordOf', () => {
+describe('scenario caps and hostable flags rebuild from parcels.bin and the chunk record (IA-8)', () => {
+  it("every parcel: the caps are §4.4's and the flags the options' on scenarioRecordOf", () => {
     expect(p.count, '25 mini lots, lots 19-25 included').toBe(25);
     for (let i = 0; i < p.count; i++) {
       const id = p.id[i];
@@ -77,21 +73,15 @@ describe('scenario yields rebuild from parcels.bin and the chunk record (IA-8)',
       const fzpCap = p.localProgram[i]
         ? null
         : densityCap(z!.zoning_code, p.lotAreaM2[i], z!.r4, capDay);
-      const at = (stories: number, k: number, cap: number | null) =>
-        stories === 0
-          ? 0
-          : Math.min(U16_MAX, scenarioYield(view, fillStories(FILL_LEVELS[k], stories), cap));
-      const want = {
-        yield: FILL_LEVELS.map((_, k) => at(p.envelopeStories[i], k, fzpCap)),
-        baseYield: FILL_LEVELS.map((_, k) => at(p.baseStories[i], k, baseCap))
-      };
-      expect(
-        {
-          yield: [...p.yield.subarray(i * F, i * F + F)],
-          baseYield: [...p.baseYield.subarray(i * F, i * F + F)]
-        },
-        id
-      ).toEqual(want);
+      expect(fzpCap ?? NULL_CAP, `${id} fzpCap`).toBe(p.fzpCap[i]);
+      const options = candidatesOf(view, fnv1a32(id));
+      const gains = (stories: number) =>
+        stories >= 1 && topHomesAt(options, stories, null, 0) > p.existingUnits[i];
+      const e = p.eligible[i] === 1;
+      expect({ h: p.hostable[i], hb: p.hostableBase[i] }, id).toEqual({
+        h: e && gains(p.envelopeStories[i]) ? 1 : 0,
+        hb: e && gains(p.baseStories[i]) ? 1 : 0
+      });
     }
   });
 
@@ -119,6 +109,9 @@ describe('scenario yields rebuild from parcels.bin and the chunk record (IA-8)',
     const src = readFileSync(new URL('../steps/scenario.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(/function scenarioRecord\b/);
     expect(src).not.toMatch(/existingHeightM\s*:/);
-    expect(src).toMatch(/scenarioRecordOf\(p, i, rec\)/);
+    expect(src).toMatch(/scenarioRecordOf\(p, i, rows\[i\]\.rec\)/);
+    // The candidates are generated on scenarioRecordFrom(rec, job), the row's own values.
+    const opts = readFileSync(new URL('../steps/options.ts', import.meta.url), 'utf8');
+    expect(opts).toMatch(/scenarioRecordFrom\(rec, job\)/);
   });
 });

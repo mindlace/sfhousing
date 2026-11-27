@@ -1,4 +1,7 @@
-import * as scenarioCodecModule from '$lib/data/scenario-codec';
+import * as policyCodecModule from '$lib/data/policy-codec';
+import * as chooseModule from '$lib/sim/choice/choose';
+import * as choiceTypesModule from '$lib/sim/choice/types';
+import type { HeightTimeModel } from '$lib/sim/choice/types';
 import * as leversTypesModule from '$lib/sim/levers/types';
 import * as rngModule from '$lib/sim/world/rules/rng';
 import * as stagesModule from '$lib/sim/world/rules/stages';
@@ -14,7 +17,9 @@ import type { World } from './types';
 
 // Imports are bound once, here: under Vite's module runner (the tests and the cost bench) every
 // use of an imported name is a getter call (docs/dev/world-core.md, Cost).
-const { FILL_LEVELS, fillStories } = scenarioCodecModule;
+const { NULL_CAP } = policyCodecModule;
+const { allowedCount, optionHomes } = chooseModule;
+const { stepAt } = choiceTypesModule;
 const { MAX_SCALE, MIN_SCALE } = leversTypesModule;
 const { P, drawOn } = rngModule;
 const { revisionRatio } = stagesModule;
@@ -25,8 +30,33 @@ const { pushRev } = columnsModule;
 const { NO_DAY, RULE_NONE, RULE_PIPELINE } = typesModule;
 
 type Scale = Partial<Record<Stage, number>>;
-const F = FILL_LEVELS.length;
 const CONSTRUCTION = STAGE_ORDER.indexOf('construction');
+
+/**
+ * The height-band multiplier on a stage's drawn time (building-choice spec, construction time by
+ * height band): the step of `ht` in force on `day` (the stage entry), at the first band whose
+ * `upTo` holds `stories`. 1 for NaN stories, for stages other than `permitIssued` and
+ * `construction`, and without a model.
+ */
+export function heightMultiplier(
+  ht: HeightTimeModel | undefined,
+  stage: Stage,
+  stories: number,
+  day: Day
+): number {
+  if (ht === undefined || Number.isNaN(stories)) return 1;
+  if (stage !== 'permitIssued' && stage !== 'construction') return 1;
+  let band = 0;
+  while (band < ht.upTo.length - 1 && stories > ht.upTo[band]) band++;
+  return stepAt(ht.steps, day).value[stage][band];
+}
+
+/** The row's stories as last proposed: its latest revision's, else its start's (NaN = unknown). */
+function rowStories(w: World, row: number): number {
+  const p = w.projects;
+  const last = p.revLast[row];
+  return last >= 0 ? p.revStories[last] : p.stories[row];
+}
 
 /**
  * The scale on a stage's time for a project that filed on `filed`: the frame's `speed` times each
@@ -66,9 +96,10 @@ export function enterStage(
   const t = name === 'complete' ? undefined : cal.transitions[pathway][name];
   if (t === undefined) throw new Error(`calibration has no ${pathway} ${name} transition`);
   const stream = p.stream[row];
+  let length: number;
   if (p.certain[row] === 1) {
     p.outcome[row] = 0;
-    p.length[row] = sampleAdvance(t, drawOn(stream, P.STAGE_TIME, stage)).days;
+    length = sampleAdvance(t, drawOn(stream, P.STAGE_TIME, stage)).days;
   } else {
     const r = sampleTransition(
       t,
@@ -77,8 +108,11 @@ export function enterStage(
       stageMonths(survived)
     );
     p.outcome[row] = r.kind === 'advance' ? 0 : 1 + EXIT_ORDER.indexOf(r.kind);
-    p.length[row] = r.days;
+    length = r.days;
   }
+  // The height band scales the drawn time still to run; the days already spent are a record.
+  const mult = heightMultiplier(cal.heightTime, name, rowStories(w, row), entered);
+  p.length[row] = mult === 1 ? length : survived + (length - survived) * mult;
   p.stage[row] = stage;
   p.used[row] = survived;
   p.anchor[row] = entered + survived;
@@ -145,12 +179,35 @@ export function reviseOnEntry(
       stories = s;
     }
   } else {
-    next = Math.min(p.top[row], Math.max(p.existing[row] + 1, Math.round(ratio * units)));
-    let f = 0;
-    while (f < F - 1 && p.yields[row * F + f] < next) f++;
-    stories = fillStories(FILL_LEVELS[f], p.env[row]);
+    // Within the construction type: an entitled building keeps its frame (plan, Revisions).
+    const t = frame.view.pre.choice.t;
+    const lot = p.src[row];
+    const from = t.offset[lot];
+    const allowed = allowedCount(t, lot, p.env[row]);
+    const cap = p.optCap[row] === NULL_CAP ? null : p.optCap[row];
+    const existing = p.existing[row];
+    const type = p.btype[row];
+    let most = 0;
+    for (let k = 0; k < allowed; k++) {
+      if (t.type[from + k] === type) most = Math.max(most, optionHomes(t, from + k, cap, existing));
+    }
+    next = Math.min(most, Math.max(existing + 1, Math.round(ratio * units)));
+    // the same-type option with the fewest homes that holds them (the first on a tie)
+    let best = -1;
+    let fewest = Infinity;
+    for (let k = 0; k < allowed; k++) {
+      if (t.type[from + k] !== type) continue;
+      const h = optionHomes(t, from + k, cap, existing);
+      if (h >= next && h < fewest) {
+        best = k;
+        fewest = h;
+      }
+    }
+    if (next === units || best < 0) return false;
+    p.level[row] = best;
+    stories = t.stories[from + best];
   }
   if (next === units) return false;
-  pushRev(p, row, day, next, stories);
+  pushRev(p, row, day, next, stories, p.level[row]);
   return true;
 }

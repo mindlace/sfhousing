@@ -6,8 +6,10 @@ import { CAR_LEVELS } from '../../src/lib/sim/cars';
 import { parseManifest, type Manifest } from '../../src/lib/data/manifest';
 import type { ParcelId, ParcelRecord } from '../../src/lib/data/parcel';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
+import { optionsOfRow, topHomesAt } from '../../src/lib/data/envelope-row';
+import type { OptionTable } from '../../src/lib/data/option-table';
+import { NULL_CAP } from '../../src/lib/data/policy-codec';
 import {
-  FILL_LEVELS,
   SCENARIO_FORMAT,
   decodeScenarioPayload,
   encodeScenarioPayload,
@@ -32,9 +34,10 @@ import { scenarioEligible } from '../lib/scenario-eligibility';
 import { checkV20 } from '../project-records/invariants';
 import { CALIBRATION_JSON } from './calibration';
 import { checkPolicy } from './check-policy';
-import { checkV36 } from './check-gross';
+import { checkOptions } from './check-options';
+import { readOptionsBin } from './options';
 import { PROJECTS_JSON } from './projects';
-import { CARS_BIN, CAR_ZONES_JSON, PARCELS_BIN } from '../lib/scenario-files';
+import { CARS_BIN, CAR_ZONES_JSON, OPTIONS_BIN, PARCELS_BIN } from '../lib/scenario-files';
 import { startTotal, zoneHomes } from '../lib/cars/population';
 import { z12TileBytes } from './tiles';
 
@@ -93,7 +96,7 @@ interface Chunk {
 const TRANSIT_TARGET_BYTES = 400e3;
 /**
  * Planning's ~780,000 units of net added FZP capacity (tier 1, scenario-data literature §1 [A]):
- * V17's cross-check of `scenario.yield.fzp_net_total`.
+ * V17's cross-check of `scenario.capacity.fzp_net_total`.
  */
 const FZP_NET_CAPACITY = 780e3;
 /** V17 warns (still passes) outside [0.25×, 4×] FZP_NET_CAPACITY (spec §4.10, tier 4 band). */
@@ -258,7 +261,7 @@ function checkCalibrationFiles(outDir: string): InvariantResult[] {
   }
 
   const live = !isFixtureDataset(outDir);
-  const v25 = checkV25(text, bytes, FILL_LEVELS, projectsAsOf, undefined, live);
+  const v25 = checkV25(text, bytes, projectsAsOf, undefined, live);
   // V26 reads the cells even when parseCalibration rejects the file (a deleted cell is itself a
   // parse failure); V27 samples only a file that parses. V25's text states the funding outcomes.
   const parsed = parseCalibrationText(text);
@@ -267,7 +270,7 @@ function checkCalibrationFiles(outDir: string): InvariantResult[] {
     verdict(
       'V25',
       v25,
-      `parses, fill levels equal FILL_LEVELS, asOf matches projects.json (T4d asOf checked by the calibration step), ${bytes} B; ${funding}`
+      `parses, asOf matches projects.json (T4d asOf checked by the calibration step), ${bytes} B; ${funding}`
     )
   ];
 
@@ -355,7 +358,7 @@ export function maxOf(xs: readonly number[]): number {
 /**
  * Spec §4.9 invariants V1–V13, transit spec §4.3 V14, scenario-data spec §4.10 V15–V19 and
  * project-records spec §4.9 V20 over a built dataset directory, then V21–V24 from
- * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V36 (gross.bin),
+ * `extras.projectChecks`, V30 (T14) from the counts and V31–V33 (policy.bin), V36 (options.bin),
  * V37 (render boxes), V38 (cars.bin) and V39 (car-zones.json). Never throws.
  */
 export async function checkDataset(
@@ -593,7 +596,7 @@ export async function checkDataset(
   const p = sc.p;
   // V16-V18 count eligibility as the scenario does: parcels.bin's flags bit 5 (the chunk record's
   // `eligible`, or no land-use row with latest-roll units, sd.landuse.none-with-units), the value
-  // its yields and hostable flags used. V17 checks the flag against the chunk records.
+  // its options and hostable flags used. V17 checks the flag against the chunk records.
   const eligibleRows: number[] = [];
   if (p) for (let i = 0; i < p.count; i++) if (p.eligible[i]) eligibleRows.push(i);
   const eligibleN = eligibleRows.length;
@@ -666,34 +669,39 @@ export async function checkDataset(
     );
   }
 
-  // V17 fill levels, no clamped u16, hostable masks, non-LP base = FZP, hostable share; warn on
-  // the FZP net capacity cross-check. The hostable flags read the uncapped full-fill yields
-  // (partner ruling, option c), which the payload does not carry: V17 checks the conditions the
-  // payload can show (hostable ⇒ eligible ∧ stories ≥ 1; eligible ∧ stories ≥ 1 ∧ capped
-  // yield[F−1] > 0 ⇒ hostable, since capped > 0 implies uncapped > 0) and the step's counts of
-  // flags that disagree with its own uncapped yields. Eligibility is flags bit 5, which must equal
+  // V17 eligibility, the hostable flags against options.bin, the FZP cap, the hostable share;
+  // warn on the FZP net capacity cross-check. A lot hosts when it is eligible, its envelope has at
+  // least one story and an option of its options.bin row at or below the envelope has more homes
+  // than it has now, before the cap (partner ruling, option c); options.bin's pruning keeps every
+  // row's best option, so the flags can be recomputed exactly. The step's counts of flags that
+  // disagree with its own candidates must be 0 too. Eligibility is flags bit 5, which must equal
   // the chunk record's `eligible` or sd.landuse.none-with-units on the row's latest-roll units,
-  // and is 0 on freeway land (`extras.freewayLand`), whose chunk records are never eligible.
+  // and is 0 on freeway land (`extras.freewayLand`), whose chunk records are never eligible. A
+  // Local Program lot has no FZP cap.
   {
-    const clamped = c['scenario.yield.clamped'];
-    const nonlp = c['scenario.yield.nonlp_base_mismatch'];
     const zero = (k: string) => (c[k] === 0 ? '' : `${k} ${c[k]} ≠ 0`);
     const problems = [
       fileProblem,
-      clamped === 0 ? '' : `scenario.yield.clamped ${clamped} ≠ 0`,
-      nonlp === 0 ? '' : `scenario.yield.nonlp_base_mismatch ${nonlp} ≠ 0`,
       zero('scenario.hostable_mismatch'),
       zero('scenario.hostable_base_mismatch')
     ];
     let hostable = 0;
     if (p) {
-      const fl = p.fillLevels;
-      if (fl.length !== FILL_LEVELS.length || FILL_LEVELS.some((v, k) => fl[k] !== v))
-        problems.push(`fillLevels [${fl.join(', ')}] ≠ FILL_LEVELS`);
-      const F = fl.length;
+      let options: OptionTable | null = null;
+      try {
+        options = readOptionsBin(join(outDir, OPTIONS_BIN));
+        if (options.count !== p.count)
+          throw new Error(`${options.count} option rows ≠ ${p.count} parcels`);
+      } catch (e) {
+        options = null;
+        problems.push(`options.bin: ${(e as Error).message}`);
+      }
+      const topAt = (i: number, stories: number) =>
+        options ? topHomesAt(optionsOfRow(options, i), stories, null, 0) : 0;
       let badH = 0;
       let badB = 0;
       let badE = 0;
+      let badCap = 0;
       for (let i = 0; i < p.count; i++) {
         const rec = recById.get(p.id[i]);
         if (
@@ -703,12 +711,12 @@ export async function checkDataset(
         )
           badE++;
         const elig = p.eligible[i] === 1;
-        const canH = elig && p.envelopeStories[i] >= 1;
-        const canB = elig && p.baseStories[i] >= 1;
-        const mustH = canH && p.yield[i * F + F - 1] > 0;
-        const mustB = canB && p.baseYield[i * F + F - 1] > 0;
-        if (p.hostable[i] ? !canH : mustH) badH++;
-        if (p.hostableBase[i] ? !canB : mustB) badB++;
+        const units = p.existingUnits[i];
+        const mustH = elig && p.envelopeStories[i] >= 1 && topAt(i, p.envelopeStories[i]) > units;
+        const mustB = elig && p.baseStories[i] >= 1 && topAt(i, p.baseStories[i]) > units;
+        if (options && p.hostable[i] !== (mustH ? 1 : 0)) badH++;
+        if (options && p.hostableBase[i] !== (mustB ? 1 : 0)) badB++;
+        if (p.localProgram[i] === 1 && p.fzpCap[i] !== NULL_CAP) badCap++;
         hostable += p.hostable[i];
       }
       const chunkEligible = [...(extras.freewayLand ?? [])].filter(
@@ -718,17 +726,18 @@ export async function checkDataset(
         problems.push(
           `freeway-land lot(s) ${chunkEligible.slice(0, 5).join(', ')}${chunkEligible.length > 5 ? ', …' : ''} are eligible in the chunks`
         );
-      if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and yield`);
-      if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and yield`);
+      if (badH) problems.push(`${badH} hostable flag(s) disagree with eligibility and options`);
+      if (badB) problems.push(`${badB} hostableBase flag(s) disagree with eligibility and options`);
       if (badE)
         problems.push(
           `${badE} eligible flag(s) disagree with the chunk record and sd.landuse.none-with-units`
         );
+      if (badCap) problems.push(`${badCap} Local Program lot(s) with an FZP cap`);
       const share = ratio(hostable, eligibleN);
       if (!(share >= HOSTABLE_MIN))
         problems.push(`hostable ${pct(share)} of eligible < ${thr(HOSTABLE_MIN)}`);
     }
-    const net = c['scenario.yield.fzp_net_total'];
+    const net = c['scenario.capacity.fzp_net_total'];
     const [lo, hi] = FZP_NET_BAND.map((x) => x * FZP_NET_CAPACITY);
     const warn =
       net >= lo && net <= hi
@@ -746,7 +755,7 @@ export async function checkDataset(
     const unitsTotal = c['scenario.units.total'];
     const mismatch = c['scenario.panel.feature_mismatch'];
     // Coordinator ruling 2026-10-18: parcels whose panel and T11 base caps differ by period (each
-    // correct for its own date) are not compared on base-cap features; reported here by code.
+    // correct for its own date), reported here by code. No compared value reads the cap.
     const capDiffers = c['scenario.v18.cap_period_differs'];
     const capPrefix = 'scenario.v18.cap_period_differs.';
     const capByCode = Object.entries(c)
@@ -763,8 +772,8 @@ export async function checkDataset(
     const baseCapMismatch = c['scenario.v18.basecap_mismatch'];
     const capDetail =
       capDiffers > 0
-        ? `; base cap differs by period on ${capDiffers} parcels (base-cap features not ` +
-          `compared; ${capByCode.map(([k, n]) => `${k} ${n}`).join(', ')})`
+        ? `; base cap differs by period on ${capDiffers} parcels ` +
+          `(${capByCode.map(([k, n]) => `${k} ${n}`).join(', ')})`
         : '; base cap differs by period on 0 parcels';
     const share = ratio(matched, eligibleN);
     const [ulo, uhi] = profile.scenarioUnitsRange;
@@ -860,14 +869,19 @@ export async function checkDataset(
   // V31–V33 policy.bin (sim data layers), against the decoded parcels.bin.
   out.push(...checkPolicy(outDir, profile, c, p, m, extras.stableDetail ?? false));
 
-  // V36 gross.bin, against parcels.bin and the decoded chunk records.
-  out.push(checkV36(outDir, m, p, recById, extras.stableDetail ?? false));
+  // V36, V40 and V41 options.bin, against parcels.bin and the decoded chunk records.
+  const stable = extras.stableDetail ?? false;
+  const [v36, v40, v41] = checkOptions(outDir, m, p, recById, stable);
+  out.push(v36);
 
   // V37 the render boxes, when the build had a building-boxes artifact.
   out.push(checkV37(c, extras.skipTiles ?? !existsSync(join(outDir, 'buildings.pmtiles'))));
 
   // V38 cars.bin and V39 car-zones.json, when the build had Census data.
   out.push(...checkCars(outDir, m, p));
+
+  // V40 type story ranges and V41 location values (options.bin), measured with V36 above.
+  out.push(v40, v41);
   return out;
 }
 

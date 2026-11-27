@@ -3,9 +3,9 @@
 // law (the empty policy document) reach it by the first rung's deadline, and does the full tree
 // reach it by the last rung's. The last line says how long the opening fill took. `--cars off` runs
 // the worlds without the car system (default on: the dataset's car system, whose parking link
-// moves start odds when the model prices parking). Exits 0 when both are reached, 1 when either is
-// missed, 2 when the check could not run (one stderr line, `reach-check: {reason}`, nothing on
-// stdout).
+// moves start odds when the model prices parking). Exits 0 when the full tree reaches it
+// (current law's answer is printed, not gated), 1 when the full tree misses, 2 when the check
+// could not run (one stderr line, `reach-check: {reason}`, nothing on stdout).
 import { pathToFileURL } from 'node:url';
 import { formatShortMonthYear } from '../src/lib/fzp/format';
 import { utcParts } from '../src/lib/fzp/time';
@@ -92,9 +92,9 @@ export function reachLines(datasetVersion: string, r: readonly Reach[]): string[
   return [`Dataset ${datasetVersion}`, `Goal: ${count(r[0].amount)} homes`, ...r.map(answerLine)];
 }
 
-/** 0 when every answer is reached, 1 when any is missed. */
+/** 1 when the full tree's answer is missed, else 0; current law's answer is information only. */
 export function reachExit(r: readonly Reach[]): 0 | 1 {
-  return r.some((x) => x.reachedOn === null) ? 1 : 0;
+  return r.some((x) => x.who === 'full' && x.reachedOn === null) ? 1 : 0;
 }
 
 /** The line reporting the opening fill's wall-clock time. */

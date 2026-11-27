@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { poolSeries } from '$lib/sim/world/score/finance';
 import { miniFinance } from '$lib/sim/world/fixtures/mini-finance';
-import { selectRows } from '$lib/sim/world/fixtures/select-rows';
+import { selectOptionRows, selectRows } from '$lib/sim/world/fixtures/select-rows';
 import { FAST_SLOPE, tinyQueue, tinyStack } from '$lib/sim/world/fixtures/tiny-queue';
 import type { LedgerEvent } from '$lib/sim/world/types';
 import { monthsOf } from '$lib/sim/world/score/targets';
@@ -218,7 +218,7 @@ describe("permuting the lot table's rows gives the same events and ledger", () =
       rows.map((r) => p.id[r]),
       () => 'all'
     );
-    const input2: SimInput = { ...input, parcels };
+    const input2: SimInput = { ...input, parcels, options: selectOptionRows(input.options, rows) };
     const statics2 = staticsOf(input2);
     expect(statics2.parcelId).toEqual(rows.map((r) => statics.parcelId[r]));
     const a = runFunded(statics, timeline, seed, MONTHS);

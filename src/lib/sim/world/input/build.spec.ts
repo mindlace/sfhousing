@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { parseManifest } from '$lib/data/manifest';
-import {
-  FILL_LEVELS,
-  featureValue,
-  fillStories,
-  readScenarioParcels,
-  scenarioRecordOf,
-  type ScenarioParcels
-} from '$lib/data/scenario-codec';
-import { capScenarioYield, scenarioYield } from '$lib/data/scenario-yield';
+import { featureValue, readScenarioParcels, type ScenarioParcels } from '$lib/data/scenario-codec';
 import { assembleSite } from '$lib/generator/assemble';
 import { checkManifestShape } from '$lib/sim/manifest-shape';
 import { exp, log } from '$lib/timelapse/math';
 import { MONTH_DAYS } from '$lib/timelapse/time';
+import {
+  allowedCount,
+  capFrom,
+  choiceFeatures,
+  choiceStepAt,
+  expectations
+} from '$lib/sim/choice/choose';
 import { initiationHazard, initiationLogit, parseCalibration } from '$lib/timelapse/model';
 import { ProjectsFormatError, parseProjectsFile, type ProjectsFile } from '$lib/timelapse/projects';
 import { PATHWAYS, type Calibration, type FeatureId } from '$lib/timelapse/types';
 import { miniBin } from '../fixtures/mini-bin';
 import miniCalibrationJson from '../fixtures/mini-calibration.json';
 import { miniFunding, miniMarket } from '../fixtures/mini-market';
+import { miniOptions } from '../fixtures/mini-options';
 import { resolveTerms, MARKET_TERMS } from '$lib/sim/finance';
 import {
   FUNDING_WITHOUT_MARKET_WARNING,
@@ -30,7 +30,6 @@ import {
   MINI_CAPPED_ID,
   MINI_CELLS,
   MINI_CROSS_CELL_PAIR,
-  MINI_HOSTABLE_NOT_BASE_ID,
   MINI_INELIGIBLE_ID,
   MINI_LP_ID,
   MINI_NONE_WITH_UNITS_ID,
@@ -58,18 +57,39 @@ import {
 } from './build';
 import { P, draw, simEntity } from '../rules/rng';
 
-const F = FILL_LEVELS.length;
 const NO_CAP = 0xffff;
 const miniCalibration = (): Calibration =>
   parseCalibration(structuredClone(miniCalibrationJson) as unknown);
 const miniProjects = (): ProjectsFile => parseProjectsFile(miniProjectsJson(), { onInvalid() {} });
-const miniFiles = () => ({
-  parcels: miniCity().parcels,
-  projects: miniProjects(),
-  calibration: miniCalibration()
-});
+const miniFiles = () => {
+  const city = miniCity();
+  return {
+    parcels: city.parcels,
+    projects: miniProjects(),
+    calibration: miniCalibration(),
+    options: miniOptions(city)
+  };
+};
+type Input = ReturnType<typeof buildSimInput>;
+/** Row i's initiation features at cost step `c`: its choice at the view's envelope and cap. */
+const featuresAt = (input: Input, i: number, c = 0) => {
+  const p = input.parcels;
+  const pre = precomputeOf(input);
+  const choice = choiceFeatures(
+    pre.choice,
+    c,
+    i,
+    allowedCount(input.options, i, p.envelopeStories[i]),
+    capFrom(p.fzpCap[i]),
+    p.existingUnits[i],
+    p.existingStories[i]
+  );
+  const f = {} as Record<FeatureId, number>;
+  for (const t of input.calibration.initiation.terms)
+    f[t.feature] = featureValue(p, i, t.feature, choice);
+  return f;
+};
 const row = (p: ScenarioParcels, id: string) => p.index.get(id)!;
-const yieldsOf = (p: ScenarioParcels, i: number) => Array.from(p.yield.subarray(i * F, i * F + F));
 
 describe('mini city fixture', () => {
   it('parcels.bin decodes to the 60 mini rows, column for column', async () => {
@@ -111,18 +131,16 @@ describe('mini city fixture', () => {
     const at = (id: string) => row(p, id);
     expect(p.localProgram.includes(0) && p.localProgram.includes(1)).toBe(true);
     expect(p.localProgram[at(MINI_LP_ID)]).toBe(1);
-    // hostable vs hostableBase
-    expect(p.hostable[at(MINI_HOSTABLE_NOT_BASE_ID)]).toBe(1);
-    expect(p.hostableBase[at(MINI_HOSTABLE_NOT_BASE_ID)]).toBe(0);
     // a density-capped parcel and an uncapped one
     const capped = at(MINI_CAPPED_ID);
     expect(p.baseCap[capped]).toBe(3);
-    expect(p.yield[capped * F + F - 1]).toBe(3);
+    expect(p.fzpCap[capped]).toBe(3);
     expect(p.baseCap[at(MINI_LP_ID)]).toBe(NO_CAP);
-    // hostable, yet no level gains a home
+    expect(p.fzpCap[at(MINI_LP_ID)]).toBe(NO_CAP);
+    // hostable, yet capped at or below its existing homes: no option gains after the cap
     const noGain = at(MINI_NO_GAIN_ID);
     expect(p.hostable[noGain]).toBe(1);
-    expect(p.yield[noGain * F + F - 1]).toBeLessThanOrEqual(p.existingUnits[noGain]);
+    expect(p.fzpCap[noGain]).toBeLessThanOrEqual(p.existingUnits[noGain]);
     // not hostable: no envelope, ineligible
     expect(p.hostable[at(MINI_NO_ENVELOPE_ID)]).toBe(0);
     expect(p.envelopeStories[at(MINI_NO_ENVELOPE_ID)]).toBe(0);
@@ -144,23 +162,22 @@ describe('mini city fixture', () => {
     );
   });
 
-  it('yields and hostable flags follow the pipeline rule on the scenario record', () => {
-    const { parcels: p, records } = miniCity();
+  it('hostable flags follow the pipeline rule on the options, before the caps', () => {
+    const city = miniCity();
+    const { parcels: p } = city;
+    const t = miniOptions(city);
+    const gains = (i: number, stories: number) => {
+      for (let j = t.offset[i]; j < t.offset[i + 1]; j++)
+        if (t.stories[j] <= stories && t.homes[j] > p.existingUnits[i]) return true;
+      return false;
+    };
     for (let i = 0; i < p.count; i++) {
-      const view = scenarioRecordOf(p, i, records.get(p.id[i])!);
-      const cap = p.baseCap[i] === NO_CAP ? null : p.baseCap[i];
-      const gross = (s: number) => (s === 0 ? 0 : scenarioYield(view, s, null));
-      const at = (s: number, c: number | null) =>
-        FILL_LEVELS.map((f) =>
-          s === 0 ? 0 : capScenarioYield(gross(fillStories(f, s)), c, p.existingUnits[i])
-        );
       const env = p.envelopeStories[i];
       const base = p.baseStories[i];
-      expect(yieldsOf(p, i)).toEqual(at(env, p.localProgram[i] ? null : cap));
-      expect(Array.from(p.baseYield.subarray(i * F, i * F + F))).toEqual(at(base, cap));
       const ok = p.eligible[i] === 1;
-      expect(p.hostable[i]).toBe(ok && env >= 1 && gross(env) > 0 ? 1 : 0);
-      expect(p.hostableBase[i]).toBe(ok && base >= 1 && gross(base) > 0 ? 1 : 0);
+      expect(p.fzpCap[i]).toBe(p.localProgram[i] ? NO_CAP : p.baseCap[i]);
+      expect(p.hostable[i]).toBe(ok && env >= 1 && gains(i, env) ? 1 : 0);
+      expect(p.hostableBase[i]).toBe(ok && base >= 1 && gains(i, base) ? 1 : 0);
     }
   });
 });
@@ -249,8 +266,8 @@ describe('mini calibration fixture', () => {
     expect(new Set(cal.initiation.terms.map((t) => t.feature))).toEqual(
       new Set<FeatureId>(['potentialRatio', 'storiesGap', 'landUseClass', 'improvementShare'])
     );
-    expect(cal.size.byEnvelope.length).toBeGreaterThanOrEqual(2);
-    expect(cal.size.fillLevels).toEqual([...FILL_LEVELS]);
+    expect(cal.choice?.prices).toHaveLength(1);
+    expect(cal.heightTime?.upTo.length).toBeGreaterThanOrEqual(2);
   });
 
   it('expects several simulated starts by 2050 on the parcels no project holds', () => {
@@ -342,25 +359,25 @@ describe('buildSimInput', () => {
     }
   });
 
-  it('rejects calibration fill levels that differ from FILL_LEVELS (A2)', () => {
-    const files = miniFiles();
-    files.calibration.size.fillLevels = [0.25, 0.5, 0.75, 0.9, 0.95];
+  it('rejects a calibration with no choice or height-time model, and options of another build', () => {
+    const noChoice = miniFiles();
+    delete noChoice.calibration.choice;
     let err: unknown;
     try {
-      buildSimInput(files);
+      buildSimInput(noChoice);
     } catch (e) {
       err = e;
     }
     expect(err).toBeInstanceOf(SimInputError);
     expect((err as SimInputError).file).toBe('calibration.json');
-    expect((err as SimInputError).message).toMatch(/fillLevels/);
-    const shorter = miniFiles();
-    shorter.calibration.size.fillLevels = [0.5, 1];
-    expect(() => buildSimInput(shorter)).toThrow(SimInputError);
-    const t11 = miniFiles();
-    t11.parcels.fillLevels = [0.5, 1];
-    expect(() => buildSimInput(t11)).toThrow(
-      expect.objectContaining({ name: 'SimInputError', file: 'parcels.bin' })
+    expect((err as SimInputError).message).toMatch(/choice/);
+    const noTime = miniFiles();
+    delete noTime.calibration.heightTime;
+    expect(() => buildSimInput(noTime)).toThrow(/heightTime/);
+    const other = miniFiles();
+    other.options = { ...other.options, datasetVersion: 'fixture-1' };
+    expect(() => buildSimInput(other)).toThrow(
+      expect.objectContaining({ name: 'SimInputError', file: 'options.bin' })
     );
   });
 
@@ -386,50 +403,81 @@ describe('precomputeOf', () => {
     expect(precomputeOf(other).hazard).toEqual(pre.hazard);
   });
 
-  it('gives hazard 0 to non-hostable parcels and to parcels with no gaining size level', () => {
+  it('gives hazard 0 to non-hostable parcels and to parcels no allowed option gains on', () => {
     const input = buildSimInput(miniFiles());
     const { parcels: p, calibration: cal } = input;
-    const { hazard, log1mh, sizeCum } = precomputeOf(input);
+    const { hazard, log1mh, byStep } = precomputeOf(input);
     expect(hazard).toHaveLength(p.count);
     expect(log1mh).toHaveLength(p.count);
-    expect(sizeCum).toHaveLength(p.count * F);
     let positive = 0;
     for (let i = 0; i < p.count; i++) {
-      const gains = yieldsOf(p, i).some((y) => y > p.existingUnits[i]);
+      const gains = byStep[0].gains[i] === 1;
       if (p.hostable[i] === 0 || !gains) {
         expect(hazard[i]).toBe(0);
-        if (!gains) expect(Array.from(sizeCum.subarray(i * F, i * F + F))).toEqual([0, 0, 0, 0, 0]);
       } else {
         positive++;
-        const f = {} as Record<FeatureId, number>;
-        for (const t of cal.initiation.terms) f[t.feature] = featureValue(p, i, t.feature, 'fzp');
-        expect(hazard[i]).toBe(initiationHazard(cal.initiation, f));
+        expect(hazard[i]).toBe(initiationHazard(cal.initiation, featuresAt(input, i)));
       }
       expect(Object.is(log1mh[i], log(1 - hazard[i]))).toBe(true);
     }
     expect(hazard[row(p, MINI_NO_GAIN_ID)]).toBe(0);
+    expect(byStep[0].gains[row(p, MINI_NO_GAIN_ID)]).toBe(0);
     expect(positive).toBeGreaterThan(30);
   });
 
-  it('renormalises the size bucket over levels that gain homes', () => {
+  it('keeps per cost step the expectations of the choice at the envelope and cap', () => {
     const input = buildSimInput(miniFiles());
-    const { parcels: p, calibration: cal } = input;
-    const { sizeCum } = precomputeOf(input);
-    const cum = (id: string) => Array.from(sizeCum.subarray(row(p, id) * F, row(p, id) * F + F));
-    // 0026T003: envelope 6 (first bucket), no existing units: every level qualifies
-    expect(yieldsOf(p, row(p, '0026T003')).every((y) => y > 0)).toBe(true);
-    const b0 = cal.size.byEnvelope[0].probs;
-    let s = 0;
-    cum('0026T003').forEach((v, k) => expect(v).toBeCloseTo((s += b0[k]), 6));
-    expect(cum('0026T003')[F - 1]).toBe(1);
-    // 0026T001A: 2 existing units, level 0 yields 0: renormalised over levels 1..4
-    const q = b0.slice(1).reduce((a, x) => a + x, 0);
-    expect(cum('0026T001A')[0]).toBe(0);
-    expect(cum('0026T001A')[1]).toBeCloseTo(b0[1] / q, 6);
-    expect(cum('0026T001A')[F - 1]).toBe(1);
-    // 2999A014: envelope 20, past every maxStoriesUpTo but the last bucket
-    const last = cal.size.byEnvelope[cal.size.byEnvelope.length - 1].probs;
-    expect(cum('2999A014')[0]).toBeCloseTo(last[0], 6);
+    const p = input.parcels;
+    const pre = precomputeOf(input);
+    expect(pre.byStep).toHaveLength(pre.choice.from.length);
+    expect(pre.choiceStep).toBe(choiceStepAt(pre.choice, input.asOf));
+    expect(pre.logit).toBe(pre.byStep[pre.choiceStep].logit);
+    const s = pre.byStep[0];
+    let gaining = 0;
+    for (let i = 0; i < p.count; i++) {
+      if (p.hostable[i] === 0) {
+        expect(s.gains[i]).toBe(0);
+        continue;
+      }
+      const allowed = allowedCount(input.options, i, p.envelopeStories[i]);
+      const e = expectations(pre.choice, 0, i, allowed, capFrom(p.fzpCap[i]), p.existingUnits[i]);
+      expect(s.gains[i]).toBe(e.gains ? 1 : 0);
+      expect(s.best[i]).toBe(e.best);
+      expect(s.expHomes[i]).toBe(Math.fround(e.homes));
+      expect(s.expStories[i]).toBe(Math.fround(e.stories));
+      expect(s.margin[i]).toBe(Math.fround(e.margin));
+      if (e.gains) gaining++;
+    }
+    expect(gaining).toBeGreaterThan(30);
+  });
+
+  it('a later cost step gets its own logits and joins the segment days', () => {
+    const base = buildSimInput(miniFiles());
+    const choice = base.calibration.choice!;
+    const step0 = choice.prices[0];
+    const anchors = structuredClone(step0.value.anchors);
+    for (const id of ['A', 'B', 'C', 'D', 'E'] as const) anchors[id].valuePerHome *= 1.3;
+    const D = MINI_AS_OF + 400;
+    const input: Input = {
+      ...base,
+      calibration: {
+        ...base.calibration,
+        choice: { ...choice, prices: [step0, { from: D, value: { ...step0.value, anchors } }] }
+      }
+    };
+    const pre = precomputeOf(input);
+    expect(pre.choice.from).toEqual([MINI_AS_OF, D]);
+    expect(pre.byStep).toHaveLength(2);
+    expect(pre.logit).toEqual(precomputeOf(base).logit);
+    const i = pre.byStep[1].logit.findIndex((z, k) => z !== pre.byStep[0].logit[k]);
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(pre.byStep[1].logit[i]).toBe(
+      initiationLogit(input.calibration.initiation, featuresAt(input, i, 1))
+    );
+    expect(pre.segments.days).toEqual([D]);
+    expect(pre.segments.log1mh[0]).toBe(pre.log1mh);
+    expect(pre.segments.log1mh[1]).toBe(pre.stepRates(1, 0));
+    expect(pre.stepRates(1, 0)[i]).toBe(log(1 - 1 / (1 + exp(-pre.byStep[1].logit[i]))));
   });
 
   it('finds parcels by id', () => {
@@ -462,12 +510,7 @@ describe('precomputeOf', () => {
 });
 
 describe('precomputeOf with a market (spec §4.8)', () => {
-  const featuresOf = (input: ReturnType<typeof buildSimInput>, i: number) => {
-    const f = {} as Record<FeatureId, number>;
-    for (const t of input.calibration.initiation.terms)
-      f[t.feature] = featureValue(input.parcels, i, t.feature, 'fzp');
-    return f;
-  };
+  const featuresOf = (input: Input, i: number) => featuresAt(input, i);
   const withSteps = (steps: { from: number; logOdds: number }[] | undefined) => {
     const input = buildSimInput(miniFiles());
     return steps === undefined ? input : { ...input, market: steps };
@@ -605,12 +648,7 @@ describe('the simulated pass shortcuts (precompute)', () => {
 });
 
 describe('Precompute.logit and parcelRankOf (finance-engine)', () => {
-  const featuresOf = (input: ReturnType<typeof buildSimInput>, i: number) => {
-    const f = {} as Record<FeatureId, number>;
-    for (const t of input.calibration.initiation.terms)
-      f[t.feature] = featureValue(input.parcels, i, t.feature, 'fzp');
-    return f;
-  };
+  const featuresOf = (input: Input, i: number) => featuresAt(input, i);
 
   it('logit is the unshifted linear predictor of every row with a hazard, -Infinity elsewhere', () => {
     const input = buildSimInput(miniFiles());

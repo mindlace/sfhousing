@@ -16,15 +16,15 @@ const manifest = JSON.parse(readFileSync(MANIFEST_URL, 'utf8')) as {
   chunks: { cellId: string; bbox: [number, number, number, number] }[];
   scenarios: {
     fzp: Record<'parcels' | 'projects' | 'calibration', string> &
-      Partial<Record<'policy' | 'gross' | 'frontage' | 'cars' | 'carZones', string>>;
+      Partial<Record<'policy' | 'options' | 'frontage' | 'cars' | 'carZones', string>>;
   };
 };
 const { fzp } = manifest.scenarios;
 // The simulation reads these six: the timelapse's three, the lever engine's policy.bin, and
-// gross.bin and the car system's cars.bin, each fetched only when the manifest names it (fixture-0
+// options.bin and the car system's cars.bin, each fetched only when the manifest names it (fixture-0
 // names both). The brush catalog (asked for when the editor first shows something) reads only
 // transit.json and neighborhoods.geojson, never frontage.bin.
-const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.gross!, fzp.cars!];
+const SIM_FILES = [fzp.parcels, fzp.projects, fzp.calibration, fzp.policy, fzp.options!, fzp.cars!];
 
 /** The world's completed net homes per filled month (`__sfhFzp.completedNet()`). */
 const completedOf = (page: Page): Promise<number[]> =>
@@ -46,7 +46,7 @@ const FAR_CELL = '10_10';
 const FAR_BBOX: [number, number, number, number] = [-122.555, 37.7, -122.545, 37.71];
 const chunkUrl = (cellId: string): string => `/data/fixture-0/parcels/${cellId}.json`;
 
-test('fetches only the viewport chunks, the scenario files, policy.bin, gross.bin and cars.bin', async ({
+test('fetches only the viewport chunks, the scenario files, policy.bin, options.bin and cars.bin', async ({
   page
 }) => {
   await page.route('**/manifest.json', async (route) => {
@@ -94,7 +94,7 @@ test('fetches only the viewport chunks, the scenario files, policy.bin, gross.bi
   // The viewport's chunk is prefetched after the first `compiled`.
   await expect.poll(() => [...new Set(chunkRequests())].sort()).toEqual(inView.sort());
   expect(fzp.policy, 'fixture-0 names policy').toBeTruthy();
-  expect(fzp.gross, 'fixture-0 names gross').toBeTruthy();
+  expect(fzp.options, 'fixture-0 names options').toBeTruthy();
   expect(fzp.cars, 'fixture-0 names cars').toBeTruthy();
   // The same six files whether or not the editor is open; the brush catalog adds none.
   await expect

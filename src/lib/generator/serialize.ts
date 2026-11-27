@@ -11,14 +11,18 @@ import { floorTop } from './massing';
 import type { LocalPart } from './generate';
 import type { GeneratedBuilding } from './types';
 
-/** An occupied fragment may never disappear while its area remains in the total. */
+/**
+ * An occupied fragment may never disappear while its area remains in the total. `coverage` is
+ * the base coverage the massing used (a chosen form's `MassOpts.coverage`, else the typology's).
+ */
 export function serializeComposition(
   parcel: ParcelRecord,
   site: Site,
   composition: OccupiedComposition,
   caps: RoofAccent[],
   tone: 0 | 1 | 2,
-  reference: OccupiedComposition = composition
+  reference: OccupiedComposition = composition,
+  coverage = rulesFor(composition.typology).coverage
 ): { local: LocalPart[]; parts: GeneratedBuilding['parts']; area: number; growth: number } | null {
   const frame = localFrame(parcel.labelPoint);
   let repairDistance = 0.02;
@@ -85,9 +89,7 @@ export function serializeComposition(
     if (failed) continue;
     if (composition.typology !== 'adu') {
       const base = bands.filter((b) => b.firstFloor === 1).flatMap((b) => b.regions);
-      const excess =
-        base.reduce((n, r) => n + signedArea(r), 0) -
-        rulesFor(composition.typology).coverage * site.A;
+      const excess = base.reduce((n, r) => n + signedArea(r), 0) - coverage * site.A;
       if (excess > 0.25) {
         const perimeter = base.reduce(
           (n, r) =>

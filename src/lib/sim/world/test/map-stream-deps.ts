@@ -1,6 +1,6 @@
 // Test support: a `MapStreamDeps` over a city's chunk records. Browser-safe.
 import type { ParcelId, ParcelRecord } from '$lib/data/parcel';
-import { generate, generateForUnits, type GeneratedBuilding } from '$lib/generator';
+import { generate, generateForm, generateForUnits, type GeneratedBuilding } from '$lib/generator';
 import { createLru, type Lru } from '$lib/sim/lru';
 import type { SimInput } from '$lib/sim/world/input/types';
 import { createMapStream, type MapStreamDeps } from '../map-stream';
@@ -98,6 +98,7 @@ export function streamDeps(
       memo,
       gen: generate,
       genForUnits: generateForUnits,
+      genForm: generateForm,
       logOnce: (projectId, msg) => warnOnce(`massing:${projectId}`, msg)
     },
     cellReady: o.ready ?? (() => true),

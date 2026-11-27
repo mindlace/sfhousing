@@ -7,14 +7,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ParcelRecord } from '../../src/lib/data/parcel';
+import { topHomesAt } from '../../src/lib/data/envelope-row';
 import {
-  FILL_LEVELS,
   LAND_USE_CLASSES,
-  fillStories,
   scenarioRecordOf,
   type ScenarioParcels
 } from '../../src/lib/data/scenario-codec';
-import { scenarioYield } from '../../src/lib/data/scenario-yield';
+import { fnv1a32 } from '../../src/lib/generator';
+import { candidatesOf } from '../../src/lib/sim/choice/options';
 import { FZP_EFFECTIVE_DAY, densityCap } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import {
@@ -38,7 +38,17 @@ import { SUPERSEDED_SCENARIO_COUNTS, miniDuck } from './helpers';
 const BIT = { year: 1, stories: 2, share: 4, units: 8, carried: 32, floor: 64 };
 const RESIDENTIAL = 0;
 const OTHER = LAND_USE_CLASSES.indexOf('other');
-const F = FILL_LEVELS.length;
+/** Row i's candidate options on its scenario record, as the scenario step generates them. */
+const optionsOf = (p: ScenarioParcels, i: number, rec: ParcelRecord) =>
+  candidatesOf(scenarioRecordOf(p, i, rec), fnv1a32(rec.id));
+/** The most homes at or below `stories` after `cap` (rule A), 0 with no envelope. */
+const topOf = (p: ScenarioParcels, i: number, rec: ParcelRecord, stories: number, cap: number) =>
+  stories === 0
+    ? 0
+    : topHomesAt(optionsOf(p, i, rec), stories, cap === 0xffff ? null : cap, p.existingUnits[i]);
+/** Whether an option at or below `stories` has more homes than the lot now (before any cap). */
+const gainsOf = (p: ScenarioParcels, i: number, rec: ParcelRecord, stories: number) =>
+  topHomesAt(optionsOf(p, i, rec), stories, null, 0) > p.existingUnits[i];
 
 interface Feature {
   mapblklot: string;
@@ -534,30 +544,6 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
       'hostable parcels',
       false
     ],
-    [
-      'sd.yield.nonmonotone',
-      'parcels.bin',
-      'yield',
-      'shape',
-      'none',
-      4,
-      null,
-      null,
-      'parcels',
-      false
-    ],
-    [
-      'sd.yield.zero-hostable',
-      'parcels.bin',
-      'yield',
-      'shape',
-      'none',
-      4,
-      null,
-      null,
-      'eligible parcels with envelopeStories ≥ 1',
-      false
-    ],
     // DQ-4 registered rules (controller rulings, Task 3 review): as-built drop and default.
     [
       'sd.roll.no-year',
@@ -779,7 +765,6 @@ describe('the scenario-data rules in the registry (spec §4.12 tables, DQ-4 ruli
     'sd.roll.floor-area-missing': { warnShare: 0.07, failShare: 0.15 },
     'sd.zoning.generic-nc': { warnShare: 0.05, failShare: 0.1 },
     'sd.zoning.named-no-cap': { warnShare: 0.12, failShare: 0.2 },
-    'sd.yield.zero-hostable': { warnShare: 0.09, failShare: 0.15 },
     // The spike's 9900019H case must never pass silently.
     'sd.parcels.clip-yield-loss': { warnShare: 0, failShare: 0.1 },
     'sd.parcels.outside-tiles': { warnShare: 0, failShare: 0 }
@@ -1190,7 +1175,7 @@ describe('scenario-data SQL rules on a synthetic copy of mini', () => {
     const ids = QUALITY_RULES.filter((r) => r.owner === 'scenario-data')
       .map((r) => r.id)
       .filter((id) => !policyRules.includes(id));
-    expect(ids).toHaveLength(49);
+    expect(ids).toHaveLength(47);
     const got = Object.keys(s.quality)
       .filter((k) => k.endsWith('.fired'))
       .map((k) => k.slice('quality.'.length, -'.fired'.length))
@@ -1220,8 +1205,8 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
 
   it('sd.zoning.split-code counts hostable parcels with a split code', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    // + lot 25; road-like lots 20-24 are not eligible, so not hostable.
-    expect(hostable).toBe(12);
+    // + lot 25 and lot 8 (its options gain a home); road-like lots 20-24 are not eligible.
+    expect(hostable).toBe(13);
     expect(await reported(s, 'sd.zoning.split-code')).toEqual({
       fired: 1,
       of: hostable,
@@ -1232,20 +1217,9 @@ describe('the TS-side zoning and yield rules on a synthetic copy of mini', () =>
   it('sd.zoning.generic-nc counts hostable parcels with a generic NC code', async () => {
     expect(await reported(s, 'sd.zoning.generic-nc')).toEqual({
       fired: 1,
-      of: 12, // + lot 25
+      of: 13, // + lot 25 and lot 8
       sample: ['8711023C']
     });
-  });
-
-  it('sd.yield.zero-hostable and sd.yield.nonmonotone count and change nothing', async () => {
-    // Eligible with an envelope: the 12 hostable parcels (lot 25 included, road-like lots 20-24
-    // not) and lots 6, 8 and 14, whose yields are 0.
-    expect(await reported(s, 'sd.yield.zero-hostable')).toEqual({
-      fired: 3,
-      of: 15,
-      sample: ['3512006', '3512008', '3512014']
-    });
-    expect(await reported(s, 'sd.yield.nonmonotone')).toEqual({ fired: 0, of: 25, sample: [] }); // 25 lots
   });
 
   it('keeps the unverified-districts warning and drops the ad hoc 10% warning', () => {
@@ -1455,8 +1429,8 @@ describe('sd.zoning.unlisted and sd.zoning.named-no-cap on a synthetic copy of m
 
   it('an unlisted code fires only sd.zoning.unlisted; the cap stays null', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    // + lot 25; road-like lots 20-24 are not eligible, so not hostable.
-    expect(hostable).toBe(12);
+    // + lot 25 and lot 8 (its options gain a home); road-like lots 20-24 are not eligible.
+    expect(hostable).toBe(13);
     expect(await reported(s, 'sd.zoning.unlisted')).toEqual({
       fired: 1,
       of: hostable,
@@ -1534,7 +1508,11 @@ describe('the researched density caps on a synthetic copy of mini', () => {
     // Mini's lot 4 is the one fzp_differs parcel as NC-1; as C-2 it still is. 8711023C (C-2|RM-4,
     // inside R-4) is the other: its C-2 component has no limit under the FZP, so the split has none.
     expect(s.scenarioCounts['scenario.density_cap.fzp_differs']).toBe(2);
-    expect(p.yield[i * 5 + 4]).toBeGreaterThan(p.baseYield[i * 5 + 4]);
+    const rec = s.records.get('0026T001A')!;
+    expect(p.fzpCap[i]).toBe(0xffff);
+    expect(topOf(p, i, rec, p.envelopeStories[i], p.fzpCap[i])).toBeGreaterThan(
+      topOf(p, i, rec, p.baseStories[i], p.baseCap[i])
+    );
   });
 
   it('a split code fires the floor rule only when the floor sets its cap', async () => {
@@ -1546,22 +1524,19 @@ describe('the researched density caps on a synthetic copy of mini', () => {
     expect((await reported(s, 'sd.zoning.c2-floor-approx')).sample).not.toContain('8711023C');
   });
 
-  it('SALI caps at 0: base yield 0, still hostable on the uncapped yield (option c)', async () => {
+  it('SALI caps at 0: base yield 0, still hostable before the cap (option c)', async () => {
     const i = p.index.get('3512005')!;
     expect(p.baseCap[i]).toBe(0);
     // Lot 5 has roll rows, so the panel's base_yield = 0 path is covered too.
-    const panel = await db.all<{ y: number; cap: number; yb: number; r: number; hb: boolean }>(
-      `SELECT roll_year y, base_density_cap cap, base_yield yb, potential_ratio_base r,
-              hostable_base hb
+    const panel = await db.all<{ y: number; cap: number; yb: number; hb: boolean }>(
+      `SELECT roll_year y, base_density_cap cap, base_yield yb, hostable_base hb
        FROM zc.scenario_panel WHERE mapblklot = '3512005' ORDER BY roll_year`
     );
     expect(panel.map((r) => r.y)).toEqual([2024, 2025]);
-    for (const r of panel) expect([r.cap, r.yb, r.r, r.hb]).toEqual([0, 0, 0, true]);
-    for (let k = 0; k < FILL_LEVELS.length; k++) {
-      expect(p.baseYield[i * FILL_LEVELS.length + k]).toBe(0);
-      expect(p.yield[i * FILL_LEVELS.length + k]).toBe(0);
-    }
-    expect(p.potentialRatio.base[i]).toBe(0);
+    for (const r of panel) expect([r.cap, r.yb, r.hb]).toEqual([0, 0, true]);
+    const rec = s.records.get('3512005')!;
+    expect(topOf(p, i, rec, p.baseStories[i], p.baseCap[i])).toBe(0);
+    expect(topOf(p, i, rec, p.envelopeStories[i], p.fzpCap[i])).toBe(0);
     expect(p.hostable[i]).toBe(1);
     expect(p.hostableBase[i]).toBe(1);
   });
@@ -1576,8 +1551,7 @@ describe('the researched density caps on a synthetic copy of mini', () => {
     expect(s.scenarioCounts['scenario.density_cap.SALI']).toBe(1);
   });
 
-  it('V17 and V18 hold: no base mismatch, every latest-year feature equal', () => {
-    expect(s.scenarioCounts['scenario.yield.nonlp_base_mismatch']).toBe(0);
+  it('V17 and V18 hold: every latest-year feature equal, no hostable mismatch', () => {
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
     expect(s.scenarioCounts['scenario.hostable_mismatch']).toBe(0);
     expect(s.scenarioCounts['scenario.hostable_base_mismatch']).toBe(0);
@@ -1598,16 +1572,17 @@ describe('V18 cap-period exclusion on a synthetic copy of mini (coordinator ruli
     p = readParcelsBin(join(s.outDir, PARCELS_BIN));
   });
 
-  it('excludes the base-cap features of a parcel whose caps differ by period, and counts it', async () => {
+  it('counts a parcel whose caps differ by period, and still matches its features', async () => {
     const i = p.index.get('3512005')!;
     expect(p.baseCap[i]).toBe(2);
-    const [row] = await db.all<{ cap: number; r: number }>(
-      `SELECT base_density_cap cap, potential_ratio_base r FROM v18.scenario_panel
+    const [row] = await db.all<{ cap: number; yb: number }>(
+      `SELECT base_density_cap cap, base_yield yb FROM v18.scenario_panel
        WHERE mapblklot = '3512005' AND roll_year = 2025`
     );
+    // Each cap is correct for its own date; the panel's base yield reads the panel's.
     expect(row.cap).toBe(3);
-    // Each value is correct for its own date, so the ratios differ and V18 does not compare them.
-    expect(row.r).not.toBe(p.potentialRatio.base[i]);
+    const rec = s.records.get('3512005')!;
+    expect(row.yb).not.toBe(topOf(p, i, rec, p.baseStories[i], p.baseCap[i]));
     expect(s.scenarioCounts['scenario.v18.cap_period_differs']).toBe(1);
     expect(s.scenarioCounts['scenario.v18.cap_period_differs.RM-1']).toBe(1);
     expect(s.scenarioCounts['scenario.panel.feature_mismatch']).toBe(0);
@@ -1658,8 +1633,8 @@ describe('sd.zoning.missing on a synthetic copy of mini', () => {
 
   it('counts hostable parcels with no zoning code (no density cap); changes nothing else', async () => {
     const hostable = s.scenarioCounts['scenario.hostable'];
-    // + lot 25; road-like lots 20-24 are not eligible, so not hostable.
-    expect(hostable).toBe(12);
+    // + lot 25 and lot 8 (its options gain a home); road-like lots 20-24 are not eligible.
+    expect(hostable).toBe(13);
     expect(await reported(s, 'sd.zoning.missing')).toEqual({
       fired: 1,
       of: hostable,
@@ -1789,19 +1764,20 @@ describe('the hostable flags on the uncapped yield (partner ruling, option c)', 
   let s: Synthetic;
   let p: ScenarioParcels;
   beforeAll(async () => {
-    // Lot 10 (RH-3, cap 4) at 4 homes: its cap no longer exceeds its homes, so its capped yields
-    // are 0, but the generator still fits more than 4 homes on it.
+    // Lot 10 (RH-3, cap 4) at 4 homes: its cap no longer exceeds its homes, so no option is
+    // allowed after the cap, but its options still hold more than 4 homes.
     s = await synthetic('h', [setRow('3512010', [2024, 2025], 'number_of_units = 4')]);
     p = readParcelsBin(join(s.outDir, PARCELS_BIN));
   });
 
   it('a parcel whose cap is at most its homes is still hostable, base and FZP', async () => {
     const i = p.index.get('3512010')!;
+    const rec = s.records.get('3512010')!;
     expect({
       existingUnits: p.existingUnits[i],
       baseCap: p.baseCap[i],
-      top: p.yield[i * F + F - 1],
-      baseTop: p.baseYield[i * F + F - 1],
+      top: topOf(p, i, rec, p.envelopeStories[i], p.fzpCap[i]),
+      baseTop: topOf(p, i, rec, p.baseStories[i], p.baseCap[i]),
       hostable: p.hostable[i],
       hostableBase: p.hostableBase[i]
     }).toEqual({ existingUnits: 4, baseCap: 4, top: 0, baseTop: 0, hostable: 1, hostableBase: 1 });
@@ -1815,14 +1791,13 @@ describe('the hostable flags on the uncapped yield (partner ruling, option c)', 
     ]);
   });
 
-  it('every flag is eligible ∧ stories ≥ 1 ∧ the uncapped full-fill yield > 0', () => {
+  it('every flag is eligible ∧ stories ≥ 1 ∧ an option there tops the homes now', () => {
     for (let i = 0; i < p.count; i++) {
       const rec = s.records.get(p.id[i])!;
-      const view = scenarioRecordOf(p, i, rec);
-      const gross = (stories: number) => scenarioYield(view, fillStories(1, stories), null);
+      const e = p.eligible[i] === 1;
       expect({ h: p.hostable[i], hb: p.hostableBase[i] }, p.id[i]).toEqual({
-        h: rec.eligible && p.envelopeStories[i] >= 1 && gross(p.envelopeStories[i]) > 0 ? 1 : 0,
-        hb: rec.eligible && p.baseStories[i] >= 1 && gross(p.baseStories[i]) > 0 ? 1 : 0
+        h: e && p.envelopeStories[i] >= 1 && gainsOf(p, i, rec, p.envelopeStories[i]) ? 1 : 0,
+        hb: e && p.baseStories[i] >= 1 && gainsOf(p, i, rec, p.baseStories[i]) ? 1 : 0
       });
     }
     expect(s.scenarioCounts['scenario.hostable_mismatch']).toBe(0);
@@ -1893,7 +1868,8 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
     });
     p = readParcelsBin(join(s.outDir, PARCELS_BIN));
   });
-  const top = (i: number) => p.yield[i * F + F - 1];
+  const top = (i: number) =>
+    topOf(p, i, s.records.get(p.id[i])!, p.envelopeStories[i], p.fzpCap[i]);
   const panel = (id: string) =>
     db.all<{
       roll_year: number;
@@ -1905,7 +1881,7 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
        WHERE mapblklot = '${id}' ORDER BY roll_year`
     );
 
-  it('a NONE parcel with roll units is eligible, gets yields and is hostable', async () => {
+  it('a NONE parcel with roll units is eligible, gets options and is hostable', async () => {
     const i = p.index.get('3512010')!;
     const rec = s.records.get('3512010')!;
     expect(rec.eligible).toBe(false);
@@ -1914,19 +1890,19 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
       eligible: 1
     });
     expect(top(i)).toBeGreaterThan(0);
-    expect(p.baseYield[i * F + F - 1]).toBeGreaterThan(0);
+    expect(topOf(p, i, rec, p.baseStories[i], p.baseCap[i])).toBeGreaterThan(0);
     expect({ h: p.hostable[i], hb: p.hostableBase[i] }).toEqual({ h: 1, hb: 1 });
-    // The yields are sized on the scenario record: the chunk record alone would get none.
+    // The options are generated on the scenario record: the chunk record alone would get none.
     const view = scenarioRecordOf(p, i, rec);
     expect(view.eligible).toBe(true);
-    expect(scenarioYield(view, p.envelopeStories[i], null)).toBeGreaterThan(0);
-    expect(scenarioYield(rec, p.envelopeStories[i], null)).toBe(0);
+    expect(candidatesOf(view, fnv1a32(rec.id)).length).toBeGreaterThan(0);
+    expect(candidatesOf(rec, fnv1a32(rec.id))).toEqual([]);
     expect((await panel('3512010')).map((r) => r.hostable_base)).toEqual([true, true]);
   });
 
-  it('rebuilds the shipped yields of a rule-eligible row exactly from scenarioRecordOf', async () => {
+  it('ships the FZP cap of a rule-eligible row, and its options rebuild from scenarioRecordOf', async () => {
     // The worker's rebuild (IA-8): the decoded row and the chunk record (eligible false) give back
-    // exactly yield and baseYield, through the eligibility the row carries in flags bit 5.
+    // the options through the eligibility the row carries in flags bit 5.
     const capDay = Date.UTC(2026, 9, 10) / 86400000;
     for (const id of ['3512010', '3512001']) {
       const i = p.index.get(id)!;
@@ -1936,32 +1912,18 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
         `SELECT d.r4, z.zoning_code FROM el.sc_district d JOIN el.sc_zoning z USING (id)
          WHERE id = '${id}'`
       );
-      const baseCap = densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, FZP_EFFECTIVE_DAY - 1);
       const fzpCap = p.localProgram[i]
         ? null
         : densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, capDay);
-      const view = scenarioRecordOf(p, i, rec);
-      const at = (stories: number, k: number, cap: number | null) =>
-        stories === 0 ? 0 : scenarioYield(view, fillStories(FILL_LEVELS[k], stories), cap);
-      const want = {
-        yield: FILL_LEVELS.map((_, k) => at(p.envelopeStories[i], k, fzpCap)),
-        baseYield: FILL_LEVELS.map((_, k) => at(p.baseStories[i], k, baseCap))
-      };
-      expect(
-        want.yield.some((v) => v > 0),
-        id
-      ).toBe(true);
-      expect(
-        {
-          yield: [...p.yield.subarray(i * F, i * F + F)],
-          baseYield: [...p.baseYield.subarray(i * F, i * F + F)]
-        },
-        id
-      ).toEqual(want);
+      expect(p.fzpCap[i] === 0xffff ? null : p.fzpCap[i], id).toBe(fzpCap);
+      expect(optionsOf(p, i, rec).length, id).toBeGreaterThan(0);
+      expect(p.baseCap[i], id).toBe(
+        densityCap(z.zoning_code, p.lotAreaM2[i], z.r4, FZP_EFFECTIVE_DAY - 1) ?? 0xffff
+      );
     }
   });
 
-  it('a NONE parcel with 0 roll units stays ineligible, with no yields', async () => {
+  it('a NONE parcel with 0 roll units stays ineligible, with no options', async () => {
     const i = p.index.get('3512011')!;
     expect(p.existingUnits[i]).toBe(0);
     expect({ eligible: p.eligible[i], h: p.hostable[i], hb: p.hostableBase[i] }).toEqual({
@@ -1969,8 +1931,7 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
       h: 0,
       hb: 0
     });
-    expect([...p.yield.subarray(i * F, i * F + F)]).toEqual([0, 0, 0, 0, 0]);
-    expect([...p.baseYield.subarray(i * F, i * F + F)]).toEqual([0, 0, 0, 0, 0]);
+    expect(optionsOf(p, i, s.records.get('3512011')!)).toEqual([]);
     const rows = await panel('3512011');
     expect(rows.map((r) => [r.base_yield, r.hostable_base])).toEqual([
       [0, false],
@@ -2010,12 +1971,10 @@ describe('sd.landuse.none-with-units: no land-use record, assessor units (coordi
       const elig =
         p.id[i] !== '3512019' &&
         (rec.eligible || (rec.landUse === 'NONE' && p.existingUnits[i] > 0));
-      const view = scenarioRecordOf(p, i, rec);
-      const gross = (stories: number) => scenarioYield(view, fillStories(1, stories), null);
       expect({ e: p.eligible[i], h: p.hostable[i], hb: p.hostableBase[i] }, p.id[i]).toEqual({
         e: elig ? 1 : 0,
-        h: elig && p.envelopeStories[i] >= 1 && gross(p.envelopeStories[i]) > 0 ? 1 : 0,
-        hb: elig && p.baseStories[i] >= 1 && gross(p.baseStories[i]) > 0 ? 1 : 0
+        h: elig && p.envelopeStories[i] >= 1 && gainsOf(p, i, rec, p.envelopeStories[i]) ? 1 : 0,
+        hb: elig && p.baseStories[i] >= 1 && gainsOf(p, i, rec, p.baseStories[i]) ? 1 : 0
       });
     }
     expect(s.scenarioCounts['scenario.hostable_mismatch']).toBe(0);

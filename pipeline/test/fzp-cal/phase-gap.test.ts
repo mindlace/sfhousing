@@ -29,6 +29,9 @@ function permit(over: Partial<PermitRow>): PermitRow {
     construction_day: null,
     complete_day: null,
     status_day: null,
+    proposed_stories: null,
+    valuation: null,
+    construction_type: null,
     ...over
   };
 }

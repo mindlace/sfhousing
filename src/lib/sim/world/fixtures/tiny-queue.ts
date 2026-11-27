@@ -1,10 +1,10 @@
 /**
  * The finance engine's queue fixtures: `tinyQueue`, a five-lot city with hand-set hazards and
- * yields, and `tinyStack`, a small public-money stack: a federal pool (ten trillion a year), a state pool and
+ * options, and `tinyStack`, a small public-money stack: a federal pool (ten trillion a year), a state pool and
  * a City pool, each with one affordable grant programme, and optionally a bond pool. The shares
  * are tier 1 dollars per home over the tier 2 total. Test values, not data. Browser-safe.
  */
-import { FILL_LEVELS } from '$lib/data/scenario-codec';
+import { NULL_CAP } from '$lib/data/policy-codec';
 import { LEGACY_UNCAPPED_DOLLARS } from '$lib/timelapse/model';
 import type { Day } from '$lib/timelapse/time';
 import type { Inflow, Pool, PoolKind, Programme } from '$lib/timelapse/types';
@@ -14,8 +14,7 @@ import { miniCalibrationWithRoutes } from './mini-finance';
 import { miniCity } from './mini-parcels';
 import { MINI_AS_OF } from './mini-projects';
 import { selectRows } from './select-rows';
-
-const F = FILL_LEVELS.length;
+import { synthOptions } from './synth-options';
 
 /** The five lots' parcel ids, ascending, so a lot's parcel rank is its row. */
 export const TINY_IDS = ['0100T001', '0100T002', '0100T003', '0100T004', '0100T005'] as const;
@@ -35,8 +34,8 @@ export interface TinyQueueOpts {
  * Five hostable lots copied from the mini city (rows `TINY_IDS`, no Local Program, envelope 4
  * stories), no pipeline projects, and the mini calibration (with `affordableRoutes`) whose
  * initiation model is one term on `landUseClass`: lot i has class i and log-odds `logOdds[i]`.
- * Each lot's fill levels yield its existing homes, except the top one, which yields `units[i]`:
- * one gaining level, so its size draw always gives `units[i]` homes.
+ * Each lot has one option, at its 4 stories with `units[i]` homes, uncapped: one gaining option, so
+ * its size draw always gives `units[i]` homes. The lots are hostable under both envelopes.
  */
 export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
   const logOdds = o.logOdds ?? [-3, -3, -3, -3, -3];
@@ -56,10 +55,9 @@ export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
     parcels.existingUnits[i] = existing[i];
     parcels.envelopeStories[i] = 4;
     parcels.baseStories[i] = 4;
-    for (let f = 0; f < F; f++) {
-      parcels.yield[i * F + f] = f === F - 1 ? units[i] : existing[i];
-      parcels.baseYield[i * F + f] = f === F - 1 ? units[i] : existing[i];
-    }
+    parcels.fzpCap[i] = NULL_CAP;
+    parcels.baseCap[i] = NULL_CAP;
+    parcels.hostableBase[i] = 1;
   });
   const cal = miniCalibrationWithRoutes();
   const calibration = {
@@ -72,6 +70,11 @@ export function tinyQueue(o: TinyQueueOpts = {}): SimInput {
   };
   return {
     parcels,
+    options: synthOptions(
+      parcels,
+      () => 4,
+      (i, stories) => (stories === 4 ? units[i] : 0)
+    ),
     projects: [],
     calibration,
     asOf: MINI_AS_OF,

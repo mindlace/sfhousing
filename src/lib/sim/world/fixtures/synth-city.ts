@@ -4,20 +4,19 @@
 // a bench calibration tuned to about 8,000 initiations by 2050. Node-only (the `parcels.bin`
 // deflate); used by scripts/measure-policy-compile.ts.
 //
-// Fixture values only (tier 4, made up for the bench): not data. The yields are a simple
+// Fixture values only (tier 4, made up for the bench): not data. The options' homes are a simple
 // floor-area rule, not the generator's: the bench measures cost, and the card's matched /
 // approximate verdict is not on its path.
 import { deflateRawSync } from 'node:zlib';
 import { idsHash } from '$lib/data/column-file';
 import type { Manifest } from '$lib/data/manifest';
+import { encodeOptionPayload, type OptionTable } from '$lib/data/option-table';
 import type { ParcelRecord } from '$lib/data/parcel';
 import { encodeParcelChunk } from '$lib/data/parcel-chunk';
 import { NULL_CAP, S207_STATUSES, type PolicyParcels } from '$lib/data/policy-codec';
 import {
-  FILL_LEVELS,
   decodeScenarioPayload,
   encodeScenarioPayload,
-  fillStories,
   type ScenarioParcels
 } from '$lib/data/scenario-codec';
 import { synthParcels } from '$lib/generator/fixtures/synth';
@@ -26,6 +25,7 @@ import type { InFlightProject, ProjectsFile } from '$lib/timelapse/projects';
 import type { Day } from '$lib/timelapse/time';
 import type { Calibration, Pathway, Provenance, Stage } from '$lib/timelapse/types';
 import miniCalibrationJson from './mini-calibration.json';
+import { synthOptions } from './synth-options';
 import { MINI_AS_OF } from './mini-projects';
 
 // host.bench's grid: 420 × 358 label points over ≈13.2 km × 11.1 km, 16 × 16 cells.
@@ -53,6 +53,8 @@ const URLS = {
 };
 /** Where the bench host serves `policy.bin` (the rig answers it with `synthPolicy`). */
 export const SYNTH_POLICY_URL = `/data/${SYNTH_VERSION}/scenarios/fzp/policy.bin`;
+/** Where the bench host serves `options.bin` (the rig answers it with `SynthCity.optionsBin`). */
+export const SYNTH_OPTIONS_URL = `/data/${SYNTH_VERSION}/scenarios/fzp/options.bin`;
 
 export interface SynthCity {
   /** Decoded T11, exactly as the host decodes `bin`. */
@@ -66,6 +68,13 @@ export interface SynthCity {
   chunks: Map<string, unknown>;
   /** `parcels.bin` as served: deflate-raw over the T11 payload */
   bin: Uint8Array;
+  /**
+   * options.bin decoded: one option per story count up to twice the envelope (at least 8, at most
+   * 80), homes by the floor-area rule.
+   */
+  options: OptionTable;
+  /** `options.bin` as served: deflate-raw over the option payload */
+  optionsBin: Uint8Array;
   /** what the host fetches: the URL of `bin`, and url → body of every JSON file it may ask for */
   files: { bin: string; json: Map<string, unknown> };
 }
@@ -116,7 +125,6 @@ function t11Of(lots: Lot[]): ScenarioParcels {
   const cellIds = [...new Set(rows.map((r) => r.cellId))];
   const cellIndex = new Map(cellIds.map((c, k) => [c, k]));
   const count = rows.length;
-  const F = FILL_LEVELS.length;
   const rand = mulberry32(18);
   const u8 = () => new Uint8Array(count);
   const p = {
@@ -140,8 +148,7 @@ function t11Of(lots: Lot[]): ScenarioParcels {
     lotAreaM2: new Uint32Array(count),
     improvementShare: new Float32Array(count),
     labelPoint: new Float64Array(2 * count),
-    yield: new Uint16Array(count * F),
-    baseYield: new Uint16Array(count * F)
+    fzpCap: new Uint16Array(count)
   };
   rows.forEach((row, i) => {
     const r = row.rec;
@@ -164,15 +171,12 @@ function t11Of(lots: Lot[]): ScenarioParcels {
     p.landUseClass[i] = r.existingUnits > 0 ? 0 : r.existingFloorAreaM2 === 0 ? 4 : 2;
     const cap = env <= 4 && rand() < 0.4 ? Math.max(2, Math.floor(r.areaM2 / 120)) : NO_CAP;
     p.baseCap[i] = cap;
-    for (let f = 0; f < F; f++) {
-      const gross = eligible ? grossUnits(r.areaM2, fillStories(FILL_LEVELS[f], env)) : 0;
-      const baseGross =
-        eligible && base > 0 ? grossUnits(r.areaM2, fillStories(FILL_LEVELS[f], base)) : 0;
-      p.yield[i * F + f] = gross;
-      p.baseYield[i * F + f] = Math.min(baseGross, cap);
-    }
-    p.hostable[i] = eligible && env >= 1 && p.yield[i * F + F - 1] > 0 ? 1 : 0;
-    p.hostableBase[i] = eligible && base >= 1 && p.baseYield[i * F + F - 1] > 0 ? 1 : 0;
+    p.fzpCap[i] = p.localProgram[i] ? NO_CAP : cap;
+    // the options' homes rise with stories (synthCity), so the most homes at an envelope are its
+    // top story's; a lot hosts where they are more than it has now (before the cap)
+    const gains = (stories: number) => grossUnits(p.lotAreaM2[i], stories) > r.existingUnits;
+    p.hostable[i] = eligible && env >= 1 && gains(env) ? 1 : 0;
+    p.hostableBase[i] = eligible && base >= 1 && gains(base) ? 1 : 0;
     p.labelPoint[2 * i] = r.labelPoint[0];
     p.labelPoint[2 * i + 1] = r.labelPoint[1];
   });
@@ -184,12 +188,11 @@ function t11Of(lots: Lot[]): ScenarioParcels {
     return c;
   });
   const parcels: ScenarioParcels = {
-    format: 'sfh-scenario/1',
+    format: 'sfh-scenario/2',
     datasetVersion: SYNTH_VERSION,
     scenario: 'fzp',
     rollYear: 2025,
     count,
-    fillLevels: [...FILL_LEVELS],
     cells,
     districts: ['', 'BENCH'],
     provenance: {
@@ -197,14 +200,11 @@ function t11Of(lots: Lot[]): ScenarioParcels {
       localProgram: prov('Local Program'),
       features: prov('Features'),
       existingUnits: { ...prov('Existing units'), n: count, window: ['2025-01-01', '2025-12-31'] },
-      yield: prov('Yield')
+      cap: prov('Cap')
     },
     id: rows.map((r) => r.rec.id),
     index: new Map(rows.map((r, i) => [r.rec.id, i])),
-    ...p,
-    // derived at decode; the decoded copy below is the one returned
-    potentialRatio: { fzp: new Float32Array(count), base: new Float32Array(count) },
-    storiesGap: { fzp: new Int16Array(count), base: new Int16Array(count) }
+    ...p
   };
   return parcels;
 }
@@ -379,6 +379,11 @@ export function synthCity(): SynthCity {
   const payload = encodeScenarioPayload(t11Of(lots));
   const bin = deflateRawSync(payload);
   const parcels = decodeScenarioPayload(payload);
+  const options = synthOptions(
+    parcels,
+    (i) => (parcels.eligible[i] ? Math.min(80, Math.max(8, 2 * parcels.envelopeStories[i])) : 0),
+    (i, stories) => grossUnits(parcels.lotAreaM2[i], stories)
+  );
   const projects = projectsOf(lots, parcels);
   const calibration = calibrationOf();
 
@@ -409,7 +414,7 @@ export function synthCity(): SynthCity {
     basemapTiles: `/data/${SYNTH_VERSION}/basemap/{z}/{x}/{y}.pbf`,
     glyphs: `/data/${SYNTH_VERSION}/glyphs/{fontstack}/{range}.pbf`,
     neighborhoods: `/data/${SYNTH_VERSION}/neighborhoods.geojson`,
-    scenarios: { fzp: { ...URLS } }
+    scenarios: { fzp: { ...URLS, policy: SYNTH_POLICY_URL, options: SYNTH_OPTIONS_URL } }
   } as Manifest;
   const json = new Map<string, unknown>(chunks);
   json.set(URLS.projects, projects);
@@ -421,6 +426,8 @@ export function synthCity(): SynthCity {
     manifest,
     chunks,
     bin: new Uint8Array(bin),
+    options,
+    optionsBin: new Uint8Array(deflateRawSync(encodeOptionPayload(options))),
     files: { bin: URLS.parcels, json }
   };
 }
@@ -434,13 +441,11 @@ const policyProv = (label: string): Provenance => prov(label);
 export function synthPolicy(city: SynthCity): PolicyParcels {
   const p = city.parcels;
   const n = p.count;
-  const F = p.fillLevels.length;
   const out: PolicyParcels = {
-    format: 'sfh-policy/1',
+    format: 'sfh-policy/2',
     datasetVersion: p.datasetVersion,
     count: n,
     idsHash: idsHash(p.id),
-    fillLevels: [...p.fillLevels],
     currentLawRule: 'fzp+s207.11',
     tierSource: 'mtc',
     useDistricts: [''],
@@ -453,17 +458,14 @@ export function synthPolicy(city: SynthCity): PolicyParcels {
     },
     useDistrict: new Uint16Array(n),
     historic: new Uint8Array(n),
-    fzpYieldCap: Uint16Array.from(p.baseCap, (c, i) => (p.localProgram[i] ? NULL_CAP : c)),
     todTier: new Uint8Array(n),
     todBand: new Uint8Array(n),
     sb79Status: new Uint8Array(n),
     sb79Stories: new Uint8Array(n),
     sb79Cap: new Uint16Array(n).fill(NULL_CAP),
-    sb79Yield: new Uint16Array(n * F),
     s207Status: new Uint8Array(n).fill(S207_STATUSES.indexOf('outside')),
     currentStories: Uint8Array.from(p.envelopeStories),
-    currentCap: new Uint16Array(n),
-    currentYield: Uint16Array.from(p.yield),
+    currentCap: Uint16Array.from(p.fzpCap),
     hostableSb79: new Uint8Array(n),
     hostableCurrent: Uint8Array.from(p.hostable),
     currentFromS207: new Uint8Array(n),
@@ -471,6 +473,5 @@ export function synthPolicy(city: SynthCity): PolicyParcels {
     exemptTemporary: new Uint8Array(n),
     historicProtected: new Uint8Array(n)
   };
-  out.currentCap.set(out.fzpYieldCap);
   return out;
 }

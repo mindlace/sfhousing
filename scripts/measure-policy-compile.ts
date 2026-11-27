@@ -8,8 +8,7 @@ import { cpus, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { parseManifest } from '../src/lib/data/manifest';
-import type { ParcelId, ParcelRecord } from '../src/lib/data/parcel';
-import { decodeParcelChunk } from '../src/lib/data/parcel-chunk';
+import type { ParcelId } from '../src/lib/data/parcel';
 import { decodeTransit } from '../src/lib/data/transit-codec';
 import {
   createLotIndex,
@@ -17,7 +16,6 @@ import {
   resolveBrushRows,
   type BrushData
 } from '../src/lib/sim/levers/brushes';
-import { createYieldRecompute, type GrossCache } from '../src/lib/sim/levers/recompute';
 import { synthCity, synthPolicy } from '../src/lib/sim/world/fixtures/synth-city';
 import { buildSimInput } from '../src/lib/sim/world/input/build';
 import { loadSimInput, simInputUrls } from '../src/lib/sim/world/input/load';
@@ -58,7 +56,6 @@ const docOf = (p: Policy): SimPolicy4 => ({
 interface World {
   input: SimInput;
   layers: CompileCtx['layers'];
-  records: Map<ParcelId, ParcelRecord>;
   /** Lots for scenario A's two bands, by query key (resolved: ms spent doing it). */
   bandLots(doc: SimPolicy4): { lots: Record<string, ParcelId[]>; ms: number };
   label: string;
@@ -90,16 +87,11 @@ async function live(dir: string): Promise<World> {
       warn: () => {}
     },
     urls,
-    () => false,
-    { policy: true }
+    () => false
   );
   if (!('fzp' in loaded)) throw new Error(`load failed: ${loaded.code}: ${loaded.message}`);
   const input = loaded.fzp;
-  const policy = loaded.policy!;
-  const records = new Map<ParcelId, ParcelRecord>();
-  for (const c of manifest.chunks)
-    for (const r of decodeParcelChunk(JSON.parse(readFileSync(pathOf(c.url), 'utf8'))))
-      records.set(r.id, r);
+  const policy = loaded.policy;
   const data: BrushData = {
     parcels: input.parcels,
     policy,
@@ -110,9 +102,8 @@ async function live(dir: string): Promise<World> {
   };
   return {
     input,
-    layers: { parcels: input.parcels, policy },
-    records,
-    label: `dataset ${manifest.datasetVersion}, gross table: ${loaded.gross ? 'yes' : 'no'}`,
+    layers: { parcels: input.parcels, policy, options: loaded.options },
+    label: `dataset ${manifest.datasetVersion}`,
     bandLots(doc) {
       const s = now();
       const index = createLotIndex(input.parcels);
@@ -128,13 +119,11 @@ async function live(dir: string): Promise<World> {
 
 function bench(): World {
   const city = synthCity();
-  const records = new Map<ParcelId, ParcelRecord>();
-  for (const chunk of city.chunks.values())
-    for (const r of decodeParcelChunk(chunk as never)) records.set(r.id, r);
   const input = buildSimInput({
     parcels: city.parcels,
     projects: parseProjectsFile(structuredClone(city.projects)),
-    calibration: parseCalibration(structuredClone(city.calibration))
+    calibration: parseCalibration(structuredClone(city.calibration)),
+    options: city.options
   });
   const p = city.parcels;
   const hostable = [...p.id.keys()]
@@ -143,8 +132,7 @@ function bench(): World {
     .sort();
   return {
     input,
-    layers: { parcels: p, policy: synthPolicy(city) },
-    records,
+    layers: { parcels: p, policy: synthPolicy(city), options: city.options },
     label: 'bench city (synthCity, no funding)',
     bandLots(doc) {
       // The bench city has no transit stops: two nested bands over the first 20,000 / 40,000 lots.
@@ -163,25 +151,13 @@ async function main(): Promise<number> {
     return 2;
   }
   const w = arg === '--bench' ? bench() : await live(arg);
-  const { input, layers, records } = w;
+  const { input, layers } = w;
   console.log(`${w.label}: ${input.parcels.count} parcels`);
   console.log(
     `load before: ${loadavg()
       .map((x) => x.toFixed(2))
       .join(' ')}`
   );
-  const yields: CompileCtx['yields'] = {
-    recompute: (parcels, needs) => {
-      const gross: GrossCache = new Map();
-      return createYieldRecompute(
-        parcels,
-        needs,
-        { record: (id) => records.get(id), cellLoaded: () => true, now },
-        gross
-      );
-    },
-    failedCells: () => []
-  };
   const hostableIds = [...input.parcels.id.keys()]
     .filter((i) => input.parcels.hostable[i] === 1)
     .map((i) => input.parcels.id[i] as ParcelId)
@@ -227,10 +203,9 @@ async function main(): Promise<number> {
         input: { ...input, parcels: { ...input.parcels } },
         layers: { ...layers },
         windowMonths: WINDOW,
-        yields,
         now
       };
-      ctx.layers = { parcels: ctx.input.parcels, policy: layers.policy };
+      ctx.layers = { parcels: ctx.input.parcels, policy: layers.policy, options: layers.options };
       const { doc, lots, pre } = make();
       const t0 = now();
       const c = compileTimeline(doc, lots, ctx, 'plan');

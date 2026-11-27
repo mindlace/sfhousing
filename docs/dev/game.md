@@ -531,8 +531,9 @@ Two sources: a built dataset directory, or a published version fetched from an o
 default production). Two questions, each reached or missed, at one amount (82,069 homes unless
 `--amount` gives another) on the engine of `scripts/reach-measure.ts`:
 
-1. Does current law (the empty policy document) reach the goal by rung 0's deadline?
-2. Does the full tree (`fullTree`) reach it by the last rung's deadline?
+1. Does current law (the empty policy document) reach the goal by rung 0's deadline? Reported,
+   not gated (owner ruling, 2026-11-26).
+2. Does the full tree (`fullTree`) reach it by the last rung's deadline? This is the gate.
 
 Five lines on stdout:
 
@@ -548,7 +549,8 @@ Lines 3 and 4 each read "reached <month>, <n> months early" ("1 month early" for
 <homes> homes, <short> short". The first month on a line is the rung's deadline. Line 5 is the
 opening fill's wall-clock time (`Engine.fillMs`) and the car switch.
 
-Exit 0 when both are reached; 1 when either is missed; 2 when the check could not run, with one
+Exit 0 when the full tree is reached (current law's line is printed either way); 1 when the full
+tree is missed; 2 when the check could not run, with one
 stderr line, `reach-check: <reason>`, and nothing on stdout (no source, both a directory and
 `--version`, an unknown flag, `--from` without `--version`, an `--amount` that is not a whole
 number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
@@ -568,6 +570,32 @@ Filled in 2.4 s (cars on)
 ```
 
 The fill time is ballpark: it was taken at a 1-minute load of 2.4.
+
+Result of 2026-11-27 on dataset `2026-11-27-247eaa0b` (the building-choice build), cars on, load 1.2
+(`LADDER_YEARS` unchanged, [2060, 2055, 2045, 2040]; the deadlines are re-derived elsewhere). Exit 0:
+
+```
+Dataset 2026-11-27-247eaa0b
+Goal: 82,069 homes
+Current law by Oct 2066: reached May 2064, 29 months early
+Full tree by Dec 2040: reached Nov 2037, 37 months early
+Filled in 3.7 s (cars on)
+```
+
+Pacing on that dataset (`npx tsx scripts/tree-balance.ts pipeline/out/2026-11-27-247eaa0b`, run as
+information only: `tuning.ts` is not changed by this build). Six orders, each played by hand and with
+Collect for me. Four of the five pacing checks pass in all 12 plays: first purchase 1:32 (target
+2:00), early runs per purchase at most 1, runs per purchase at most 3 (3 by hand in the catalogue and
+permitting-first orders), longest gap between map changes 1:28 at most (target 5:00). "Fewest
+purchases between deadlines" (target 3) fails in 8 of the 12: the catalogue, permitting-first,
+zoning-first, money-first and hands-first orders by hand (1, 1, 1, 1, 2) and the catalogue,
+permitting-first and money-first orders with Collect for me (2, 2, 2); it passes for zoning-first
+(Collect for me) and both cheapest and hands-first (Collect for me) plays. Every play's last run
+reaches the last rung (Dec 2040) on time, the by-hand ones in runs 10 to 20, the Collect for me ones
+in runs 5 to 7.
+Current law at each deadline stands below every side-goal target it is measured against (for
+example `collect-run` 18,822 of 24,000, `funded-homes` 14,457 of 21,000, `affordable-homes` 15,602
+of 20,000, `building-homes` 1,950 of 6,000). The exit is 1 because of the failing check.
 
 ## Words
 

@@ -26,6 +26,11 @@ export interface GeneratedBuilding {
   units: number;
   floorAreaM2: number;
   replacesExisting: boolean;
+  /**
+   * Form-massed buildings only (`generateForm`): the tower plates, 0 for any other form; on a
+   * district, summed over the lots.
+   */
+  plates?: number;
   /** District results only (large-site massing §4.4): the built lots, in fill order. */
-  lots?: { typology: TypologyId; stories: number; floorAreaM2: number }[];
+  lots?: { typology: TypologyId; stories: number; floorAreaM2: number; plates?: number }[];
 }

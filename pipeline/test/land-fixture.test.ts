@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { decodeParcelChunk } from '../../src/lib/data/parcel-chunk';
-import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import type { Duck } from '../lib/duck';
 import { createQualityTables } from '../lib/quality';
 import { runSql } from '../lib/sql';
@@ -117,7 +116,6 @@ describe('shoreline lots in the mini fixture', () => {
 
 describe('shoreline lots in the shipped fixture dataset', () => {
   const dir = join(__dirname, '../../e2e/fixtures/data/fixture-0');
-  const F = FILL_LEVELS.length;
 
   it('ships the underwater flag in the chunk', () => {
     const recs = ['parcels/50_25.json', 'parcels/51_25.json'].flatMap((f) =>
@@ -133,17 +131,14 @@ describe('shoreline lots in the shipped fixture dataset', () => {
     expect(recs.filter((r) => r.underwater).map((r) => r.id)).toEqual(['3512016']);
   });
 
-  it('gives the underwater lot no yield and keeps its homes', () => {
+  it('makes the underwater lot unhostable and keeps its homes', () => {
     const p = readParcelsBin(join(dir, PARCELS_BIN));
     const wet = p.index.get('3512016')!;
     const dry = p.index.get('3512015')!;
     expect(p.eligible[wet]).toBe(0);
     expect(p.existingUnits[wet]).toBe(2);
-    for (let k = 0; k < F; k++) {
-      expect(p.yield[wet * F + k]).toBe(0);
-      expect(p.baseYield[wet * F + k]).toBe(0);
-    }
+    expect([p.hostable[wet], p.hostableBase[wet]]).toEqual([0, 0]);
     expect(p.eligible[dry]).toBe(1);
-    expect(p.yield[dry * F + F - 1]).toBeGreaterThan(0);
+    expect(p.hostable[dry]).toBe(1);
   });
 });

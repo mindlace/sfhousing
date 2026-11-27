@@ -1,17 +1,20 @@
 import { buildSimInput } from '$lib/sim/world/input/build';
 import type { SimInput } from '$lib/sim/world/input/types';
 import miniCalibrationJson from '$lib/sim/world/fixtures/mini-calibration.json';
+import { miniOptions } from '$lib/sim/world/fixtures/mini-options';
 import { miniCity } from '$lib/sim/world/fixtures/mini-parcels';
 import { miniProjectsJson } from '$lib/sim/world/fixtures/mini-projects';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile } from '$lib/timelapse/projects';
 
-/** The mini city's FZP SimInput, built from the three decoded files, finance included. */
+/** The mini city's FZP SimInput, built from the decoded files, finance included. */
 export function miniFzpInput(): SimInput {
+  const city = miniCity();
   return buildSimInput({
-    parcels: miniCity().parcels,
+    parcels: city.parcels,
     projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown)
+    calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown),
+    options: miniOptions(city)
   });
 }
 

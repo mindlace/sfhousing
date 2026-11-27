@@ -26,6 +26,7 @@ import {
   miniFinance,
   withFederalYearly
 } from '../fixtures/mini-finance';
+import { miniOptions } from '../fixtures/mini-options';
 import { miniCity, MINI_LP_ID } from '../fixtures/mini-parcels';
 import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from '../fixtures/mini-projects';
 import { buildSimInput } from '../input/build';
@@ -41,7 +42,8 @@ const file = parseProjectsFile(miniProjectsJson(), { onInvalid() {} });
 const input: SimInput = buildSimInput({
   parcels: city.parcels,
   projects: file,
-  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration
+  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration,
+  options: miniOptions(city)
 });
 const qualityRules = new Map(file.qualityRules.map((r) => [r.id, r]));
 

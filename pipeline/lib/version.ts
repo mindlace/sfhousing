@@ -46,6 +46,7 @@ export const PATHS: readonly string[] = [
   'src/lib/timelapse',
   'src/lib/plan/geometry.ts',
   'src/lib/plan/types.ts',
+  'src/lib/sim/choice',
   'src/lib/sim/finance',
   'src/lib/sim/cars',
   'src/lib/sim/world/rules/rng.ts',

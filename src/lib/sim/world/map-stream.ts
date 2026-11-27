@@ -205,7 +205,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
   /** The memo key of revision `k` (rule 11): the revision's content. */
   function massingKey(s: Schedule, k: number): string {
     const r = s.revisions[k];
-    return `${s.projectId}|${k}|${r.day}|${r.units}|${r.stories}`;
+    return `${s.projectId}|${k}|${r.day}|${r.units}|${r.stories}|${r.option ?? '-'}`;
   }
 
   /**
@@ -219,7 +219,7 @@ export function createMapStream(deps: MapStreamDeps, windowMonths: number): MapS
     const e = s.end;
     k +=
       e.kind === 'open' ? '|open' : e.kind === 'complete' ? `|c${e.day}` : `|x${e.day}${e.stage}`;
-    for (const r of s.revisions) k += `|${r.day}:${r.units}:${r.stories}`;
+    for (const r of s.revisions) k += `|${r.day}:${r.units}:${r.stories}:${r.option ?? '-'}`;
     return `${k}|f${flags}`;
   }
 

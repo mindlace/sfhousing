@@ -15,6 +15,8 @@ import {
   type Prototype,
   type PrototypeId
 } from '../../../src/lib/sim/finance/prototypes';
+import { optionPrototype, type PriceKey } from '../../../src/lib/sim/choice/pricing';
+import type { PriceStep } from '../../../src/lib/sim/choice/types';
 import { AFFORDABLE_COHORT_SHARE, type StartCohort } from '../affordable-cohort';
 import type { MarketFile } from '../../enrichment/market-schema';
 import type { InitiationReport } from './initiation';
@@ -53,6 +55,11 @@ export interface MarketInput {
   initiationSources: { label: string; url: string }[];
   /** defaults to PROTOTYPES; injectable so the guards of spec §4.4 are testable */
   prototypes?: readonly Prototype[];
+  /**
+   * The shipped price step's cost ratio above the top anchor (`PriceStep.aboveTopCostRatio`): a
+   * typed Type I start above D's stories is priced with it.
+   */
+  aboveTopCostRatio: number;
 }
 
 export interface MarketTodayResult {
@@ -225,9 +232,12 @@ export interface MarketReport extends Omit<MarketTodayResult, 'today'> {
   mode: 'fit' | 'fixture';
   /** the weight years `[L − 4, L]` */
   years: [number, number];
-  /** one row per prototype, A to E */
+  /**
+   * One row per prototype A to E, then one per Type I price between or above the anchors (`I<n>`,
+   * by stories) that a typed start has
+   */
   weights: {
-    id: PrototypeId;
+    id: PriceKey;
     rule: string;
     starts: number;
     weight: number;
@@ -235,8 +245,13 @@ export interface MarketReport extends Omit<MarketTodayResult, 'today'> {
     costPerHome: number;
     uncoveredShare: number;
   }[];
-  /** weight-year private starts left out: homes not recorded; homes ≥ 25 and stories not recorded */
+  /**
+   * weight-year private starts left out: homes not recorded; stories not recorded where the
+   * price needs them (untyped with homes ≥ 25, or Type I)
+   */
   unbinned: { homes: number; stories: number };
+  /** weight-year private starts priced by their permit's construction type, and by the binning */
+  priced: { typed: number; binned: number };
   /** true when the fixture has no binned start and every prototype weighs the same */
   equalWeights: boolean;
   typicalUncoveredShare: number;
@@ -246,18 +261,62 @@ export interface MarketReport extends Omit<MarketTodayResult, 'today'> {
   counts: Record<string, number>;
 }
 
-/** The weights table's rule per prototype (the bins of `prototypeFor`, F4). */
+/**
+ * The weights table's rule per prototype: the construction type a typed start is priced by
+ * (`optionPrototype`), then the bins of `prototypeFor` (F4) for an untyped one.
+ */
 const RULES: Record<PrototypeId, string> = {
-  A: 'homes ≥ 25, stories ≤ 6',
-  B: 'homes ≥ 25, stories 7 to 10',
-  C: 'homes ≥ 25, stories 11 to 18',
-  D: 'homes ≥ 25, stories above 18',
-  E: 'homes under 25'
+  A: 'Type V, homes ≥ 25; untyped: homes ≥ 25, stories ≤ 6',
+  B: 'Type III; untyped: homes ≥ 25, stories 7 to 10',
+  C: "Type I up to C's stories; untyped: homes ≥ 25, stories 11 to 18",
+  D: 'untyped: homes ≥ 25, stories above 18',
+  E: 'Type V, homes under 25; untyped: homes under 25'
 };
+
+/** The anchors of `prototypes` as a price step (value = cost − shortfall); carrying unread. */
+function anchorStep(prototypes: readonly Prototype[], aboveTopCostRatio: number): PriceStep {
+  const anchors = Object.fromEntries(
+    prototypes.map((p) => [
+      p.id,
+      {
+        stories: p.stories,
+        homes: p.homes,
+        costPerHome: p.costPerHome,
+        valuePerHome: p.costPerHome - p.shortfallPerHome
+      }
+    ])
+  ) as PriceStep['anchors'];
+  return { anchors, aboveTopCostRatio, carrying: { rate: 0, drawn: 0 } };
+}
 
 const MODEL_GAP = 1;
 
-/** The prototype a start is priced as, or why it is unbinned (spec §4.3). */
+/**
+ * The prototype a start is priced as, or why it is left out (spec §4.3). A start whose permit
+ * records a modelled construction type is priced by it on `step` (`optionPrototype`, as the
+ * engine prices an option: Type V as A or E, Type III as B, Type I as C, D or between); only an
+ * untyped one is binned by stories and homes (building-choice spec, "Funded and affordable
+ * projects").
+ */
+function priceStart(
+  s: PanelStart,
+  step: PriceStep
+):
+  | { typed: true; p: Prototype & { id: PriceKey } }
+  | { typed: false; id: PrototypeId }
+  | 'homes'
+  | 'stories' {
+  if (s.homes === null) return 'homes';
+  if (s.type !== null) {
+    if (s.type === 'I' && s.stories === null) return 'stories';
+    const o = { type: s.type, stories: s.stories ?? 0, homes: s.homes };
+    return { typed: true, p: optionPrototype(o, step) };
+  }
+  const b = binStart(s);
+  return b === 'homes' || b === 'stories' ? b : { typed: false, id: b };
+}
+
+/** The bin of an untyped start, or why it is unbinned (spec §4.3). */
 function binStart(s: PanelStart): PrototypeId | 'homes' | 'stories' {
   if (s.homes === null) return 'homes';
   if (s.homes < 25) {
@@ -372,32 +431,58 @@ export function marketModel(x: MarketInput): { market: MarketModel; report: Mark
 
   // The weights.
   const prototypes = [...(x.prototypes ?? PROTOTYPES)].sort((a, b) => (a.id < b.id ? -1 : 1));
-  const binned: Record<PrototypeId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
-  const unbinned = { homes: 0, stories: 0 };
-  for (const s of x.starts) {
-    if (s.year < years[0] || s.year > years[1] || s.cohort === 'affordable') continue;
-    const b = binStart(s);
-    if (b === 'homes' || b === 'stories') unbinned[b]++;
-    else binned[b]++;
-  }
-  const nBinned = binned.A + binned.B + binned.C + binned.D + binned.E;
-  if (nBinned === 0 && !fixture) {
-    throw new CalibrationError(`market: no private start in ${weightSpan} has a prototype`);
-  }
-  const equalWeights = nBinned === 0;
   for (const p of prototypes) {
     if (p.costPerHome <= p.shortfallPerHome) {
       throw new CalibrationError(`market: prototype ${p.id} has no positive value per home`);
     }
   }
-  const weights: MarketReport['weights'] = prototypes.map((p) => {
-    const u = uncoveredPerHome('market', p);
-    const c = costPerHome('market', p);
+  const step = anchorStep(prototypes, x.aboveTopCostRatio);
+  // Rows: A to E (their own prototypes), then each Type I price a typed start has, by stories.
+  const rows = new Map<PriceKey, { p: Prototype; rule: string; starts: number }>(
+    prototypes.map((p) => [p.id, { p, rule: RULES[p.id], starts: 0 }])
+  );
+  const unbinned = { homes: 0, stories: 0 };
+  const priced = { typed: 0, binned: 0 };
+  for (const s of x.starts) {
+    if (s.year < years[0] || s.year > years[1] || s.cohort === 'affordable') continue;
+    const b = priceStart(s, step);
+    if (b === 'homes' || b === 'stories') {
+      unbinned[b]++;
+      continue;
+    }
+    const id = b.typed ? b.p.id : b.id;
+    let row = rows.get(id);
+    if (row === undefined && b.typed) {
+      const ss = b.p.stories;
+      const rule =
+        ss > step.anchors.D.stories
+          ? `Type I, ${ss} stories (above D: D's cost × ${x.aboveTopCostRatio}, D's value)`
+          : `Type I, ${ss} stories (between C and D)`;
+      rows.set(id, (row = { p: b.p, rule, starts: 0 }));
+    }
+    row!.starts++;
+    priced[b.typed ? 'typed' : 'binned']++;
+  }
+  const nBinned = priced.typed + priced.binned;
+  if (nBinned === 0 && !fixture) {
+    throw new CalibrationError(`market: no private start in ${weightSpan} has a prototype`);
+  }
+  const equalWeights = nBinned === 0;
+  const stories = (id: string) => (id.startsWith('I') ? Number(id.slice(1)) : 0);
+  const ordered = [...rows.entries()].sort(([a], [b]) => {
+    const ia = a.startsWith('I');
+    const ib = b.startsWith('I');
+    if (ia !== ib) return ia ? 1 : -1;
+    return ia ? stories(a) - stories(b) : a < b ? -1 : 1;
+  });
+  const weights: MarketReport['weights'] = ordered.map(([id, r]) => {
+    const u = uncoveredPerHome('market', r.p);
+    const c = costPerHome('market', r.p);
     return {
-      id: p.id,
-      rule: RULES[p.id],
-      starts: binned[p.id],
-      weight: equalWeights ? 1 / prototypes.length : binned[p.id] / nBinned,
+      id,
+      rule: r.rule,
+      starts: r.starts,
+      weight: equalWeights ? 1 / prototypes.length : r.starts / nBinned,
       uncoveredPerHome: u,
       costPerHome: c,
       uncoveredShare: u / c
@@ -405,7 +490,8 @@ export function marketModel(x: MarketInput): { market: MarketModel; report: Mark
   });
   let typicalUncoveredShare = 0;
   let typicalCostOverValue = 0;
-  prototypes.forEach((p, i) => {
+  ordered.forEach(([, r], i) => {
+    const p = r.p;
     typicalUncoveredShare += weights[i].weight * weights[i].uncoveredShare;
     typicalCostOverValue +=
       (weights[i].weight * p.costPerHome) / (p.costPerHome - p.shortfallPerHome);
@@ -435,9 +521,9 @@ export function marketModel(x: MarketInput): { market: MarketModel; report: Mark
     `perCostShare = −today.private ÷ typicalUncoveredShare: closing a typical private project's whole uncovered cost (shortfall plus land) returns its odds to the ${ref} average. ` +
     (equalWeights
       ? `The fixture panel has no binned private start in ${weightSpan}, so every prototype weighs ${sig6(1 / prototypes.length)} (tier 4). `
-      : `Weights are the shares of the ${nBinned} binned private starts of ${weightSpan} (affordable-cohort starts left out) in each prototype. `) +
+      : `Weights are the shares of the ${nBinned} priced private starts of ${weightSpan} (affordable-cohort starts left out) in each prototype: ${priced.typed} priced by their permit's construction type (Type V as A, or E under 25 homes; Type III as B; Type I as C, D or between them) and ${priced.binned} with no recorded type binned by stories and homes. `) +
     `Per prototype: ${weightText}. ` +
-    `Left out: ${unbinned.homes} start${unbinned.homes === 1 ? '' : 's'} with homes not recorded and ${unbinned.stories} of 25 homes or more with stories not recorded. ` +
+    `Left out: ${unbinned.homes} start${unbinned.homes === 1 ? '' : 's'} with homes not recorded and ${unbinned.stories} with stories not recorded where the price needs them (untyped of 25 homes or more, or Type I). ` +
     `typicalUncoveredShare = Σ w_p × uncoveredPerHome ÷ costPerHome = ${sig6(typicalUncoveredShare)}; ` +
     `perCostShare = −(${today.private}) ÷ ${sig6(typicalUncoveredShare)} = ${perCostShare}.`;
   const crossChecksMethod =
@@ -502,6 +588,8 @@ export function marketModel(x: MarketInput): { market: MarketModel; report: Mark
     'calibration.market.recentNoRecord': c.noRecord,
     'calibration.market.recentUnknown': c.unknown,
     'calibration.market.weightStarts': nBinned,
+    'calibration.market.typedStarts': priced.typed,
+    'calibration.market.binnedStarts': priced.binned,
     'calibration.market.unbinnedHomes': unbinned.homes,
     'calibration.market.unbinnedStories': unbinned.stories
   };
@@ -515,6 +603,7 @@ export function marketModel(x: MarketInput): { market: MarketModel; report: Mark
       years,
       weights,
       unbinned,
+      priced,
       equalWeights,
       typicalUncoveredShare,
       typicalCostOverValue,

@@ -507,7 +507,10 @@ describe('deriveProjects: values', () => {
       issued_day: day('2021-02-01'),
       construction_day: day('2021-05-03'),
       complete_day: null,
-      status_day: day('2021-02-01')
+      status_day: day('2021-02-01'),
+      proposed_stories: 6,
+      valuation: 3_000_000,
+      construction_type: null
     });
     const g = r.permits.find((p) => p.permit_number === '201801010007')!;
     expect(g).toMatchObject({ live: false, superseded: false, complete_day: day('2019-06-01') });

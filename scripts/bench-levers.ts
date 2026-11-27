@@ -1,17 +1,14 @@
 // `npx tsx scripts/bench-levers.ts <datasetDir>` (sim-page plan Task 11): resolve three citywide
 // brushes on a built dataset read from disk, each as a zoning rule (max(FZP, N), uncapped where it
-// raises), then time the touched-lot yield recompute, the way
-// the timeline host runs it (resolveEnvelopes -> allNeeds -> createYieldRecompute -> fillNeeds ->
-// applyLevers). Not part of the bundle; prints a Markdown table.
-import { readFileSync, statSync } from 'node:fs';
+// raises), then time the steps the timeline host runs (resolveEnvelopes -> applyLevers ->
+// precomputeOf). A lot's homes at any envelope are its options' (options.bin), so no step reads
+// parcel chunks. Not part of the bundle; prints a Markdown table.
+import { readFileSync } from 'node:fs';
 import { cpus, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { parseManifest } from '../src/lib/data/manifest';
-import type { ParcelId, ParcelRecord } from '../src/lib/data/parcel';
-import { decodeParcelChunk } from '../src/lib/data/parcel-chunk';
-import { scenarioRecordOf } from '../src/lib/data/scenario-codec';
-import { scenarioYield } from '../src/lib/data/scenario-yield';
+import type { ParcelId } from '../src/lib/data/parcel';
 import { decodeTransit } from '../src/lib/data/transit-codec';
 import { applyLevers } from '../src/lib/sim/levers/apply';
 import {
@@ -22,13 +19,9 @@ import {
   type BrushData,
   type BrushQuery
 } from '../src/lib/sim/levers/brushes';
-import {
-  createTableRecompute,
-  createYieldRecompute,
-  type GrossCache
-} from '../src/lib/sim/levers/recompute';
-import { allNeeds, fillNeeds, resolveEnvelopes } from '../src/lib/sim/levers/resolve';
+import { resolveEnvelopes } from '../src/lib/sim/levers/resolve';
 import { DEFAULT_LEVERS, type SimLevers } from '../src/lib/sim/levers/types';
+import { precomputeOf } from '../src/lib/sim/world/input/build';
 import { loadSimInput, simInputUrls } from '../src/lib/sim/world/input/load';
 
 /** A brush compiled to one rule: every lot it resolves takes max(FZP, stories). */
@@ -50,7 +43,7 @@ async function main(): Promise<number> {
     return join(dir, url.slice(prefix.length));
   };
   const urls = simInputUrls(manifest);
-  if (!urls?.policy) throw new Error('manifest has no policy.bin');
+  if (!urls?.policy || !urls.options) throw new Error('manifest has no policy.bin or options.bin');
   const bytes = (url: string) => {
     const b = readFileSync(pathOf(url));
     return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
@@ -70,12 +63,11 @@ async function main(): Promise<number> {
       warn: (msg) => console.warn(`[load] ${msg}`)
     },
     urls,
-    () => false,
-    { policy: true }
+    () => false
   );
   if (!('fzp' in loaded)) throw new Error(`load failed: ${loaded.code}: ${loaded.message}`);
   const parcels = loaded.fzp.parcels;
-  const policy = loaded.policy!;
+  const policy = loaded.policy;
   const data: BrushData = {
     parcels,
     policy,
@@ -86,7 +78,6 @@ async function main(): Promise<number> {
   };
   console.log(`loaded ${manifest.datasetVersion} in ${ms(performance.now() - tLoad)} ms`);
 
-  const chunkUrl = new Map(manifest.chunks.map((c) => [c.cellId, c.url]));
   const catalog = brushCatalog(data);
   const rh1 = catalog.districts.find((d) => d.family === 'RH-1');
   if (!rh1) throw new Error('no RH-1 family in the catalog');
@@ -108,9 +99,9 @@ async function main(): Promise<number> {
     }
   ];
 
-  const ctx = { parcels, policy };
+  const ctx = { parcels, policy, options: loaded.options };
   const asOf = loaded.fzp.asOf;
-  /** One brush, measured: a fresh lot index and gross cache each time (cold data, not cold JIT). */
+  /** One brush, measured: a fresh lot index each time (cold data, not cold JIT). */
   const measure = (b: Brush): string[] => {
     // a fresh lot index each time (the host builds one per session)
     const t0 = performance.now();
@@ -123,74 +114,24 @@ async function main(): Promise<number> {
 
     const t1 = performance.now();
     const resolution = resolveEnvelopes(ctx, levers, asOf);
-    const needs = allNeeds(resolution);
     const envMs = performance.now() - t1;
 
-    // the cells the recompute waits on, then their chunks as the loader would fetch them
-    const records = new Map<ParcelId, ParcelRecord>();
-    const loadedCells = new Set<string>();
-    const deps = {
-      record: (id: ParcelId) => records.get(id),
-      cellLoaded: (c: string) => loadedCells.has(c),
-      now: () => performance.now()
-    };
-    const gross: GrossCache = new Map();
-    const recompute = createYieldRecompute(parcels, needs, deps, gross);
-    const cells = recompute.cellsNeeded();
-    let chunkBytes = 0;
-    for (const c of cells) {
-      const p = pathOf(chunkUrl.get(c)!);
-      chunkBytes += statSync(p).size;
-      for (const r of decodeParcelChunk(JSON.parse(readFileSync(p, 'utf8')))) records.set(r.id, r);
-      loadedCells.add(c);
-    }
-
     const t2 = performance.now();
-    if (!recompute.step(Infinity)) throw new Error('recompute did not finish');
-    const recomputeMs = performance.now() - t2;
+    const li = applyLevers(loaded.fzp, ctx, levers, resolution);
+    const applyMs = performance.now() - t2;
 
-    // The scenarioYield share, estimated: replay every gross the recompute computed (the cache
-    // holds them). The replay runs on warmer code and caches but without the recompute's
-    // interleaving, so "other" (recompute minus replay) can be off in either direction.
     const t3 = performance.now();
-    for (const key of gross.keys()) {
-      const [row, s] = key.split(':').map(Number);
-      const rec = records.get(parcels.id[row] as ParcelId);
-      if (rec) scenarioYield(scenarioRecordOf(parcels, row, rec), s, null);
-    }
-    const yieldMs = performance.now() - t3;
-
-    const t4 = performance.now();
-    const filled = fillNeeds(resolution, recompute.result());
-    applyLevers(loaded.fzp, ctx, levers, filled);
-    const applyMs = performance.now() - t4;
-
-    // The same needs from the pipeline-built gross table (one unsliced step), if any.
-    let tableMs: string | null = null;
-    if (loaded.gross) {
-      const t5 = performance.now();
-      const tr = createTableRecompute(parcels, needs, loaded.gross, {
-        now: () => performance.now()
-      });
-      if (!tr.step(Infinity)) throw new Error('table recompute did not finish');
-      tableMs = ms(performance.now() - t5);
-    }
+    precomputeOf(li.plan);
+    const precomputeMs = performance.now() - t3;
 
     return [
       b.name,
       lotRows.length.toLocaleString('en-US'),
       ms(resolveMs),
       ms(envMs),
-      needs.length.toLocaleString('en-US'),
-      cells.length.toLocaleString('en-US'),
-      `${(chunkBytes / 1e6).toFixed(1)} MB`,
-      ms(recomputeMs),
-      ms(yieldMs),
-      ms(Math.max(0, recomputeMs - yieldMs)),
-      gross.size.toLocaleString('en-US'),
-      recompute.missing.length.toLocaleString('en-US'),
       ms(applyMs),
-      ...(tableMs === null ? [] : [tableMs])
+      ms(precomputeMs),
+      li.capacity.plan.toLocaleString('en-US')
     ];
   };
   // A warm-up pass over every brush first, so each measured brush runs on a warmed-up JIT.
@@ -202,16 +143,9 @@ async function main(): Promise<number> {
     'Lots',
     'Resolve ms',
     'resolveEnvelopes ms',
-    'Needs (unique)',
-    'Cells',
-    'Chunk bytes',
-    'Recompute ms',
-    'scenarioYield ms (est.)',
-    'Other ms (est.)',
-    'Gross computed',
-    'Missing',
-    'fillNeeds + applyLevers ms',
-    ...(loaded.gross ? ['Table ms'] : [])
+    'applyLevers ms',
+    'precomputeOf ms',
+    'Capacity'
   ];
   console.log(`\n| ${head.join(' | ')} |`);
   console.log(`| ${head.map(() => '---').join(' | ')} |`);

@@ -25,6 +25,11 @@ export interface PolicyFrame {
   speedNew: { from: Day; scale: StageScale }[];
   /** The shift in the log-odds of starting. */
   market: number;
+  /**
+   * The cost step in force on the month's first day (`choiceStepAt` of the view's choice): start
+   * odds read `view.pre.byStep[choiceStep].logit`. Absent: the step in force at the dataset date.
+   */
+  choiceStep?: number;
   finance: FinanceFrame | null;
   /**
    * A log-odds shift per lot added to `z + market` for market starts (the parking a start no longer

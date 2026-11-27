@@ -69,7 +69,9 @@ that is not on offer moves nothing. (Spec 4.3's letter is kept: the application 
 first-day bundle and is not re-made on joining.)
 
 **Memo of prices.** The bundle is priced with `fundBundle`, memoised per input by (kind, programme
-set, prototype id; the affordable price ignores the prototype). The engine always passes items in
+set, prototype; the affordable price ignores the prototype). A funded latent's prototype is its
+option's (`optionPrototype` on the price step of the cost step its size was drawn at), one object
+per (PriceKey, price step), so the memo keys on both (`FinanceIndex.price`). The engine always passes items in
 `finance.programmes` order, so a set fixes the order and the memo key may be the set.
 
 ## What `off` does
@@ -345,8 +347,8 @@ projects; an ordinary start in such a run has neither.
   counterpart: those homes would have been built without the money.
 
 **Re-pricing `funding.programmes` gives the same dollars.** `finance-score` prices
-`funding.programmes` again with `fundBundle`, at `prototypeFor(revisions[0].stories,
-revisions[0].units)`, the start size the engine priced. Under the tier rule a grant with a share
+`funding.programmes` again with `fundBundle` for an affordable project, whose price reads
+`AFFORDABLE` and no prototype, so any prototype gives the engine's dollars. Under the tier rule a grant with a share
 above 0 pays exactly 0 only when nothing remains for its tier, and then every grant of its tier
 and of later tiers pays 0 too, so dropping it changes no other item; loans and guarantees do not
 depend on the set. The listed programmes keep `finance.programmes` order, so the floating-point

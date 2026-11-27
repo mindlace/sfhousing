@@ -74,7 +74,7 @@ export function stepShadows(ctx: StepCtx): void {
     const g = timeline.frameAt(Math.min(s.frameMonth, month));
     const existing = line.shadowExisting[i];
     const uS = drawOn(streamOf(sh, lotEntity(statics, lot), k), P.SIZE, 0);
-    const size = sizeIn(statics, g.view, g.calibration, lot, existing, uS);
+    const size = sizeIn(g.view, g.choiceStep, lot, existing, uS);
     if (size !== null) ctx.displace(line.shadowRow[i], lot, s.day, size.units - existing);
   }
   dropShadows(line, ended);

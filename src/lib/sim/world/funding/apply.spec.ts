@@ -102,6 +102,9 @@ function application(lot: number, kind: number, keyDay: number): Application {
     key: lineKey(keyDay, statics.rank[lot], kind === KIND_AFFORDABLE ? 'affordable' : 'market'),
     bundle: 'p',
     f: 0,
+    btype: 0,
+    cstep: 0,
+    price: '',
     units: 1,
     stories: 1,
     level: 1,
@@ -245,7 +248,7 @@ describe('the funding line', () => {
 
   it('apply records lot, kind, applied day inside the month, bundle ids, size, level and key', () => {
     let checked = 0;
-    for (const seed of [1, 2, 3]) {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
       const sys = createFundingSystem();
       const ctxs: StepCtx[] = [];
       const spy: FundingSystem = {

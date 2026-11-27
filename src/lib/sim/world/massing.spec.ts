@@ -2,15 +2,18 @@
 import { describe, expect, it } from 'vitest';
 import type { ParcelId } from '$lib/data/parcel';
 import { createLru } from '../lru';
-import { generate, generateForUnits } from '$lib/generator';
+import { fnv1a32, generate, generateForm, generateForUnits } from '$lib/generator';
+import { scenarioRecordOf } from '$lib/data/scenario-codec';
+import { BUILDING_FORMS } from '$lib/sim/choice/types';
 import { parseCalibration } from '$lib/timelapse/model';
 import { parseProjectsFile, type InFlightProject } from '$lib/timelapse/projects';
 import type { Calibration } from '$lib/timelapse/types';
 import miniCalibrationJson from './fixtures/mini-calibration.json';
+import { miniOptions } from './fixtures/mini-options';
 import { miniCity } from './fixtures/mini-parcels';
 import { MINI_AS_OF, MINI_PROJECTS, miniProjectsJson } from './fixtures/mini-projects';
 import { buildSimInput } from './input/build';
-import { districtOptsFor, pipeKey, type MassingCtx } from './massing';
+import { districtOptsFor, massingFor, pipeKey, simKey, type MassingCtx } from './massing';
 import type { Schedule, SimInput } from './input/types';
 
 const P = MINI_PROJECTS;
@@ -18,7 +21,8 @@ const city = miniCity();
 const base: SimInput = buildSimInput({
   parcels: city.parcels,
   projects: parseProjectsFile(miniProjectsJson(), { onInvalid() {} }),
-  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration
+  calibration: parseCalibration(structuredClone(miniCalibrationJson) as unknown) as Calibration,
+  options: miniOptions(city)
 });
 
 /** `base` with these envelope stories, row edits and districtMaxStories. */
@@ -47,6 +51,7 @@ const ctxOf = (input: SimInput): MassingCtx => ({
   memo: createLru(10),
   gen: generate,
   genForUnits: generateForUnits,
+  genForm: generateForm,
   logOnce() {}
 });
 
@@ -84,7 +89,10 @@ describe('buildSimInput districtMaxStories', () => {
   it('is the projects.json districtMaxStories.stories, else null', () => {
     const file = parseProjectsFile(miniProjectsJson(), { onInvalid() {} });
     const calibration = base.calibration;
-    expect(buildSimInput({ parcels: city.parcels, projects: file, calibration })).toMatchObject({
+    const options = base.options;
+    expect(
+      buildSimInput({ parcels: city.parcels, projects: file, calibration, options })
+    ).toMatchObject({
       districtMaxStories: file.districtMaxStories?.stories ?? null
     });
     const withMax: typeof file = {
@@ -92,12 +100,14 @@ describe('buildSimInput districtMaxStories', () => {
       districtMaxStories: { stories: 14, n: 9, provenance: file.rhnaCompletedNet.provenance }
     };
     expect(
-      buildSimInput({ parcels: city.parcels, projects: withMax, calibration }).districtMaxStories
+      buildSimInput({ parcels: city.parcels, projects: withMax, calibration, options })
+        .districtMaxStories
     ).toBe(14);
     const without = { ...file };
     delete without.districtMaxStories;
     expect(
-      buildSimInput({ parcels: city.parcels, projects: without, calibration }).districtMaxStories
+      buildSimInput({ parcels: city.parcels, projects: without, calibration, options })
+        .districtMaxStories
     ).toBeNull();
   });
 });
@@ -190,5 +200,96 @@ describe('pipeKey', () => {
     expect(pipeKey(5, 40, 6, ['b', 'a'], { storyLimit: 9, openSpaceShare: 0.25 })).toBe(
       'p|5|40|6|a,b|9|-|0.25'
     );
+  });
+});
+
+describe('a simulated project draws its chosen option', () => {
+  const t = base.options;
+  const parcels = base.parcels;
+  const formOf = (j: number) => BUILDING_FORMS[t.form[j]];
+
+  /** A simulated schedule started at option f of lot i. */
+  const simAt = (i: number, f: number): Schedule => {
+    const j = t.offset[i] + f;
+    return sched({
+      projectId: `sim:${parcels.id[i]}:0`,
+      origin: 'simulated',
+      parcelIds: [parcels.id[i]],
+      multiPhase: false,
+      revisions: [{ day: MINI_AS_OF, units: t.homes[j], stories: t.stories[j], option: f }]
+    });
+  };
+
+  /** Lots with a loaded record, in row order. */
+  const lots = [...Array(parcels.count).keys()].filter((i) => city.records.has(parcels.id[i]));
+
+  it("has the option's form, stories and plates, and holds its homes", () => {
+    let towers = 0;
+    let checked = 0;
+    for (const i of lots.slice(0, 40)) {
+      const id = parcels.id[i];
+      const rec = scenarioRecordOf(parcels, i, city.records.get(id)!);
+      for (let f = 0; f < t.offset[i + 1] - t.offset[i]; f++) {
+        const j = t.offset[i] + f;
+        const m = massingFor(simAt(i, f), 0, ctxOf(base));
+        const want = generateForm(rec, formOf(j), t.stories[j], fnv1a32(id));
+        expect(want).not.toBeNull();
+        expect(m).toEqual({ ...want!.building, source: 'scenario' });
+        if (!('parts' in m)) throw new Error('no building drawn');
+        expect(m.units).toBe(t.homes[j]);
+        expect(m.stories).toBe(t.stories[j]);
+        expect(m.plates ?? 0).toBe(t.plates[j]);
+        if (t.plates[j] > 0) towers++;
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(20);
+    expect(towers).toBeGreaterThan(0);
+  });
+
+  it('two options of different forms at the same stories get different keys and buildings', () => {
+    let pairs = 0;
+    for (const i of lots) {
+      const from = t.offset[i];
+      for (let a = from; a < t.offset[i + 1]; a++) {
+        for (let b = a + 1; b < t.offset[i + 1] && t.stories[b] === t.stories[a]; b++) {
+          if (t.form[a] === t.form[b]) continue;
+          const id = parcels.id[i];
+          const ka = simKey(id, formOf(a), t.stories[a], t.plates[a]);
+          const kb = simKey(id, formOf(b), t.stories[b], t.plates[b]);
+          expect(ka).not.toBe(kb);
+          const ctx = ctxOf(base);
+          massingFor(simAt(i, a - from), 0, ctx);
+          massingFor(simAt(i, b - from), 0, ctx);
+          expect(ctx.memo.get(ka)).toBeTruthy();
+          expect(ctx.memo.get(kb)).toBeTruthy();
+          expect(ctx.memo.get(ka)).not.toBe(ctx.memo.get(kb));
+          pairs++;
+        }
+      }
+      if (pairs >= 5) break;
+    }
+    expect(pairs).toBeGreaterThan(0);
+  });
+
+  it('a simulated revision without an option is drawn as its footprint', () => {
+    const logged: string[] = [];
+    const ctx = { ...ctxOf(base), logOnce: (_: string, m: string) => void logged.push(m) };
+    const s = simAt(lots[0], 0);
+    s.revisions = [{ day: MINI_AS_OF, units: 4, stories: 2 }];
+    expect('parts' in massingFor(s, 0, ctx)).toBe(false);
+    expect(logged.join()).toMatch(/no option/);
+  });
+
+  it("a recorded project's massing is unchanged: generateForUnits at its stories", () => {
+    const s = sched({
+      multiPhase: false,
+      revisions: [{ day: MINI_AS_OF, units: 120, stories: 6 }]
+    });
+    const recs = s.parcelIds.map((id) => city.records.get(id)!);
+    const ctx = ctxOf(base);
+    const want = generateForUnits(recs, 120, 6, fnv1a32(s.projectId), 6, districtOptsFor(s, ctx));
+    expect(want).not.toBeNull();
+    expect(massingFor(s, 0, ctx)).toEqual({ ...want!, source: 'pipeline' });
   });
 });

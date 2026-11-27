@@ -171,6 +171,19 @@ npm run bench:map -- -g "run with drops|purchase to ready"   # fixture-0: a smok
 | Apple M5 Pro (macOS 27.2.1), head 52acb0b5 (main 083fb7ae merged), run 1 | 2026-11-26 | live `2026-11-25-76c90397` | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=678ms,929ms,877ms median=877ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.14 |
 | same, run 2                                                              | 2026-11-26 | same                       | purchase to ready | `bench:map case=buy-to-ready dataset=2026-11-25-76c90397 node=stop-rail samples=798ms,837ms,885ms median=837ms buyS=4000ms`     | median below `buyS`, DPR 2, Metal, load 1.32 |
 
+### The building-choice build (2026-11-27, dataset `2026-11-27-247eaa0b`)
+
+Apple M5 Pro, 15 cores, branch `feat/building-choice`, the dataset loaded into local R2 with `npm run pipeline -- upload 2026-11-27-247eaa0b --local`, port 4173 free. Both cases passed (`SFH_BENCH_DATASET=2026-11-27-247eaa0b npm run bench:map -- -g "run with drops|purchase to ready"`, 2 passed, DPR 2, Metal). A first pass ran right after the local upload at one-minute load 7 to 11 and is not of record; the pass of record began at load 1.93 (2.03 at its end), under the bar of 2.
+
+| Case                                                     | Line                                                                            | Label                                                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| run with drops (first pass, load 7 to 11, not of record) | `frames=3278 dropped=74302 collected=29806 p50=6.1ms p95=7.1ms bar=16.7ms PASS` | ballpark                                                                                |
+| run with drops                                           | `frames=3277 dropped=74302 collected=29811 p50=6.1ms p95=7.4ms bar=16.7ms PASS` | quiet, of record                                                                        |
+| purchase to ready (first pass, not of record)            | `node=stop-rail samples=815ms,779ms,747ms median=779ms buyS=4000ms`             | ballpark                                                                                |
+| purchase to ready                                        | `node=stop-rail samples=828ms,805ms,862ms median=828ms buyS=4000ms`             | quiet, of record; median below `buyS`, in line with the 2026-11-26 rows' 837 and 877 ms |
+
+`precomputeOf` on the same dataset (`node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir pipeline/out/2026-11-27-247eaa0b --case compile --runs 5`, its `precomputeViewMs`, fresh input objects, load 1.2): median **58.4 ms**, p90 63.5 ms, max 63.5 ms. The pre-branch figure is the 46.4 ms accepted in [ensemble-runner.md](ensemble-runner.md) (the 43 to 45 ms of [policy-timeline.md](policy-timeline.md) on the same city): Task 0 deferred its own baseline on a busy machine, so these are the baselines. 58.4 ms is 1.26 times 46.4 ms, within the 1.5 times bar (69.6 ms). No compact options.bin (Task 9c) is needed on this evidence.
+
 ### Budgets held to main (2026-11-26, main 083fb7ae)
 
 Apple M5 Pro; main `083fb7ae` against branch `dd688b51`, alternated main-1, branch-1, main-2, branch-2; one-minute load 1.54, 1.77, 1.89, 1.58 at the starts. Command: `npx vitest --run --project perf --project client-perf --no-file-parallelism --maxWorkers=1`. Figures are run 1, run 2. A budget is held to main: the branch at most 10% above main's figure on the mean of the two runs. Where main misses its own bar, that comparison is the whole bar: the written bar is not restated, its test stays failing on both trees, and the miss is main's, not this build's.

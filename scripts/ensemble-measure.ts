@@ -1,5 +1,5 @@
 // `node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <datasetDir>
-// --case <name> [--extra <dir>] [--no-gross] [--no-money] [--no-copies] [--variant market|zoning]
+// --case <name> [--extra <dir>] [--no-money] [--no-copies] [--variant market|zoning]
 // [--runs 3] [--worlds 1] [--months 480]`: ensemble-runner's measurements before building (plan
 // Task 1).
 // A prototype of the runner's fill loop (spec rules 5 to 8 and S16) over the step engine on a
@@ -32,12 +32,6 @@ import {
   resolveBrushRows,
   type BrushData
 } from '../src/lib/sim/levers/brushes';
-import {
-  createTableRecompute,
-  createYieldRecompute,
-  type GrossCache,
-  type YieldRecompute
-} from '../src/lib/sim/levers/recompute';
 import { decodeTransit } from '../src/lib/data/transit-codec';
 import { loadSimInput, simInputUrls, type Loaded } from '../src/lib/sim/world/input/load';
 import { massingFor } from '../src/lib/sim/world/massing';
@@ -172,8 +166,7 @@ async function loadLive(dir: string, extra: string | null): Promise<Live> {
       warn: () => {}
     },
     urls,
-    () => false,
-    { policy: true }
+    () => false
   );
   if (!('fzp' in loaded)) throw new Error(`load failed: ${loaded.code}: ${loaded.message}`);
   const records = dirRecords(dir);
@@ -196,7 +189,7 @@ async function loadLive(dir: string, extra: string | null): Promise<Live> {
     loadMs,
     brushData: () => ({
       parcels: loaded.fzp.parcels,
-      policy: loaded.policy!,
+      policy: loaded.policy,
       transit: decodeTransit(
         JSON.parse(readFileSync(fileOf(manifest.transit, 'transit.json'), 'utf8'))
       ),
@@ -214,47 +207,11 @@ function unfunded(input: SimInput): SimInput {
   return rest;
 }
 
-/** Recompute-step timings, filled by the `YieldSource` below. */
-interface Seam {
-  recompute: number[];
-}
-
-function yieldsOf(live: Live, noGross: boolean, seam: Seam | null): CompileCtx['yields'] {
-  const gross = live.loaded.gross;
-  const timed = (job: YieldRecompute): YieldRecompute => {
-    if (!seam) return job;
-    const inner = job.step.bind(job);
-    return Object.assign(Object.create(job) as YieldRecompute, {
-      step(budgetMs: number) {
-        const t = now();
-        const done = inner(budgetMs);
-        seam.recompute.push(now() - t);
-        return done;
-      }
-    });
-  };
-  return {
-    recompute: (parcels, needs) =>
-      timed(
-        !noGross && gross
-          ? createTableRecompute(parcels, needs, gross, { now })
-          : createYieldRecompute(
-              parcels,
-              needs,
-              { record: (id) => live.byId.get(id), cellLoaded: () => true, now },
-              new Map() as GrossCache
-            )
-      ),
-    failedCells: () => []
-  };
-}
-
-function ctxOf(live: Live, input: SimInput, months: number, yields: CompileCtx['yields']) {
+function ctxOf(live: Live, input: SimInput, months: number) {
   const ctx: CompileCtx = {
     input,
-    layers: { parcels: input.parcels, policy: live.loaded.policy! },
+    layers: { parcels: input.parcels, policy: live.loaded.policy, options: live.loaded.options },
     windowMonths: months,
-    yields,
     now
   };
   return ctx;
@@ -410,7 +367,7 @@ interface Session {
 
 /** Both compiles, run to the end; `scoreStaticsOf` on each (plan D3). */
 function compileBoth(live: Live, input: SimInput, doc: SimPolicy4, months: number) {
-  const ctx = ctxOf(live, input, months, yieldsOf(live, false, null));
+  const ctx = ctxOf(live, input, months);
   const planDoc = reconciled(doc, input);
   const lots = Object.fromEntries(queriesOf4(planDoc).map((q) => [q.key, [] as ParcelId[]]));
   const plan = compileFully(planDoc, lots, ctx, 'plan');
@@ -767,7 +724,7 @@ function caseReplan(c: Common, variant: 'market' | 'zoning') {
     );
     lots = m.lots;
   }
-  const ctx = ctxOf(c.live, input, c.months, yieldsOf(c.live, false, null));
+  const ctx = ctxOf(c.live, input, c.months);
   const tc = now();
   const plan = compileFully(doc, lots, ctx, 'plan');
   const cmp = comparisonOf(doc);
@@ -822,18 +779,17 @@ function caseReplan(c: Common, variant: 'market' | 'zoning') {
 }
 
 /** Case 6: compiles of (a) one metro rule and (b) 500 painted lots, from month 1. */
-function caseCompile(c: Common, noGross: boolean, runs: number) {
+function caseCompile(c: Common, runs: number) {
   const out: Record<string, unknown> = {};
   for (const name of ['metro', 'painted'] as const) {
     const one = () => {
-      const seam: Seam = { recompute: [] };
       // a fresh input object: nothing memoised by input identity can hit
       const input: SimInput = { ...c.input, parcels: { ...c.input.parcels } };
-      const ctx = ctxOf(c.live, input, c.months, yieldsOf(c.live, noGross, seam));
+      const ctx = ctxOf(c.live, input, c.months);
       const { doc, lots, resolveMs } =
         name === 'metro' ? metroDoc(c.live, input, 1) : paintedDoc(input);
       const r = compileFully(doc, lots, ctx, 'plan');
-      return { ...r, resolveMs, seam };
+      return { ...r, resolveMs };
     };
     one(); // warm-up
     const rs = Array.from({ length: runs }, one);
@@ -849,16 +805,7 @@ function caseCompile(c: Common, noGross: boolean, runs: number) {
         r1
       ),
       longestStep20Ms: stats(maxSlice, r1),
-      slicesOver50ms: rs.map((r) => r.slices.filter((x) => x > 50).length),
-      recomputeStepLongestMs: stats(
-        rs.map((r) => Math.max(0, ...r.seam.recompute)),
-        r1
-      ),
-      recomputeStepTotalMs: stats(
-        rs.map((r) => r.seam.recompute.reduce((a, b) => a + b, 0)),
-        r1
-      ),
-      recomputeSteps: rs[0].seam.recompute.length
+      slicesOver50ms: rs.map((r) => r.slices.filter((x) => x > 50).length)
     };
   }
   // the precomputeView seam is today's precomputeOf, whole: timed on fresh input objects
@@ -870,11 +817,7 @@ function caseCompile(c: Common, noGross: boolean, runs: number) {
     if (k > 0) pre.push(now() - t);
   }
   out.precomputeViewMs = stats(pre, r1);
-  return {
-    case: 'compile',
-    yields: noGross ? 'chunk records (--no-gross)' : 'gross table',
-    ...out
-  };
+  return { case: 'compile', ...out };
 }
 
 /** Case 7: open to the first flushed cells and the first final calendar month (prototype). */
@@ -884,7 +827,7 @@ async function caseFirst(dir: string, extra: string | null, money: boolean, worl
   const live = await loadLive(dir, extra);
   const input = money ? live.funded : unfunded(live.funded);
   const tLoad = now() - t0;
-  const ctx = ctxOf(live, input, months, yieldsOf(live, false, null));
+  const ctx = ctxOf(live, input, months);
   const planDoc = reconciled(DEFAULT_POLICY4, input);
   const cp = compileTimeline(planDoc, {}, ctx, 'plan');
   const cmp = comparisonOf(planDoc);
@@ -1411,7 +1354,7 @@ async function main(): Promise<number> {
   if (!dir || !which) {
     console.error(
       'usage: node --expose-gc node_modules/.bin/tsx scripts/ensemble-measure.ts --dir <dataset> ' +
-        '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume|host [--extra <dir>] [--no-gross] ' +
+        '--case ensemble|replan|compile|first|flush|flush-warm|sizes|resume|host [--extra <dir>] ' +
         '[--no-money] [--money-set baseline|bench|benchset] [--no-copies] [--copies 0,240] [--at 240,470] [--variant market|zoning] [--runs 3] [--worlds 1] [--months 480]'
     );
     return 2;
@@ -1472,13 +1415,13 @@ async function main(): Promise<number> {
       doc
     };
     console.error(
-      `${live.label}: ${input.parcels.count} parcels, gross table ${live.loaded.gross ? 'yes' : 'no'}, ` +
+      `${live.label}: ${input.parcels.count} parcels, ` +
         `money ${money ? `${input.finance?.pools.length ?? 0} pools` : 'off'}, load ${r1(live.loadMs)} ms`
     );
     if (which === 'ensemble') result = caseEnsemble(c);
     else if (which === 'replan')
       result = caseReplan(c, opt('--variant') === 'zoning' ? 'zoning' : 'market');
-    else if (which === 'compile') result = caseCompile(c, has('--no-gross'), num('--runs', 3));
+    else if (which === 'compile') result = caseCompile(c, num('--runs', 3));
     else if (which === 'flush') result = caseFlush(c, false);
     else if (which === 'flush-warm') result = caseFlush(c, true);
     else if (which === 'sizes') result = caseSizes(c);

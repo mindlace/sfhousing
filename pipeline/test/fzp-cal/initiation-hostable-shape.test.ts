@@ -46,7 +46,8 @@ const OTHER_BIN: Partial<Record<FeatureId, number>> = {
   yearBuilt: 3,
   storiesGap: 4,
   rentControlLikely: 0,
-  landUseClass: 1
+  landUseClass: 1,
+  choiceMargin: 2
 };
 
 /**

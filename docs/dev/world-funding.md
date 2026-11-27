@@ -16,7 +16,7 @@ tests.
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `system.ts`      | `createFundingSystem()`: the hook methods, each a thin call into the files below.                                                                            |
 | `columns.ts`     | `FundLine`, `FundPools`: the line, spell and shadow tables, the pool counters and money rows; `initFunding`, `fundOf`, row helpers.                          |
-| `clocks.ts`      | The market and affordable funded clocks of a free lot (rules 2 to 5, 7), the size in a view (`sizeIn`). Nothing stored.                                      |
+| `clocks.ts`      | The market and affordable funded clocks of a free lot (rules 2 to 5, 7), the size in a view (`sizeIn`) and its price. Nothing stored.                        |
 | `apply.ts`       | `planLotMonth` (the hook's `planLot`), `applyLots`, `joinLine` (rule 9 order), `remakeRow` (rule 17), `leaveLine` (rule 8), `fundableAny`, the rowless memo. |
 | `serve.ts`       | `serveLine` (rule 10, grouped by default), `awardDay` (rule 11, T17), `fundedStartOf`; `awardRow` is the one award site.                                     |
 | `pools.ts`       | `moneyIn` (rule 12), `commitAward`, `moneyOnEvent` (rule 13), `availableOf`.                                                                                 |
@@ -37,8 +37,10 @@ Frame indices exist only inside a step (`frameMoney`, `rowOf` in `serve.ts`).
 
 **Line rows** (one per waiting application, in line order): `lot`, `kind` (0 market, 1
 affordable), `month` (model month applied, rule 9's first key), `applied` (day), `keyDay`
-(Int32, capped at `NEVER_KEY_DAY`), `key` (`lineKey`), `bundle`, `f`, `units`, `stories`,
-`level`, `viewMonth` (whose view gave the size), `gone` (1 = left the line), `seq` (ascending along
+(Int32, capped at `NEVER_KEY_DAY`), `key` (`lineKey`), `bundle`, `f` (Uint16, the option's index in
+the lot's row, up to 1,022), `btype` (its construction type code), `cstep` (the cost step the size
+was drawn at), `price` (a market row's price tag, `${PriceKey}@${price step}`; '' for affordable),
+`units`, `stories`, `level`, `viewMonth` (whose view gave the size), `gone` (1 = left the line), `seq` (ascending along
 the line, kept by compaction). Line scalars: `n`, `nextSeq`, `version`, `appliedThrough` (the last
 month whose `apply` ran). Line record of the count of homes waiting (not per-row, so `grow` and
 `compactLine` never touch it): `waitHomes` (Int32, `[m]` = homes waiting at the end of model
@@ -46,6 +48,17 @@ month m, `[0]` = 0) and `waitThrough` (the last month recorded). `waitingAt(worl
 `columns.ts` reads it. Side tables on the line: spells (`spellLot`, `spellKind`, `spellK`,
 `spellR`, sorted by lot then kind: a respelled kind's attempt and the day before its new spell)
 and shadows (`shadowLot`, `shadowRow`, `shadowK`, `shadowR`, `shadowExisting`, `shadowMonth`).
+
+**Size and price of a line row** (building-choice). A latent's size is an option of its lot's row
+(`sizeIn`): a market latent's is the developer's draw on the attempt's SIZE stream at the frame's
+cost step, as an ordinary start draws it; an affordable latent's is the same draw under
+`affordableRule` 'market', and the first option with the most homes (`mostHomes`) under
+'most-homes'. The row is priced by its option (`line-price.ts`): `optionPrototype` of its type,
+stories and homes on the price step in force at `cstep`, the cost step its size was drawn at
+(`frameAt(viewMonth).choiceStep`, else the dataset date's). Serving, closing and the clocks all
+read that price, never the binning, and serving on a later day never re-prices the row. The
+line index groups market rows by their price tag, so `FinanceIndex.price` memoises one price per
+(PriceKey, price step).
 
 **Pools**: one row per pool id (`id`, `received`, `committed`, `spentGrant`, `outLoan`,
 `lostLoan`, `lostGuarantee`, `moneyDay`, `moneyMonth`: the latest money that reached it;
@@ -87,7 +100,7 @@ writing**, or the index goes stale silently (a write without a bump is not detec
   that moves after it waits for next month. Money returned during the scan (a release or repayment
   by an award's chain) waits for next month's scan too, and does not set the pool's money day;
   commits and losses apply at once (`holdingReturns`, `heldOf` in `pools.ts`). Grouped serving (rule 1's decision): per award group
-  (kind, bundle, market prototype) the largest passing size H, then the earliest member at most H
+  (kind, bundle, market price tag) the largest passing size H, then the earliest member at most H
   in line order, confirmed with `awardPasses`; every H is dropped after an award.
 - **Award rule** (rule 16 as amended 2026-11-25): `awardSet` and `awardPasses`
   (`rules/funding.ts`) leave every programme of a short pool out, in rounds, and award what is
@@ -319,7 +332,7 @@ change to world-core's hook, results identical:
 - **The rowless memo** (`apply.ts`, `rowlessBits`). For a free lot with **no lot row** (free since
   the dataset date, attempt 0), `fundableAny(ctx, asOf, kind, lot)` reads only the timeline, the
   month and the lot's static data: the frame of `first = min(monthOfDay(asOf, asOf + 1), month)`
-  and of each change in `(first, month]` (their view's chance and yields, their money's offers and
+  and of each change in `(first, month]` (their view's chance and largest allowed option, their money's offers and
   least `minHomes`). No draw, no seed, nothing of the world: the same answer in every world of the
   timeline. **Keyed on** the `PolicyTimeline` object (a `WeakMap`), then on `(asOf, lot count,
 first, last)`, `last` being the latest change in `(first, month]`: those fix the frames read. A

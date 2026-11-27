@@ -14,6 +14,10 @@ import { lotEntity, ordinaryStart } from '../rates';
 import { staticsOf, type Statics } from '../statics';
 import { changingAt, frameOf, limited } from '../test/timeline';
 import { STABLE_FROM, kindClock, logSurvival, type Spell } from './clocks';
+import { allowedCount, capFrom, choiceRow, mostHomes, pickOption } from '$lib/sim/choice/choose';
+import type { ChoiceModel } from '$lib/sim/choice/types';
+import type { PolicyFrame, PolicyTimeline } from '../policy/frame';
+import { frameIdOf } from '../policy/intern';
 import { financeFrameOf, fundedMini, oneMoneyTimeline } from './test/fixtures';
 
 type Finance = NonNullable<SimInput['finance']>;
@@ -134,9 +138,9 @@ describe('kindClock', () => {
     const fb = financeIndexOf(b);
     const market = a.programmes.flatMap((g, i) => (g.reach === 'market' ? [i] : []));
     for (const p of PROTOTYPES) {
-      expect(fa.price('market', market, p.id).coverage).toBeGreaterThan(1);
-      expect(fb.price('market', market, p.id).coverage).toBeGreaterThan(
-        fa.price('market', market, p.id).coverage
+      expect(fa.price('market', market, p).coverage).toBeGreaterThan(1);
+      expect(fb.price('market', market, p).coverage).toBeGreaterThan(
+        fa.price('market', market, p).coverage
       );
     }
     const input = fundedMini(a);
@@ -293,5 +297,102 @@ describe('logSurvival', () => {
       prev = r;
     }
     expect(Math.abs(logSurvival(STABLE_FROM + 1e-9) - plain(STABLE_FROM))).toBeLessThan(1e-8);
+  });
+});
+
+describe('the size and price of a funded latent (building-choice Task 10)', () => {
+  /** The mini with `affordableRule` set to `rule`. */
+  function withRule(rule: ChoiceModel['affordableRule']): SimInput {
+    const base = fundedMini();
+    const choice = { ...base.calibration.choice!, affordableRule: rule };
+    return { ...base, calibration: { ...base.calibration, choice } };
+  }
+
+  it("an affordable latent sizes to the most homes under 'most-homes', to the draw under 'market'", () => {
+    for (const rule of ['most-homes', 'market'] as const) {
+      const input = withRule(rule);
+      const t = oneMoneyTimeline(input, input.finance!);
+      const statics = staticsOf(input);
+      const ot = input.options;
+      let sized = 0;
+      let differ = 0;
+      eachSpell(input, 5, input.asOf, (spell, sh) => {
+        const k = kindClock(statics, t, 1, sh, spell, 'affordable');
+        if (k.T === 0 || k.f < 0) return;
+        const view = t.frameAt(k.viewMonth).view;
+        const lot = spell.lot;
+        const allowed = allowedCount(ot, lot, view.parcels.envelopeStories[lot]);
+        const cap = capFrom(view.parcels.fzpCap[lot]);
+        const most = mostHomes(ot, lot, allowed, cap, spell.existing);
+        const cum = new Float32Array(allowed);
+        choiceRow(
+          view.pre.choice,
+          view.pre.choiceStep,
+          lot,
+          allowed,
+          cap,
+          spell.existing,
+          'market',
+          cum
+        );
+        const drawn = pickOption(cum, allowed, drawOn(spell.stream, P.SIZE, 0));
+        expect(k.f).toBe(rule === 'most-homes' ? most : drawn);
+        expect(k.btype).toBe(ot.type[ot.offset[lot] + k.f]);
+        sized++;
+        if (most !== drawn) differ++;
+      });
+      expect(sized).toBeGreaterThan(0);
+      expect(differ).toBeGreaterThan(0);
+    }
+  });
+
+  it('a clock records the cost step of the frame that sized it and prices on that step', () => {
+    const input = fundedMini();
+    const choice = input.calibration.choice!;
+    const step0 = choice.prices[0];
+    const anchors = structuredClone(step0.value.anchors);
+    for (const id of ['A', 'B', 'C', 'D', 'E'] as const) anchors[id].costPerHome *= 1.25;
+    const from = monthFirstDay(input.asOf, 1) + 3;
+    const two: SimInput = {
+      ...input,
+      calibration: {
+        ...input.calibration,
+        choice: { ...choice, prices: [step0, { from, value: { ...step0.value, anchors } }] }
+      }
+    };
+    const base = oneMoneyTimeline(two, two.finance!);
+    const frames = new Map<number, PolicyFrame>();
+    // frames from month 4 read cost step 1, as a compile sets it from the month's first day
+    const t: PolicyTimeline = {
+      frameAt: (m) => {
+        if (m < 4) return base.frameAt(m);
+        let f = frames.get(m);
+        if (f === undefined) {
+          const b = base.frameAt(m);
+          frames.set(m, (f = { ...b, id: frameIdOf(`clocks-step|${b.id}`), choiceStep: 1 }));
+        }
+        return f;
+      },
+      changes: () => [...new Set([...base.changes(), 4])].sort((a, b) => a - b),
+      touched: (m) => (m === 4 ? null : base.touched(m)),
+      readyThrough: () => Number.MAX_SAFE_INTEGER
+    };
+    const statics = staticsOf(two);
+    const seen = [0, 0];
+    eachSpell(two, 3, two.asOf, (spell, sh) => {
+      for (const kind of KINDS) {
+        const k = kindClock(statics, t, 12, sh, spell, kind);
+        if (k.T === 0 || k.proto === null) continue;
+        const cstep = k.viewMonth >= 4 ? 1 : 0;
+        expect(k.cstep).toBe(cstep);
+        const shipped = PROTOTYPES.some((p) => p === k.proto);
+        // step 0 is the shipped anchors; step 1 never is
+        expect(shipped).toBe(cstep === 0 && k.proto.id.length === 1);
+        if (cstep === 1) expect(k.price.endsWith('@1')).toBe(kind === 'market');
+        seen[cstep]++;
+      }
+    });
+    expect(seen[0]).toBeGreaterThan(0);
+    expect(seen[1]).toBeGreaterThan(0);
   });
 });

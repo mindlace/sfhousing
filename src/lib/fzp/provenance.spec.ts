@@ -268,11 +268,14 @@ describe('provenanceSections', () => {
     expect(table.rows[0][0]).toBe(table.rows[1][0]);
   });
 
-  it('renders the size table with whole percents', () => {
-    const [table] = section('src-size').tables;
-    expect(table.rows).toHaveLength(cal.size.fillLevels.length * cal.size.byEnvelope.length);
-    expect(table.rows[0]).toEqual(['Up to 999 stories', '25% of the allowed height', '0%']);
-    expect(table.rows.at(-1)).toEqual(['Up to 999 stories', '100% of the allowed height', '100%']);
+  it('describes the size of new projects by the developer’s choice', () => {
+    const s = section('src-size');
+    expect(s.tables).toEqual([]);
+    expect(s.entries.map((e) => e.id)).toEqual(
+      cal.choice
+        ? ['src-size-model', 'src-size-costs', 'src-size-value', 'src-size-affordable']
+        : []
+    );
   });
 
   it('renders one revision row per stage with shrink and grow shares', () => {
