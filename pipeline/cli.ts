@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { FIXTURE_PROFILE, FREEWAY_LAND_JSON, LIVE_PROFILE, STAGING_ORIGIN } from './config';
+import { localCacheNotice, sharedCache } from './lib/cache-root';
 import { versionCommand } from './lib/dataset-check';
 import { build, printResults } from './steps/build';
 import {
@@ -9,7 +10,8 @@ import {
   checkDataset,
   type InvariantResult
 } from './steps/check';
-import { boxesCommand } from './steps/boxes';
+import { boxesReusing } from './steps/boxes-reuse';
+import { cacheImport } from './steps/cache-import';
 import { doctor, reportDoctor } from './steps/doctor';
 import { fetchAll } from './steps/fetch';
 import { fixture } from './steps/fixture';
@@ -24,7 +26,8 @@ import { wranglerTarget } from './lib/r2';
 const ROOT = resolve(import.meta.dirname, '..');
 const OUT = join(ROOT, 'pipeline/out');
 const LOCK = join(ROOT, 'pipeline/sources.lock.json');
-const RAW = join(ROOT, 'pipeline/.cache/raw');
+/** The shared raw cache, resolved when a command runs. */
+const raw = (): string => sharedCache().raw;
 const PIPELINE_MD = join(ROOT, 'docs/dev/pipeline.md');
 const MINI = join(ROOT, 'pipeline/test/fixtures/mini');
 
@@ -64,7 +67,7 @@ async function runBuild(args: ParsedArgs): Promise<number> {
   }
   const { outDir, results } = await build({
     lockPath: LOCK,
-    rawDir: RAW,
+    rawDir: raw(),
     outRoot: OUT,
     profile: LIVE_PROFILE,
     skipTiles: args.flags['skip-tiles'] === true
@@ -97,16 +100,18 @@ const steps: Record<string, { help: string; run: Step }> = {
     run: async () => reportDoctor(await doctor(), console.log)
   },
   boxes: {
-    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact [--fixture: the mini fixture]',
+    help: 'derive the building boxes from the locked footprints, parts and LiDAR tiles and lock the building-boxes artifact; reuses an earlier run with the same code, config and inputs [--force: run in full] [--fixture: the mini fixture]',
     run: (args) => {
       const fixture = args.flags.fixture === true;
-      return boxesCommand({
+      return boxesReusing({
         lockPath: fixture ? join(MINI, 'sources.lock.json') : LOCK,
         lidarLockPath: fixture ? LIDAR_LOCK.fixture : LIDAR_LOCK.live,
-        rawDir: fixture ? join(MINI, 'raw') : RAW,
+        rawDir: fixture ? join(MINI, 'raw') : raw(),
         byName: fixture,
         repoRoot: ROOT,
-        fixture
+        fixture,
+        indexDir: fixture ? null : sharedCache().boxesIndex,
+        force: args.flags.force === true
       });
     }
   },
@@ -147,6 +152,24 @@ const steps: Record<string, { help: string; run: Step }> = {
       return printResults(results);
     }
   },
+  cache: {
+    help: "move an old pipeline/.cache's raw, ept and lidar-work into the shared cache and index its boxes artifact <dir> [--lock <path>]",
+    run: async (args) => {
+      const dir = args.positional[1];
+      if (args.positional[0] !== 'import' || !dir) {
+        console.error(
+          `usage: cache import <dir> [--lock <sources.lock.json>] (shared cache: ${sharedCache().root})`
+        );
+        return 2;
+      }
+      const lock = str(args.flags.lock);
+      const { code } = await cacheImport({
+        from: resolve(dir),
+        lockPath: lock ? resolve(lock) : undefined
+      });
+      return code;
+    }
+  },
   fixture: {
     help: 'build the mini fixture into e2e/fixtures/data/fixture-0 [--update-golden] [--out <dir> --version fixture-<n>] [--skip-tiles]',
     run: (args) =>
@@ -158,7 +181,7 @@ const steps: Record<string, { help: string; run: Step }> = {
       })
   },
   fetch: {
-    help: 'fetch live sources into .cache/raw and write the lock [--only <id,...>] [--release <rel>] [--basemap-date YYYYMMDD] | --restore [--lidar] [--local]; --only usgs-lidar-sf [--tiles a_b,...] [--jobs n] [--dry-run] (needs uv; locks pipeline/lidar.lock.json)',
+    help: 'fetch live sources into the shared raw cache and write the lock [--only <id,...>] [--release <rel>] [--basemap-date YYYYMMDD] | --restore [--lidar] [--local]; --only usgs-lidar-sf [--tiles a_b,...] [--jobs n] [--dry-run] (needs uv; locks pipeline/lidar.lock.json)',
     run: async (args) => {
       const tiles = str(args.flags.tiles);
       const jobs = str(args.flags.jobs);
@@ -211,7 +234,7 @@ const steps: Record<string, { help: string; run: Step }> = {
         lock: lockPath ? readLock(lockPath) : { sources: [] },
         // Fixture versions archive nothing, the LiDAR tiles included.
         lidarLock: lockPath ? readLidarLock(LIDAR_LOCK.live) : null,
-        rawDir: RAW,
+        rawDir: raw(),
         target: wranglerTarget({ local: args.flags.local === true }),
         repoRoot: ROOT,
         local: args.flags.local === true
@@ -271,6 +294,10 @@ async function main(): Promise<number> {
   if (!step) {
     console.error(usage());
     return 2;
+  }
+  if (args.cmd !== 'cache') {
+    const notice = localCacheNotice();
+    if (notice) console.log(notice);
   }
   return step.run(args);
 }
