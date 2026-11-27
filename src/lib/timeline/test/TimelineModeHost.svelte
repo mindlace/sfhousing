@@ -1,26 +1,18 @@
 <!--
   Test host: TimelineMode under the real SiteHeader, wired as the root layout wires it, and the
-  page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and
-  `ctl` lets a test set them as the page's store and PolicySync would, and call `showDetails` and
-  `showActivity`. `onedit` applies the change; `onundoto` (rule 34) sets the document unless the
-  test passes its own. With `withInspector` the inspector renders the Details face (or `face`'s).
-  `readonly` is the page's (default false). `regionHeight` is the mode box's height (700 px unless given). With
-  `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`),
-  and `saveOff` follows it as SimPage passes it (autosave off) unless the test gives its own.
-  A `game` is provided to the context, as the root layout does, and passed through with
-  `goalAmount`; `initialRun` (with `ctl.setRun`) is the document the worker runs, apart from
-  `policy`; without it no `run` is passed.
-  With `phased` (and a game in its runs) the host holds the phase as SimPage does: it starts at
-  `landing(game.state)` and moves only by `nextPhase` on TimelineMode's and the stub tree's events
-  (`ctl.setPhase` sets it outright, a test seam; `ctl.send` sends an event as a control would, and
-  `onphaseevent` sees each event first). The stub tree shows its `busy` and `ending` as
-  `data-busy` and `data-ending` (JSON) and has Run (`host-run`), which sends `run` and, as Tree's
-  Run does, takes focus when the tree mounts.
+  page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and `ctl`
+  lets a test set them as the page's store and PolicySync would, and call `showDetails` and
+  `showActivity`. `onedit` applies the change (`ctl.edit` calls it); `onundoto` (rule 34) sets the
+  document unless the test passes its own. With `withInspector` the inspector renders the Details
+  face (or `face`'s). `readonly` is the page's (default false). `regionHeight` is the mode box's
+  height (700 px unless given). With `saveStatus` the status is the real SaveIndicator, as SimPage
+  renders it (`ctl.setSaveStatus`), and `saveOff` follows it as SimPage passes it (autosave off)
+  unless the test gives its own. A `game` is provided to the context, as the root layout does, and
+  passed through with `goalAmount`; `initialRun` (with `ctl.setRun`) is the document the worker
+  runs, apart from `policy`; without it no `run` is passed.
 -->
 <script lang="ts">
   import { untrack, type ComponentProps, type Snippet } from 'svelte';
-  import { landing, nextPhase, type GamePhase, type PhaseEvent } from '$lib/sim-page/game-phase';
-  import type { TreeArgs } from '../TimelineMode.svelte';
   import type { SaveStatus } from '$lib/sharing/autosave.svelte';
   import { provideGame } from '$lib/game/store.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
@@ -42,15 +34,8 @@
     | 'onadd'
     | 'readonly'
     | 'onundoto'
-    | 'phase'
-    | 'onphase'
-    | 'tree'
   >;
   interface Props extends Rest {
-    /** Hold the phase as SimPage does (only with a game in its runs). */
-    phased?: boolean;
-    /** Every phase event the host receives, before it applies it. */
-    onphaseevent?: (e: PhaseEvent) => void;
     onundoto?: (p: SimPolicy4) => void;
     withInspector?: boolean;
     face?: 'details' | 'activity';
@@ -68,10 +53,9 @@
       setPolicy?: (p: SimPolicy4) => void;
       setRun?: (p: SimPolicy4) => void;
       setLots?: (l: Lots | null) => void;
+      /** The page's `onedit`, as a policy row calls it. */
+      edit?: (change: (p: SimPolicy4) => SimPolicy4) => void;
       setLotsFailed?: (f: boolean) => void;
-      setPhase?: (p: GamePhase) => void;
-      /** A phase event as the page's controls send it (a second press of Run). */
-      send?: (e: PhaseEvent) => void;
       showDetails?: () => Promise<void>;
       showActivity?: () => Promise<void>;
     };
@@ -89,22 +73,8 @@
     regionHeight = 700,
     saveStatus: initialSave = undefined,
     saveOff = undefined,
-    phased = false,
-    onphaseevent = undefined,
     ...rest
   }: Props = $props();
-  // Never `landing` for the open game or one in its opening: those have no phase.
-  let phase = $state<GamePhase | null>(
-    untrack(() =>
-      phased && rest.game && !rest.game.open && rest.game.state.phase === 'runs'
-        ? landing(rest.game.state)
-        : null
-    )
-  );
-  function onphase(e: PhaseEvent): void {
-    onphaseevent?.(e);
-    if (phase !== null && rest.game) phase = nextPhase(phase, e, rest.game.state.runs);
-  }
   const slot = provideHeaderActions();
   // As the root layout does: the win card reads the game from the context.
   untrack(() => {
@@ -117,6 +87,9 @@
   let lotsFailed = $state(false);
   let selected = $state.raw<SpanRef | null>(null);
   let mode = $state<ReturnType<typeof TimelineMode>>();
+  function onedit(change: (p: SimPolicy4) => SimPolicy4): void {
+    policy = change(policy);
+  }
   untrack(() => {
     ctl.showDetails = () => mode!.showDetails();
     ctl.showActivity = () => mode!.showActivity();
@@ -124,23 +97,10 @@
     ctl.setPolicy = (p) => (policy = p);
     ctl.setRun = (p) => (run = p);
     ctl.setLots = (l) => (lots = l);
+    ctl.edit = onedit;
     ctl.setLotsFailed = (f) => (lotsFailed = f);
-    ctl.setPhase = (p) => (phase = p);
-    ctl.send = (e) => onphase(e);
   });
 </script>
-
-{#snippet tree({ busy, ending }: TreeArgs)}
-  <div data-testid="host-tree" data-busy={String(busy)} data-ending={JSON.stringify(ending)}>
-    <!-- Focused on mount, as Tree focuses its Run (U1). -->
-    <button
-      type="button"
-      data-testid="host-run"
-      onclick={() => onphase('run')}
-      {@attach (el) => el.focus()}>Run</button
-    >
-  </div>
-{/snippet}
 
 {#snippet inspector({ activity, details }: { activity: Snippet; details: Snippet })}
   <div data-testid="host-inspector">
@@ -172,11 +132,10 @@
     saveOff={saveOff ?? save === 'off'}
     {selected}
     onselect={(r) => (selected = r)}
-    onedit={(change) => (policy = change(policy))}
+    {onedit}
     onadd={() => {}}
     onundoto={onundoto ?? ((p) => (policy = p))}
     inspector={withInspector ? inspector : undefined}
     {...initialSave ? { status: saveState } : {}}
-    {...phase !== null ? { phase, onphase, tree } : {}}
   />
 </div>

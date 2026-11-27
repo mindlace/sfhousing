@@ -112,6 +112,12 @@ describe('the shared parts', () => {
     expect([...tip].filter((c) => look.test(c) && !expected.has(c))).toEqual([]);
   });
 
+  it("the header's Menu panel draws SURFACE_POP from lg, class for class", () => {
+    const header = readFileSync(fromRoot('src/lib/shell/SiteHeader.svelte'), 'utf8');
+    const attr = /const PANEL_POP =\s*'([^']*)'/.exec(header)?.[1] ?? '';
+    expect(new Set(classes(attr))).toEqual(new Set(classes(ui.SURFACE_POP).map((c) => `lg:${c}`)));
+  });
+
   it("layout.css's .explain-under draws SURFACE_TIP in CSS, light and dark", () => {
     const css = readFileSync(fromRoot('src/routes/layout.css'), 'utf8');
     expect(css).toMatch(/SURFACE_TIP/);

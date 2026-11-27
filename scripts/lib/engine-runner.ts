@@ -43,6 +43,8 @@ export interface Engine {
   datasetVersion: string;
   asOf: Day;
   cal: Calibration;
+  /** Wall-clock milliseconds from `openTimeline` to the last month of the opening fill. */
+  fillMs: number;
   /** The whole window's view for `doc`, reconciled and with its lots resolved. */
   view(doc: SimPolicy4): Promise<TimelineView>;
   close(): void;
@@ -358,18 +360,21 @@ export async function openEngine(
   };
 
   const empty = reconcilePolicy4(DEFAULT_POLICY4, cal, asOf).doc;
+  let fillMs: number;
   try {
     const opened = begin();
     const p = pending as Pending | null;
     rev = 1;
     p!.rev = rev;
     p!.refilled = true;
+    const started = performance.now();
     if (
       send({ type: 'openTimeline', rev, manifest, policy: empty, lots: {}, months: WINDOW_MONTHS })
     ) {
       send({ type: 'prefetch', bbox: allBbox(manifest) });
     }
     views.set(canonicalJson(empty), await opened);
+    fillMs = performance.now() - started;
   } catch (e) {
     close();
     throw e;
@@ -419,7 +424,7 @@ export async function openEngine(
     return run;
   };
 
-  return { datasetVersion: manifest.datasetVersion, asOf, cal, view, close };
+  return { datasetVersion: manifest.datasetVersion, asOf, cal, fillMs, view, close };
 }
 
 /**

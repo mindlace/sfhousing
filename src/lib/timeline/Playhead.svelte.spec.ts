@@ -434,6 +434,31 @@ describe('Playhead', () => {
     expect(document.querySelector('[data-testid=tl-goal-flag]')).toBeNull();
   });
 
+  it('the goal flag reads goalLabel when given', async () => {
+    const deadline = dayFromUtc(2031, 1, 1);
+    await setup({ goalDeadline: deadline, goalLabel: 'Target Jan 2031' });
+    const goal = page.getByTestId('tl-goal-flag');
+    await expect.element(goal).toHaveTextContent('Target Jan 2031');
+    near(centre(rect(goal.element())), xOf(deadline), 'goal flag');
+  });
+
+  it('the target flag keeps inside a 270 px lane with the target in the last year', async () => {
+    const target = dayFromUtc(2066, 9, 1);
+    await setup({ goalDeadline: target, goalLabel: 'Target Sep 2066' }, [390, 760]);
+    // The lane at 270 px: the host narrowed by what the ruler is over.
+    const grid = byId('host-grid');
+    const over = rect(byId('tl-ruler')).width - 270;
+    grid.style.width = `${rect(grid).width - over}px`;
+    await expect.poll(() => Math.round(rect(byId('tl-ruler')).width)).toBe(270);
+    const lane = rect(byId('tl-ruler'));
+    const goal = page.getByTestId('tl-goal-flag');
+    await expect.element(goal).toHaveTextContent('Target Sep 2066');
+    await expect.poll(() => rect(goal.element()).right).toBeLessThanOrEqual(lane.right + 0.5);
+    expect(rect(goal.element()).left).toBeGreaterThanOrEqual(lane.left - 0.5);
+    // Clamped against the end, it stays as near its day as it can: flush with the lane's end.
+    near(rect(goal.element()).right, lane.right, 'flush with the end');
+  });
+
   it('draws no To beat flag and says no To beat sentence', async () => {
     await setup({ goalDeadline: dayFromUtc(2030, 11, 31) });
     expect(document.querySelector('[data-testid=tl-bar-flag]')).toBeNull();

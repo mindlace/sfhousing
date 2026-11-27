@@ -3,7 +3,7 @@ import { newVisitor, seedGame } from './helpers/game';
 import { savedGame } from './helpers/play';
 import { SAVES_KEY, saveKey } from '../src/lib/game/saves';
 
-type Entry = { id: string; phase: 'opening' | 'runs'; rung: number };
+type Entry = { id: string; phase: 'opening' | 'runs'; round: number };
 type Index = { v: number; current: string; saves: Entry[] };
 
 function hydrationWarnings(page: Page): string[] {
@@ -41,12 +41,12 @@ test('a new visitor gets one game in the opening', async ({ page }) => {
   expect(stored.saves).toHaveLength(1);
   expect(stored.current).toBe(stored.saves[0].id);
   expect(stored.saves[0].phase).toBe('opening');
-  expect(stored.saves[0].rung).toBe(0);
+  expect(stored.saves[0].round).toBe(0);
   const save = await savedGame(page);
   expect(save.v).toBe(2);
   expect(save.id).toBe(stored.current);
   expect(save.state.phase).toBe('opening');
-  expect(save.state.rung).toBe(0);
+  expect(save.state.round).toBe(0);
   expect(warnings).toEqual([]);
 });
 
@@ -64,7 +64,7 @@ test('a seeded index is kept as seeded', async ({ page }) => {
 });
 
 test('a current id that names no entry gets a new game in the opening', async ({ page }) => {
-  await seedGame(page, { phase: 'runs', units: { home: 500 } });
+  await seedGame(page, { phase: 'runs', round: 2 });
   await openAbout(page);
   const seededId = (await index(page)).current;
   await page.evaluate((k) => {
@@ -82,12 +82,12 @@ test('a current id that names no entry gets a new game in the opening', async ({
   expect(stored.current).not.toBe('missing');
   const fresh = stored.saves.find((s) => s.id === stored.current);
   expect(fresh?.phase).toBe('opening');
-  expect(fresh?.rung).toBe(0);
+  expect(fresh?.round).toBe(0);
   const current = await savedGame(page);
   expect(current.id).toBe(stored.current);
   expect(current.state.phase).toBe('opening');
   const old = JSON.parse((await item(page, saveKey(seededId))) ?? 'null');
-  expect(old.state.units.home).toBe(500);
+  expect(old.state.round).toBe(2);
 });
 
 test('a five-level index and save are deleted at load, never moved aside', async ({ page }) => {

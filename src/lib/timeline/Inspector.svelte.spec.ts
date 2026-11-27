@@ -7,9 +7,11 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { formatMonthYear } from '$lib/fzp/format';
-import type { Limits } from '$lib/game/limits';
+import { FREE_MEASURES, OPEN_LIMITS, type Limits } from '$lib/game/limits';
 import { DRAFT_DISCARDED, limitAlert } from '$lib/sim-page/funding-copy';
 import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
+import { fundingPresets } from '$lib/sim-page/funding-presets';
+import { DEFAULT_BANDS } from '$lib/sim-page/policy';
 import type { FundingDrafts } from '$lib/sim-page/funding-drafts.svelte';
 import type { PolicyStore } from '$lib/sim-page/policy-store.svelte';
 import { BOND_POLICY, fundingCalibration, policyWith } from '$lib/sim-page/test/funding';
@@ -21,14 +23,7 @@ import { TERMS_HINT } from './money-copy';
 import { PRESET_PER_POLICY } from './lens';
 import type { Policy, SimPolicy4 } from './policy4';
 import { FIXED_LABEL, FIXED_NOTE, formatEdge } from './rows';
-import {
-  movePolicy,
-  policyOf,
-  removePolicy,
-  setOn,
-  type SpanRef,
-  type TimelineWindow
-} from './spans';
+import { movePolicy, removePolicy, setOn, type SpanRef, type TimelineWindow } from './spans';
 import { limitsWith } from './test/limits';
 import { upgradePolicy } from './upgrade';
 import InspectorHost from './test/InspectorHost.svelte';
@@ -491,65 +486,112 @@ describe('Inspector', () => {
   });
 });
 
+describe('Inspector: an editable catalogue transit rule in a game', () => {
+  it('shows its stop types as text, with no chip', async () => {
+    const railDoc: SimPolicy4 = {
+      schema: 4,
+      kinds: {
+        zoning: [
+          {
+            ...transit,
+            id: 'transit-rail',
+            label: 'Taller near BART and Caltrain',
+            where: { tag: 'transit', stopTypes: ['regionalRail'] }
+          }
+        ],
+        permitting: [],
+        money: []
+      }
+    };
+    const l = limitsWith({
+      offered: new Set(['transit-rail']),
+      editable: new Set(['transit-rail']),
+      stops: new Set(['regionalRail', 'metro'])
+    });
+    setup({ doc: railDoc, initial: { kind: 'zoning', id: 'transit-rail', span: 0 }, limits: l });
+    const group = page.getByRole('group', { name: 'Stop types' });
+    await expect.element(group).toHaveTextContent('Regional rail');
+    expect(group.getByRole('button').all()).toHaveLength(0);
+  });
+});
+
 describe('Inspector under limits', () => {
-  const early = limitsWith({
-    stops: new Set(['metro']),
-    bands: 1,
-    stories: 8,
-    reachM: 402,
-    measures: new Set(['housing-bond'])
+  /** Round 1 of a game: its three policies offered, none editable yet. */
+  const round1 = limitsWith({
+    offered: new Set(['transit-rail', 'sb423-clock', 'housing-bond']),
+    stops: new Set(['regionalRail']),
+    money: true
   });
   const labels = () =>
     [...document.querySelectorAll('[data-add-menu] button')].map((b) => b.textContent?.trim());
+  const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
+  const bondMade = () =>
+    addPolicy(
+      EMPTY,
+      { kind: 'money', what: 'preset', preset: 'housing-bond' },
+      { w, month: 13, cal }
+    );
 
-  it('"+" offers per limits', async () => {
-    setup({ doc: { schema: 4, kinds: { zoning: [], permitting: [], money: [] } }, limits: early });
+  it('"+" on Zoning offers the protections only before the end', async () => {
+    setup({ doc: EMPTY, limits: round1 });
     await page.getByRole('button', { name: 'Add zoning' }).click();
     await expect.element(page.getByRole('group', { name: 'Add to Zoning' })).toBeVisible();
     expect(labels()).toEqual([
-      'Transit rule',
       'Protect rent-controlled buildings',
       'Protect historic buildings',
       'Protect buildings newer than 30 years'
     ]);
   });
 
-  it('a transit rule added under limits is fitted to them', async () => {
-    const { store } = setup({
-      doc: { schema: 4, kinds: { zoning: [], permitting: [], money: [] } },
-      limits: early
-    });
+  it('a finished game offers a transit rule at the editor defaults', async () => {
+    const { store } = setup({ doc: EMPTY, limits: limitsWith({ whole: true }) });
     await page.getByRole('button', { name: 'Add zoning' }).click();
     await page.getByRole('button', { name: 'Transit rule' }).click();
     const added = store.policy.kinds.zoning[0];
-    expect(added.where).toEqual({ tag: 'transit', stopTypes: ['metro'] });
-    expect(added.spans[0].what).toEqual({ tag: 'bands', bands: [{ maxM: 402, stories: 8 }] });
+    expect(added.where.tag).toBe('transit');
+    expect(added.spans[0].what).toEqual({ tag: 'bands', bands: DEFAULT_BANDS });
   });
 
-  it("a given measure's What is the summary under closed limits", async () => {
-    const made = addPolicy(
-      { schema: 4, kinds: { zoning: [], permitting: [], money: [] } },
-      { kind: 'money', what: 'preset', preset: 'housing-bond' },
-      { w, month: 13, cal }
-    );
-    setup({ doc: made.doc, initial: made.ref, limits: early });
+  it('a catalogue policy not yet editable shows its details and no editor control', async () => {
+    const made = bondMade();
+    setup({ doc: made.doc, initial: made.ref, limits: round1 });
+    await expect.element(page.getByTestId('policy-details')).toBeVisible();
+    expect(editor()).toBeNull();
+    expect(document.querySelectorAll('[role=switch], input, select')).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Remove policy' }).all()).toHaveLength(0);
+  });
+
+  it('once editable, an offered catalogue policy shows the editor without Remove', async () => {
+    const made = bondMade();
+    const editable = limitsWith({ ...round1, editable: new Set(['housing-bond']) });
+    setup({ doc: made.doc, initial: made.ref, limits: editable });
     await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
-    expect(editor()!.querySelector('[data-funding-editor]')).toBeNull();
-    await expect.element(page.getByText('Public money', { exact: false }).first()).toBeVisible();
+    expect(page.getByRole('button', { name: 'Remove policy' }).all()).toHaveLength(0);
+    expect(page.getByRole('button', { name: 'Move up' }).all()).toHaveLength(1);
   });
 
-  it('the On switch works on a bought policy', async () => {
-    const { store } = setup({
-      initial: { kind: 'zoning', id: 'z1', span: 0 },
-      limits: early
+  for (const [name, limits] of [
+    ['a finished game', limitsWith({ whole: true })],
+    ['no game', OPEN_LIMITS]
+  ] as const) {
+    it(`${name} shows Remove`, async () => {
+      const made = bondMade();
+      setup({ doc: made.doc, initial: made.ref, limits });
+      await expect.element(page.getByRole('button', { name: 'Remove policy' })).toBeVisible();
     });
-    await page.getByRole('switch', { name: 'On' }).click();
-    expect(policyOf(store.policy, 'zoning', 'z1')!.on).toBe(false);
+  }
+
+  it('once editable, its What edits', async () => {
+    const made = bondMade();
+    const editable = limitsWith({ ...round1, editable: new Set(['housing-bond']) });
+    setup({ doc: made.doc, initial: made.ref, limits: editable });
+    await expect
+      .poll(() => editor()?.querySelector('[data-funding-editor]') ?? null)
+      .not.toBeNull();
   });
 
-  it('a routes policy offers the bought presets and no custom controls', async () => {
-    const bought = limitsWith({ presets: new Set(['noDiscretionary']), custom: false });
-    setup({ initial: { kind: 'permitting', id: 'p1', span: 0 }, limits: bought });
+  it('a routes policy in a game offers only its own preset, with custom controls', async () => {
+    setup({ initial: { kind: 'permitting', id: 'p1', span: 0 }, limits: round1 });
     const box = editor()!;
     await expect
       .poll(() =>
@@ -557,31 +599,24 @@ describe('Inspector under limits', () => {
           o.textContent?.trim()
         )
       )
-      .toEqual(['observed', 'noDiscretionary'].map((id) => PRESETS.find((p) => p.id === id)!.name));
-    expect(box.querySelectorAll('input[type="number"]')).toHaveLength(0);
-    expect(
-      [...box.querySelectorAll('button')].some((b) => /^Revert/.test(b.textContent?.trim() ?? ''))
-    ).toBe(false);
-    expect(box.textContent).toContain('Discretionary share:');
+      .toEqual([PRESETS.find((p) => p.id === 'observed')!.name]);
   });
 
-  it('a transit layer holds to the bought bands', async () => {
-    setup({ initial: { kind: 'zoning', id: 'z1', span: 0 }, limits: early });
-    // One band bought: "Add band" is off, not disabled.
+  it('a transit layer in a game may have every band', async () => {
+    setup({ initial: { kind: 'zoning', id: 'z1', span: 0 }, limits: round1 });
     const addBand = page.getByRole('button', { name: /^Add\s+Band$/ });
     await expect.element(addBand).toBeVisible();
-    expect(addBand.element().getAttribute('aria-disabled')).toBe('true');
-    expect(addBand.element().hasAttribute('disabled')).toBe(false);
+    expect(addBand.element().getAttribute('aria-disabled')).not.toBe('true');
   });
 });
 
 describe('Inspector with given measures', () => {
-  const givenLimits = limitsWith({ measures: new Set(['housing-bond']) });
-  // The housing bond as `addPolicy` makes it, then a neighbour below it on the money row.
+  const givenLimits = limitsWith({ offered: new Set(['housing-bond']), money: true });
+  // The free measure `state-off` as `addPolicy` makes it, then a neighbour below it on the money row.
   const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
   const made = addPolicy(
     EMPTY,
-    { kind: 'money', what: 'preset', preset: 'housing-bond' },
+    { kind: 'money', what: 'preset', preset: 'state-off' },
     { w, month: 13, cal }
   );
   const GIVEN_DOC: SimPolicy4 = {
@@ -595,7 +630,7 @@ describe('Inspector with given measures', () => {
     [...document.querySelectorAll('[data-add-menu] button')].map((b) => b.textContent?.trim());
 
   it('a given measure under closed limits', async () => {
-    expect(GIVEN_DOC.kinds.money[0].preset).toBe('housing-bond');
+    expect(GIVEN_DOC.kinds.money[0].preset).toBe('state-off');
     const { store } = setup({ doc: GIVEN_DOC, initial: givenRef, limits: givenLimits });
     await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
     await expect.element(page.getByRole('button', { name: 'Move up' })).toBeVisible();
@@ -626,13 +661,13 @@ describe('Inspector with given measures', () => {
     const at = ids().indexOf(givenRef.id);
     await page.getByRole('button', { name: 'Move down' }).click();
     expect(ids().indexOf(givenRef.id)).toBe(at + 1);
-    expect(measure(store)!.preset).toBe('housing-bond');
+    expect(measure(store)!.preset).toBe('state-off');
 
     await page.getByRole('switch', { name: 'On' }).click();
     expect(measure(store)!.on).toBe(false);
     await page.getByRole('switch', { name: 'On' }).click();
     expect(measure(store)!.on).toBe(true);
-    expect(measure(store)!.preset).toBe('housing-bond');
+    expect(measure(store)!.preset).toBe('state-off');
 
     const before = measure(store)!.spans[0].from;
     const y = new Date(first(40) * 86_400_000).getUTCFullYear();
@@ -641,26 +676,71 @@ describe('Inspector with given measures', () => {
       String(y)
     );
     expect(measure(store)!.spans[0].from).not.toBe(before);
-    expect(measure(store)!.preset).toBe('housing-bond');
+    expect(measure(store)!.preset).toBe('state-off');
   });
 
-  it("'+' on Public money lists given measures only", async () => {
+  it("'+' on Public money lists the free measures only before the end", async () => {
     setup({ doc: EMPTY, limits: givenLimits });
     await page.getByRole('button', { name: 'Add money', exact: true }).click();
     const group = page.getByRole('group', { name: 'Add to Public money' });
     await expect.element(group).toBeVisible();
-    await expect.element(group.getByRole('button', { name: 'A housing bond' })).toBeVisible();
+    const free = fundingPresets(cal)
+      .filter((p) => p.available && FREE_MEASURES.includes(p.id))
+      .map((p) => p.label);
+    expect(free.length).toBeGreaterThan(0);
     const names = menuNames();
+    expect(names).toEqual(free);
     expect(names).not.toContain('Your own pool');
     expect(names).not.toContain('City funding scale');
     expect(names).not.toContain('Market terms');
   });
 
+  describe('a free measure', () => {
+    const freeMade = (preset: string) =>
+      addPolicy(EMPTY, { kind: 'money', what: 'preset', preset }, { w, month: 13, cal });
+    const round1 = limitsWith({ offered: new Set(['housing-bond']), money: true });
+    /** The What section's controls: none while its What is the summary. */
+    const whatControls = () => {
+      const what = [...(editor()?.querySelectorAll('section') ?? [])].find(
+        (s) => s.querySelector('h3')?.textContent === 'What'
+      );
+      return what ? what.querySelectorAll('input, select, button').length : -1;
+    };
+
+    for (const preset of ['state-off', 'federal-credits-off']) {
+      it(`${preset}: summary only in a game before the end; switch and When still edit`, async () => {
+        const made = freeMade(preset);
+        const { store } = setup({ doc: made.doc, initial: made.ref, limits: round1 });
+        await expect.element(page.getByRole('switch', { name: 'On' })).toBeVisible();
+        await expect.element(page.getByRole('combobox', { name: 'From year' })).toBeEnabled();
+        expect(whatControls()).toBe(0);
+        await page.getByRole('switch', { name: 'On' }).click();
+        expect(store.policy.kinds.money.find((p) => p.id === made.ref.id)!.on).toBe(false);
+      });
+
+      for (const [name, limits] of [
+        ['a finished game', limitsWith({ whole: true })],
+        ['OPEN_LIMITS', OPEN_LIMITS]
+      ] as const) {
+        it(`${preset}: the editor shows in ${name}`, async () => {
+          const made = freeMade(preset);
+          setup({ doc: made.doc, initial: made.ref, limits });
+          await expect.poll(whatControls).toBeGreaterThan(0);
+        });
+      }
+    }
+  });
+
   it('under open limits a given measure is edited as today', async () => {
     setup({ doc: GIVEN_DOC, initial: givenRef });
     await expect
-      .poll(() => editor()?.querySelector('[data-funding-editor]') ?? null)
-      .not.toBeNull();
+      .poll(() => {
+        const what = [...(editor()?.querySelectorAll('section') ?? [])].find(
+          (x) => x.querySelector('h3')?.textContent === 'What'
+        );
+        return what?.querySelectorAll('input, select, button').length ?? 0;
+      })
+      .toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Add money', exact: true }).click();
     await expect.element(page.getByRole('button', { name: 'Your own pool' })).toBeVisible();
   });

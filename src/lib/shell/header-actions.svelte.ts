@@ -3,7 +3,7 @@ import { getContext, onDestroy, setContext, type Snippet } from 'svelte';
 const KEY = Symbol('header-actions');
 
 export class HeaderActions {
-  /** The right-aligned actions: in the header from lg, in the header's Menu below lg. */
+  /** The right-aligned actions: in the bar from lg, in the header's Menu below lg. */
   current = $state<Snippet | null>(null);
   /**
    * The page's one always-visible item (the header score on `/`, `/p/:id`, `/sim` and `/s/<id>`):
@@ -56,7 +56,7 @@ export function useHeaderActions(
 }
 
 /**
- * Focuses the header's phone Menu button (SiteHeader marks it `data-header-menu`). For a page
+ * Focuses the header's Menu button (SiteHeader marks it `data-header-menu`). For a page
  * whose overlay was opened from the Menu and must hand focus back once the Menu has closed.
  * Returns false when there is no Menu button.
  */
@@ -69,7 +69,7 @@ export function focusHeaderMenu(): boolean {
 const OVERLAY_OPEN = 'sfh-header-overlay-open';
 
 /**
- * The header's overlays (the phone Menu, the pinned /sim score details) open in the same place
+ * The header's overlays (the Menu, the pinned /sim score details) open in the same place
  * under the header, so at most one is open. Each one calls `openOnly(id)` when it opens, by any
  * input; every other overlay's `close` runs. Returns `openOnly` and installs the listener for the
  * component's lifetime (call during component init).

@@ -1,4 +1,7 @@
-import { createRawSnippet, mount, unmount } from 'svelte';
+import { createRawSnippet, mount, tick, unmount } from 'svelte';
+import { dayFromUtc } from '$lib/fzp/time';
+import { PENDING } from '$lib/game/rounds';
+import { pinnedWords } from '$lib/game/ui/round-words';
 import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -10,7 +13,6 @@ import HeaderScoreHeader from './test/HeaderScoreHeader.svelte';
 import { quietSync, seededGame } from './test/seeded-game';
 import GameHeaderHost from './test/GameHeaderHost.svelte';
 import GoalPinnedHeader from './test/GoalPinnedHeader.svelte';
-import SimRowGameHeader from './test/SimRowGameHeader.svelte';
 import SimRowHeader from './test/SimRowHeader.svelte';
 
 const WON = '2026-11-22T12:00:00.000Z';
@@ -43,6 +45,7 @@ describe('SiteHeader', () => {
     it('links a signed-out visitor to /signin', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { user: null });
+      await page.getByRole('button', { name: 'Menu' }).click();
       const link = page.getByRole('banner').getByRole('link', { name: 'Sign in' });
       await expect.element(link).toHaveAttribute('href', '/signin');
     });
@@ -50,6 +53,7 @@ describe('SiteHeader', () => {
     it('offers no Sign in when no sign-in method is in effect', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { user: null, signInAvailable: false });
+      await page.getByRole('button', { name: 'Menu' }).click();
       await expect.element(page.getByRole('banner')).toBeVisible();
       expect(page.getByRole('link', { name: 'Sign in' }).elements()).toHaveLength(0);
       expect(document.querySelector('[data-header-account]')).toBeNull();
@@ -58,6 +62,7 @@ describe('SiteHeader', () => {
     it('still links a signed-in user to /account when no sign-in method is in effect', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { user: { handle: 'ada' }, signInAvailable: false });
+      await page.getByRole('button', { name: 'Menu' }).click();
       const link = page.getByRole('banner').getByRole('link', { name: '@ada' });
       await expect.element(link).toHaveAttribute('href', '/account');
     });
@@ -65,6 +70,7 @@ describe('SiteHeader', () => {
     it('links a signed-in user to /account, by handle', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { user: { handle: 'ada' } });
+      await page.getByRole('button', { name: 'Menu' }).click();
       const link = page.getByRole('banner').getByRole('link', { name: '@ada' });
       await expect.element(link).toHaveAttribute('href', '/account');
     });
@@ -73,6 +79,7 @@ describe('SiteHeader', () => {
       await page.viewport(1024, 768);
       const handle = 'a-very-long-handle-that-will-not-fit-in-the-header';
       render(SiteHeader, { user: { handle } });
+      await page.getByRole('button', { name: 'Menu' }).click();
       const link = page.getByRole('banner').getByRole('link', { name: `@${handle}` });
       await expect.element(link).toHaveAttribute('title', `@${handle}`);
     });
@@ -89,25 +96,28 @@ describe('SiteHeader', () => {
       expect(panel?.contains(link.element())).toBe(true);
     });
 
-    it('at 1024px is visible in the banner, after the actions, and the header stays 48px', async () => {
+    it('at 1024px the actions are in the bar before the Menu, the account entry in the Menu, and the header stays 48px', async () => {
       await page.viewport(1024, 768);
       const actions = createRawSnippet(() => ({ render: () => '<button>Publish</button>' }));
       render(SiteHeader, { user: null, actions });
       const banner = page.getByRole('banner');
-      const link = banner.getByRole('link', { name: 'Sign in' });
-      await expect.element(link).toBeVisible();
+      const menu = banner.getByRole('button', { name: 'Menu' });
+      await expect.element(banner.getByRole('button', { name: 'Publish' })).toBeVisible();
       const a = banner.getByRole('button', { name: 'Publish' }).element().getBoundingClientRect();
-      const l = link.element().getBoundingClientRect();
-      expect(l.left).toBeGreaterThanOrEqual(a.right);
+      expect(menu.element().getBoundingClientRect().left).toBeGreaterThanOrEqual(a.right);
+      await expect.element(page.getByText('Sign in', { exact: true })).not.toBeVisible();
+      await menu.click();
+      await expect.element(banner.getByRole('link', { name: 'Sign in' })).toBeVisible();
       expect(banner.element().getBoundingClientRect().height).toBe(48);
     });
   });
 
   describe('About entry', () => {
-    it('at 1024px links /about, right after the account entry', async () => {
+    it('at 1024px links /about in the Menu, right after the account entry', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { user: null });
       const banner = page.getByRole('banner');
+      await page.getByRole('button', { name: 'Menu' }).click();
       const about = banner.getByRole('link', { name: 'About', exact: true });
       await expect.element(about).toBeVisible();
       await expect.element(about).toHaveAttribute('href', '/about');
@@ -137,6 +147,7 @@ describe('SiteHeader', () => {
     it('is current on /about only', async () => {
       await page.viewport(1024, 768);
       const { rerender } = await render(SiteHeader, { routeId: '/about' });
+      await page.getByRole('button', { name: 'Menu' }).click();
       const about = page.getByRole('banner').getByRole('link', { name: 'About', exact: true });
       await expect.element(about).toHaveAttribute('aria-current', 'page');
       await rerender({ routeId: '/sim' });
@@ -153,22 +164,17 @@ describe('SiteHeader', () => {
       render: () => '<button>Room for 47,335 homes</button>'
     }));
 
-    // Paint's header (one action, Publish). /sim's, signed in at 1024 with the playhead at the
-    // end, is asserted in SimPage.svelte.spec.ts and e2e/map-key.spec.ts. From lg to xl the
-    // handle is capped at 96 px (the fit ladder's step 2: a touch laptop's row at 1024), from xl
-    // at 160 px; its full text stays the name and the title.
-    for (const [width, cap] of [
-      [1024, 96],
-      [1280, 160]
-    ])
-      it(`at ${width}px the header does not overflow and the handle is capped at ${cap}px`, async () => {
+    // The handle sits in the Menu, capped at 160 px; its full text stays the name and the title.
+    for (const width of [1024, 1280])
+      it(`at ${width}px the header does not overflow and the handle is capped at 160px`, async () => {
         await page.viewport(width, 800);
         render(SiteHeader, { routeId: '/', user: { handle }, actions, pinned });
+        await page.getByRole('button', { name: 'Menu' }).click();
         const banner = page.getByRole('banner');
         const account = banner.getByRole('link', { name: `@${handle}` });
         await expect.element(account).toBeVisible();
         await expect.element(account).toHaveAttribute('title', `@${handle}`);
-        expect(account.element().getBoundingClientRect().width).toBeLessThanOrEqual(cap);
+        expect(account.element().getBoundingClientRect().width).toBeLessThanOrEqual(160);
         const el = banner.element() as HTMLElement;
         expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
       });
@@ -227,7 +233,7 @@ describe('SiteHeader', () => {
       expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
     });
 
-    it('at 375px keeps the order status, pinned, Menu', async () => {
+    it('at 375px keeps the order pinned (from the left), status, Menu', async () => {
       await page.viewport(375, 812);
       const st = createRawSnippet(() => ({ render: () => '<span data-testid="st">saved</span>' }));
       render(SiteHeader, { routeId: '/sim', actions, pinned, status: st });
@@ -235,8 +241,10 @@ describe('SiteHeader', () => {
       const status = page.getByTestId('st').element();
       const score = page.getByRole('button', { name: '1,234 homes added' }).element();
       const m = menu().element();
-      expect(x(status)).toBeLessThan(x(score));
-      expect(x(score)).toBeLessThan(x(m));
+      const bar = page.getByRole('banner').element().getBoundingClientRect();
+      expect(x(score) - bar.left).toBeLessThanOrEqual(16);
+      expect(x(score)).toBeLessThan(x(status));
+      expect(x(status)).toBeLessThan(x(m));
     });
 
     it('at 375px with a pinned item the site name waits in the Menu', async () => {
@@ -447,8 +455,7 @@ describe('SiteHeader', () => {
               page.getByRole('button', { name: '12,345 homes added' }).element(),
               page.getByRole('button', { name: 'Policy' }).element(),
               page.getByRole('button', { name: 'Share link' }).element(),
-              page.getByRole('link', { name: 'Sign in' }).element(),
-              page.getByRole('link', { name: 'About', exact: true }).element()
+              page.getByRole('button', { name: 'Menu' }).element()
             ];
             for (let i = 1; i < row.length; i++)
               expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
@@ -497,7 +504,7 @@ describe('SiteHeader', () => {
           }
         });
 
-      it('at 375px it leads the bar (the site title waits in the Menu), outside the Menu', async () => {
+      it('at 375px it sits after the pinned item, before the Menu (the site title waits in the Menu)', async () => {
         await page.viewport(375, 812);
         render(HeaderScoreHeader, { props: { actions, status, total: 12345, delta: 12345 } });
         const host = page.getByTestId('status-slot').element() as HTMLElement;
@@ -509,15 +516,13 @@ describe('SiteHeader', () => {
             []
           );
           const c = chip.element().getBoundingClientRect();
-          const bar = page.getByRole('banner').element().getBoundingClientRect();
-          expect(c.left).toBeGreaterThanOrEqual(bar.left);
-          expect(c.left - bar.left).toBeLessThanOrEqual(24);
-          expect(c.right).toBeLessThanOrEqual(
+          expect(c.left).toBeGreaterThanOrEqual(
             page
               .getByRole('button', { name: '12,345 homes added' })
               .element()
-              .getBoundingClientRect().left
+              .getBoundingClientRect().right
           );
+          expect(c.right).toBeLessThanOrEqual(menu().element().getBoundingClientRect().left);
           const panel = document.getElementById(menu().element().getAttribute('aria-controls')!);
           expect(panel?.contains(host)).toBe(false);
           // The widest states fit: no horizontal scroll, header still one 48 px row.
@@ -538,16 +543,19 @@ describe('SiteHeader', () => {
       });
     });
 
-    it('at 1024px there is no Menu; the pinned item sits before the actions', async () => {
+    it('at 1024px the Menu button shows after the actions; the pinned item sits before them', async () => {
       await page.viewport(1024, 768);
       render(SiteHeader, { routeId: '/sim', actions, pinned });
       await expect.element(page.getByRole('button', { name: 'Example' })).toBeVisible();
-      expect(page.getByRole('button', { name: 'Menu' }).elements()).toEqual([]);
+      await expect.element(page.getByRole('button', { name: 'Menu' })).toBeVisible();
       const score = page.getByRole('button', { name: '1,234 homes added' }).element();
       const other = page.getByRole('button', { name: 'Example' }).element();
       expect(score.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(score.getBoundingClientRect().right).toBeLessThanOrEqual(
         other.getBoundingClientRect().left
+      );
+      expect(other.getBoundingClientRect().right).toBeLessThanOrEqual(
+        page.getByRole('button', { name: 'Menu' }).element().getBoundingClientRect().left
       );
     });
 
@@ -573,18 +581,16 @@ describe('SiteHeader', () => {
       );
     });
 
-    // /sim's widest row from lg on a fine-only pointer (no Undo or Redo): a 20-character handle,
-    // a five-digit headline with its delta, "Autosave off" with "Updating" beside it.
+    // /sim's widest row from lg on a fine-only pointer (no Undo or Redo): a five-digit headline
+    // with its delta, "Autosave off" with "Updating" beside it, then Publish and the Menu.
     const row = () => {
-      const handle = 'a-very-long-handle-x';
       return [
         page.getByRole('link', { name: 'SF Housing', exact: true }).element(),
         page.getByRole('button', { name: 'Autosave off' }).element(),
         page.getByText('Updating', { exact: true }).element(),
         page.getByTestId('score-bar').element().parentElement!,
         page.getByRole('button', { name: 'Publish' }).element(),
-        page.getByRole('link', { name: `@${handle}` }).element(),
-        page.getByRole('link', { name: 'About', exact: true }).element()
+        page.getByRole('button', { name: 'Menu' }).element()
       ];
     };
     const expectRowFits = async (width: number) => {
@@ -624,8 +630,7 @@ describe('SiteHeader', () => {
         undo.element(),
         page.getByRole('button', { name: /^Redo/ }).element(),
         page.getByRole('button', { name: 'Publish' }).element(),
-        page.getByRole('link', { name: '@a-very-long-handle-x' }).element(),
-        page.getByRole('link', { name: 'About', exact: true }).element()
+        page.getByRole('button', { name: 'Menu' }).element()
       ];
       const box = (el: Element) => el.getBoundingClientRect();
       for (let i = 0; i < items.length; i++) {
@@ -650,39 +655,164 @@ describe('SiteHeader', () => {
     it('at 1280px the same row fits and the score is centred', async () => {
       expect(await expectRowFits(1280)).toBeLessThan(1);
     });
+  });
 
-    // The same row with the game's unit count.
-    for (const touch of [false, true])
-      it(`at 1024px with the unit count${touch ? ' on a touch laptop' : ''} the row fits`, async () => {
-        await page.viewport(1024, 800);
-        const { game } = seededGame({
-          state: { phase: 'runs', firstWinAt: WON, units: { home: 12345 } }
-        });
-        render(SimRowGameHeader, {
-          props: { game, user: { handle: 'a-very-long-handle-x' }, touch }
-        });
-        await expect.element(page.getByTestId('header-units')).toBeVisible();
-        const banner = page.getByRole('banner').element() as HTMLElement;
-        const box = (el: Element) => el.getBoundingClientRect();
-        const items = [
-          page.getByTestId('header-units').element(),
-          page.getByTestId('score-bar').element().parentElement!,
-          page.getByRole('button', { name: 'Publish' }).element(),
-          page.getByRole('link', { name: '@a-very-long-handle-x' }).element(),
-          page.getByRole('link', { name: 'About', exact: true }).element()
-        ];
-        const overlap = items.map((el, i) =>
-          i === 0 ? 0 : box(items[i - 1]).right - box(el).left
-        );
-        expect(Math.max(...overlap), `overlaps ${overlap}`).toBeLessThanOrEqual(0);
-        expect(banner.getBoundingClientRect().height).toBe(48);
+  describe('the Menu at every width', () => {
+    const actions = createRawSnippet(() => ({ render: () => '<button>Publish</button>' }));
+    const menu = () => page.getByRole('button', { name: 'Menu', exact: true });
+    const panelOf = () => document.getElementById(menu().element().getAttribute('aria-controls')!)!;
+
+    it('at 1280px the Menu button shows; About and the account entry wait in it', async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, { user: null });
+      await expect.element(menu()).toBeVisible();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(page.getByText('About', { exact: true })).not.toBeVisible();
+      await expect.element(page.getByText('Sign in', { exact: true })).not.toBeVisible();
+      await menu().click();
+      await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+      const about = page.getByRole('link', { name: 'About', exact: true });
+      const account = page.getByRole('link', { name: 'Sign in' });
+      await expect.element(about).toBeVisible();
+      await expect.element(account).toBeVisible();
+      const panel = panelOf();
+      expect(panel.hasAttribute('data-header-panel')).toBe(true);
+      expect(panel.contains(about.element())).toBe(true);
+      expect(panel.contains(account.element())).toBe(true);
+    });
+
+    it('at 1280px the panel is a pop-over under the header at the right, 24rem wide', async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, { user: null });
+      await menu().click();
+      await expect.element(page.getByRole('link', { name: 'About', exact: true })).toBeVisible();
+      const r = panelOf().getBoundingClientRect();
+      const h = page.getByRole('banner').element().getBoundingClientRect();
+      expect(r.top).toBeGreaterThanOrEqual(h.bottom - 1);
+      expect(r.width).toBe(384);
+      expect(h.right - r.right).toBe(16);
+    });
+
+    it('at 1280px the actions render once, in the bar and outside the panel', async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, { actions });
+      const publish = page.getByRole('banner').getByRole('button', { name: 'Publish' });
+      await expect.element(publish).toBeVisible();
+      expect(panelOf().contains(publish.element())).toBe(false);
+      expect(page.getByRole('button', { name: 'Publish' }).elements()).toHaveLength(1);
+      await menu().click();
+      await expect.element(publish).toBeVisible();
+      expect(page.getByRole('button', { name: 'Publish' }).elements()).toHaveLength(1);
+    });
+
+    it('at 375px the actions are in the panel', async () => {
+      await page.viewport(375, 812);
+      render(SiteHeader, { actions });
+      await menu().click();
+      const publish = page.getByRole('button', { name: 'Publish' });
+      await expect.element(publish).toBeVisible();
+      expect(panelOf().contains(publish.element())).toBe(true);
+      expect(page.getByRole('button', { name: 'Publish' }).elements()).toHaveLength(1);
+    });
+
+    it('holds, in order, the site name, the actions, the game panel, the account entry, About', async () => {
+      await page.viewport(375, 812);
+      const pinned = createRawSnippet(() => ({ render: () => '<button>Room</button>' }));
+      render(GameHeaderHost, { game: seededGame().game, routeId: '/', actions, pinned });
+      await menu().click();
+      const panel = panelOf();
+      await expect.element(page.getByTestId('game-panel')).toBeVisible();
+      const parts = [
+        panel.querySelector('a[href="/"]'),
+        panel.querySelector('button'),
+        panel.querySelector('[data-testid="game-panel"]'),
+        panel.querySelector('[data-header-account]'),
+        panel.querySelector('[data-header-about]')
+      ];
+      expect(parts.every((p) => p !== null)).toBe(true);
+      for (let i = 1; i < parts.length; i++)
         expect(
-          banner.scrollWidth - banner.clientWidth,
-          `overflow; items ${items.map((el) => `${box(el).left}-${box(el).right}`)}`
-        ).toBeLessThanOrEqual(0);
-        expect(box(items.at(-1)!).right).toBeLessThanOrEqual(1024);
-        expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(1024);
+          parts[i - 1]!.compareDocumentPosition(parts[i]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+          `part ${i}`
+        ).toBeTruthy();
+    });
+
+    for (const width of [375, 1280]) {
+      it(`at ${width}px a game's saved games sit in the panel after mount, and no unit count`, async () => {
+        await page.viewport(width, 800);
+        render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+        await menu().click();
+        const games = page.getByTestId('game-panel');
+        await expect.element(games).toBeVisible();
+        expect(panelOf().contains(games.element())).toBe(true);
+        expect(document.querySelectorAll('[data-testid="header-units"]')).toHaveLength(0);
       });
+
+      it(`at ${width}px Escape closes the Menu and focus returns to its button`, async () => {
+        await page.viewport(width, 800);
+        render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+        await menu().click();
+        (page.getByRole('link', { name: 'About', exact: true }).element() as HTMLElement).focus();
+        await userEvent.keyboard('{Escape}');
+        await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+        await expect.element(menu()).toHaveFocus();
+      });
+
+      it(`at ${width}px a press outside closes the Menu`, async () => {
+        await page.viewport(width, 800);
+        render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+        await menu().click();
+        await expect.element(menu()).toHaveAttribute('aria-expanded', 'true');
+        // At 375px the panel covers the page, so the press is dispatched, not clicked.
+        page
+          .getByTestId('outside')
+          .element()
+          .dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
+      });
+    }
+
+    describe('crossing lg with a modal dialog open in the actions', () => {
+      const withDialog = createRawSnippet(() => ({
+        render: () =>
+          '<span><button>Publish</button><dialog data-testid="pub"><button>Send</button></dialog></span>'
+      }));
+      const dialog = () => document.querySelector('dialog') as HTMLDialogElement;
+
+      for (const [from, to] of [
+        [1280, 800],
+        [800, 1280]
+      ])
+        it(`${from} to ${to} px keeps the same open dialog, and the actions move once it closes`, async () => {
+          await page.viewport(from, 800);
+          render(SiteHeader, { actions: withDialog });
+          const inPanel = () => panelOf().contains(dialog());
+          await expect.poll(() => inPanel()).toBe(from < 1024);
+          const el = dialog();
+          el.showModal();
+          await page.viewport(to, 800);
+          // Let the media query's change run.
+          await expect
+            .poll(() => window.matchMedia('(min-width: 1024px)').matches)
+            .toBe(to >= 1024);
+          await tick();
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          expect(dialog()).toBe(el);
+          expect(el.open).toBe(true);
+          expect(el.matches(':modal')).toBe(true);
+          el.close();
+          await expect.poll(() => dialog() !== el || inPanel()).toBe(true);
+          await expect.poll(() => inPanel()).toBe(to < 1024);
+        });
+    });
+
+    it('the Menu button is at least 24x24 at 1280px', async () => {
+      await page.viewport(1280, 800);
+      render(SiteHeader, {});
+      const r = menu().element().getBoundingClientRect();
+      expect(r.width).toBeGreaterThanOrEqual(24);
+      expect(r.height).toBeGreaterThanOrEqual(24);
+    });
   });
 
   describe('the game', () => {
@@ -695,7 +825,7 @@ describe('SiteHeader', () => {
           .getByRole('link', { name: 'SF Housing', exact: true });
         await expect.element(name).toBeVisible();
         expect(name.element().textContent?.trim()).toBe('SF Housing');
-        if (width < 1024) await page.getByRole('button', { name: 'Menu' }).click();
+        await page.getByRole('button', { name: 'Menu' }).click();
         expect(page.getByRole('navigation', { name: 'Steps' }).elements()).toEqual([]);
         expect(document.querySelector('a[href="/sim"]')).toBeNull();
         expect(document.querySelector('[data-step-number], [data-step-locked]')).toBeNull();
@@ -714,44 +844,157 @@ describe('SiteHeader', () => {
       expect(panel.contains(name.element())).toBe(true);
     });
 
-    it('at 1024px the unit count sits in the bar after the name, before the status', async () => {
-      await page.viewport(1024, 800);
-      render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
-      const units = page.getByTestId('header-units');
-      await expect.element(units).toBeVisible();
-      const name = page.getByRole('link', { name: 'SF Housing', exact: true }).element();
-      const status = document.querySelector('[data-header-status]')!;
-      expect(units.element().getBoundingClientRect().left).toBeGreaterThanOrEqual(
-        name.getBoundingClientRect().right
-      );
-      expect(units.element().getBoundingClientRect().right).toBeLessThanOrEqual(
-        status.getBoundingClientRect().left + 0.5
-      );
-    });
-
-    it('at 800px the unit count waits in the Menu and shows when it opens', async () => {
-      await page.viewport(800, 800);
-      render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
-      const menu = page.getByRole('button', { name: 'Menu', exact: true });
-      await expect.element(menu).toBeVisible();
-      await expect.element(page.getByTestId('header-units')).not.toBeVisible();
-      await menu.click();
-      await expect.element(page.getByTestId('header-units')).toBeVisible();
-      const panel = document.getElementById(menu.element().getAttribute('aria-controls')!)!;
-      expect(panel.contains(page.getByTestId('header-units').element())).toBe(true);
-    });
-
-    it('the open game has no unit count', async () => {
+    it('the open game has no game panel', async () => {
       await page.viewport(1280, 800);
       render(SiteHeader, { routeId: '/' });
+      await page.getByRole('button', { name: 'Menu' }).click();
       await expect.element(page.getByRole('link', { name: 'About', exact: true })).toBeVisible();
-      expect(page.getByTestId('header-units').elements()).toEqual([]);
+      expect(page.getByTestId('game-panel').elements()).toEqual([]);
+    });
+
+    describe('the round label', () => {
+      const label = () => page.getByTestId('round-label');
+      const runs = (over: Record<string, unknown> = {}) =>
+        seededGame({ state: { phase: 'runs', firstWinAt: WON, round: 2, ...over } }).game;
+
+      it('"Round 2" is plain text after the site name: not a button, not a link', async () => {
+        await page.viewport(1280, 800);
+        render(GameHeaderHost, { game: runs(), routeId: '/' });
+        await expect.element(label()).toHaveTextContent('Round 2');
+        const el = label().element();
+        expect(el.closest('button, a')).toBeNull();
+        expect(el.querySelector('button, a, [tabindex]')).toBeNull();
+        expect(el.hasAttribute('tabindex')).toBe(false);
+        const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing' }).element();
+        expect(name.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      });
+
+      it('reads Current law in round 0 and Every policy when finished', async () => {
+        await page.viewport(1280, 800);
+        const r = await render(GameHeaderHost, { game: runs({ round: 0 }), routeId: '/' });
+        await expect.element(label()).toHaveTextContent('Current law');
+        r.unmount();
+        render(GameHeaderHost, { game: runs({ round: 4, finished: true }), routeId: '/' });
+        await expect.element(label()).toHaveTextContent('Every policy');
+      });
+
+      it('is absent for the open game and in the opening', async () => {
+        await page.viewport(1280, 800);
+        const r = await render(SiteHeader, { routeId: '/' });
+        await expect.element(page.getByRole('link', { name: 'SF Housing' })).toBeVisible();
+        expect(page.getByTestId('round-label').elements()).toEqual([]);
+        r.unmount();
+        render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+        await expect.element(page.getByRole('link', { name: 'SF Housing' })).toBeVisible();
+        expect(page.getByTestId('round-label').elements()).toEqual([]);
+      });
+
+      for (const routeId of ['/s/[id]', '/p/[id]', '/about'])
+        for (const width of [1280, 375])
+          it(`never shows on ${routeId} at ${width} px, in the bar or the Menu`, async () => {
+            await page.viewport(width, 800);
+            const pinned = createRawSnippet(() => ({ render: () => '<span>Pinned</span>' }));
+            render(GameHeaderHost, { game: runs(), routeId, pinned });
+            const menu = page.getByRole('button', { name: 'Menu', exact: true });
+            await menu.click();
+            await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
+            await expect.element(page.getByTestId('game-panel')).toBeVisible();
+            expect(page.getByTestId('round-label').elements()).toEqual([]);
+            expect(page.getByTestId('round-label-menu').elements()).toEqual([]);
+          });
+
+      it('below sm with a pinned item it waits in the Menu beside the name, as text', async () => {
+        await page.viewport(375, 812);
+        render(GoalPinnedHeader, { game: runs(), headline: HEADLINE });
+        await expect.element(page.getByTestId('goal-headline')).toBeVisible();
+        expect(label().element().getClientRects()).toHaveLength(0);
+        const menu = page.getByRole('button', { name: 'Menu', exact: true });
+        await menu.click();
+        const inMenu = page.getByTestId('round-label-menu');
+        await expect.element(inMenu).toBeVisible();
+        await expect.element(inMenu).toHaveTextContent('Round 2');
+        expect(inMenu.element().closest('button, a')).toBeNull();
+        const panel = document.getElementById(menu.element().getAttribute('aria-controls')!)!;
+        expect(panel.contains(inMenu.element())).toBe(true);
+      });
+
+      it('from sm with a pinned item the Menu does not repeat it', async () => {
+        await page.viewport(1280, 800);
+        render(GoalPinnedHeader, { game: runs(), headline: HEADLINE });
+        await expect.element(label()).toBeVisible();
+        await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        expect(page.getByTestId('round-label-menu').element().getClientRects()).toHaveLength(0);
+      });
+    });
+
+    describe('the Menu panel fits the viewport', () => {
+      const panelOf = () => {
+        const menu = page.getByRole('button', { name: 'Menu', exact: true }).element();
+        return document.getElementById(menu.getAttribute('aria-controls')!)!;
+      };
+      for (const [width, height, saves] of [
+        [667, 375, 3],
+        [320, 568, 3]
+      ] as const)
+        it(`at ${width} by ${height} with ${saves} saved games it ends at the viewport's bottom and scrolls inside`, async () => {
+          await page.viewport(width, height);
+          const pinned = createRawSnippet(() => ({ render: () => '<span>Pinned</span>' }));
+          const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves });
+          render(GameHeaderHost, { game, routeId: '/', pinned });
+          const menu = page.getByRole('button', { name: 'Menu', exact: true });
+          await menu.click();
+          await expect.element(page.getByTestId('game-panel')).toBeVisible();
+          const panel = panelOf();
+          const r = panel.getBoundingClientRect();
+          const style = getComputedStyle(panel);
+          expect(style.overflowY).toBe('auto');
+          expect(style.overscrollBehaviorY).toBe('contain');
+          expect(panel.scrollHeight).toBeGreaterThan(panel.clientHeight);
+          expect(r.bottom).toBeLessThanOrEqual(height);
+          expect(r.bottom).toBeGreaterThan(height - 1);
+          // The last entry, About, is reached by Tab from the Menu button (focus scrolls the
+          // panel) and by scrolling the panel; either way it is then whole in the viewport.
+          const about = page.getByRole('link', { name: 'About', exact: true });
+          (menu.element() as HTMLElement).focus();
+          for (let i = 0; i < 40 && document.activeElement !== about.element(); i++)
+            await userEvent.tab();
+          expect(document.activeElement).toBe(about.element());
+          panel.scrollTop = 0;
+          about.element().scrollIntoView({ block: 'nearest' });
+          await expect
+            .poll(() => about.element().getBoundingClientRect().bottom)
+            .toBeLessThanOrEqual(height);
+          expect(about.element().getBoundingClientRect().top).toBeGreaterThanOrEqual(r.top);
+        });
+
+      it('at 667 by 375 with one saved game the panel fits with no scrollbar', async () => {
+        await page.viewport(667, 375);
+        const pinned = createRawSnippet(() => ({ render: () => '<span>Pinned</span>' }));
+        const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves: 1 });
+        render(GameHeaderHost, { game, routeId: '/', pinned });
+        await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        await expect.element(page.getByTestId('game-panel')).toBeVisible();
+        const panel = panelOf();
+        expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
+        expect(panel.getBoundingClientRect().bottom).toBeLessThanOrEqual(375);
+      });
+
+      it('at 1280 px the pop-over has no scrollbar it does not need', async () => {
+        await page.viewport(1280, 800);
+        const { game } = seededGame({ state: { phase: 'runs', firstWinAt: WON }, saves: 3 });
+        render(GameHeaderHost, { game, routeId: '/' });
+        await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        await expect.element(page.getByTestId('game-panel')).toBeVisible();
+        const panel = panelOf();
+        expect(panel.scrollHeight).toBeLessThanOrEqual(panel.clientHeight);
+        expect(panel.getBoundingClientRect().bottom).toBeLessThan(800);
+      });
     });
 
     it('the Menu button is named Menu and has no dot, whatever the game holds', async () => {
       await page.viewport(800, 800);
       const { game } = seededGame({
-        state: { phase: 'runs', firstWinAt: WON, units: { home: 500 } }
+        state: { phase: 'runs', firstWinAt: WON, round: 2 }
       });
       render(GameHeaderHost, { game, routeId: '/' });
       await expect.element(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
@@ -763,15 +1006,13 @@ describe('SiteHeader', () => {
       render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
       const menu = page.getByRole('button', { name: 'Menu', exact: true });
       await menu.click();
-      await page.getByTestId('header-units').click();
-      const gamePanel = page.getByTestId('header-game-panel');
+      const gamePanel = page.getByTestId('game-panel');
       await expect.element(gamePanel).toBeVisible();
-      // A switch has no aria-expanded, so only the keep-open rule holds the Menu open.
-      const sound = gamePanel.getByTestId('game-sound');
-      expect(sound.element().hasAttribute('aria-expanded')).toBe(false);
-      const before = sound.element().getAttribute('aria-checked');
-      await sound.click();
-      await expect.element(sound).not.toHaveAttribute('aria-checked', before!);
+      // Rename has no aria-expanded, so only the keep-open rule holds the Menu open.
+      const rename = gamePanel.getByRole('button', { name: /^Rename / }).first();
+      expect(rename.element().hasAttribute('aria-expanded')).toBe(false);
+      await rename.click();
+      await expect.element(gamePanel.getByRole('textbox', { name: 'Name' })).toBeVisible();
       await expect.element(menu).toHaveAttribute('aria-expanded', 'true');
       const about = page.getByRole('link', { name: 'About', exact: true }).element();
       about.addEventListener('click', (e) => e.preventDefault(), { once: true });
@@ -780,12 +1021,16 @@ describe('SiteHeader', () => {
     });
 
     const HEADLINE = {
-      homes: 61400,
-      amount: 82069,
-      deadline: 'Dec 2055',
-      unlocks: null,
-      met: false,
-      side: []
+      state: 'pending' as const,
+      words: pinnedWords(PENDING, {
+        amount: 82069,
+        target: dayFromUtc(2055, 12, 1),
+        legal: dayFromUtc(2066, 9, 30),
+        round: 1,
+        finished: false,
+        next: 3
+      }),
+      fill: 0.75
     };
     for (const width of [375, 1280])
       it(`at ${width}px the header is positioned, the pinned box is not, and both GoalHeadline root nodes sit in it`, async () => {
@@ -799,16 +1044,69 @@ describe('SiteHeader', () => {
         expect(page.getByTestId('goal-live').element().parentElement).toBe(slot);
         expect(getComputedStyle(banner).position).toBe('relative');
         expect(getComputedStyle(slot).position).toBe('static');
-        await page.getByTestId('goal-headline-button').click();
-        const pop = page.getByTestId('side-goals');
-        await expect.element(pop).toBeVisible();
-        expect((pop.element() as HTMLElement).offsetParent).toBe(banner);
-        const p = pop.element().getBoundingClientRect();
-        const b = banner.getBoundingClientRect();
-        expect(p.top).toBeGreaterThanOrEqual(b.bottom);
-        expect(p.left).toBeGreaterThanOrEqual(b.left + 16 - 0.5);
-        expect(p.right).toBeLessThanOrEqual(b.right - 16 + 0.5);
+        expect(page.getByTestId('side-goals').elements()).toHaveLength(0);
       });
+
+    const WIN_HEADLINE = {
+      state: 'win' as const,
+      words: pinnedWords(
+        { tag: 'win', goalMonth: dayFromUtc(2058, 3, 1) },
+        {
+          amount: 82069,
+          target: dayFromUtc(2060, 6, 1),
+          legal: dayFromUtc(2066, 9, 30),
+          round: 1,
+          finished: false,
+          next: 3
+        }
+      ),
+      fill: 0.75,
+      ongift: () => {}
+    };
+    /** The banner's focusable parts that show, in DOM order. */
+    const focusables = () =>
+      [...page.getByRole('banner').element().querySelectorAll<HTMLElement>('a[href], button')]
+        .filter((el) => el.getBoundingClientRect().width > 0)
+        .filter((el) => !el.closest('[data-header-panel]'));
+    const inVisualOrder = (els: HTMLElement[]) => {
+      for (let i = 1; i < els.length; i++)
+        expect(
+          els[i].getBoundingClientRect().left,
+          `${els[i].textContent} after ${els[i - 1].textContent}`
+        ).toBeGreaterThanOrEqual(els[i - 1].getBoundingClientRect().left);
+    };
+
+    it('at 320 px the DOM order is the visual order: gift, status control, Menu', async () => {
+      await page.viewport(320, 700);
+      render(GoalPinnedHeader, { game: seededGame().game, headline: WIN_HEADLINE, status: true });
+      await expect.element(page.getByTestId('goal-gift')).toBeVisible();
+      await expect.element(page.getByTestId('status-control')).toBeVisible();
+      const els = focusables();
+      expect(els).toEqual([
+        page.getByTestId('goal-gift').element(),
+        page.getByTestId('status-control').element(),
+        page.getByRole('button', { name: 'Menu' }).element()
+      ]);
+      inVisualOrder(els);
+      const banner = page.getByRole('banner').element();
+      for (let el: Element | null = els[0]; el && el !== banner; el = el.parentElement)
+        expect(getComputedStyle(el).order, 'no CSS order').toBe('0');
+      for (const el of banner.children) expect(getComputedStyle(el).order).toBe('0');
+    });
+
+    it('at 1280 px the order is name, status control, gift, Menu', async () => {
+      await page.viewport(1280, 800);
+      render(GoalPinnedHeader, { game: seededGame().game, headline: WIN_HEADLINE, status: true });
+      await expect.element(page.getByTestId('goal-gift')).toBeVisible();
+      const els = focusables();
+      expect(els).toEqual([
+        page.getByRole('link', { name: 'SF Housing', exact: true }).element(),
+        page.getByTestId('status-control').element(),
+        page.getByTestId('goal-gift').element(),
+        page.getByRole('button', { name: 'Menu' }).element()
+      ]);
+      inVisualOrder(els);
+    });
 
     it("the account entry reads @handle from the layout's user first", async () => {
       await page.viewport(1280, 800);
@@ -818,6 +1116,7 @@ describe('SiteHeader', () => {
         routeId: '/',
         user: { handle: 'ada' }
       });
+      await page.getByRole('button', { name: 'Menu' }).click();
       const link = page.getByRole('link', { name: '@ada' });
       await expect.element(link).toHaveAttribute('href', '/account');
       expect(page.getByRole('link', { name: '@bob' }).elements()).toHaveLength(0);
@@ -831,6 +1130,7 @@ describe('SiteHeader', () => {
         routeId: '/',
         signInAvailable: false
       });
+      await page.getByRole('button', { name: 'Menu' }).click();
       await expect
         .element(page.getByRole('link', { name: '@bob' }))
         .toHaveAttribute('href', '/account');
@@ -839,6 +1139,7 @@ describe('SiteHeader', () => {
     it('with neither, Sign in links /signin while a method is in effect', async () => {
       await page.viewport(1280, 800);
       render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+      await page.getByRole('button', { name: 'Menu' }).click();
       await expect
         .element(page.getByRole('link', { name: 'Sign in' }))
         .toHaveAttribute('href', '/signin');
@@ -851,6 +1152,7 @@ describe('SiteHeader', () => {
         routeId: '/',
         signInAvailable: false
       });
+      await page.getByRole('button', { name: 'Menu' }).click();
       await expect.element(page.getByRole('link', { name: 'About' })).toBeVisible();
       expect(document.querySelector('[data-header-account]')).toBeNull();
     });

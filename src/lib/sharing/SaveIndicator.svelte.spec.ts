@@ -1,6 +1,6 @@
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page, userEvent } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import '../../routes/layout.css';
 import { COPY } from './copy';
 import SaveIndicator from './SaveIndicator.svelte';
@@ -29,6 +29,83 @@ describe('SaveIndicator', () => {
     expect(state().element().getBoundingClientRect().width).toBe(width);
   });
 
+  describe('with icons (a game below sm)', () => {
+    const state = () => page.getByTestId('save-state');
+    const width = () => state().element().getBoundingClientRect().width;
+    const off = () => page.getByRole('button', { name: COPY.autosaveOff, exact: true });
+
+    /** A CSS colour as sRGB 0..255, read back from a canvas pixel (oklch included). */
+    const rgbOf = (css: string): number[] => {
+      const c = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!;
+      c.fillStyle = css;
+      c.fillRect(0, 0, 1, 1);
+      return [...c.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+    };
+    const lum = (css: string) => {
+      const [r, g, b] = rgbOf(css).map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+
+    it('below sm: nothing drawn while saved or saving; off is a 24 px icon named Autosave off', async () => {
+      onTestFinished(() => page.viewport(1280, 900));
+      await page.viewport(375, 700);
+      const { rerender } = await render(SaveIndicator, { status: 'saved', icons: true });
+      await expect.element(state()).toHaveAttribute('data-save-status', 'saved');
+      expect(width()).toBe(0);
+      await rerender({ status: 'saving', icons: true });
+      await expect.element(state()).toHaveAttribute('data-save-status', 'saving');
+      expect(width()).toBe(0);
+
+      await rerender({ status: 'off', icons: true });
+      await expect.element(off()).toBeVisible();
+      const b = off().element().getBoundingClientRect();
+      expect(b.width).toBeGreaterThanOrEqual(24);
+      expect(b.height).toBeGreaterThanOrEqual(24);
+      expect(b.width).toBeLessThanOrEqual(28);
+      const icon = off().element().querySelector('svg')!;
+      expect(icon.getBoundingClientRect().width).toBeGreaterThan(0);
+      // The word is kept for assistive technology only.
+      const word = off().element().querySelector('span')!;
+      expect(word.textContent).toBe(COPY.autosaveOff);
+      expect(getComputedStyle(word).position).toBe('absolute');
+      expect(word.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+      expect(width()).toBeLessThanOrEqual(28);
+
+      await page.viewport(1280, 900);
+      await expect.poll(() => off().element().getBoundingClientRect().width).toBeGreaterThan(40);
+      expect(icon.getBoundingClientRect().width).toBe(0);
+    });
+
+    for (const scheme of ['light', 'dark'] as const)
+      it(`the icon keeps 3:1 on its button, and the button 3:1 against the bar (${scheme})`, async () => {
+        onTestFinished(() => page.viewport(1280, 900));
+        await page.viewport(375, 700);
+        await cdp().send('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-color-scheme', value: scheme }]
+        });
+        onTestFinished(async () => {
+          await cdp().send('Emulation.setEmulatedMedia', {
+            features: [{ name: 'prefers-color-scheme', value: 'light' }]
+          });
+        });
+        await render(SaveIndicator, { status: 'off', icons: true });
+        await expect.element(off()).toBeVisible();
+        const st = getComputedStyle(off().element());
+        const icon = getComputedStyle(off().element().querySelector('svg')!);
+        const bar = getComputedStyle(document.documentElement).getPropertyValue(
+          scheme === 'light' ? '--color-surface' : '--color-chrome-dark'
+        );
+        expect(ratio(icon.color, st.backgroundColor)).toBeGreaterThanOrEqual(3);
+        expect(ratio(st.borderTopColor, bar)).toBeGreaterThanOrEqual(3);
+      });
+  });
   it('shows "Saving…" for saving', async () => {
     render(SaveIndicator, { status: 'saving' });
     const text = page.getByTestId('save-text');

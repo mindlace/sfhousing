@@ -1,13 +1,12 @@
 import { getContext, setContext } from 'svelte';
 import { isValidId, newId } from '$lib/ids/base58';
-import { NODES } from './catalogue/nodes';
-import { RUNGS, fitGame, takeNext as nextRung } from './ladder';
+import type { Day } from '$lib/timelapse/time';
+import { POLICY_KEYS, ROUNDS } from './catalogue/rounds';
 import { OPEN_LIMITS, limitsOf, type Limits } from './limits';
-import { settle as settleRun, type RunResult } from './run-result';
+import { fitState, takeWin as winTaken } from './rounds';
 import { parseGameSave, type GameSave, type SaveEntry } from './save-shape';
 import { MAX_SAVES, SAVES_KEY, SAVE_NAME_MAX, saveKey } from './saves';
-import { NEW_GAME, type GameState, type NodeId } from './state';
-import { buy as buyNode, type Bought } from './tree';
+import { NEW_GAME, type GameState } from './state';
 import { defaultSaveName } from './words';
 import type { SaveSync } from './save-sync.svelte';
 
@@ -21,6 +20,9 @@ const POLICY_RECORD = 'sfhousing:sim:v2';
 const OLD_POLICY = 'sfhousing:sim:v1';
 /** Where a removed `OLD_POLICY` is copied when `POLICY_RECORD` was absent. */
 const OLD_POLICY_ASIDE = 'sfhousing:sim:corrupt:';
+
+/** The run's switches the old build kept; nothing reads them, so loading removes them. */
+const RUN_KEYS = ['sfhousing:run:collect', 'sfhousing:run:muted'] as const;
 
 const SAVE_PREFIX = 'sfhousing:save:';
 const CORRUPT_PREFIX = 'sfhousing:save:corrupt:';
@@ -141,7 +143,8 @@ function entryOf(save: GameSave): SaveEntry {
     nameIsDefault: save.nameIsDefault,
     savedAt: save.savedAt,
     phase: save.state.phase,
-    rung: save.state.rung
+    round: save.state.round,
+    finished: save.state.finished
   };
 }
 
@@ -152,7 +155,8 @@ function sameEntry(a: SaveEntry, b: SaveEntry): boolean {
     a.nameIsDefault === b.nameIsDefault &&
     a.savedAt === b.savedAt &&
     a.phase === b.phase &&
-    a.rung === b.rung
+    a.round === b.round &&
+    a.finished === b.finished
   );
 }
 
@@ -174,12 +178,12 @@ function isV1(text: string): boolean {
 function fitted(json: unknown): GameSave | null {
   const save = parseGameSave(json);
   if (save === null) return null;
-  const state = fitGame(save.state);
+  const state = fitState(save.state);
   return state === save.state ? save : { ...save, state };
 }
 
 /** The index when valid (§sec-design-store-layout), else null. */
-function parseIndex(text: string): { current: string; saves: SaveEntry[] } | null {
+function parseIndex(text: string): { current: string; saves: SaveEntry[]; old: boolean } | null {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -190,18 +194,27 @@ function parseIndex(text: string): { current: string; saves: SaveEntry[] } | nul
   if (!Array.isArray(json.saves)) return null;
   const ids = new Set<string>(); // eslint-disable-line svelte/prefer-svelte-reactivity
   const saves: SaveEntry[] = [];
+  let old = false;
   for (const e of json.saves as unknown[]) {
     if (!isPlain(e)) return null;
-    const { id, name, nameIsDefault, savedAt, phase, rung } = e;
+    const { id, name, nameIsDefault, savedAt, phase } = e;
     if (typeof id !== 'string' || ids.has(id)) return null;
     if (typeof name !== 'string' || typeof nameIsDefault !== 'boolean') return null;
     if (typeof savedAt !== 'string') return null;
     if (phase !== 'opening' && phase !== 'runs') return null;
-    if (typeof rung !== 'number' || !Number.isSafeInteger(rung) || rung < 0) return null;
+    // An index the old build wrote carries `rung`: it is read as the round, and the index is
+    // rewritten with `round`.
+    const isOld = !Object.hasOwn(e, 'round');
+    const round = isOld ? e.rung : e.round;
+    if (typeof round !== 'number' || !Number.isSafeInteger(round) || round < 0) return null;
+    if (isOld) old = true;
+    // An index written before `finished` has none: false, and the entry is rewritten from its
+    // save on the next read.
+    const finished = e.finished === true;
     ids.add(id);
-    saves.push({ id, name, nameIsDefault, savedAt, phase, rung });
+    saves.push({ id, name, nameIsDefault, savedAt, phase, round, finished });
   }
-  return { current: json.current, saves };
+  return { current: json.current, saves, old };
 }
 
 function parseSaveText(text: string): GameSave | null {
@@ -217,19 +230,16 @@ let opening = false;
 
 const OPEN_AT = '1970-01-01T00:00:00.000Z';
 
-/** The open game's state: the last rung met, every node at its last level, no units (call 9). */
+/** The open game's state: the last round, finished, every key editable; it passes its own parser. */
 function openState(): GameState {
   return {
     ...structuredClone(NEW_GAME),
     phase: 'runs',
-    bought: Object.fromEntries(NODES.map((n) => [n.id, n.levels.length])),
-    rung: RUNGS - 1,
-    met: Array.from({ length: RUNGS }, (_, rung) => ({
-      rung,
-      reachedOn: 0,
-      datasetVersion: 'open',
-      at: OPEN_AT
-    }))
+    firstWinAt: OPEN_AT,
+    round: ROUNDS,
+    finished: true,
+    editable: [...POLICY_KEYS],
+    own: true
   };
 }
 
@@ -337,6 +347,7 @@ export class GameStore {
       }
       const recs = { plan: storage.getItem(PLAN_RECORD), policy: storage.getItem(POLICY_RECORD) };
       if (changed) ops.push([SAVES_KEY, this.#indexText(games, current, recs)]);
+      for (const key of RUN_KEYS) if (storage.getItem(key) !== null) ops.push([key, null]);
     } catch {
       // A read threw before anything was written: storage cannot be trusted.
       this.#memoryGame(null, structuredClone(NEW_GAME));
@@ -401,6 +412,7 @@ export class GameStore {
       }
       changed = true;
     } else {
+      if (index.old) changed = true;
       for (const entry of index.saves) {
         const key = saveKey(entry.id);
         const raw = storage.getItem(key);
@@ -643,25 +655,14 @@ export class GameStore {
     if (state.phase === 'runs') return OK;
     return this.#put({ ...state, phase: 'runs' }) ? OK : REFUSED;
   }
-  /** Buys a node (G3); a refusal passes through unwritten, a refused write answers short. */
-  buy(id: NodeId): Bought {
-    const bought = buyNode(this.#state, id);
-    if (this.#open) return bought.ok ? { ok: false, reason: 'done' } : bought;
-    if (!bought.ok) return bought;
-    return this.#put(bought.state) ? bought : { ok: false, reason: 'short' };
-  }
-  /** Settles a finished run once; the same run again writes nothing. */
-  settle(r: RunResult): StoreChange {
+  /** takeWin of rounds.ts, written; the open game answers ok and changes nothing. */
+  takeWin(w: {
+    goalMonth: Day | null;
+    on: ReadonlySet<string>;
+    datasetVersion: string;
+  }): StoreChange {
     if (this.#open) return OK;
-    const last = this.#state.last;
-    if (last !== null && last.at === r.at && last.rung === r.rung) return OK;
-    return this.#put(settleRun(this.#state, r)) ? OK : REFUSED;
-  }
-  /** Takes the next rung when one is due; writes nothing when it does not move. */
-  takeNext(): StoreChange {
-    if (this.#open) return OK;
-    const next = nextRung(this.#state);
-    if (next === this.#state) return OK;
+    const next = winTaken(this.#state, { ...w, at: this.#now().toISOString() });
     return this.#put(next) ? OK : REFUSED;
   }
   /** Registers a function the store calls before another game becomes current; returns its remover. */

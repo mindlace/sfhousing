@@ -29,7 +29,7 @@ function save(id: string = newId(), over: Partial<GameSave> = {}): GameSave {
     state: {
       ...structuredClone(NEW_GAME),
       phase: 'runs',
-      rung: 1,
+      round: 1,
       firstWinAt: '2026-11-22T10:00:00.000Z'
     },
     plan: null,
@@ -79,20 +79,61 @@ describe('the game_save table', () => {
 });
 
 describe('putGame', () => {
-  it('stores phase and rung from save.state on insert and on update', async () => {
+  it('stores phase and the round, in the rung column, on insert and on update; lists the round', async () => {
     const db = await setup();
-    const a = save(undefined, { state: { ...save().state, phase: 'opening', rung: 0 } });
+    const a = save(undefined, { state: { ...save().state, phase: 'opening', round: 0 } });
     await putGame(db, 'u1', a, null);
     expect(await row(db, 'u1', a.id)).toMatchObject({ phase: 'opening', rung: 0, rev: 1 });
-    await putGame(db, 'u1', { ...a, state: { ...a.state, phase: 'runs', rung: 2 } }, 1);
+    await putGame(db, 'u1', { ...a, state: { ...a.state, phase: 'runs', round: 2 } }, 1);
     expect(await row(db, 'u1', a.id)).toMatchObject({ phase: 'runs', rung: 2, rev: 2 });
+    const { saves } = await listGames(db, 'u1', new Date('2026-11-23T00:00:00.000Z'));
+    expect(saves[0]).toMatchObject({ id: a.id, round: 2 });
+    expect(saves[0]).not.toHaveProperty('rung');
   });
 
-  it('keeps a bought entry for a node the catalogue lacks', async () => {
+  it('keeps an editable key the catalogue lacks', async () => {
     const db = await setup();
-    const a = save(undefined, { state: { ...save().state, bought: { 'no-such-node': 3 } } });
+    const a = save(undefined, { state: { ...save().state, editable: ['no-such-key'] } });
     await putGame(db, 'u1', a, null);
     expect(await readGame(db, 'u1', a.id)).toEqual({ kind: 'live', rev: 1, save: a });
+  });
+
+  it('a stored version 2 body reads back as version 3', async () => {
+    const db = await setup();
+    const id = newId();
+    const v2 = {
+      ...save(id),
+      state: {
+        v: 2,
+        phase: 'runs',
+        firstWinAt: '2026-11-22T10:00:00.000Z',
+        bought: { 'housing-bond': 1 },
+        units: { home: 3 },
+        rung: 1,
+        met: [{ rung: 0, reachedOn: 33000, datasetVersion: 'v', at: '2026-11-22T10:00:00.000Z' }],
+        side: {},
+        runs: 1,
+        last: null
+      }
+    };
+    await db.insert(gameSave).values({
+      identityId: 'u1',
+      id,
+      rev: 1,
+      name: v2.name,
+      phase: 'runs',
+      rung: 1,
+      body: JSON.stringify(v2),
+      savedAt: new Date(v2.savedAt),
+      removedAt: null
+    });
+    const r = await readGame(db, 'u1', id);
+    expect(r?.kind === 'live' && r.save.state).toMatchObject({
+      v: 3,
+      round: 2,
+      editable: ['housing-bond'],
+      own: true
+    });
   });
 
   it('a conflict carries the v2 save stored', async () => {
@@ -233,7 +274,7 @@ describe('listGames', () => {
       name: 'Named',
       nameIsDefault: false,
       savedAt: '2026-11-21T12:00:00.000Z',
-      state: { ...save().state, phase: 'opening', rung: 0, firstWinAt: null }
+      state: { ...save().state, phase: 'opening', round: 0, firstWinAt: null }
     });
     const recent = save(newId(), { savedAt: '2026-11-22T12:00:00.000Z' });
     await putGame(db, 'u1', mid, null);
@@ -251,7 +292,8 @@ describe('listGames', () => {
       nameIsDefault: true,
       savedAt: '2026-11-22T12:30:00.000Z',
       phase: 'runs',
-      rung: 1,
+      round: 1,
+      finished: false,
       rev: 2
     });
     expect(saves[0].nameIsDefault).toBe(true);
@@ -262,9 +304,18 @@ describe('listGames', () => {
       nameIsDefault: false,
       savedAt: mid.savedAt,
       phase: 'opening',
-      rung: 0,
+      round: 0,
+      finished: false,
       rev: 1
     });
+  });
+
+  it('lists a finished game as finished, from its body', async () => {
+    const db = await setup();
+    const done = save(newId(), { state: { ...save().state, round: 4, finished: true } });
+    await putGame(db, 'u1', done, null);
+    const { saves } = await listGames(db, 'u1', new Date());
+    expect(saves[0]).toMatchObject({ id: done.id, round: 4, finished: true });
   });
 
   it('lists removed ids for 90 days and not after, never among saves', async () => {

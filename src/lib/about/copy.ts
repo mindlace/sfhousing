@@ -59,7 +59,7 @@ export const MEANINGS: readonly {
   {
     term: 'The goal',
     body:
-      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the deadline, ` +
+      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the target, ` +
       `counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so homes built since then count. ` +
       "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
       `Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`,
@@ -70,16 +70,10 @@ export const MEANINGS: readonly {
     body: `The state asks for room for at least ${bufferPercent}% more: ${formatCount(bufferAmount(GOAL_BASE))} ${GOAL_BASE.measure.unit}.`
   },
   {
-    term: 'The deadline',
+    term: 'The target',
     body:
-      `When the goal must be met. The first is the end of the ${WINDOW_MONTHS / 12}-year ` +
-      'window; each later one is five or more years earlier. Taking the next one is your choice.'
-  },
-  {
-    term: 'Units',
-    body:
-      'Homes you collected during a run. Every completed home counts toward the goal; only ' +
-      'collected homes become units to spend in the tree.'
+      `When the goal must be met. It starts as the end of the ${WINDOW_MONTHS / 12}-year ` +
+      'window; each win moves it to the month your forecast reached the goal.'
   }
 ];
 
@@ -90,30 +84,22 @@ export const YOUR_PLANS: readonly [string, string] = [
 
 /** Using it: the game, in order. */
 export const GAME_STEPS: readonly string[] = [
-  'Paint room for the goal. Meeting it starts your first run.',
-  'A run plays the forecast from today to the deadline. Sweep the pointer over finished projects to collect their homes before they fade.',
-  'After a run, the tally shows homes by the deadline, the units you collected and where the other homes stand.',
-  'Between runs, spend units in the tree. What you buy is in force from today, and you can switch it off and on.',
-  'Meet the goal to be offered an earlier deadline. Taking it is your choice.'
+  'Paint room for the goal, then press Start.',
+  'Play the forecast, or drag the playhead. Seeing the month current law reaches the goal is your first win.',
+  'Each win offers a few new policies. Switch them on or off and watch the date move.',
+  'Beat your best month by any means to win again. A policy you win with becomes yours to edit.'
 ];
 
 export const GAME_NOTES: readonly string[] = [
   'Painting happens once, at the start, to show how much has to be built. The simulation runs your policy.',
-  'Collect for me, behind the unit count, collects every drop as it appears.',
-  'A deadline once met stays met after a data update.',
+  'A change to a policy takes the timeline back to the month it starts.',
   'A published policy plays in full for everyone.'
 ];
 
 export const SAVED_GAMES: readonly string[] = [
-  `Each saved game has its own plan, policy, units, purchases and deadlines met. You can keep ${MAX_SAVES}.`,
-  'The unit count in the header opens your saved games.',
+  `Each saved game has its own plan, policy, round and best month. You can keep ${MAX_SAVES}.`,
+  'The Menu in the header opens your saved games.',
   'Games are saved in this browser, and to your account from your first win.'
-];
-
-/** About's Run table: the keys of a run (R1). */
-export const RUN_SHORTCUTS: readonly { keys: string; action: string }[] = [
-  { keys: '← ↑ → ↓', action: 'Move the collecting ring (during a run)' },
-  { keys: 'Shift + ← ↑ → ↓', action: 'Move the collecting ring further' }
 ];
 
 export const WORKED_OUT = 'How this is worked out';

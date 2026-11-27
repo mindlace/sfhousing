@@ -22,6 +22,9 @@ export const WAITING_NOTE = 'Working out the months ahead.';
 /** OQ-4. */
 export const DATES_MOVED_NOTICE = 'Some policy dates moved to fit this data.';
 
+/** Under a policy's name when it does not run in this game. */
+export const NOT_IN_GAME = 'Not in this game';
+
 /** The ruler's flag at the goal's deadline. */
 export const GOAL_FLAG = 'Goal';
 /** Play's label when it offers to replay from an edit's first changed month. */

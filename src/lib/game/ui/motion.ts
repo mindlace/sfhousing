@@ -1,4 +1,3 @@
-export const ROLL_MS = 400;
-export const TALLY_ROLL_MS = 800;
-export const MET_MS = 1200;
-export const REVEAL_MS = 300;
+/** The win's gift jiggles once every period: a 600 ms turn (the keyframes' first 15%), then
+ *  still. */
+export const JIGGLE_MS = 4000;

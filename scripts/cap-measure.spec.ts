@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_POLICY4 } from '../src/lib/timeline/policy4';
 import { CAPS, OLD_FIGURES, capLines, capTable, type CapRun } from './cap-measure';
 import { openWorlds } from './record-check';
-import { openEngine } from './reach-measure';
+import { openEngine } from './lib/engine-runner';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
 /** Enough for one fill of the fixture's window, twice; a test argument, not a wait. */
@@ -57,7 +57,7 @@ describe('capLines', () => {
     expect(lines).toContain(
       'Current law: 2040 200 (was 47,502), 2066 400 (was 79,338); starts V 50%, III 30%, I 20% (n 10)'
     );
-    expect(lines.some((l) => l.startsWith('Full tree, 80 stories: 2040 500 (was 97,777)'))).toBe(
+    expect(lines.some((l) => l.startsWith('Every policy, 80 stories: 2040 500 (was 97,777)'))).toBe(
       true
     );
   });

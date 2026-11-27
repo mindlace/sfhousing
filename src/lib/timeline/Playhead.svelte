@@ -41,6 +41,8 @@
     playFrom?: Day | null;
     /** The goal flag's day; null hides the flag and the description's deadline sentence. */
     goalDeadline?: Day | null;
+    /** The goal flag's words (default GOAL_FLAG); a game names its target ("Target Jun 2060"). */
+    goalLabel?: string;
     /** Called exactly once per day change. */
     onday?: (day: Day) => void;
     /** Test seams. */
@@ -59,6 +61,7 @@
     reached,
     playFrom = null,
     goalDeadline = null,
+    goalLabel = GOAL_FLAG,
     onday,
     raf = (cb) => requestAnimationFrame(cb),
     cancelRaf = (h) => cancelAnimationFrame(h)
@@ -84,6 +87,8 @@
   const FLAG_GAP = 2;
   let rulerW = $state(0);
   let yearW = $state(0);
+  /** The goal flag's width (.goal --w), measured: its words vary ("Target Sep 2066"). */
+  let goalW = $state(0);
   const covered = $derived.by(() => {
     if (rulerW <= FLAG_W) return '';
     const x = (at(day) / 100) * rulerW;
@@ -296,7 +301,9 @@
           class="goal text-ink-muted dark:text-ink-dark-muted"
           data-testid="tl-goal-flag"
           aria-hidden="true"
-          style:left="{at(goalDeadline)}%">{GOAL_FLAG}</span
+          bind:offsetWidth={goalW}
+          style:--at="{at(goalDeadline)}%"
+          style:--w="{goalW}px">{goalLabel}</span
         >
       {/if}
     </div>
@@ -457,12 +464,14 @@
     background: var(--color-accent);
     color: var(--color-on-accent);
   }
+  /* The goal flag is centred on its day and, as the date flag, keeps inside the cell at either
+     end (--w is its measured width). */
   .goal {
     position: absolute;
     bottom: 0;
+    left: clamp(0px, calc(var(--at) - var(--w) / 2), calc(100% - var(--w)));
     font-size: 12px;
     line-height: 16px;
-    transform: translateX(-50%);
     white-space: nowrap;
   }
   .ctl:focus-visible {

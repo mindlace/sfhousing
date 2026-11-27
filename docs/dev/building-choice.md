@@ -364,9 +364,11 @@ spec tests.
 `cap-measure` runs the same runner over the whole window (480 months) with the score series fed
 as the ensemble's plain loop feeds it, so `rows[i].completedNet` is the view's row for row (its spec
 checks this against `openEngine` on fixture-0; on `2026-11-27-3abc9cb0` the 480 current-law rows
-agree exactly). The transit rule is `GAME_TRANSIT_ID` with all four stop types at 805 m; the full
-tree is `fullTree(cal)` with every band of its transit rule set to the cap. The old figures
-(`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
+agree exactly). The transit rule is one policy (`TRANSIT_RULE_ID`) with all four stop types at
+805 m; "Every policy" is `catalogueDoc(cal, POLICY_KEYS)`, the game's twelve policies on, with every
+band of its transit policies set to the cap. The old figures (`OLD_FIGURES`) are the taller-caps
+report's engine runs on `2026-11-25-76c90397`. The "Full tree" row below was measured before the
+policy rounds replaced the points game's tree, so it is that tree's, not the catalogue's.
 
 **Live figures** (build `2026-11-27-247eaa0b`, not uploaded; records 2016-11-27 to 2026-11-27).
 Record check: 6 pass, 0 miss, 10 accepted, 41 report, exit 0 (stage targets on the fit's spells;

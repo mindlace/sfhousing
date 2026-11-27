@@ -751,6 +751,7 @@ describe('TimelineMode', () => {
 
     it('About open: Space does not play', async () => {
       await opened();
+      await page.getByRole('button', { name: 'Menu', exact: true }).click();
       await page.getByRole('link', { name: 'About', exact: true }).click();
       await expect.element(page.getByRole('dialog', { name: 'About this model' })).toBeVisible();
       spaceOn(document.body);
@@ -2254,10 +2255,7 @@ describe('TimelineMode', () => {
       await chip.click();
       await expect.poll(() => pop.hidden).toBe(false);
       await frame();
-      const lead =
-        width >= 1024
-          ? page.getByRole('link', { name: 'About', exact: true })
-          : page.getByRole('button', { name: 'Menu' });
+      const lead = page.getByRole('button', { name: 'Menu' });
       const rects = () => ({
         cell: page.getByTestId('tl-status-group').element().getBoundingClientRect().toJSON(),
         score: scoreBar().element().getBoundingClientRect().toJSON(),
@@ -2607,7 +2605,7 @@ describe('TimelineMode', () => {
     await expect.element(page.getByTestId('tl-chart-legend')).toBeVisible();
     const legend = page.getByTestId('tl-chart-legend').element() as HTMLElement;
     const lab = legend.parentElement!.getBoundingClientRect();
-    expect(lab.width).toBe(168);
+    expect(lab.width).toBe(288);
     const names = [...legend.querySelectorAll('li')].map((li) => li.textContent!.trim());
     // The fixture's 24 months end before the goal's deadline: no step, so no goal entry.
     expect(page.getByTestId('chart-target').elements()).toEqual([]);
@@ -3611,13 +3609,12 @@ describe('halos on the map', () => {
   });
 });
 
-describe('no game: no phase', () => {
-  it('data-phase is none, setRunView is never called, and the dock mounts', async () => {
+describe('no game', () => {
+  it('no data-phase, and the dock mounts', async () => {
     await opened();
-    expect(page.getByTestId('tl-mode').element().getAttribute('data-phase')).toBe('none');
+    expect(page.getByTestId('tl-mode').element().hasAttribute('data-phase')).toBe(false);
     await expect.element(page.getByTestId('tl-dock')).toBeInTheDocument();
     expect(callsOf('getMap').length).toBeGreaterThan(0); // the map was ready
-    expect(callsOf('setRunView')).toEqual([]);
     const box = page.getByTestId('tl-map-box').element();
     expect(box.hasAttribute('inert')).toBe(false);
     expect(box.hasAttribute('tabindex')).toBe(false);

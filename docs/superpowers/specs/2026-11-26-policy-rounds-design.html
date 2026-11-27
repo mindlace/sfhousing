@@ -1,0 +1,686 @@
+<article>
+  <header>
+    <h1>Policy rounds: the simulator first, no points</h1>
+    <p>Remove units, drops, the tally and the tree. Keep the simulation page as the forecasting
+      tool at all times, and reveal policies a few per round.</p>
+  </header>
+
+  <aside data-kind="note"><strong>Status</strong> Agreed with the owner on 2026-11-26. No open
+    questions.</aside>
+
+  <section id="sec-intent">
+    <h2>Intent</h2>
+    <p>The incremental loop (#158) turned the simulator into a game of buying power-ups. The
+      owner's aim for incrementalism was narrower: show the policy choices over time, in a tool
+      that stays an educational simulator where people experiment and see which choices do more.
+      This design keeps the progressive reveal and removes the economy around it.</p>
+    <table id="tbl-owner">
+      <caption>What the owner said (2026-11-26)</caption>
+      <thead>
+        <tr><th scope="col">Id</th><th scope="col">Statement</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">P1</th><td>"My main goal with incrementalism was exposing various
+          policy choices over time. This is still intended to be an educational simulator that
+          helps people experiment and see what choices have better effects vs not. Now it's a
+          'game' of clicking power-ups, which if chosen will auto-win you the next round."</td></tr>
+        <tr><th scope="row">P2</th><td>"I don't recall asking to drop the 3d model aspect of the
+          map. It's now entirely flat." It is still as it was during the paint level.</td></tr>
+        <tr><th scope="row">P3</th><td>"I want to drop the point system entirely; the progressive
+          reveal of policy options is still good. I don't care that this means there's no
+          sweeping-like behavior during a sim run."</td></tr>
+        <tr><th scope="row">P4</th><td>A run of about 20 seconds "is way too fast to be aware of
+          what's going on". Speed "can be the same as what is currently showing on 'workshop'
+          pages" (1× and 3×).</td></tr>
+        <tr><th scope="row">P5</th><td>"Pausing and scrubbing seems to have been lost."</td></tr>
+        <tr><th scope="row">P6</th><td>The player must be able to change (enable, disable, edit)
+          earned policies without advancing to the next level.</td></tr>
+        <tr><th scope="row">P7</th><td>The next set of policies is earned by meeting the deadline.
+          "I don't want the deadline to advance in 5 year increments; I want it to advance
+          according to the player's own achievement. i.e. if they made it in June 2056 then
+          that's the new target."</td></tr>
+        <tr><th scope="row">P8</th><td>"Maybe we have fewer items available each round."</td></tr>
+        <tr><th scope="row">P9</th><td>"We should offer fixed policies the first go, and then
+          after they 'win' with a given fixed policy, they can edit it."</td></tr>
+        <tr><th scope="row">P10</th><td>Editing after a win is fully open: any value the editor
+          allows. "The fully open rule gives us an out with 'will the next added policy make
+          things faster': if it doesn't, they can edit their existing rules to get a bump."</td></tr>
+        <tr><th scope="row">P11</th><td>"I don't think we need a 'new policy must be on' rule. As
+          long as you beat your old time by any means you should be able to advance."</td></tr>
+        <tr><th scope="row">P12</th><td>A win has to be seen: the playhead reaches the goal month,
+          by Play or by dragging.</td></tr>
+        <tr><th scope="row">P13</th><td>The no-gain rule (a round can complete without a win)
+          "sounds decent". Superseded by P19 and P20: a late result grants nothing.</td></tr>
+        <tr><th scope="row">P14</th><td>"Since transit rules are implicitly about walking
+          distance, maybe we have a sensible max, and don't default to the max as we appear to
+          today. I would think 1km would already be pretty darn far."</td></tr>
+        <tr><th scope="row">P15</th><td>20 and 40 stories reaching the goal later than 12 "sounds
+          like some kind of simulation bug".</td></tr>
+        <tr><th scope="row">P16</th><td>"Reset the timeline when a policy changes or is enabled
+          to the present or to when the policy goes into effect, whichever is later."</td></tr>
+        <tr><th scope="row">P17</th><td>"Round 2" is a status, not a button. Clicking the score
+          opens the round panel. In the policies pane each row has the switch on the left and
+          Edit on the right. "Don't show a lock - 'new' is synonymous with fixed, so it either
+          has a 'new' badge or an edit button. Clicking on either should show the edit pane, but
+          in the new state it should just show details." On a phone, Edit or New goes beneath
+          the switch.</td></tr>
+        <tr><th scope="row">P18</th><td>"The round panel is an information panel not a tool
+          surface. Show only choosable policies in effect for that round with their as-set
+          rules. For earlier rounds, show what was achieved." A pop-over.</td></tr>
+        <tr><th scope="row">P19</th><td>No modal victory: "the user may want to tweak things
+          more". The top score converts to a win state when the current policies are winning
+          and the playhead has made it to or past the threshold; it is sticky while policies
+          are unchanged. A little present icon that jiggles stands for the new policies. Once
+          the present is opened, each new policy gets an explainer with an Accept button that
+          goes to the next. The losing state shows "82,069 homes by Jun 2062" over "2 years
+          late". "No policies granted, no nothing."</td></tr>
+        <tr><th scope="row">P20</th><td>A separate agent is improving the realism of the
+          scenario engine. "We should focus on the mechanisms and not worry too much if this
+          iteration paints the user into corners - we're not going to release this round of work
+          without integrating the sim changes."</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sec-goals">
+    <h2>Goals, non-goals, anti-goals</h2>
+    <section id="sec-goals-list">
+      <h3>Goals</h3>
+      <ul>
+        <li>After the opening there is one screen: the simulation page with the map in 3D, the
+          timeline, Play and Pause, the ruler, the chart, cards and Details (P2, P4, P5).</li>
+        <li>No units, drops, ring, tally, prices or buying anywhere (P3).</li>
+        <li>Policies arrive a few per round. Each arrives fixed, with a switch. A policy becomes
+          editable once the player has won with it on (P8, P9, P10).</li>
+        <li>The target is the player's own best date. Beating it by any means wins the round
+          (P7, P11), once the playhead has seen the goal month (P12).</li>
+        <li>Every policy the player has can be switched or edited at any time, with no need to
+          take a new target first (P6).</li>
+        <li>Games saved since #158 keep working.</li>
+      </ul>
+    </section>
+    <section id="sec-non-goals">
+      <h3>Non-goals</h3>
+      <ul>
+        <li>A second yardstick for money policies. The date cannot tell them apart (see
+          <a href="#tbl-measured">the measurements</a>); Details already shows affordable homes
+          and public money. A later design can add a measure per round.</li>
+        <li>New policies beyond those the tree already had.</li>
+        <li>Any change to the opening (the brush, the room goal, Start).</li>
+        <li>A speed of 1 month per second. It was removed in #63 and P4 asks for the workshop's
+          speeds.</li>
+        <li>Fixing the height anomaly (P15). It is being investigated and gets its own change;
+          see <a href="#sec-height">Height</a>.</li>
+      </ul>
+    </section>
+    <section id="sec-anti-goals">
+      <h3>Anti-goals</h3>
+      <ul>
+        <li>A screen after the opening that hides the map or the timeline.</li>
+        <li>A forecast the player cannot pause, scrub or replay.</li>
+        <li>A policy the player has won with that they cannot edit, or an edit that silently
+          reverts (the 805 m revert the owner hit).</li>
+        <li>Any currency, score multiplier or reward that is not the forecast itself.</li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="sec-today">
+    <h2>What exists today</h2>
+    <ul>
+      <li><strong>Phases.</strong> After Start the page moves through starting, run, tally, tree
+        and workshop (<code>src/lib/sim-page/game-phase.ts</code>). Only the workshop mounts the
+        timeline; it is reached through Edit on a bought node.</li>
+      <li><strong>The run view.</strong> In starting, run and tally the map is locked flat, north
+        up, fitted to the city (<code>setRunView</code> in <code>SimMap.svelte</code>,
+        <code>runFrame</code> in <code>camera.ts</code>). At that zoom the buildings layer is
+        below its minimum zoom. The design gave the reason as "every drop is then reachable".
+        Nothing of the 3D style was deleted.</li>
+      <li><strong>The run clock.</strong> A run is a fixed 20 seconds (<code>RUN_MS</code>,
+        <code>src/lib/fzp/playback.ts</code>): 2 years per second to the first deadline. The
+        workshop's Playhead still has 1 year and 3 years per second, pause, drag and keys.</li>
+      <li><strong>Reveal.</strong> A node shows when its ring is at or below the rung and one of
+        its prerequisites is bought (<code>isShown</code>, <code>src/lib/game/tree.ts</code>).
+        Limits come only from <code>bought</code> (<code>limitsOf</code>,
+        <code>src/lib/game/limits.ts</code>); edits are capped at the bought level.</li>
+      <li><strong>Zoning.</strong> Eleven zoning nodes all edit one transit rule,
+        <code>game-transit</code>, so their switches move together. The policy document itself
+        allows any number of transit rules; where they overlap each lot takes the tallest.</li>
+      <li><strong>The ladder.</strong> Five deadlines: Oct 2066, then Dec 2060, 2055, 2045, 2040
+        (<code>LADDER_YEARS</code>), set by a rounding rule from one measurement.</li>
+    </ul>
+    <table id="tbl-measured">
+      <caption>Month the goal (82,069 homes) is reached, dataset 2026-11-25-76c90397, cars on</caption>
+      <thead>
+        <tr><th scope="col">Policies on</th><th scope="col">Reached</th><th scope="col">Earlier than current law</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Current law</th><td>Oct 2061</td><td>0</td></tr>
+        <tr><th scope="row">All permitting</th><td>May 2059</td><td>29 months</td></tr>
+        <tr><th scope="row">All money</th><td>Dec 2058</td><td>34 months</td></tr>
+        <tr><th scope="row">All zoning (80 stories, 3,219 m)</th><td>Nov 2040</td><td>251 months</td></tr>
+        <tr><th scope="row">Everything</th><td>Aug 2037</td><td>290 months</td></tr>
+        <tr><th scope="row">SB 423 clock alone</th><td>Oct 2061</td><td>0</td></tr>
+        <tr><th scope="row">Benchmark permits alone</th><td>Mar 2061</td><td>7 months</td></tr>
+        <tr><th scope="row">No discretionary review alone</th><td>Mar 2060</td><td>19 months</td></tr>
+        <tr><th scope="row">Housing bond alone</th><td>Mar 2061</td><td>7 months</td></tr>
+        <tr><th scope="row">General revenue alone</th><td>Jun 2059</td><td>28 months</td></tr>
+        <tr><th scope="row">Federal support alone</th><td>May 2060</td><td>17 months</td></tr>
+        <tr><th scope="row">Revolving fund, public bank or state-double alone</th><td>Oct 2061</td><td>0</td></tr>
+        <tr><th scope="row">Rail, 8 stories, 402 m</th><td>Jun 2060</td><td>16 months</td></tr>
+        <tr><th scope="row">Rail, metro or rapid bus alone at 4 stories</th><td>Oct 2061</td><td>0</td></tr>
+        <tr><th scope="row">All four stop types, 8 stories, 402 m</th><td>Nov 2051</td><td>119 months</td></tr>
+      </tbody>
+    </table>
+    <p>The strengths of the levers were never tuned; only prices and deadlines were. Height near
+      transit is the only thing that moves the date by decades. At a reach of two miles, one
+      transit mode covers nearly the whole city.</p>
+  </section>
+
+  <section id="sec-approaches">
+    <h2>Approaches</h2>
+    <dl>
+      <dt>A. Build the rounds on the workshop (chosen)</dt>
+      <dd>Delete the run, tally and tree phases and everything that exists for points. The page
+        always mounts what the workshop mounts today. The game's state shrinks to the round, the
+        target and which policies are editable, and the limits read that state instead of
+        <code>bought</code>. This keeps what #158 built that is still wanted: one page at one
+        address, saved games and their sync, the limits and the runnable document, the goal in
+        the header.</dd>
+      <dt>B. Revert #158 and add rounds to the old levels game</dt>
+      <dd>Brings back the old page as it was, but throws away saved games, the sync, the single
+        address and the limits code, all of which would be rebuilt. Rejected.</dd>
+      <dt>C. Keep the phases and make everything free</dt>
+      <dd>Keeps run, tally and tree with prices at zero and adds a pause to the run. The screens
+        that hide the tool stay, the run clock and the tally have no purpose without drops, and
+        P2, P4, P5 and P6 would each need a patch. Rejected.</dd>
+    </dl>
+    <aside data-kind="decision"><strong>Decision</strong> Approach A. My call; the owner has not
+      been asked to choose between these.</aside>
+  </section>
+
+  <section id="sec-design">
+    <h2>Design</h2>
+
+    <section id="sec-words">
+      <h3>Words</h3>
+      <dl>
+        <dt>Goal</dt><dd>82,069 homes, as today.</dd>
+        <dt>Goal month</dt><dd>The month the current forecast first reaches the goal.</dd>
+        <dt>Target</dt><dd>The month to beat: the player's best goal month so far. Before the
+          baseline has been seen there is none, and the header shows the legal deadline
+          (<code>defaultGoal(asOf).deadline</code>, Oct 2066).</dd>
+        <dt>Round</dt><dd>A set of policies offered together.</dd>
+        <dt>Fixed</dt><dd>An offered policy whose only control is its switch.</dd>
+        <dt>Editable</dt><dd>A policy the player can change in its editor, to any value the
+          editor allows.</dd>
+        <dt>Baseline</dt><dd>The forecast with no offered policy on: current law plus the
+          player's painted plan.</dd>
+      </dl>
+    </section>
+
+    <section id="sec-loop">
+      <h3>The loop</h3>
+      <figure id="fig-loop">
+        <svg class="diagram" viewBox="0 0 760 240" role="img" aria-labelledby="fig-loop-t">
+          <title id="fig-loop-t">A round: change a policy, watch the forecast, then a win the player takes or a late result</title>
+          <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z"/></marker></defs>
+          <g class="node" id="n-change"><rect x="10" y="30" width="150" height="44"/><text x="85" y="52">Switch or edit</text></g>
+          <g class="node" id="n-reset"><rect x="200" y="30" width="150" height="44"/><text x="275" y="52">Timeline resets</text></g>
+          <g class="node" id="n-watch"><rect x="390" y="30" width="150" height="44"/><text x="465" y="52">Play or drag</text></g>
+          <g class="node" id="n-late"><rect x="580" y="30" width="170" height="44"/><text x="665" y="52">Late</text></g>
+          <g class="node result" id="n-win"><rect x="390" y="150" width="150" height="44"/><text x="465" y="172">Win state</text></g>
+          <g class="node" id="n-gift"><rect x="200" y="150" width="150" height="44"/><text x="275" y="172">Gift opened</text></g>
+          <g class="node" id="n-accept"><rect x="10" y="150" width="150" height="44"/><text x="85" y="172">Policies accepted</text></g>
+          <g class="edge" data-from="n-change" data-to="n-reset"><path d="M160 52H198"/></g>
+          <g class="edge" data-from="n-reset" data-to="n-watch"><path d="M350 52H388"/></g>
+          <g class="edge" data-from="n-watch" data-to="n-late"><path d="M540 52H578"/><text x="559" y="44">not yet</text></g>
+          <g class="edge" data-from="n-watch" data-to="n-win"><path d="M465 74V148"/><text x="500" y="114">earlier</text></g>
+          <g class="edge" data-from="n-late" data-to="n-change"><path d="M665 30V12H85V28"/><text x="375" y="8">try something else</text></g>
+          <g class="edge" data-from="n-win" data-to="n-gift"><path d="M390 172H352"/></g>
+          <g class="edge" data-from="n-gift" data-to="n-accept"><path d="M200 172H162"/></g>
+          <g class="edge" data-from="n-accept" data-to="n-change"><path d="M85 150V76"/><text x="118" y="114">next round</text></g>
+          <g class="edge" data-from="n-win" data-to="n-change"><path d="M465 194V222H40V76"/><text x="250" y="234">or keep tweaking</text></g>
+        </svg>
+        <figcaption>Figure 1. A win is a state the player can leave standing while they tweak
+          more. Opening the gift takes it: the target moves and the next round's policies
+          arrive.</figcaption>
+      </figure>
+      <ol>
+        <li><strong>The baseline comes first.</strong> After Start no policy is offered. The
+          player plays or drags to the baseline's goal month. Seeing it is the first win; taking
+          it sets the first target and offers round 1. Seeing current law before any policy is
+          the comparison everything later is read against. Accepted by the owner (2026-11-26).
+          <ul>
+            <li>Nothing depends on the baseline meeting the legal deadline. The owner's rule is
+              that the model follows realism wherever current law then lands, and the game is
+              re-derived from it. The deadline is a mark on the ruler for comparison.</li>
+            <li>If the baseline never reaches the goal in the window, seeing the end of the
+              window offers round 1, and the first forecast that reaches the goal is a win.</li>
+          </ul>
+        </li>
+        <li><strong>A change resets the timeline.</strong> When a policy is switched on or off, or
+          edited, playback pauses and the playhead goes to the first month the change takes
+          effect, or to today if that is later (P16). Everything after that point is unseen
+          again, and the result state below is cleared. The playhead goes there even when that
+          is later than where it was; months jumped over are not seen. An edit to a policy that
+          is off before and after changes no forecast and resets nothing. In a game the reset
+          takes the place of "Play from".</li>
+        <li><strong>The result state.</strong> The pinned goal in the header shows one of three
+          states (P19). There is no result card and nothing interrupts the player.
+          <ul>
+            <li><strong>Pending.</strong> The target: "82,069 homes before Jun 2060".</li>
+            <li><strong>Win.</strong> The forecast is current, its goal month is earlier than the
+              target, and the playhead has reached or passed that month. It reads "82,069 homes
+              by Mar 2058" over "2 yr 3 mo early", with a gift beside it.</li>
+            <li><strong>Late.</strong> The playhead has reached or passed the target month and
+              the win conditions are not met. It reads "82,069 homes by Jun 2062" over "2 years
+              late". Nothing is granted.</li>
+          </ul>
+          Win and Late are sticky: dragging back and forth does not change them. Only a change
+          to a policy clears them.</li>
+        <li><strong>Any means count.</strong> A win needs no new policy on. Editing an older
+          policy for an earlier date is a win (P11).</li>
+        <li><strong>Taking the win.</strong> The player may keep tweaking in the win state. When
+          they open the gift:
+          <ul>
+            <li>the goal month becomes the target (P7);</li>
+            <li>every New policy that is on becomes editable (P9);</li>
+            <li>the next round's policies are presented one at a time, each with an explainer
+              and one button, Accept, which goes to the next. When all are accepted they are in
+              the timeline, off, marked New.</li>
+          </ul>
+        </li>
+        <li><strong>No way round a late result.</strong> A round is passed only by a win. A
+          player whose policies cannot beat their target is stuck in that round. The owner
+          accepts this for now (P20): the engine is being made more realistic in separate
+          work, and this design is not released before that lands.</li>
+        <li><strong>The end.</strong> After the last round, the next win's gift opens the whole
+          tool: the limits are those <code>finished</code> gives today, and "+" offers every
+          kind of policy. The brush stays in the opening. The target keeps tracking the player's
+          best date.</li>
+      </ol>
+      <p>Nothing is ever taken away. A later forecast that is worse changes nothing; the target is
+        the best date taken. Wins and editable policies are not undone by Undo. An untaken win
+        is not saved: after a reload the player plays to the goal month again.</p>
+    </section>
+
+    <section id="sec-policies">
+      <h3>The policies and their rounds</h3>
+      <p>Twelve policies, down from 23 nodes. The three "hands" nodes go with the points. The
+        eleven zoning increments become three transit rules, one per class of transit, each its
+        own policy in the document with its own switch (P10). The classes are the owner's: heavy
+        rail (BART and Caltrain), light rail (Muni Metro), and bus (rapid and frequent together).
+        The bus rule holds the app's two bus stop types. Permitting and money policies are the
+        presets the tree already used.</p>
+      <table id="tbl-rounds">
+        <caption>Rounds: three policies each</caption>
+        <thead>
+          <tr><th scope="col">Round</th><th scope="col">Zoning</th><th scope="col">Permitting</th><th scope="col">Money</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>Taller near BART and Caltrain</td><td>SB 423 clock</td><td>Housing bond</td></tr>
+          <tr><th scope="row">2</th><td>Taller near Muni Metro</td><td>Benchmark permits</td><td>General revenue</td></tr>
+          <tr><th scope="row">3</th><td>Taller near bus</td><td></td><td>Revolving fund, federal support</td></tr>
+          <tr><th scope="row">4</th><td></td><td>No discretionary review</td><td>Public bank, state-double</td></tr>
+        </tbody>
+      </table>
+      <p>Every round holds at least one policy that moves the date even for a player who has
+        edited everything: a transit rule in rounds 1 to 3, and no discretionary review in
+        round 4 (17 months at the margin of the full tree).</p>
+      <ul>
+        <li><strong>A fixed zoning policy includes height.</strong> A stop type at 4 stories does
+          nothing, so each transit rule arrives with a height and a reach.</li>
+        <li><strong>What "editable" covers.</strong> Zoning: stories, reach and bands, and the
+          dates. The class of transit is what the policy is, so its stop types stay until the end. Permitting: the
+          policy's timings, as custom timings. Money: the policy's funding editor. All: the dates
+          it is in force.</li>
+        <li><strong>Adding and removing.</strong> During the rounds "+" offers only the levers
+          that are free today: the two measures that switch money off, once any money policy has
+          been offered, and category protections, once any transit rule has been offered. An
+          offered policy cannot be removed, only switched off. After the end "+" offers
+          everything.</li>
+        <li><strong>Offering.</strong> When a round is offered its policies are added to the
+          document, off, in force from today. This is not an undo step.</li>
+      </ul>
+      <table id="tbl-transit-fixed">
+        <caption>Fixed values of the three transit rules</caption>
+        <thead>
+          <tr><th scope="col">Policy</th><th scope="col">Inner band</th><th scope="col">Outer band</th><th scope="col">Source</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Taller near BART and Caltrain (heavy rail)</th><td>75 ft within 402 m</td><td>65 ft from 402 to 805 m</td><td>SB 79 Tier 1</td></tr>
+          <tr><th scope="row">Taller near Muni Metro (light rail)</th><td>65 ft within 402 m</td><td>55 ft from 402 to 805 m</td><td>SB 79 Tier 2</td></tr>
+          <tr><th scope="row">Taller near bus (rapid and frequent)</th><td>55 ft within 300 m</td><td>45 ft from 300 to 600 m</td><td>No enacted source; distances are the owner's</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>The heights are SB 79's default tiers (Gov. Code 65912.155 to .162; ABAG's summary,
+          Table 1). The builder converts feet to stories with the rule the app already uses for
+          its SB 79 default bands. SB 79's third band, within 200 ft of a station entrance, is
+          left out.</li>
+        <li>San Francisco adopted an alternative plan in May 2026, so SB 79's defaults bind no
+          parcel in the city. These policies are "what if the default tiers applied", and their
+          one-line descriptions say so.</li>
+        <li>SB 79 covers bus only where it has dedicated lanes, in Tier 2. The bus rule here
+          takes in all rapid and frequent bus, so it goes beyond enacted law. Its bands are 300 m
+          and 600 m, the owner's choice; its heights (one step below Tier 2) are my call.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision</strong> The owner accepted the round table,
+        the fixed values, what "editable" covers and the rule for adding and removing
+        (2026-11-26). The plan measures each round's effect with these values before anything
+        else is built on them.</aside>
+    </section>
+
+    <section id="sec-reach">
+      <h3>Reach</h3>
+      <p>The transit editor's maximum reach comes down from 3,219 m to a walking distance, and a
+        new rule no longer starts at the maximum (P14). With a walking-distance maximum the four
+        stop types stay different policies; at two miles any one of them covers the city.</p>
+      <table id="tbl-walk">
+        <caption>What the sources say about walking to transit</caption>
+        <thead>
+          <tr><th scope="col">Source</th><th scope="col">Figure</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">SB 79 (2025), AB 2097 (2022)</th><td>Half a mile (805 m), straight line from the parcel</td></tr>
+          <tr><th scope="row">Agrawal, Schlossberg and Irvin 2008 (Bay Area and Portland rail)</th><td>Median walk 0.47 miles (about 760 m)</td></tr>
+          <tr><th scope="row">El-Geneidy et al. 2014 (Montreal)</th><td>85th percentile: about 524 m to bus, about 1,259 m to commuter rail</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li><strong>Maximum by stop type:</strong> 1,200 m for regional rail and Muni Metro, the
+          long tail of measured walks to rail; 800 m for rapid and frequent bus, the legal half
+          mile and well above the measured 524 m. The app measures in a straight line, as SB 79
+          does, so the real walk is longer.</li>
+        <li><strong>Rules that mix classes.</strong> In the rounds every transit policy is one
+          class, so its maximum is that class's. A rule can mix rail and bus only outside the
+          rounds: after the end, and in documents already stored. Such a rule takes the shortest
+          maximum among its stop types.</li>
+        <li><strong>Default for a new rule:</strong> SB 79's two bands, 402 m and 805 m, which the
+          open editor already uses. A new rule never starts at the maximum.</li>
+        <li><strong>Stored values are kept.</strong> A published policy or a saved game with a
+          longer reach keeps its value and keeps running. The editor shows the stored value and
+          clamps only when the player changes it, as it does today. Today a game would silently
+          drop such a policy from its forecast (<code>within</code> in
+          <code>limits.ts</code>); that must not happen.</li>
+      </ul>
+      <aside data-kind="decision"><strong>Decision</strong> The owner accepted 1,200 m and
+        pointed out that stop types are separate policies, so the maximum can differ by type
+        (2026-11-26). The bus value of 800 m and the rule for several stop types are my calls.
+        The evidence for 1,200 m is one survey's 85th percentile for rail; the law stops at
+        805 m.</aside>
+    </section>
+
+    <section id="sec-height">
+      <h3>Height</h3>
+      <p>On the rail rule, 40 stories gives fewer homes by 2066 than 12 (92,259 against 94,074),
+        and 20 stories reaches the goal later than 12 (P15). A counterintuitive result is fine
+        when its cause is real. This one looks like an artefact: a height limit is a maximum,
+        and the model treats it as the height to build.</p>
+      <p>The cause, read from the code and not yet confirmed lot by lot: the engine builds to
+        the limit instead of choosing the best building at or below it.</p>
+      <ul>
+        <li>From 13 stories, a lot of 1,500 m² or more becomes a tower: a 5-story podium and a
+          slim floor plate. On a large lot a 13-story tower holds about half the homes of a
+          12-story midrise, and a tower only catches up near 40 stories
+          (<code>src/lib/generator/select.ts</code>, <code>massing.ts</code>).</li>
+        <li>The size draw uses a different table once the limit is above 12, one that favours
+          smaller fills (<code>size.byEnvelope</code> in the calibration).</li>
+        <li>The start odds read two features computed from the limit, through fitted bins that do
+          not rise steadily.</li>
+      </ul>
+      <p>The fix is a separate change to the engine: each lot takes the best building at or below
+        its limit, with a height sweep beside <code>scripts/money-monotone.ts</code> as a
+        diagnostic. It changes
+        the dataset version, so it gets its own design. This design does not wait for it: the
+        fixed heights in <a href="#tbl-transit-fixed">the transit rules</a> are all below 13
+        stories. A player who edits a rule above 12 stories will still meet the anomaly until
+        the fix lands.</p>
+    </section>
+
+    <section id="sec-screen">
+      <h3>The screen</h3>
+      <p>After Start the page is what the workshop is today, for the whole game: the map with the
+        tilted camera the opening handed over, free to pan, zoom and rotate; the timeline with
+        its policies; the Playhead with Play, Pause, Replay, "Play from", the ruler, Today and the
+        1× and 3× speeds (1 and 3 years per second); the chart; cards and Details.</p>
+      <pre><code data-lang="text">SF Housing  Round 2      [82,069 homes by Mar 2058 · 2 yr 3 mo early 🎁]            Publish  ☰ Menu
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                           map, 3D, pan and zoom                                  │
+├──────────────────────────────────────────────────────────────────────────────────┤
+│ Zoning      (on ) Taller near BART and Caltrain  [Edit]  ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬   │
+│             (off) Taller near Muni Metro          New    ▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭   │
+│ Permitting  (off) SB 423 clock                    New    ▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭▭   │
+│ ▶ 1×  Today  ├────seen────┼──────unseen──────⚑ Jun 2060───────────┤              │
+└──────────────────────────────────────────────────────────────────────────────────┘</code></pre>
+      <ul>
+        <li><strong>The round is a status.</strong> "Round 2" is plain text beside the site name.
+          It is not a button and opens nothing (P17).</li>
+        <li><strong>The pinned goal.</strong> It shows the result state: pending, win or late
+          (see <a href="#sec-loop">The loop</a>). In the win state it carries a gift that
+          jiggles, and stays still under reduced motion. Pressing the goal opens the round
+          panel; pressing the gift takes the win.</li>
+        <li><strong>The pinned goal on a phone.</strong> Below sm the goal starts at the left of
+          the bar and takes the width up to the Menu button, with its two lines joined into one
+          (the owner's change to the second mockups, 2026-11-26). The page's status cell, when it
+          shows, sits between the goal and the Menu:
+          <pre><code data-lang="text">Pending  [82,069 homes before Jun 2060          ]  ☰
+Win      [82,069 by Mar 2058 · 2 yr 3 mo early 🎁]  ☰
+Late     [82,069 by Jun 2062 · 2 years late     ]  ☰</code></pre>
+          The three states read in words there as on desktop. The bar under the text stays.
+          If a line does not fit, "homes" goes first, then the comma-grouped count shortens
+          last; the early or late part is never dropped.</li>
+        <li><strong>The round panel.</strong> A pop-over under the pinned goal. It is information
+          only, with nothing to operate (P18). For the current round it lists the policies
+          offered this round, each with its rules as set. For earlier rounds it shows what was
+          achieved: the goal month and how much earlier. The side goals leave with the units
+          that paid for them.</li>
+        <li><strong>A policy row.</strong> In the timeline's label column: the switch on the left,
+          the name, and on the right either a "New" badge or an "Edit" button (P17).
+          <ul>
+            <li>"New" means the policy is still fixed. It stays until the policy becomes
+              editable. There is no lock and no separate "fixed" mark.</li>
+            <li>Pressing "New" or "Edit" opens the policy's pane. For a New policy the pane
+              shows its details read-only; for an editable one it is the editor.</li>
+            <li>On a phone, where a policy takes two rows, "New" or "Edit" sits beneath the
+              switch.</li>
+          </ul>
+        </li>
+        <li><strong>The target on the ruler.</strong> The goal flag sits at the target month, as
+          the "To beat" flag did before #158.</li>
+        <li><strong>New policies arrive by explainer.</strong> Opening the gift shows one modal
+          per new policy: its name, a line or two on what it is and its rules as set, a step
+          count, and Accept. After the last, the policies are in the timeline with their New
+          badges.</li>
+        <li><strong>The Menu, at every width.</strong> The header has a Menu button on desktop as
+          well as on a phone (the owner's choice, 2026-11-26). It holds what the unit count's
+          panel held (saved games, New game and the sync line), the account entry and About.
+          "Collect for me" and the sound switch go; sound existed for collecting.</li>
+        <li><strong>What stays in the bar.</strong> The site name, the round, the page's status
+          cell, the pinned goal, and the page's actions: Undo and Redo where they show today,
+          and Publish. "Back to the tree" goes. Keeping Publish in the bar and moving the
+          account entry into the Menu are my calls.</li>
+      </ul>
+      <aside data-kind="note"><strong>Note</strong> The owner reviewed the first mockups
+        (2026-11-26) and set the row layout, the New and Edit rule, the information-only round
+        panel, the result states in place of a card, the gift, the explainers and the Menu at
+        every width. The owner accepted the second mockups as drawn. Dropping the side goals
+        and sound is my call.</aside>
+      <figure id="fig-mockup">
+        <img src="assets/2026-11-26-policy-rounds-design/mockup-v2.png" alt="The second mockups: the desktop screen in round 2, the row states, the read-only and editable policy panes, the round panel, the pinned goal in its pending, win and late states, the explainer, and the phone layouts.">
+        <figcaption>Figure 2. The mockups the owner accepted. Two things in them are superseded:
+          the header's "Games", account and About buttons move into the Menu, and on a phone the
+          pinned goal is one line at the left, not two lines at the right. Its dates, the
+          "2,140 lots" and the explainer's wording are placeholders.</figcaption>
+      </figure>
+    </section>
+
+    <section id="sec-removed">
+      <h3>What is removed</h3>
+      <ul>
+        <li>Units: <code>units.ts</code>, prices, <code>RUNG_LUMP</code>, side rewards,
+          <code>buy</code>, the balance and price wording.</li>
+        <li>The run: <code>RunClock</code>, <code>RUN_MS</code>, <code>RunLayer</code>, drops, the
+          ring, <code>run-model</code>, the run sounds and preferences, the e2e run-length seam.</li>
+        <li>The run view: <code>setRunView</code>, <code>runFrame</code>, <code>RUN_VIEW</code>,
+          and anything only it uses (the merged timeline layers, if nothing else needs them).</li>
+        <li>The tally and the tree screens, the tree pane over the map, and the phases starting,
+          run, tally, tree and workshop.</li>
+        <li>The ladder: <code>LADDER_YEARS</code>, rungs, <code>takeNext</code>,
+          <code>scripts/reach-measure.ts</code>.</li>
+        <li>Side goals, the hands branch, <code>scripts/tree-balance.ts</code>, the About text on
+          units, and the run cases of <code>bench:map</code>.</li>
+      </ul>
+    </section>
+
+    <section id="sec-state">
+      <h3>State and saved games</h3>
+      <p><code>GameState</code> version 3 holds: the round offered so far, the target, the set of
+        editable policies, the
+        list of wins (goal month, when, and the dataset version), and whether the game is
+        finished. It no longer holds
+        units, <code>bought</code>, the last run's result, side goals, the rung or the run count.
+        <code>limitsOf</code> derives the limits from this state.</p>
+      <p>A version 2 game is upgraded where it is parsed, in the browser and on the server, and
+        is never deleted:</p>
+      <ul>
+        <li>the plan and the policy document are kept as they are;</li>
+        <li>a game with no run played starts at the baseline; any other game has rounds 1 to
+          rung + 1 offered, capped at the last round;</li>
+        <li>the target is the deadline of the last rung met, or the legal deadline;</li>
+        <li>every policy in the document that ran before the upgrade keeps running and is
+          editable: bought presets, the old shared transit rule, and anything the player added
+          (other transit rules, protections, custom timings, edited measures). The old shared
+          transit rule sits beside the new ones as the player's own;</li>
+        <li>a game that had met every deadline is finished.</li>
+      </ul>
+      <p><strong>A new dataset.</strong> The target is a month from one dataset's forecast. It is
+        kept when the dataset changes; it is not re-based. If the new forecast beats it, that is
+        a win like any other. If the target is now out of reach the player is stuck in that
+        round, which the owner accepts for now (P20).</p>
+      <p>The <code>game_save</code> columns <code>phase</code> and <code>rung</code> list a
+        game's progress. Whether <code>rung</code> is renamed by a generated migration or reused
+        for the round is left to the plan; no migration is hand-edited.</p>
+    </section>
+
+    <section id="sec-checks">
+      <h3>The dataset check</h3>
+      <p>The rounds ask little of a dataset: targets come from the player's own forecast. This
+        follows the owner's rule (2026-11-26) that levers are judged by realism, and that "more
+        never builds fewer" is a diagnostic and not a gate. A model result can leave a player
+        stuck in a round; the report below is how that is seen, and the engine's realism work
+        is where it is fixed (P20).</p>
+      <ul>
+        <li><strong>The gate.</strong> <code>scripts/reach-check.ts</code> still runs before every
+          upload, with one rule: the goal is reached inside the window with every policy on at
+          its fixed values. Without that the game has no target to offer. It no longer requires
+          current law to meet a deadline.</li>
+        <li><strong>The report.</strong> The same script prints each policy's effect alone and in
+          its round, and each round's effect all on, replacing <code>tree-balance</code>. A round
+          that gains nothing, or a policy that loses homes, is printed for a person to judge:
+          a real mechanism stays, a model artefact gets fixed.</li>
+      </ul>
+      <p>My call.</p>
+      <table id="tbl-rounds-measured">
+        <caption>The rounds measured at their fixed values, all on, dataset 2026-11-25-76c90397, cars on</caption>
+        <thead>
+          <tr><th scope="col">Rounds on</th><th scope="col">Goal month</th><th scope="col">Earlier than the row above</th><th scope="col">Homes by Oct 2066</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Current law</th><td>Oct 2061</td><td></td><td>88,061</td></tr>
+          <tr><th scope="row">1</th><td>Jun 2061</td><td>4 months</td><td>88,462</td></tr>
+          <tr><th scope="row">1 and 2</th><td>Aug 2052</td><td>106 months</td><td>103,514</td></tr>
+          <tr><th scope="row">1 to 3</th><td>Feb 2050</td><td>30 months</td><td>108,899</td></tr>
+          <tr><th scope="row">1 to 4</th><td>Feb 2048</td><td>24 months</td><td>112,496</td></tr>
+          <tr><th scope="row">1 to 4, every transit rule edited to 12 stories and its maximum reach</th><td>Nov 2039</td><td>99 months</td><td>171,729</td></tr>
+        </tbody>
+      </table>
+      <p>Heights use the app's rule of ten feet per story (<code>storiesFromFt</code>,
+        <code>pipeline/lib/heights.ts</code>). These numbers are from one dataset and will move
+        as the model does; nothing in the design depends on them. Every round gains on the one
+        before. Three findings need a judgment of real mechanism or artefact:</p>
+      <ul>
+        <li><strong>Round 1 together is worse than its rail rule alone.</strong> Taller near BART
+          and Caltrain alone reaches the goal 29 months early; with the SB 423 clock and the
+          housing bond also on, 4 months. The pair that does it is the rail rule with the housing
+          bond: no gain on current law, and 4,598 fewer homes by 2066 than the rail rule alone,
+          nearly all affordable. Only in that run, three fixed-amount money pools close in Oct
+          2031 with money left in them (about $44M of City bond money is never spent), and from
+          2032 affordable projects start later or never. The closing rule
+          (<code>closeSpent</code>, <code>src/lib/sim/world/funding/closing.ts</code>) calls a
+          pool spent when every waiting application asks for more than it holds. That reads as
+          an artefact, not a real mechanism. It belongs to the funding engine, outside this
+          design; round 1 still gains with it present.</li>
+        <li><strong>Four policies move nothing where they are offered:</strong> the SB 423 clock,
+          the revolving fund, the public bank and state-double. State-double gains 2 months
+          once no discretionary review is on. The public bank changed nothing in any case
+          measured.</li>
+        <li><strong>A longer reach can lose homes.</strong> Taking the Muni Metro rule's outer
+          band to 1,200 m reaches the goal 12 months earlier but leaves 1,892 fewer homes by
+          2066.</li>
+      </ul>
+      <p>If a later dataset leaves a round with no gain for a player who edits nothing, the
+        report shows it. Reordering the rounds or changing a fixed value is then the owner's
+        choice.</p>
+    </section>
+  </section>
+
+  <section id="sec-constraints">
+    <h2>Constraints</h2>
+    <ul>
+      <li>The engine, the worker protocol and the map stream are not changed by this design.
+        Seeking is already done in the browser.</li>
+      <li>What is published at <code>/s/&lt;id&gt;</code> is still the runnable document, and
+        existing published policies load and run unchanged.</li>
+      <li>WCAG 2.2 AA: the win and late states are announced, and neither is shown by colour alone;
+        the gift is a button with a name; the explainers are dialogs that hold focus; everything a drag does has a
+        key, as the ruler has today.</li>
+      <li>Page text stays terse; details sit behind a tap.</li>
+      <li>The e2e seam for a seeded game stays, with the new state. Signoff's checks apply
+        (no server stderr, no timing crutches, no retried flakes).</li>
+      <li>Docs change with the code: <code>CLAUDE.md</code>, <code>docs/dev/game.md</code>,
+        <code>game-save.md</code>, <code>sim-page.md</code>, <code>timeline-ui.md</code>,
+        <code>map-interfaces.md</code>, <code>map-perf.md</code>, <code>testing.md</code>.</li>
+    </ul>
+  </section>
+
+  <section id="sec-done">
+    <h2>What done looks like</h2>
+    <ul>
+      <li>After Start the map is tilted with buildings drawn, and it can be panned and zoomed at
+        every moment of the game.</li>
+      <li>Play, Pause, drag, the keys and the 1× and 3× speeds work from the first second.</li>
+      <li>No unit count, price, drop or tally appears anywhere, including About.</li>
+      <li>Seeing the baseline's goal month puts the pinned goal in its win state with a gift.
+        Opening the gift sets the target to that month and presents round 1's policies one by
+        one; after the last Accept they are in the timeline, off, marked New.</li>
+      <li>Switching on a round-1 policy and seeing the goal month gives the win state. It holds
+        while the player drags back and forth and clears when a policy changes. Opening the
+        gift moves the target to that month and turns that policy's New badge into Edit;
+        setting its reach to any allowed value holds.</li>
+      <li>With the playhead at the target month and the goal not reached, the pinned goal reads
+        the forecast's goal month over how late it is, and nothing is granted.</li>
+      <li>The round label is plain text and the round panel has nothing to operate.</li>
+      <li>Editing an older policy for an earlier date wins with no new policy on.</li>
+      <li>Switching a policy on with the playhead at the end of the timeline pauses playback and
+        moves the playhead to today, or to the policy's start if later; no win is given until
+        the goal month is reached again.</li>
+      <li>A game saved before this change opens with its policies and plan intact.</li>
+      <li>With a baseline that misses the legal deadline, the game still plays: the baseline's
+        goal month becomes the first target.</li>
+      <li>The reach check passes on the current dataset under its one rule and prints the
+        report.</li>
+    </ul>
+  </section>
+
+  <section id="sec-builder">
+    <h2>Left to the builder</h2>
+    <ul>
+      <li>How the page's phase code collapses, and which run-view helpers have other users.</li>
+      <li>The shape of the catalogue module and how the round panel reads it.</li>
+      <li>Whether the <code>rung</code> column is renamed or reused.</li>
+      <li>The order of work, provided each step leaves the page usable.</li>
+    </ul>
+  </section>
+</article>

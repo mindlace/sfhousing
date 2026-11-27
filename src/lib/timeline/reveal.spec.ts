@@ -6,6 +6,7 @@ import {
   editedReveal,
   monthChanged,
   moved,
+  resetReveal,
   revealOpen,
   scanned,
   type Reveal,
@@ -42,7 +43,8 @@ function searching(reach: number, before: Side = side(base)): Reveal {
 describe('revealOpen and moved', () => {
   it('opens with everything ahead unseen', () => {
     const r = revealOpen(ASOF);
-    expect(r).toEqual({ reached: ASOF, finding: null, playFrom: null });
+    expect(r).toEqual({ reached: ASOF, from: ASOF, finding: null, playFrom: null });
+    expect(r.from).toBe(ASOF);
   });
 
   it('moving forward reaches further; moving back leaves it', () => {
@@ -52,8 +54,13 @@ describe('revealOpen and moved', () => {
   });
 
   it('moving clears an offered Play from, and returns the same object when nothing changes', () => {
-    const offered: Reveal = { reached: M[10], finding: null, playFrom: 12 };
-    expect(moved(offered, M[4])).toEqual({ reached: M[10], finding: null, playFrom: null });
+    const offered: Reveal = { reached: M[10], from: M[4], finding: null, playFrom: 12 };
+    expect(moved(offered, M[4])).toEqual({
+      reached: M[10],
+      from: M[4],
+      finding: null,
+      playFrom: null
+    });
     const plain = revealOpen(M[0]);
     expect(moved(plain, M[0])).toBe(plain);
     const high = moved(plain, M[10]);
@@ -61,11 +68,42 @@ describe('revealOpen and moved', () => {
   });
 });
 
+describe('the seen range start', () => {
+  it('moving lowers from and never raises it', () => {
+    const r = resetReveal(moved(revealOpen(M[0]), M[10]), M[8]);
+    expect(moved(r, M[20]).from).toBe(M[8]);
+    expect(moved(r, M[3])).toEqual({ reached: M[8], from: M[3], finding: null, playFrom: null });
+  });
+
+  it('a reset sets reached and from to the day, earlier or later than before', () => {
+    const r: Reveal = {
+      reached: M[10],
+      from: M[2],
+      finding: { before: side(base), next: 3 },
+      playFrom: 4
+    };
+    for (const day of [M[6], M[15]]) {
+      expect(resetReveal(r, day)).toEqual({
+        reached: day,
+        from: day,
+        finding: null,
+        playFrom: null
+      });
+    }
+  });
+
+  it('after a reset, moving ahead keeps from and moving back lowers it', () => {
+    const r = resetReveal(revealOpen(ASOF), M[12]);
+    expect(moved(r, M[23]).from).toBe(M[12]);
+    expect(moved(r, M[5]).from).toBe(M[5]);
+  });
+});
+
 describe('scanned', () => {
   it('an edit at today finds nothing to pull back', () => {
     const r = editedReveal(revealOpen(ASOF), side(base));
     const out = scanned(r, side(changedFrom(0)), { day: ASOF, ...idle });
-    expect(out).toEqual({ reached: ASOF, finding: null, playFrom: null });
+    expect(out).toEqual({ reached: ASOF, from: ASOF, finding: null, playFrom: null });
   });
 
   it('pulls back to the first changed month, months before it stay seen', () => {
@@ -208,7 +246,7 @@ describe('scanned', () => {
     const r = editedReveal(revealOpen(mid), side(base));
     const { view, reads } = counted(changedFrom(0));
     const out = scanned(r, side(view), { day: mid, playing: false, asOf: mid });
-    expect(out).toEqual({ reached: mid, finding: null, playFrom: null });
+    expect(out).toEqual({ reached: mid, from: mid, finding: null, playFrom: null });
     expect(reads).toEqual([]);
   });
 
@@ -217,7 +255,7 @@ describe('scanned', () => {
     const day = mid + 5;
     const r = editedReveal(moved(revealOpen(mid), day), side(base));
     const out = scanned(r, side(changedFrom(0)), { day, playing: false, asOf: mid });
-    expect(out).toEqual({ reached: day, finding: null, playFrom: 0 });
+    expect(out).toEqual({ reached: day, from: mid, finding: null, playFrom: 0 });
   });
 
   it('ending with nothing changed keeps reached from falling behind the playhead', () => {
@@ -233,7 +271,7 @@ describe('scanned', () => {
     const waiting = scanned(r, side(cut(base, 3)), { day: M[2], ...idle });
     expect(waiting.finding?.next).toBe(4);
     const out = scanned(r, side(cut(base, 10)), { day: M[2], ...idle });
-    expect(out).toEqual({ reached: M[4], finding: null, playFrom: 4 });
+    expect(out).toEqual({ reached: M[4], from: ASOF, finding: null, playFrom: 4 });
     const playing = scanned(r, side(cut(base, 10)), { day: M[2], playing: true, asOf: ASOF });
     expect(playing.playFrom).toBeNull();
     expect(playing.reached).toBe(M[4]);

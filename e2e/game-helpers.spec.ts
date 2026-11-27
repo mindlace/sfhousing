@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { newVisitor, seedGame, seedGoalAmount, seedRunMs } from './helpers/game';
+import { newVisitor, seedGame, seedGoalAmount } from './helpers/game';
 import { E2E_GAME_KEY, E2E_GOAL_KEY } from '../src/lib/game/e2e';
-import { E2E_RUN_MS_KEY } from '../src/lib/sim-page/e2e-run';
 import { SAVES_KEY, saveKey } from '../src/lib/game/saves';
 
 type Probe = Record<string, string>;
@@ -15,13 +14,7 @@ async function probe(page: Page): Promise<void> {
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key === null) continue;
-          if (
-            key === k.game ||
-            key === k.goal ||
-            key === k.runMs ||
-            key === k.saves ||
-            key.startsWith(k.prefix)
-          )
+          if (key === k.game || key === k.goal || key === k.saves || key.startsWith(k.prefix))
             out[key] = localStorage.getItem(key) ?? '';
         }
       } catch {
@@ -32,7 +25,6 @@ async function probe(page: Page): Promise<void> {
     {
       game: E2E_GAME_KEY,
       goal: E2E_GOAL_KEY,
-      runMs: E2E_RUN_MS_KEY,
       saves: SAVES_KEY,
       prefix: saveKey('')
     }
@@ -54,11 +46,11 @@ async function load(page: Page): Promise<Probe> {
 type Saved = {
   v: number;
   id: string;
-  state: { phase: string; rung: number; firstWinAt: string | null; units: { home?: number } };
+  state: { phase: string; round: number; firstWinAt: string | null };
 };
 
 function seededParts(p: Probe): {
-  index: { v: number; current: string; saves: { id: string; phase: string; rung: number }[] };
+  index: { v: number; current: string; saves: { id: string; phase: string; round: number }[] };
   save: Saved;
 } {
   const index = JSON.parse(p[SAVES_KEY]);
@@ -73,7 +65,7 @@ test('with no helper, nothing is stored', async ({ page }) => {
   expect(Object.keys(p).filter((k) => k.startsWith(saveKey('')))).toEqual([]);
 });
 
-test('seedGame(page) stores one v2 save in the opening', async ({ page }) => {
+test('seedGame(page) stores one save in the opening', async ({ page }) => {
   await seedGame(page);
   const p = await load(page);
   expect(p[E2E_GAME_KEY]).toBe('1');
@@ -85,18 +77,18 @@ test('seedGame(page) stores one v2 save in the opening', async ({ page }) => {
   expect(save.v).toBe(2);
   expect(save.id).toBe(index.current);
   expect(save.state.phase).toBe('opening');
-  expect(save.state.rung).toBe(0);
+  expect(save.state.round).toBe(0);
   expect(save.state.firstWinAt).toBeNull();
 });
 
 test('seedGame with a state in the runs loads as current', async ({ page }) => {
-  await seedGame(page, { phase: 'runs', units: { home: 500 } });
+  await seedGame(page, { phase: 'runs', round: 2 });
   const { index, save } = seededParts(await load(page));
   expect(index.saves).toHaveLength(1);
   expect(index.current).toBe(save.id);
   expect(index.saves[0].phase).toBe('runs');
   expect(save.state.phase).toBe('runs');
-  expect(save.state.units.home).toBe(500);
+  expect(save.state.round).toBe(2);
   expect(typeof save.state.firstWinAt).toBe('string');
   await page.goto('/about');
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '');
@@ -176,19 +168,6 @@ test('seedGoalAmount sets the goal and leaves the game open', async ({ page }) =
   const p = await load(page);
   expect(p[E2E_GOAL_KEY]).toBe('5000');
   expect(p[E2E_GAME_KEY]).toBeUndefined();
-});
-
-test('seedRunMs stores the wall time of a run', async ({ page }) => {
-  await seedRunMs(page, 500);
-  const p = await load(page);
-  expect(p[E2E_RUN_MS_KEY]).toBe('500');
-  expect(p[E2E_GAME_KEY]).toBeUndefined();
-});
-
-test('seedRunMs refuses a time outside 100 to 20000 or not whole', async ({ page }) => {
-  const message = 'seedRunMs: ms must be a whole number from 100 to 20000';
-  await expect(seedRunMs(page, 99)).rejects.toThrow(message);
-  await expect(seedRunMs(page, 1.5)).rejects.toThrow(message);
 });
 
 test('the helpers refuse a second game on one page', async ({ page, browser }) => {

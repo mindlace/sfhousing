@@ -6,27 +6,17 @@ import { tick } from 'svelte';
 import axe from 'axe-core';
 import '../../../routes/layout.css';
 import { page as appPage } from '$app/state';
-import { getStorage } from '$lib/sharing/storage';
-import { BASE_HANDS, limitsOf } from '../limits';
-import { RUNGS } from '../ladder';
-import { onPrefs, readCollectForMe, readMuted, writeCollectForMe, writeMuted } from '../run/prefs';
-import { NEW_GAME } from '../state';
 import { MAX_SAVES } from '../saves';
 import type { SyncState } from '../save-sync.svelte';
 import { GameStore, openGame } from '../store.svelte';
 import { FakeSync } from '../test/fake-sync.svelte';
 import { FULL_TEXT, STORAGE_TEXT, syncText } from '../words';
-import { COLLECT_BOUGHT } from './words';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
 import { FakeGame, entry, type FakeGameInit } from './test/fake-game.svelte';
 import PanelHost from './test/PanelHost.svelte';
 import { reloadGame } from './reload';
 
 vi.mock('./reload', () => ({ reloadGame: vi.fn() }));
-vi.mock('$lib/sharing/storage', async (orig) => ({
-  ...(await orig<typeof import('$lib/sharing/storage')>()),
-  getStorage: vi.fn(() => localStorage)
-}));
 
 beforeEach(() => localStorage.clear());
 
@@ -51,7 +41,6 @@ afterEach(async () => {
   // The stub's url is a plain URL; the real `page.url` type narrows the pathname to routes.
   appPage.url = new URL('http://localhost/') as never;
   vi.mocked(reloadGame).mockClear();
-  vi.mocked(getStorage).mockImplementation(() => localStorage);
 });
 
 /** A local-calendar time `daysAgo` days before today, at noon. */
@@ -66,17 +55,12 @@ const rowOf = (name: string) => rows().filter({ hasText: name });
 const field = () => page.getByRole('textbox', { name: 'Name' });
 const newGameButton = () => page.getByRole('button', { name: 'New game' });
 const errorLine = () => page.getByTestId('game-error');
-const sound = () => page.getByRole('switch', { name: 'Sound' });
-const collect = () => page.getByRole('switch', { name: 'Collect for me' });
-const autoLimits = () => ({
-  limits: { ...limitsOf(NEW_GAME), hands: { ...BASE_HANDS, auto: true } }
-});
 
 // Mission is current, in its opening; Sunset and Richmond are in their runs.
 const THREE = () => [
   entry('Mission', { savedAt: daysAgo(0) }),
-  entry('Sunset', { phase: 'runs', rung: 0, savedAt: daysAgo(1) }),
-  entry('Richmond', { phase: 'runs', rung: RUNGS - 1, savedAt: daysAgo(3) })
+  entry('Sunset', { phase: 'runs', round: 0, savedAt: daysAgo(1) }),
+  entry('Richmond', { phase: 'runs', round: 3, savedAt: daysAgo(3) })
 ];
 
 async function mount(init: FakeGameInit = { saves: THREE() }) {
@@ -88,29 +72,41 @@ async function mount(init: FakeGameInit = { saves: THREE() }) {
 }
 
 describe('GamePanel', () => {
-  it('the heading is the current game and the stage line reads its goal and units', async () => {
+  it('the heading is the current game and the stage line reads its round', async () => {
     const { unmount } = await mount({
       saves: THREE(),
       currentId: 'id-Richmond',
-      state: { phase: 'runs', rung: RUNGS - 1, units: { home: 1240 } }
+      state: { phase: 'runs', round: 3 }
     });
     await expect.element(page.getByRole('heading', { level: 2 })).toHaveTextContent('Richmond');
-    await expect
-      .element(page.getByTestId('game-stage'))
-      .toHaveTextContent(`Goal ${RUNGS} of ${RUNGS} · 1,240 units`);
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Round 3');
     unmount();
     await mount({ saves: THREE() });
-    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting · 0 units');
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting');
   });
 
-  it('a row reads Painting or Goal N of M, then Playing or when it was played', async () => {
+  it('a row reads Painting or the round, then Playing or when it was played', async () => {
     await mount();
     await expect.element(rowOf('Mission')).toHaveAttribute('aria-current', 'true');
     await expect.element(rowOf('Mission')).toHaveTextContent('Painting · Playing');
     await expect.element(rowOf('Sunset')).not.toHaveAttribute('aria-current');
-    await expect.element(rowOf('Sunset')).toHaveTextContent(`Goal 1 of ${RUNGS} · Yesterday`);
-    await expect.element(rowOf('Richmond')).toHaveTextContent(`Goal ${RUNGS} of ${RUNGS} ·`);
+    await expect.element(rowOf('Sunset')).toHaveTextContent('Current law · Yesterday');
+    await expect.element(rowOf('Richmond')).toHaveTextContent('Round 3 ·');
     expect(rows().elements()).toHaveLength(3);
+  });
+
+  it('a finished game reads Every policy, in its row and as the current game', async () => {
+    await mount({
+      saves: [
+        entry('Mission', { savedAt: daysAgo(0), phase: 'runs', round: 4, finished: true }),
+        entry('Sunset', { phase: 'runs', round: 4, finished: true, savedAt: daysAgo(1) })
+      ],
+      currentId: 'id-Mission',
+      state: { phase: 'runs', round: 4, finished: true }
+    });
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Every policy');
+    await expect.element(rowOf('Mission')).toHaveTextContent('Every policy · Playing');
+    await expect.element(rowOf('Sunset')).toHaveTextContent('Every policy · Yesterday');
   });
 
   it("each sync state's words", async () => {
@@ -313,66 +309,6 @@ describe('GamePanel', () => {
     expect(onescape).toHaveBeenCalledTimes(1);
   });
 
-  it('the sound switch reads the muted pref and writes it on each press', async () => {
-    writeMuted(localStorage, true);
-    await mount();
-    await expect.element(sound()).toHaveAttribute('aria-checked', 'false');
-    await expect.element(page.getByTestId('game-sound')).toBeVisible();
-    const heard = vi.fn();
-    const off = onPrefs(heard);
-    await sound().click();
-    await expect.element(sound()).toHaveAttribute('aria-checked', 'true');
-    expect(readMuted(localStorage)).toBe(false);
-    expect(heard).toHaveBeenCalledTimes(1);
-    await sound().click();
-    expect(readMuted(localStorage)).toBe(true);
-    expect(heard).toHaveBeenCalledTimes(2);
-    off();
-  });
-
-  it('Collect for me reads its pref and writes it on each press', async () => {
-    writeCollectForMe(localStorage, true);
-    await mount();
-    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
-    await expect.element(page.getByTestId('game-collect')).toBeVisible();
-    const heard = vi.fn();
-    const off = onPrefs(heard);
-    await collect().click();
-    await expect.element(collect()).toHaveAttribute('aria-checked', 'false');
-    expect(readCollectForMe(localStorage)).toBe(false);
-    expect(heard).toHaveBeenCalledTimes(1);
-    off();
-  });
-
-  it('with hands.auto the collect switch is checked, off and explained', async () => {
-    await mount({ saves: THREE(), ...autoLimits() });
-    const heard = vi.fn();
-    const off = onPrefs(heard);
-    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
-    await expect.element(collect()).toHaveAttribute('aria-disabled', 'true');
-    const describedBy = collect().element().getAttribute('aria-describedby');
-    expect(describedBy).toBeTruthy();
-    expect(document.getElementById(describedBy!)?.textContent).toBe(COLLECT_BOUGHT);
-    await collect().click({ force: true });
-    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
-    expect(readCollectForMe(localStorage)).toBe(false);
-    expect(localStorage.length).toBe(0);
-    expect(heard).not.toHaveBeenCalled();
-    off();
-  });
-
-  it('with no storage the switches show the defaults, switch on screen and write nothing', async () => {
-    vi.mocked(getStorage).mockReturnValue(null);
-    await mount();
-    await expect.element(sound()).toHaveAttribute('aria-checked', 'true');
-    await expect.element(collect()).toHaveAttribute('aria-checked', 'false');
-    await sound().click();
-    await collect().click();
-    await expect.element(sound()).toHaveAttribute('aria-checked', 'false');
-    await expect.element(collect()).toHaveAttribute('aria-checked', 'true');
-    expect(localStorage.length).toBe(0);
-  });
-
   it('every control is at least 24 px', async () => {
     await mount();
     await page.getByRole('button', { name: 'Rename Sunset' }).click();
@@ -395,7 +331,7 @@ describe('GamePanel', () => {
     await expect
       .element(page.getByRole('heading', { level: 2 }))
       .toHaveTextContent(store.saves[0].name);
-    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting · 0 units');
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting');
     await newGameButton().click();
     expect(store.saves).toHaveLength(2);
     expect(reloadGame).toHaveBeenCalledTimes(1);
@@ -421,15 +357,5 @@ describe('GamePanel', () => {
     await page.getByRole('button', { name: 'Delete Richmond' }).click();
     await expect.element(page.getByText('Delete Richmond?')).toBeVisible();
     await check();
-  });
-
-  it('axe finds no violation with the collect switch bought', async () => {
-    await mount({ saves: THREE(), ...autoLimits() });
-    await expect.element(collect()).toBeVisible();
-    for (const s of ['light', 'dark'] as const) {
-      await scheme(s);
-      const res = await axe.run(panel().element(), { runOnly: TAGS });
-      expect(res.violations.map((v) => v.id)).toEqual([]);
-    }
   });
 });

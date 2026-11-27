@@ -161,25 +161,18 @@ describe('startersFor', () => {
     ]);
   });
 
-  it('only what is bought', () => {
+  it('only what the limits offer: a game before the end has none, a finished game all three', () => {
     expect(startersFor(cal, DEFAULT_POLICY4, OPEN_LIMITS)).toHaveLength(3);
     expect(startersFor(cal, DEFAULT_POLICY4, limitsWith({}))).toEqual([]);
-    expect(
-      startersFor(cal, DEFAULT_POLICY4, limitsWith({ presets: new Set(['sb423Clock']) })).map(
-        (x) => x.text
-      )
-    ).toEqual(['SB 423 approval clock']);
-    const early = limitsWith({
-      stops: new Set(['metro']),
-      bands: 1,
-      stories: 4,
-      reachM: 402,
-      measures: new Set(['housing-bond'])
+    const round1 = limitsWith({
+      offered: new Set(['transit-rail', 'sb423-clock', 'housing-bond']),
+      stops: new Set(['regionalRail']),
+      money: true
     });
-    expect(startersFor(cal, DEFAULT_POLICY4, early).map((x) => x.text)).toEqual([
-      'Taller near transit',
-      'A housing bond'
-    ]);
+    expect(startersFor(cal, DEFAULT_POLICY4, round1)).toEqual([]);
+    expect(
+      startersFor(cal, DEFAULT_POLICY4, limitsWith({ whole: true })).map((x) => x.text)
+    ).toEqual(['Taller near transit', 'SB 423 approval clock', 'A housing bond']);
   });
 });
 

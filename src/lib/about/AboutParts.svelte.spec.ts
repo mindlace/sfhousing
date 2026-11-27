@@ -18,7 +18,6 @@ import {
   GAME_STEPS,
   MEANINGS,
   PART_HEADING,
-  RUN_SHORTCUTS,
   SAVED_GAMES,
   YOUR_PLANS
 } from './copy';
@@ -93,7 +92,7 @@ async function expectNotices() {
 }
 
 describe('AboutMeanings', () => {
-  it('meanings: every term in order; the goal reads "82,069 homes by the deadline" and "June 2022" from GOAL_BASE; the deadline and units, word for word', async () => {
+  it('meanings: every term in order; the goal reads "82,069 homes by the target" and "June 2022" from GOAL_BASE; the target, word for word', async () => {
     render(AboutMeanings, { level: 2 });
     const terms = [...document.querySelectorAll('dt')].map((d) => d.textContent?.trim());
     expect(terms).toEqual([
@@ -103,8 +102,7 @@ describe('AboutMeanings', () => {
       'Current law',
       'The goal',
       'The goal + 15%',
-      'The deadline',
-      'Units'
+      'The target'
     ]);
     expect(MEANINGS.map((m) => m.term)).toEqual(terms);
     const t = text();
@@ -113,18 +111,15 @@ describe('AboutMeanings', () => {
       'Every eligible lot you painted, rebuilt to its height at once. Homes in replaced buildings are subtracted.'
     );
     expect(t).toContain(
-      '82,069 homes by the deadline, counted from June 2022, so homes built since then count. ' +
+      '82,069 homes by the target, counted from June 2022, so homes built since then count. ' +
         "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
         'Allocation, which asks for them by January 2031.'
     );
     expect(t).toContain(
-      'When the goal must be met. The first is the end of the 40-year window; each later one is ' +
-        'five or more years earlier. Taking the next one is your choice.'
+      'When the goal must be met. It starts as the end of the 40-year window; each win moves it ' +
+        'to the month your forecast reached the goal.'
     );
-    expect(t).toContain(
-      'Homes you collected during a run. Every completed home counts toward the goal; only ' +
-        'collected homes become units to spend in the tree.'
-    );
+    expect(t).not.toContain('Units');
     expect(t).not.toContain('To beat');
   });
 
@@ -296,24 +291,15 @@ describe('AboutUsing', () => {
     expect(rows).toEqual(TIMELINE_SHORTCUTS.map((s) => [s.keys, s.action]));
   });
 
-  it('using: the tables are Painting, Timeline and Run; Run holds its two rows', async () => {
+  it('using: the tables are Painting and Timeline', async () => {
     render(AboutUsing, { level: 2 });
     const captions = [...document.querySelectorAll('#about-shortcuts table caption')].map((c) =>
       c.textContent?.trim()
     );
-    expect(captions).toEqual(['Painting', 'Timeline', 'Run']);
-    const run = [...document.querySelectorAll('#about-shortcuts table')][2];
-    const rows = [...run.querySelectorAll('tbody tr')].map((r) =>
-      [...r.querySelectorAll('td')].map((d) => d.textContent?.trim())
-    );
-    expect(rows).toEqual([
-      ['← ↑ → ↓', 'Move the collecting ring (during a run)'],
-      ['Shift + ← ↑ → ↓', 'Move the collecting ring further']
-    ]);
-    expect(RUN_SHORTCUTS.map((s) => [s.keys, s.action])).toEqual(rows);
+    expect(captions).toEqual(['Painting', 'Timeline']);
   });
 
-  it('using: The game, an ordered list of its five steps, then its four notes, word for word', async () => {
+  it('using: The game, an ordered list of its four steps, then its three notes, word for word', async () => {
     render(AboutUsing, { level: 2 });
     const s = document.getElementById('about-levels')!;
     expect(s.tagName).toBe('SECTION');
@@ -325,16 +311,14 @@ describe('AboutUsing', () => {
       ...GAME_NOTES
     ]);
     expect(GAME_STEPS).toEqual([
-      'Paint room for the goal. Meeting it starts your first run.',
-      'A run plays the forecast from today to the deadline. Sweep the pointer over finished projects to collect their homes before they fade.',
-      'After a run, the tally shows homes by the deadline, the units you collected and where the other homes stand.',
-      'Between runs, spend units in the tree. What you buy is in force from today, and you can switch it off and on.',
-      'Meet the goal to be offered an earlier deadline. Taking it is your choice.'
+      'Paint room for the goal, then press Start.',
+      'Play the forecast, or drag the playhead. Seeing the month current law reaches the goal is your first win.',
+      'Each win offers a few new policies. Switch them on or off and watch the date move.',
+      'Beat your best month by any means to win again. A policy you win with becomes yours to edit.'
     ]);
     expect(GAME_NOTES).toEqual([
       'Painting happens once, at the start, to show how much has to be built. The simulation runs your policy.',
-      'Collect for me, behind the unit count, collects every drop as it appears.',
-      'A deadline once met stays met after a data update.',
+      'A change to a policy takes the timeline back to the month it starts.',
       'A published policy plays in full for everyone.'
     ]);
   });
@@ -347,8 +331,8 @@ describe('AboutUsing', () => {
       ...SAVED_GAMES
     ]);
     expect(SAVED_GAMES).toEqual([
-      `Each saved game has its own plan, policy, units, purchases and deadlines met. You can keep ${MAX_SAVES}.`,
-      'The unit count in the header opens your saved games.',
+      `Each saved game has its own plan, policy, round and best month. You can keep ${MAX_SAVES}.`,
+      'The Menu in the header opens your saved games.',
       'Games are saved in this browser, and to your account from your first win.'
     ]);
     expect(MAX_SAVES).toBe(12);

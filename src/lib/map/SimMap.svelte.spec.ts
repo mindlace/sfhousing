@@ -28,8 +28,7 @@ const HANDLE_FNS = [
   'setBottomInset',
   'getMap',
   'setOverlayLayers',
-  'onResyncNeeded',
-  'setRunView'
+  'onResyncNeeded'
 ] as const;
 
 const CREDIT = '© OpenStreetMap · About this model';
@@ -179,6 +178,9 @@ describe('SimMap ready', { timeout: 30_000 }, () => {
     const h = await ready;
     expect(onready).toHaveBeenCalledTimes(1);
     for (const fn of HANDLE_FNS) expect(typeof h[fn]).toBe('function');
+    // No run view: the handle has no switch for it and the root no attribute.
+    expect('setRunView' in h).toBe(false);
+    expect(root.hasAttribute('data-run-view')).toBe(false);
     expect(target.textContent).not.toContain('Loading map…');
 
     const map = h.getMap()!;

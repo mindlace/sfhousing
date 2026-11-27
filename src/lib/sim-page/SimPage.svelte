@@ -32,18 +32,12 @@
   import { BrushState } from '$lib/brush/state.svelte';
   import type { Manifest } from '$lib/data/manifest';
   import type { ParcelId } from '$lib/data/parcel';
-  import { RUN_MS } from '$lib/fzp/playback';
-  import { NODES } from '$lib/game/catalogue/nodes';
   import { e2eGoalAmount } from '$lib/game/e2e';
-  import { onPrefs, readCollectForMe, readMuted } from '$lib/game/run/prefs';
-  import { createSound } from '$lib/game/run/sound';
-  import { applyGrant } from '$lib/game/grant';
-  import { ladder, RUNGS, type Rung } from '$lib/game/ladder';
-  import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
-  import type { NodeId } from '$lib/game/state';
+  import { isFixed, OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
+  import { offerThrough, onKeys } from '$lib/game/offer';
+  import { giftItems, type GiftItem } from '$lib/game/round-panel';
   import type { GameStore } from '$lib/game/store.svelte';
-  import { treeView } from '$lib/game/tree';
-  import Tree from '$lib/game/ui/Tree.svelte';
+  import GiftDialog from '$lib/game/ui/GiftDialog.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
   import { LIDS_FADE, type LimitsView } from '$lib/map/height/limits-style';
@@ -61,7 +55,7 @@
   import { copyFor } from '$lib/sharing/copy';
   import PublishButton from '$lib/sharing/PublishButton.svelte';
   import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
-  import { BUTTON, BUTTON_PRIMARY } from '$lib/shell/ui';
+  import { BUTTON } from '$lib/shell/ui';
   import { getStorage } from '$lib/sharing/storage';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { PREVIEW_MAX_LOTS } from '$lib/sim/world/runner/budget';
@@ -80,7 +74,6 @@
     redateMoved,
     type AddChoice
   } from '$lib/timeline/add';
-  import { BACK_TO_TREE, boughtLabel, restoredLabel } from '$lib/timeline/game-copy';
   import Inspector from '$lib/timeline/Inspector.svelte';
   import { project, spanLens, writeBack, type StrokeStore } from '$lib/timeline/lens';
   import { fundingName4, ownerName4 } from '$lib/timeline/owner';
@@ -99,20 +92,16 @@
   import { policyOf, type SpanRef } from '$lib/timeline/spans';
   import TimelineMode, {
     type MapLike,
-    type TimelineClientApi,
-    type TreeArgs
+    type TimelineClientApi
   } from '$lib/timeline/TimelineMode.svelte';
   import { readViewPrefs, writeViewPrefs, type ViewPrefs } from '$lib/view/prefs';
   import LayerSwitches, { type ViewRow } from '$lib/view/LayerSwitches.svelte';
   import { ERASE_HINT, SimBrushTools, brushToolOf, type SimTool } from './brush-tools.svelte';
   import { simPaintRows } from './brush-summary';
   import { installSimDebug } from './debug';
-  import { e2eRunMs } from './e2e-run';
   import { PaintFeedback, lotsInView } from './feedback';
-  import { DRAFT_DISCARDED, fundingNotices, limitAlert } from './funding-copy';
+  import { fundingNotices, limitAlert } from './funding-copy';
   import { FundingDrafts } from './funding-drafts.svelte';
-  import { nodeRefs, nodeSwitches, restoreNode, switchNodeDoc } from './game-levers';
-  import { RUN_VIEW, landing, nextPhase, type GamePhase, type PhaseEvent } from './game-phase';
   import { LidRequest, clampBbox } from './lid-request';
   import { OutlineRequest } from './outline-request';
   import { customQuery, paintedLots, queryKey, type Lots } from './policy';
@@ -240,22 +229,6 @@
   });
   /** The goal's amount over the default (X1's seam), read once. */
   const goalAmount = untrack(() => e2eGoalAmount(storage()));
-  /** The run's wall time: the e2e seam's, else `RUN_MS`; read once. */
-  const runMs = untrack(() => e2eRunMs(storage()) ?? RUN_MS);
-
-  // ---- the run's prefs and sound (game-sim #sec-design-props) ----
-
-  /** Muted, as the prefs last said: read on mount and on each `onPrefs`, never per sound. */
-  let muted = untrack(() => readMuted(storage()));
-  /** "Collect for me", as the prefs last said: read on mount and on each `onPrefs`. */
-  let collectForMe = $state(untrack(() => readCollectForMe(storage())));
-  const sound = createSound(() => muted);
-
-  function readPrefs(): void {
-    const s = storage();
-    muted = readMuted(s);
-    collectForMe = readCollectForMe(s);
-  }
 
   /** The scenario client's requests; null before the session opens, after a crash and unmount. */
   let api: TimelineClientApi | null = null;
@@ -288,13 +261,62 @@
   let mounted = false;
   let detach: (() => void) | null = null;
 
+  /** Resets the store to `p`; in a game, with every policy the game offers that `p` lacks added
+   *  off (no undo step). */
   function load(p: SimPolicy4): void {
-    store.reset(p);
-    // The runnable document of `p`, as `run` holds it, so the sync effect sees no change.
+    const offered = untrack(() => {
+      const g = game && !game.open ? game : null;
+      return g && cal ? offerThrough(p, g.state.round, cal, g.state.editable) : p;
+    });
+    store.reset(offered);
+    // The runnable document of what was loaded (in a game, `p` with the offered policies added),
+    // as `run` holds it, so the sync effect sees no change.
     const r = run;
     synced = r;
     // A load, not a change: no debounce (`PolicySync.open`).
     sync.open(r);
+  }
+
+  /** In a game, `p` with every policy the game offers now that it lacks, added off. */
+  function offeredIn(p: SimPolicy4): SimPolicy4 {
+    const g = game && !game.open ? game : null;
+    return g && cal ? offerThrough(p, g.state.round, cal, g.state.editable) : p;
+  }
+
+  /** The explainers after a gift, one per new policy; null: none open. */
+  let gift = $state.raw<GiftItem[] | null>(null);
+
+  /**
+   * The gift: game.takeWin with the keys whose policies are on, then the store reset to
+   * offerThrough(doc, after.round, cal, after.editable) (no undo step, history cleared), the
+   * autosave flushed (leave()), and the explainers opened on giftItems(before, after). False when
+   * the store refused: nothing changes and the win stands.
+   */
+  function takeWin(w: { goalMonth: Day | null }): boolean {
+    const g = game;
+    if (!g || g.open || !cal) return false;
+    const before = g.state;
+    const done = g.takeWin({ goalMonth: w.goalMonth, on: onKeys(store.policy), datasetVersion });
+    if (!done.ok) return false;
+    load(store.policy);
+    leave();
+    const items = giftItems(before, g.state);
+    if (items.length > 0) gift = items;
+    // The pressed gift is gone with the win: no explainer, focus goes to the goal as after one.
+    else focusGoal();
+    return true;
+  }
+
+  /** The explainers are accepted: focus goes to the pinned goal. */
+  function giftClosed(): void {
+    gift = null;
+    focusGoal();
+  }
+
+  function focusGoal(): void {
+    void tick().then(() =>
+      document.querySelector<HTMLElement>('[data-testid=goal-headline-button]')?.focus()
+    );
   }
 
   /** Opens the document once the calibration is known (rule 40, R-3). */
@@ -426,21 +448,6 @@
   const uid = $props.id();
   const inspectorId = `${uid}-inspector`;
 
-  // ---- the game's phase (game-sim #sec-design-states) ----
-
-  /**
-   * The game's phase on the page: where a mount lands, then only through `nextPhase`. Null with no
-   * game (the published view, the open game) and for a game still in its opening.
-   */
-  let phase = $state<GamePhase | null>(
-    untrack(() => (game && !game.open && game.state.phase === 'runs' ? landing(game.state) : null))
-  );
-
-  function toPhase(e: PhaseEvent): void {
-    if (phase === null || !game) return;
-    phase = nextPhase(phase, e, game.state.runs);
-  }
-
   const inspectorOpen = $derived(
     panel !== null || selected !== null || adding !== null || drafts.isOpen
   );
@@ -527,8 +534,7 @@
       r = addPolicy(store.policy, choice, {
         w: { asOf: c.asOf, months: WINDOW_MONTHS },
         month: viewMonthOf(c.asOf, day),
-        cal: c,
-        limits
+        cal: c
       });
     } catch (e) {
       // A funding limit (only off policies count: starters show with nothing in force). The "+"
@@ -581,13 +587,26 @@
   /**
    * The editor closed (Close, Escape, Remove, "+" or a draft closed): focus goes to the bar that
    * was selected, or, when it is gone (Remove) or there was none, to its kind's "+", else the
-   * kind's toggle (WCAG 2.4.3).
+   * kind's toggle (WCAG 2.4.3). A fixed policy's pane closes to the row's New button.
    */
   function closeEditor(): void {
+    const sel = selected;
+    const picked =
+      sel !== null && !isFixedRef(sel) ? policyOf(store.policy, sel.kind, sel.id) : undefined;
+    const newButton =
+      sel !== null && picked !== undefined && isFixed(picked, limits)
+        ? document.querySelector<HTMLElement>(
+            `[data-testid="tl-dock"] [data-testid="tl-kind-${sel.kind}"] [data-policy-id="${CSS.escape(sel.id)}"] [data-testid="tl-policy-new"]`
+          )
+        : null;
     const bar = document.querySelector<HTMLElement>(`[data-testid="tl-dock"] :is(${PRESSED})`);
     const kind = selected?.kind ?? focusKind;
     void tick().then(() => {
       if (dead) return;
+      if (newButton?.isConnected) {
+        newButton.focus();
+        return;
+      }
       if (bar?.isConnected) {
         bar.focus();
         return;
@@ -608,97 +627,6 @@
         `[data-testid="tl-kind-${kind}"] button.toggle[aria-expanded="false"]`
       )
       ?.click();
-  }
-
-  // ---- the tree: buying, Edit, switching, Back (game-sim #sec-design-buy, -workshop, -switch) ----
-
-  /** Tree's "Take the next goal": the next rung once the rung in play is met; else null. */
-  const nextRung = $derived.by<Rung | null>(() => {
-    if (!game || !cal) return null;
-    const s = game.state;
-    const met = s.met.some((m) => m.rung === s.rung);
-    return met && s.rung + 1 < RUNGS ? ladder(cal.asOf)[s.rung + 1] : null;
-  });
-
-  /**
-   * Buys a node: the game's write first, then its grant to the document as one undo step named by
-   * `boughtLabel`, written at once. A refused write changes nothing.
-   */
-  function buy(id: NodeId): void {
-    if (phase !== 'tree' || !game || !cal) return;
-    const r = game.buy(id);
-    if (!r.ok) return;
-    const node = NODES.find((n) => n.id === id)!;
-    const label = boughtLabel(node, r.state.bought[id]);
-    // `game.limits` is read after the buy, so it holds the purchase.
-    const ctx = { cal, limits: game.limits };
-    store.apply((d) => applyGrant(d, r.grant, ctx), label);
-    leave(); // the autosave writes the document now
-    sound.buy();
-    brush.announce(label, ANNOUNCE_MS);
-  }
-
-  /**
-   * Edit: the node's policy added back when the document has none (one undo step named by
-   * `restoredLabel`), the workshop, and its first policy selected with its kind open. A Hands node
-   * enters the workshop with nothing selected.
-   */
-  function editNode(id: NodeId): void {
-    if (phase !== 'tree' || !game || !cal) return;
-    const node = NODES.find((n) => n.id === id);
-    const level = game.state.bought[id] ?? 0;
-    if (!node || level === 0) return;
-    const next = restoreNode(store.policy, node, level, { cal, limits: game.limits });
-    if (next !== store.policy) store.apply(() => next, restoredLabel(node));
-    toPhase('edit');
-    const ref = nodeRefs(store.policy, node.levels[0].grant)[0] ?? null;
-    if (ref) {
-      select(ref);
-      // The kind's row mounts with the workshop's bottom pane, after this update.
-      void tick().then(() => {
-        if (!dead) openKind(ref.kind);
-      });
-    }
-  }
-
-  /** The tree's switch: every policy of the node on or off, as one undo step. */
-  function switchNode(id: NodeId, on: boolean): void {
-    if (phase !== 'tree' || !game) return;
-    const node = NODES.find((n) => n.id === id);
-    if (!node) return;
-    const label = `${on ? 'Switched on' : 'Switched off'}: ${node.label}`;
-    const before = store.policy;
-    store.apply((d) => switchNodeDoc(d, node, on), label);
-    if (store.policy !== before) brush.announce(label, ANNOUNCE_MS);
-  }
-
-  /** "Back to the tree": an open draft discarded (and said), the column cleared, then `back`. */
-  function backToTree(): void {
-    if (phase !== 'workshop') return;
-    if (drafts.isOpen) {
-      drafts.discard();
-      brush.announce(DRAFT_DISCARDED, ANNOUNCE_MS);
-    }
-    selected = null;
-    adding = null;
-    panel = null;
-    toPhase('back');
-  }
-
-  /**
-   * The tree's Publish: the header's Publish button, which opens its dialog on `publishDoc`.
-   * Below lg the button sits in the closed Menu, where its dialog would not render: the Menu
-   * opens first.
-   */
-  async function openPublish(): Promise<void> {
-    const button = document.querySelector<HTMLElement>('[data-testid="publish-open"]');
-    if (!button) return;
-    const menu = document.querySelector<HTMLElement>('[data-header-menu][aria-expanded="false"]');
-    if (button.getClientRects().length === 0 && menu) {
-      menu.click();
-      await tick();
-    }
-    button.click();
   }
 
   // ---- strokes on the map ----
@@ -739,8 +667,7 @@
             {
               w: { asOf: c.asOf, months: WINDOW_MONTHS },
               month: viewMonthOf(c.asOf, day),
-              cal: c,
-              limits
+              cal: c
             }
           );
           added.ref = r.ref;
@@ -861,16 +788,11 @@
     });
   });
 
-  /** Starting, run or tally: the map is in its run view, and Undo and Redo do nothing. */
-  const inRunView = $derived(phase !== null && RUN_VIEW.has(phase));
-
   function undo(): void {
-    if (inRunView) return;
     if (controller) controller.undo();
     else adapter.editor.undo();
   }
   function redo(): void {
-    if (inRunView) return;
     if (controller) controller.redo();
     else adapter.editor.redo();
   }
@@ -879,10 +801,10 @@
    * Ctrl+Z and Ctrl+Shift+Z before the brush controller attaches (the map is loading, or never
    * comes without WebGL): the page undoes and redoes itself. Once attached, the controller's own
    * window listener takes the keys and this one does nothing. Typing in a field and a modal
-   * dialog keep their keys (`actionForKey`). In starting, run and tally it does nothing.
+   * dialog keep their keys (`actionForKey`).
    */
   function onWindowKey(e: KeyboardEvent): void {
-    if (inRunView || controller || readonly || e.defaultPrevented) return;
+    if (controller || readonly || e.defaultPrevented) return;
     const a = actionForKey(
       {
         key: e.key,
@@ -963,13 +885,10 @@
   } | null>(null);
   let viewMap: ControllerMap | null = null;
 
-  /**
-   * In the run view the view stays as it was before the run (the lock's `moveend` reports the
-   * whole city); the unlock's `moveend`, after the phase leaves it, is read as usual.
-   */
+  /** The map's view, read at each `moveend`. */
   function readView(): void {
     const m = viewMap;
-    if (!m || inRunView) return;
+    if (!m) return;
     const b = m.getBounds();
     const c = m.getCenter();
     mapView = {
@@ -1019,9 +938,8 @@
     const M = limitsModule;
     if (!o) return;
     const c = city;
-    // No limits in the run view (call 19).
     const layers =
-      M && c && limitsOn && !inRunView
+      M && c && limitsOn
         ? [M.heightLimitsLayer({ city: c, lids, mode: limitsMode, theme: systemTheme.current })]
         : [];
     untrack(() => o.slot('limits')(layers));
@@ -1257,9 +1175,6 @@
     if (autosave) detach = autosave.attach();
     // Before the game changes, the document still waiting is written to its record (G2).
     const offLeave = game?.beforeLeave(leave) ?? null;
-    // The run's prefs: read now and again on each change (the game panel's, R1).
-    readPrefs();
-    const offPrefs = onPrefs(readPrefs);
     import('@deck.gl/layers').then(
       (mod) => {
         if (dead) return;
@@ -1280,7 +1195,6 @@
       dead = true;
       uninstall();
       offLeave?.();
-      offPrefs();
       detach?.();
       strokePreview.reset();
       viewMap?.off('moveend', readView);
@@ -1300,18 +1214,13 @@
 {/snippet}
 
 {#snippet actions()}
-  {#if phase === 'workshop'}
-    <button type="button" class={BUTTON_PRIMARY} data-testid="game-back" onclick={backToTree}
-      >{BACK_TO_TREE}</button
-    >
-  {/if}
   {#if toolOff}
     <button type="button" class={BUTTON} onclick={() => setTool('move')}
       >{tools.tool === 'erase' ? 'Stop erasing' : 'Stop painting'}</button
     >
   {/if}
   {#if !readonly}
-    {#if pointer.touch && !inRunView}
+    {#if pointer.touch}
       <HistoryButtons
         canUndo={store.canUndo}
         canRedo={store.canRedo}
@@ -1335,7 +1244,7 @@
 
 {#snippet saveState(covered: boolean)}
   {#if autosave}
-    <SaveIndicator status={autosave.status} {covered} align="start" />
+    <SaveIndicator status={autosave.status} {covered} align="start" icons={!!game && !game.open} />
   {/if}
 {/snippet}
 
@@ -1391,25 +1300,6 @@
   {/if}
 {/snippet}
 
-{#snippet treePart({ busy, ending }: TreeArgs)}
-  {#if game}
-    <Tree
-      nodes={treeView(game.state)}
-      on={nodeSwitches(store.policy, game.state)}
-      units={game.state.units}
-      {busy}
-      next={nextRung}
-      {ending}
-      onbuy={buy}
-      onedit={editNode}
-      ontoggle={switchNode}
-      onrun={() => toPhase('run')}
-      onnext={() => game?.takeNext()}
-      onpublish={openPublish}
-    />
-  {/if}
-{/snippet}
-
 <svelte:window onkeydown={onWindowKey} />
 
 <TimelineMode
@@ -1435,19 +1325,13 @@
   {run}
   {game}
   {initialFrame}
-  phase={phase ?? undefined}
-  onphase={phase === null ? undefined : toPhase}
-  tree={phase === null ? undefined : treePart}
-  {sound}
-  {collectForMe}
-  {runMs}
   {goalAmount}
   lots={sync.lots}
   lotsFailed={sync.lots === null && !sync.pending && sync.failed.length > 0}
   onlotsretry={() => sync.failed.forEach((k) => sync.retry(k))}
   {readonly}
   onedit={(change, label) => store.apply(change, label)}
-  onundoto={(p) => store.undoTo(wholeOf.get(p) ?? p, 'Reverted a change')}
+  onundoto={(p) => store.undoTo(offeredIn(wholeOf.get(p) ?? p), 'Reverted a change')}
   {selected}
   onselect={select}
   onadd={startAdd}
@@ -1471,6 +1355,7 @@
   onmiss={onMiss}
   onscore={pressScore}
   onstarter={readonly || game ? undefined : addStarter}
+  ongift={game && !game.open && !readonly ? takeWin : undefined}
   {refusal}
   ondismissrefusal={() => (refusal = null)}
   ondetails={showDetails}
@@ -1487,5 +1372,8 @@
     ondone={() => {}}
     eraseHint={ERASE_HINT}
   />
+{/if}
+{#if gift}
+  <GiftDialog items={gift} onclose={giftClosed} />
 {/if}
 <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>

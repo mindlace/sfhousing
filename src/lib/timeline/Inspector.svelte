@@ -5,12 +5,14 @@
     "Your own pool" opens a pool draft instead; the draft, once complete, is added the same way.
   - the open pool draft (where a new fund's debt terms are set);
   - a fixed row: what it is, read-only (rule 7);
+  - a catalogue policy the game keeps fixed (`isFixed`): `PolicyDetails`, read-only, no editor;
   - a policy: its switch, Move up / Move down and Remove (rule 13), When (WhenEditor) and What
     (WhatEditor, today's editors on the selected span through `spanLens`). A refused edit's
     reason shows in the alert line.
-  `limits` (what is bought): "+" offers only what they allow, adds fitted to them, and under closed
-  limits a given measure's What is `PolicySummary`; its switch, order, Remove and When edit as
-  today.
+  `limits` (what the game offers): "+" offers only what they allow, and a catalogue policy the
+  player cannot edit yet, or a given measure outside the catalogue before the end (`whatFixed`),
+  has `PolicySummary` as its What; its switch, order and When edit as today. Remove shows when
+  `canRemove`: no game, a finished game, or a policy outside the catalogue.
   Read-only (rule 17): When as text, What as `PolicySummary`; nothing edits. Selecting another
   policy, opening "+" or closing discards an unfinished funding draft and says so (rule 15). Close
   and Escape call `onclose` (the page focuses the selected bar) and then clear the selection.
@@ -18,7 +20,8 @@
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
-  import { isGiven, OPEN_LIMITS, type Limits } from '$lib/game/limits';
+  import { entryOf, keyOf } from '$lib/game/catalogue/rounds';
+  import { canRemove, isFixed, OPEN_LIMITS, whatFixed, type Limits } from '$lib/game/limits';
   import type { BrushCatalog } from '$lib/sim/levers/brushes';
   import { FINANCE_LIMITS } from '$lib/sim/levers/finance';
   import { marketLevel } from '$lib/sim/world/input/market';
@@ -35,6 +38,7 @@
   import { addPolicy, AddLimitError, poolCount, type AddChoice, type AddOffer } from './add';
   import AddMenu from './AddMenu.svelte';
   import { spanLens, type EditStore } from './lens';
+  import PolicyDetails from './PolicyDetails.svelte';
   import { viewMonthOf } from './playhead';
   import type { PolicyKind, SimPolicy4 } from './policy4';
   import type { PolicySync } from './policy-sync.svelte';
@@ -289,8 +293,7 @@
       r = addPolicy(store.policy, choice, {
         w,
         month: playheadMonth,
-        cal: calibration,
-        limits
+        cal: calibration
       });
     } catch (e) {
       if (e instanceof AddLimitError) {
@@ -364,6 +367,12 @@
             : FIXED_LABEL[fixed.kind]
           : (policy?.label ?? '')
   );
+  /** A catalogue policy the game keeps fixed: its pane is read-only details (no editor at all). */
+  const details = $derived(
+    menu === null && poolDraft === null && fixed === null && policy !== undefined && ref !== null
+      ? isFixed(policy, limits)
+      : false
+  );
   const shown = $derived(
     menu !== null || poolDraft !== null || fixed !== null || policy !== undefined
   );
@@ -374,7 +383,15 @@
   const alertClass = (t: string) => `text-sm text-red-800 dark:text-red-300 ${t ? '' : 'sr-only'}`;
 </script>
 
-{#if shown}
+{#if details && policy && ref}
+  <PolicyDetails
+    kind={ref.kind}
+    {policy}
+    entry={entryOf(keyOf(policy) ?? '')}
+    {asOf}
+    onclose={close}
+  />
+{:else if shown}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <section
     bind:this={root}
@@ -446,7 +463,9 @@
             aria-disabled={index < 0 || index >= count - 1 ? 'true' : undefined}
             onclick={() => move(1)}>Move down</button
           >
-          <button type="button" class={btn} onclick={removeThis}>Remove policy</button>
+          {#if canRemove(policy, limits)}
+            <button type="button" class={btn} onclick={removeThis}>Remove policy</button>
+          {/if}
         </div>
         <WhatEditor
           part="policy"
@@ -488,7 +507,7 @@
           {catalog}
           {drafts}
           {playheadDay}
-          readonly={readonly || (!limits.open && isGiven(policy))}
+          readonly={readonly || whatFixed(policy, limits)}
           {limits}
           {announce}
           onremove={removeThis}

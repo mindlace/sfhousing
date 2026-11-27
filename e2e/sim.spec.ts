@@ -1423,12 +1423,12 @@ test("the simulation: the header's About opens About this model over the map; Es
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(/\/$/);
   expect(await runState(page)).toEqual(before);
-  // Focus back where About was pressed: the link, or the Menu button once the Menu closed.
-  if (isMobile) await expect(menuButton(page)).toBeFocused();
-  else await expect(about).toBeFocused();
+  // Focus back on the Menu button: About is in the Menu at every width, and the Menu closed.
+  await expect(menuButton(page)).toBeFocused();
 
   if (!isMobile) {
     // A modified click is the browser's: the page in a new tab, no dialog, the run untouched.
+    await openHeaderMenu(page);
     const [tab] = await Promise.all([
       page.context().waitForEvent('page'),
       about.click({ modifiers: ['ControlOrMeta'] })

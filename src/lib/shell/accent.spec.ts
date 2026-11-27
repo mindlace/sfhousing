@@ -23,7 +23,6 @@ const CHROME_FILES = [
 const SCANNED = [...CHROME_FILES, 'src/lib/brush/RadiusPopover.svelte'];
 /** Files that follow the light and dark surface tokens (later plans append theirs). */
 const THEMED_FILES = [
-  'src/lib/timeline/RunClock.svelte',
   'src/lib/shell/NoticePills.svelte',
   'src/lib/sim-page/SimNotices.svelte',
   'src/lib/timeline/SimDetails.svelte',
@@ -82,11 +81,8 @@ const THEMED_FILES = [
   'src/lib/shell/Message.svelte',
   'src/lib/sharing/NoticeStack.svelte',
   'src/lib/sim-page/SimNotices.svelte',
-  'src/lib/game/ui/Tally.svelte',
-  'src/lib/game/ui/Tree.svelte',
   'src/lib/game/ui/GoalHeadline.svelte',
   'src/lib/game/ui/OpeningCard.svelte',
-  'src/lib/game/ui/GameCell.svelte',
   'src/lib/game/ui/GamePanel.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */

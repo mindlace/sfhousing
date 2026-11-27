@@ -1,58 +1,45 @@
-/// <reference types="@vitest/browser-playwright" />
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { flushSync, type ComponentProps } from 'svelte';
+// The pinned goal: pending, win or late (P19), the bar, the gift, and one line on a phone.
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRawSnippet, type ComponentProps } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../../routes/layout.css';
+import { dayFromUtc } from '$lib/fzp/time';
 import { MemoryStorage } from '$lib/sharing/fixtures/memory-storage';
+import { PENDING, type Verdict } from '../rounds';
 import { GameStore, openGame } from '../store.svelte';
 import { FakeSync } from '../test/fake-sync.svelte';
 import type GoalHeadline from './GoalHeadline.svelte';
-import { MET_MS, ROLL_MS } from './motion';
+import GoalPinnedHeader from '$lib/shell/test/GoalPinnedHeader.svelte';
+import { pinnedWords, type PinnedCtx } from './round-words';
 import HeadlineHost from './test/HeadlineHost.svelte';
-import { sideEntry, sideGoal } from './test/fixtures';
-import {
-  GOAL_MET,
-  HOMES_WORD,
-  LAST_GOAL,
-  MET,
-  NO_SIDE_GOALS,
-  goalLine,
-  goalMetLive,
-  priceText,
-  progressText,
-  sideMetLive,
-  sideMetText,
-  unitsName,
-  unlocksText
-} from './words';
-
-/** Both media features at once: each Emulation.setEmulatedMedia call replaces the last. */
-async function emulate(scheme: 'light' | 'dark', motion: 'reduce' | 'no-preference' = 'reduce') {
-  await cdp().send('Emulation.setEmulatedMedia', {
-    features: [
-      { name: 'prefers-color-scheme', value: scheme },
-      { name: 'prefers-reduced-motion', value: motion }
-    ]
-  });
-}
-
-// Svelte runs every tween on one shared frame loop. A tween left pending on real frames (a hidden
-// page pauses them) or on faked ones (gone once real timers return) stalls every later roll, so
-// no test starts with motion on and every faked frame runs out before the clock is restored.
-beforeAll(() => emulate('light', 'reduce'));
 
 afterEach(async () => {
-  if (vi.isFakeTimers()) await vi.runAllTimersAsync();
-  vi.useRealTimers();
-  await emulate('light', 'reduce');
+  await cdp().send('Emulation.setEmulatedMedia', {
+    features: [
+      { name: 'prefers-color-scheme', value: 'light' },
+      { name: 'prefers-reduced-motion', value: 'no-preference' }
+    ]
+  });
 });
 
 type Props = ComponentProps<typeof GoalHeadline>;
 
-const DEADLINE = 'Dec 2055';
-const UNLOCKS = 'Height near transit';
+const CTX: PinnedCtx = {
+  amount: 82_069,
+  target: dayFromUtc(2060, 6, 1),
+  legal: dayFromUtc(2066, 9, 30),
+  round: 2,
+  finished: false,
+  next: 3
+};
+const WORDS = pinnedWords(PENDING, CTX);
+const WIN: Verdict = { tag: 'win', goalMonth: dayFromUtc(2058, 3, 1) };
+const LATE: Verdict = { tag: 'late', goalMonth: dayFromUtc(2062, 6, 1) };
+const WIN_WORDS = pinnedWords(WIN, CTX);
+const LATE_WORDS = pinnedWords(LATE, CTX);
+
 const realStore = () =>
   new GameStore({
     storage: new MemoryStorage(),
@@ -61,308 +48,333 @@ const realStore = () =>
   });
 
 const props = (over: Partial<Props> = {}): Props => ({
-  homes: 40_000,
-  amount: 80_000,
-  deadline: DEADLINE,
-  unlocks: UNLOCKS,
-  met: false,
-  side: [],
+  state: 'pending',
+  words: WORDS,
+  fill: 0.4,
   ...over
 });
+const win = (over: Partial<Props> = {}) => props({ state: 'win', words: WIN_WORDS, ...over });
+const late = (over: Partial<Props> = {}) => props({ state: 'late', words: LATE_WORDS, ...over });
 
-function mount(over: Partial<Props> = {}, onescape?: () => void) {
-  return render(HeadlineHost, { props: { store: realStore(), headline: props(over), onescape } });
+function mount(over: Partial<Props> = {}) {
+  return render(HeadlineHost, { props: { store: realStore(), headline: props(over) } });
 }
 
 const box = () => page.getByTestId('goal-box');
-const button = () => page.getByTestId('goal-headline-button');
-const line2 = () => page.getByTestId('goal-line2');
-const pop = () => page.getByTestId('side-goals');
-const el = (testid: string) =>
-  document.querySelector<HTMLElement>(`[data-testid="${testid}"]`) as HTMLElement;
-/** Line 1 as drawn (the rolling count); the button's sr-only copy carries the true count. */
-const shown = () => el('goal-headline-button').querySelector('[aria-hidden="true"]')?.textContent;
-const named = () => el('goal-headline-button').querySelector('.sr-only')?.textContent;
-
-const towers = sideGoal('towers', 'Ten towers', 500);
-const added = sideGoal('added', '1,000 homes added', 300);
+const live = () => page.getByTestId('goal-live');
+const giftEl = () => page.getByTestId('goal-gift');
 
 describe('GoalHeadline', () => {
-  it('line 1 with homes and with null', async () => {
+  it('renders line 1, line 2 and a bar filled to fill', async () => {
     await page.viewport(1280, 800);
-    const a = await mount();
-    await expect.element(button()).toHaveAccessibleName(goalLine(40_000, 80_000, DEADLINE));
-    expect(shown()).toBe(goalLine(40_000, 80_000, DEADLINE));
-    await a.unmount();
-    await mount({ homes: null });
-    await expect.element(button()).toHaveAccessibleName(goalLine(null, 80_000, DEADLINE));
-    expect(shown()).toBe(goalLine(null, 80_000, DEADLINE));
+    await mount();
+    await expect.element(page.getByTestId('goal-line1')).toHaveTextContent(WORDS.line1);
+    await expect.element(page.getByTestId('goal-line2')).toHaveTextContent(WORDS.line2);
+    await expect.element(page.getByTestId('goal-bar')).toHaveAttribute('data-fill', '40');
+  });
+
+  for (const [name, p, w] of [
+    ['pending', props(), WORDS],
+    ['win', win({ ongift: () => {} }), WIN_WORDS],
+    ['late', late(), LATE_WORDS]
+  ] as const) {
+    it(`the ${name} state renders line 1, line 2 and the bar`, async () => {
+      await page.viewport(1280, 800);
+      await mount(p);
+      await expect.element(page.getByTestId('goal-headline')).toHaveAttribute('data-state', name);
+      await expect.element(page.getByTestId('goal-line1')).toHaveTextContent(w.line1);
+      await expect.element(page.getByTestId('goal-line2')).toHaveTextContent(w.line2);
+      await expect.element(page.getByTestId('goal-bar')).toBeVisible();
+    });
+  }
+
+  it('the win says so in words: "early" in line 2 and a gift named by words.gift', async () => {
+    await page.viewport(1280, 800);
+    const ongift = vi.fn();
+    await mount(win({ ongift }));
+    await expect.element(page.getByTestId('goal-line2')).toHaveTextContent('2 yr 3 mo early');
+    const g = page.getByRole('button', { name: WIN_WORDS.gift! });
+    await expect.element(g).toBeVisible();
+    expect(g.element()).toBe(giftEl().element());
+    await g.click();
+    expect(ongift).toHaveBeenCalledOnce();
+  });
+
+  it('no gift without ongift, nor in pending or late', async () => {
+    await page.viewport(1280, 800);
+    const r = await mount(win());
+    await expect.element(page.getByTestId('goal-line1')).toBeVisible();
+    expect(document.querySelector('[data-testid="goal-gift"]')).toBeNull();
+    for (const p of [props({ ongift: () => {} }), late({ ongift: () => {} })]) {
+      await r.rerender({ headline: p });
+      await expect.element(page.getByTestId('goal-line2')).toHaveTextContent(p.words.line2);
+      expect(document.querySelector('[data-testid="goal-gift"]')).toBeNull();
+    }
+  });
+
+  it('without a panel the lines are plain text, not a control', async () => {
+    await page.viewport(1280, 800);
+    await mount();
+    const lines = page.getByTestId('goal-headline-button').element();
+    expect(lines.tagName).not.toBe('BUTTON');
+    expect(lines.hasAttribute('aria-expanded')).toBe(false);
+    expect(lines.hasAttribute('aria-controls')).toBe(false);
+    expect(lines.hasAttribute('tabindex')).toBe(false);
+    expect(lines.hasAttribute('role')).toBe(false);
+  });
+
+  it('with a panel the lines are a button that opens it', async () => {
+    await page.viewport(1280, 800);
+    const panel = createRawSnippet(() => ({ render: () => '<p>Round 2</p>' }));
+    await mount({ panel });
+    const b = page.getByTestId('goal-headline-button');
+    expect(b.element().tagName).toBe('BUTTON');
+    await expect.element(b).toHaveAttribute('aria-expanded', 'false');
+    const id = b.element().getAttribute('aria-controls')!;
+    expect(document.getElementById(id)).not.toBeNull();
+    await b.click();
+    await expect.element(b).toHaveAttribute('aria-expanded', 'true');
+    await expect.element(page.getByText('Round 2')).toBeVisible();
+  });
+
+  describe('the panel closes by Escape and by a press outside', () => {
+    const panelSnippet = () => createRawSnippet(() => ({ render: () => '<p>Round 2</p>' }));
+    const button = () => page.getByTestId('goal-headline-button');
+
+    it('Escape closes it and focus is on the button', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await button().click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
+      await userEvent.keyboard('{Escape}');
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(button()).toHaveFocus();
+    });
+
+    it('a press outside closes it, focus on the button; a press inside keeps it open', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await button().click();
+      await page.getByText('Round 2').click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
+      await page.getByTestId('outside').click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(button()).toHaveFocus();
+    });
+
+    it('another header overlay opening closes it', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await button().click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
+      window.dispatchEvent(new CustomEvent('sfh-header-overlay-open', { detail: 'menu' }));
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('opening it announces itself to the other overlays', async () => {
+      await page.viewport(1280, 800);
+      const seen: string[] = [];
+      const on = (e: Event) => seen.push((e as CustomEvent<string>).detail);
+      window.addEventListener('sfh-header-overlay-open', on);
+      try {
+        await mount({ panel: panelSnippet() });
+        await button().click();
+        expect(seen).toHaveLength(1);
+      } finally {
+        window.removeEventListener('sfh-header-overlay-open', on);
+      }
+    });
+
+    it('Escape with the panel shut does nothing to the focus', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await userEvent.keyboard('{Escape}');
+      await expect.element(button()).not.toHaveFocus();
+    });
+  });
+
+  it('the state at mount is not announced; win and late arriving later are', async () => {
+    await page.viewport(1280, 800);
+    const r = await mount(win({ ongift: () => {} }));
+    await expect.element(page.getByTestId('goal-line1')).toBeVisible();
+    expect(live().element().getAttribute('aria-live')).toBe('polite');
+    expect(live().element().textContent).toBe('');
+    await r.rerender({ headline: props() });
+    await expect
+      .element(page.getByTestId('goal-headline'))
+      .toHaveAttribute('data-state', 'pending');
+    expect(live().element().textContent).toBe('');
+    await r.rerender({ headline: late() });
+    await expect.element(live()).toHaveTextContent(LATE_WORDS.live!);
+    await r.rerender({ headline: win({ ongift: () => {} }) });
+    await expect.element(live()).toHaveTextContent(WIN_WORDS.live!);
+  });
+
+  it('the win marks its box beyond the words: an accent border', async () => {
+    await page.viewport(1280, 800);
+    const r = await mount();
+    const colour = () => getComputedStyle(box().element()).borderTopColor;
+    await expect.element(box()).toBeVisible();
+    const pending = colour();
+    await r.rerender({ headline: win({ ongift: () => {} }) });
+    await expect.poll(colour).not.toBe(pending);
+  });
+
+  it('the gift jiggles every 4 s, and is still under reduced motion', async () => {
+    await page.viewport(1280, 800);
+    await mount(win({ ongift: () => {} }));
+    await expect.element(giftEl()).toBeVisible();
+    const style = () => getComputedStyle(giftEl().element());
+    expect(style().animationName).not.toBe('none');
+    expect(style().animationDuration).toBe('4s');
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+    });
+    await expect.poll(() => style().animationName).toBe('none');
+  });
+
+  describe('on a phone', () => {
+    const phone = () => page.getByTestId('goal-phone');
+    const part = (c: string) => phone().element().querySelector<HTMLElement>(`.goal-${c}`)!;
+    const shows = (el: HTMLElement) => el.getBoundingClientRect().width > 0;
+    /** The phone line's visible words. */
+    const read = () =>
+      (['count', 'short', 'homes', 'rest'] as const)
+        .map((c) => part(c))
+        .filter(shows)
+        .map((el, i, all) => (el === all.at(-1) ? ` ${el.textContent}` : el.textContent))
+        .join('') + (part('result') ? ` · ${part('result').textContent}` : '');
+    const rect = (el: Element) => el.getBoundingClientRect();
+    /** Every drawn part of the phone line lies inside the line's box: nothing is cut off. */
+    const expectWhole = () => {
+      const line = rect(phone().element());
+      for (const c of ['count', 'short', 'homes', 'rest', 'result'] as const) {
+        const el = part(c);
+        if (!el || !shows(el)) continue;
+        const r = rect(el);
+        expect(r.left, c).toBeGreaterThanOrEqual(line.left - 0.5);
+        expect(r.right, c).toBeLessThanOrEqual(line.right + 0.5);
+        expect(r.top, c).toBeGreaterThanOrEqual(line.top - 0.5);
+        expect(r.bottom, c).toBeLessThanOrEqual(line.bottom + 0.5);
+      }
+    };
+    // The e2e journeys' win at 438 homes, against Jan 2045: the widest rest the fixture shows.
+    const WIDE_WIN = pinnedWords(
+      { tag: 'win', goalMonth: dayFromUtc(2038, 8, 1) },
+      { ...CTX, amount: 438, target: dayFromUtc(2045, 1, 1) }
+    );
+
+    it('at 320 px beside a status the result wraps beneath: nothing cut off, the bar 48 px', async () => {
+      await page.viewport(320, 700);
+      render(GoalPinnedHeader, {
+        props: {
+          game: realStore(),
+          headline: win({ words: WIDE_WIN, ongift: () => {} }),
+          status: true
+        }
+      });
+      await expect.element(phone()).toBeVisible();
+      expect(part('result').textContent).toContain('6 yr 5 mo early');
+      expect(shows(part('result'))).toBe(true);
+      expectWhole();
+      expect(rect(part('result')).top).toBeGreaterThan(rect(part('rest')).top);
+      // No leading dot on the wrapped line: the separator sits left of the line's box, unseen.
+      expect(rect(part('sep')).right).toBeLessThanOrEqual(rect(phone().element()).left + 0.5);
+      expect(rect(part('result')).left).toBeLessThanOrEqual(rect(phone().element()).left + 0.5);
+      const banner = page.getByRole('banner').element();
+      expect(rect(banner).height).toBe(48);
+      const g = rect(giftEl().element());
+      expect(g.width).toBeGreaterThanOrEqual(24);
+      expect(g.height).toBeGreaterThanOrEqual(24);
+      expect(g.left).toBeGreaterThanOrEqual(rect(phone().element()).right);
+      const status = rect(page.getByTestId('status-control').element());
+      expect(g.right).toBeLessThanOrEqual(status.left);
+      expect(status.right).toBeLessThanOrEqual(
+        rect(page.getByRole('button', { name: 'Menu' }).element()).left
+      );
+    });
+
+    it('at 375 px with no status the win is one line', async () => {
+      await page.viewport(375, 700);
+      render(GoalPinnedHeader, {
+        props: { game: realStore(), headline: win({ words: WIDE_WIN, ongift: () => {} }) }
+      });
+      await expect.element(phone()).toBeVisible();
+      expectWhole();
+      expect(rect(part('result')).top).toBe(rect(part('rest')).top);
+      // On one line the dot stays, between the month and the result, inside the line.
+      const sep = rect(part('sep'));
+      expect(sep.left).toBeGreaterThanOrEqual(rect(part('rest')).right);
+      expect(sep.right).toBeLessThanOrEqual(rect(part('result')).left);
+      expect(sep.left).toBeGreaterThanOrEqual(rect(phone().element()).left);
+      expect(part('sep').textContent?.trim()).toBe('·');
+    });
+
+    for (const [name, p, rest] of [
+      ['pending', props(), 'before Jun 2060'],
+      ['win', win({ ongift: () => {} }), 'by Mar 2058 · 2 yr 3 mo early'],
+      ['late', late(), 'by Jun 2062 · 2 years late']
+    ] as const) {
+      it(`at 320 px the ${name} state is one line from the bar's left, without overflow`, async () => {
+        await page.viewport(320, 700);
+        render(GoalPinnedHeader, { props: { game: realStore(), headline: p } });
+        await expect.element(phone()).toBeVisible();
+        await expect.element(page.getByTestId('goal-line1')).not.toBeVisible();
+        await expect.element(page.getByTestId('goal-line2')).not.toBeVisible();
+        await expect.element(page.getByTestId('goal-bar')).toBeVisible();
+        expect(read()).toMatch(
+          new RegExp(`^(82,069|82k)(${name === 'pending' ? ' homes' : ''})? ${rest}$`)
+        );
+        expect(shows(part('rest'))).toBe(true);
+        const banner = page.getByRole('banner').element() as HTMLElement;
+        const b = box().element().getBoundingClientRect();
+        expect(b.left - banner.getBoundingClientRect().left).toBeLessThanOrEqual(16);
+        expect(b.right).toBeLessThanOrEqual(
+          page.getByRole('button', { name: 'Menu' }).element().getBoundingClientRect().left
+        );
+        expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+        expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(320);
+        const line = phone().element() as HTMLElement;
+        expect(line.scrollWidth).toBeLessThanOrEqual(line.clientWidth);
+        if (name === 'win') {
+          const g = giftEl().element().getBoundingClientRect();
+          expect(g.width).toBeGreaterThanOrEqual(24);
+          expect(g.height).toBeGreaterThanOrEqual(24);
+          expect(g.right).toBeLessThanOrEqual(b.right);
+        }
+      });
+    }
+
+    it('narrowed, "homes" hides first and the short count comes last; the rest always shows', async () => {
+      await page.viewport(320, 700);
+      await mount();
+      const root = page.getByTestId('goal-headline').element() as HTMLElement;
+      root.style.flex = 'none';
+      const at = async (rem: number) => {
+        root.style.width = `${rem}rem`;
+        await expect.poll(() => root.getBoundingClientRect().width).toBe(rem * 16);
+        return (['count', 'short', 'homes', 'rest'] as const).map((c) => shows(part(c)));
+      };
+      expect(await at(19)).toEqual([true, false, true, true]);
+      expect(await at(15)).toEqual([true, false, false, true]);
+      expect(await at(11)).toEqual([false, true, false, true]);
+    });
+  });
+
+  it('clamps the bar to 0..1', async () => {
+    await page.viewport(1280, 800);
+    const r = await mount({ fill: 1.7 });
+    await expect.element(page.getByTestId('goal-bar')).toHaveAttribute('data-fill', '100');
+    await r.rerender({ headline: props({ fill: -1 }) });
     await expect.element(page.getByTestId('goal-bar')).toHaveAttribute('data-fill', '0');
   });
 
-  it('below sm the word homes is hidden and the name is unchanged', async () => {
-    await page.viewport(375, 812);
+  it('has no side goals', async () => {
+    await page.viewport(1280, 800);
     await mount();
-    await expect.element(button()).toHaveAccessibleName(goalLine(40_000, 80_000, DEADLINE));
-    const word = el('goal-headline-button').querySelector('[aria-hidden="true"] > span');
-    expect(word?.textContent).toBe(HOMES_WORD);
-    // Visually hidden: clipped to at most a pixel.
-    const r = word!.getBoundingClientRect();
-    expect(r.width).toBeLessThanOrEqual(1);
-    const drawn = el('goal-headline-button').querySelector<HTMLElement>('[aria-hidden="true"]')!;
-    expect(drawn.offsetWidth).toBeGreaterThan(0);
-    await page.viewport(1280, 800);
-    await expect.poll(() => word!.getBoundingClientRect().width).toBeGreaterThan(1);
-  });
-
-  it('line 2 for unlocks, met and the last goal, with the side count', async () => {
-    await page.viewport(1280, 800);
-    const cases: [Partial<Props>, string][] = [
-      [{}, unlocksText(UNLOCKS)],
-      [{ met: true }, GOAL_MET],
-      [{ unlocks: null }, LAST_GOAL],
-      [
-        { side: [sideEntry(towers, 10, 10), sideEntry(added, 600, 1000)] },
-        `${unlocksText(UNLOCKS)} · ${sideMetText(1)}`
-      ]
-    ];
-    for (const [over, text] of cases) {
-      const r = await mount(over);
-      await expect.element(line2()).toHaveTextContent(text, { normalizeWhitespace: true });
-      expect(line2().element().textContent?.trim()).toBe(text);
-      await expect.element(button()).toHaveAccessibleDescription(text);
-      await r.unmount();
-    }
-  });
-
-  it('line 2 is hidden below sm, its description whole', async () => {
-    await page.viewport(375, 812);
-    await mount({ side: [sideEntry(towers, 10, 10)] });
-    await expect.element(button()).toBeVisible();
-    await expect.element(line2()).not.toBeVisible();
-    await expect
-      .element(button())
-      .toHaveAccessibleDescription(`${unlocksText(UNLOCKS)} · ${sideMetText(1)}`);
-  });
-
-  it('the bar and the side mark', async () => {
-    await page.viewport(1280, 800);
-    const half = await mount();
-    await expect.element(page.getByTestId('goal-bar')).toHaveAttribute('data-fill', '50');
-    await expect.element(page.getByTestId('goal-side-mark')).not.toBeInTheDocument();
-    await half.unmount();
-    const over = await mount({ homes: 90_000, side: [sideEntry(added, 600, 1000)] });
-    await expect.element(page.getByTestId('goal-bar')).toHaveAttribute('data-fill', '100');
-    await expect.element(page.getByTestId('goal-side-mark')).not.toBeInTheDocument();
-    await over.rerender({ headline: props({ side: [sideEntry(added, 1000, 1000)] }) });
-    await expect.element(page.getByTestId('goal-side-mark')).toBeInTheDocument();
-    await over.rerender({ headline: props({ side: [sideEntry(added, 1000, 1000, false)] }) });
-    await expect.element(page.getByTestId('goal-side-mark')).not.toBeInTheDocument();
-  });
-
-  it('the pop-over opens and closes', async () => {
-    await page.viewport(1280, 800);
-    const announced: string[] = [];
-    const onopen = (e: Event) => announced.push((e as CustomEvent<string>).detail);
-    window.addEventListener('sfh-header-overlay-open', onopen);
-    try {
-      await mount({ side: [sideEntry(added, 600, 1000)] });
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
-      // By the button.
-      await button().click();
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
-      await expect.element(pop()).toBeVisible();
-      expect(button().element().getAttribute('aria-controls')).toBe(pop().element().id);
-      expect(document.activeElement).toBe(button().element());
-      expect(announced).toEqual(['goal-side']);
-      await button().click();
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(pop()).not.toBeInTheDocument();
-
-      // Escape closes it and focuses the button.
-      await button().click();
-      await expect.element(pop()).toBeVisible();
-      (document.activeElement as HTMLElement).blur();
-      await userEvent.keyboard('{Escape}');
-      await expect.element(pop()).not.toBeInTheDocument();
-      await expect.element(button()).toHaveFocus();
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
-
-      // An Escape already handled leaves it open.
-      await button().click();
-      await expect.element(pop()).toBeVisible();
-      const handled = (e: KeyboardEvent) => e.preventDefault();
-      window.addEventListener('keydown', handled, { capture: true });
-      try {
-        await userEvent.keyboard('{Escape}');
-      } finally {
-        window.removeEventListener('keydown', handled, { capture: true });
-      }
-      await expect.element(pop()).toBeVisible();
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
-
-      // A press outside closes it; left of the pop-over, which sits under the box.
-      await page.getByTestId('outside').click({ position: { x: 40, y: 100 } });
-      await expect.element(pop()).not.toBeInTheDocument();
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
-
-      // A press inside the pop-over keeps it open.
-      await button().click();
-      await expect.element(pop()).toBeVisible();
-      await pop().click();
-      await expect.element(pop()).toBeVisible();
-
-      // Another header overlay opening closes it.
-      window.dispatchEvent(new CustomEvent('sfh-header-overlay-open', { detail: 'other' }));
-      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
-      await expect.element(pop()).not.toBeInTheDocument();
-    } finally {
-      window.removeEventListener('sfh-header-overlay-open', onopen);
-    }
-  });
-
-  for (const [w, h] of [
-    [375, 812],
-    [1280, 800]
-  ] as const)
-    it(`the pop-over lies inside the viewport at ${w} px`, async () => {
-      await page.viewport(w, h);
-      await mount({ side: [sideEntry(added, 600, 1000), sideEntry(towers, 3, 10)] });
-      await button().click();
-      await expect.element(pop()).toBeVisible();
-      const r = pop().element().getBoundingClientRect();
-      expect(r.left).toBeGreaterThanOrEqual(0);
-      expect(r.right).toBeLessThanOrEqual(innerWidth);
-      const header = page.getByRole('banner').element().getBoundingClientRect();
-      expect(r.top).toBeGreaterThanOrEqual(header.bottom);
-    });
-
-  it('each side entry', async () => {
-    await page.viewport(1280, 800);
-    const r = await mount({ side: [sideEntry(added, 600, 1000), sideEntry(towers, 10, 10)] });
-    await button().click();
-    await expect.element(pop()).toBeVisible();
-    await expect.element(page.getByRole('heading', { name: 'Side goals' })).toBeVisible();
-    const entries = page.getByTestId('side-goal');
-    await expect.poll(() => entries.all().length).toBe(2);
-    const [a, b] = entries.elements();
-    expect(a.getAttribute('data-goal')).toBe('added');
-    expect(a.hasAttribute('data-met')).toBe(false);
-    expect(a.textContent).toContain('1,000 homes added');
-    expect(a.textContent).toContain(progressText(600, 1000));
-    expect(a.textContent).toContain(priceText(300));
-    expect(a.querySelector('.sr-only')?.textContent).toBe(unitsName(300));
-    expect(a.querySelector('[data-fill]')?.getAttribute('data-fill')).toBe('60');
-    expect(a.textContent).not.toContain(MET);
-    expect(b.getAttribute('data-goal')).toBe('towers');
-    expect(b.hasAttribute('data-met')).toBe(true);
-    expect(b.textContent).toContain(MET);
-    expect(b.querySelector('.sr-only')?.textContent).toBe(unitsName(500));
-    expect(b.querySelector('[data-fill]')?.getAttribute('data-fill')).toBe('100');
-    await r.unmount();
-
-    await mount({ side: [] });
-    await button().click();
-    await expect.element(pop()).toHaveTextContent(NO_SIDE_GOALS);
-    expect(pop().element().querySelector('ul')).toBeNull();
-  });
-
-  it('the live region speaks a goal met and a side goal met after mount, and nothing at mount', async () => {
-    await page.viewport(1280, 800);
-    const live = page.getByTestId('goal-live');
-    const at = await mount({ met: true, side: [sideEntry(towers, 10, 10)] });
     await expect.element(box()).toBeVisible();
-    expect(live.element().textContent).toBe('');
-    await at.unmount();
-
-    const side = [sideEntry(towers, 3, 10), sideEntry(added, 600, 1000)];
-    const r = await mount({ side });
-    await expect.element(box()).toBeVisible();
-    expect(live.element().textContent).toBe('');
-    await r.rerender({ headline: props({ met: true, side }) });
-    await expect.element(live).toHaveTextContent(goalMetLive(80_000, DEADLINE));
-    await r.rerender({
-      headline: props({
-        met: true,
-        side: [sideEntry(towers, 10, 10), sideEntry(added, 1000, 1000)]
-      })
-    });
-    await expect
-      .element(live)
-      .toHaveTextContent(`${sideMetLive('Ten towers')} · ${sideMetLive('1,000 homes added')}`);
-    expect(live.element().getAttribute('aria-live')).toBe('polite');
-  });
-
-  // Fake setTimeout before the render: the flash's timer starts on the rerender. No
-  // expect.element while faked: its retries wait on timers.
-  it('data-flash lasts MET_MS', async () => {
-    await page.viewport(1280, 800);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const r = await mount();
-    flushSync();
-    expect(el('goal-box').hasAttribute('data-flash')).toBe(false);
-    await r.rerender({ headline: props({ met: true }) });
-    flushSync();
-    expect(el('goal-box').hasAttribute('data-flash')).toBe(true);
-    expect(el('goal-box').hasAttribute('data-met')).toBe(true);
-    await vi.advanceTimersByTimeAsync(MET_MS - 1);
-    flushSync();
-    expect(el('goal-box').hasAttribute('data-flash')).toBe(true);
-    await vi.advanceTimersByTimeAsync(1);
-    flushSync();
-    expect(el('goal-box').hasAttribute('data-flash')).toBe(false);
-  });
-
-  it('with reduced motion the flash does not animate', async () => {
-    await page.viewport(1280, 800);
-    const still = await mount();
-    await expect.element(box()).toBeVisible();
-    await still.rerender({ headline: props({ met: true }) });
-    await expect.element(box()).toHaveAttribute('data-flash');
-    expect(getComputedStyle(box().element()).animationName).toBe('none');
-    expect(getComputedStyle(box().element()).outlineStyle).toBe('solid');
-    await still.unmount();
-
-    await emulate('light', 'no-preference');
-    const moving = await mount();
-    await expect.element(box()).toBeVisible();
-    await moving.rerender({ headline: props({ met: true }) });
-    await expect.element(box()).toHaveAttribute('data-flash');
-    expect(getComputedStyle(box().element()).animationName).toContain('goal-met');
-  });
-
-  it('the count rolls, and jumps with reduced motion', async () => {
-    await page.viewport(1280, 800);
-    // Reduced motion (the default context): the new count at once.
-    const jump = await mount();
-    await expect.element(box()).toBeVisible();
-    await jump.rerender({ headline: props({ homes: 44_000 }) });
-    await expect.element(button()).toHaveAccessibleName(goalLine(44_000, 80_000, DEADLINE));
-    expect(shown()).toBe(goalLine(44_000, 80_000, DEADLINE));
-    await jump.unmount();
-
-    // Without it, a roll over ROLL_MS on the faked animation clock. No expect.element below.
-    await emulate('light', 'no-preference');
-    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
-    const roll = await mount();
-    flushSync();
-    await roll.rerender({ headline: props({ homes: 44_000 }) });
-    flushSync();
-    expect(shown()).not.toBe(goalLine(44_000, 80_000, DEADLINE));
-    expect(named()).toBe(goalLine(44_000, 80_000, DEADLINE));
-    await vi.advanceTimersByTimeAsync(ROLL_MS + 50);
-    flushSync();
-    expect(shown()).toBe(goalLine(44_000, 80_000, DEADLINE));
-    expect(el('goal-bar').getAttribute('data-fill')).toBe('55');
-    await roll.unmount();
-
-    // From null: at once.
-    const fromNull = await mount({ homes: null });
-    flushSync();
-    await fromNull.rerender({ headline: props({ homes: 40_000 }) });
-    flushSync();
-    expect(shown()).toBe(goalLine(40_000, 80_000, DEADLINE));
-    expect(el('goal-bar').getAttribute('data-fill')).toBe('50');
+    expect(document.querySelector('[data-testid="side-goals"]')).toBeNull();
+    expect(document.querySelector('[data-testid="side-goal"]')).toBeNull();
   });
 
   it('renders nothing for the open game', async () => {
@@ -370,41 +382,23 @@ describe('GoalHeadline', () => {
     await render(HeadlineHost, { props: { store: openGame(), headline: props() } });
     await expect.element(page.getByTestId('outside')).toBeInTheDocument();
     await expect.element(box()).not.toBeInTheDocument();
-    expect(document.querySelector('[data-testid="goal-live"]')).toBeNull();
   });
 
   it('the box is at most 44 px tall at 1280 px', async () => {
     await page.viewport(1280, 800);
-    await mount({ side: [sideEntry(towers, 10, 10)] });
-    await expect.element(line2()).toBeVisible();
+    await mount();
+    await expect.element(page.getByTestId('goal-line2')).toBeVisible();
     expect(box().element().getBoundingClientRect().height).toBeLessThanOrEqual(44);
   });
 
-  // The button's target is the box: its ::before covers it.
-  it('the button is at least 24 px', async () => {
-    for (const [w, h] of [
-      [1280, 800],
-      [375, 812]
-    ] as const) {
-      await page.viewport(w, h);
-      const r = await mount();
-      await expect.element(box()).toBeVisible();
-      const b = box().element().getBoundingClientRect();
-      expect(b.width).toBeGreaterThanOrEqual(24);
-      expect(b.height).toBeGreaterThanOrEqual(24);
-      const before = getComputedStyle(button().element(), '::before');
-      expect(before.position).toBe('absolute');
-      await r.unmount();
-    }
-  });
-
-  it('axe finds no violation in light and dark, with the pop-over open', async () => {
+  it('axe finds no violation in light and dark', async () => {
     await page.viewport(1280, 800);
-    await mount({ side: [sideEntry(added, 600, 1000), sideEntry(towers, 10, 10)] });
-    await button().click();
-    await expect.element(pop()).toBeVisible();
+    await mount();
+    await expect.element(box()).toBeVisible();
     for (const s of ['light', 'dark'] as const) {
-      await emulate(s);
+      await cdp().send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: s }]
+      });
       expect((await axe.run(page.getByRole('banner').element())).violations).toEqual([]);
     }
   });

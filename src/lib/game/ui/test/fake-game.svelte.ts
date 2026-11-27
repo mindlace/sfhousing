@@ -18,7 +18,7 @@ export interface FakeGameInit {
   sync?: FakeSync;
 }
 
-/** A save entry for tests: id `id-${name}`, nameIsDefault false, phase 'opening', rung 0, savedAt now. */
+/** A save entry for tests: id `id-${name}`, nameIsDefault false, phase 'opening', round 0, savedAt now. */
 export function entry(name: string, over: Partial<SaveEntry> = {}): SaveEntry {
   return {
     id: `id-${name}`,
@@ -26,14 +26,15 @@ export function entry(name: string, over: Partial<SaveEntry> = {}): SaveEntry {
     nameIsDefault: false,
     savedAt: new Date().toISOString(), // eslint-disable-line svelte/prefer-svelte-reactivity
     phase: 'opening',
-    rung: 0,
+    round: 0,
+    finished: false,
     ...over
   };
 }
 
 const OK: StoreChange = { ok: true };
 
-/** The G7 members GameCell and GamePanel read, reactive ($state.raw), recording each call. */
+/** The G7 members GamePanel reads, reactive ($state.raw), recording each call. */
 export class FakeGame {
   state = $state.raw<GameState>(NEW_GAME);
   limits = $state.raw<Limits>(limitsOf(NEW_GAME));
@@ -64,7 +65,7 @@ export class FakeGame {
   newGame(): StoreChange {
     this.calls.push({ kind: 'newGame' });
     if (this.refuse) return this.refuse;
-    const made = entry(`Game ${this.saves.length + 1}`, { phase: 'opening', rung: 0 });
+    const made = entry(`Game ${this.saves.length + 1}`, { phase: 'opening', round: 0 });
     this.saves = [made, ...this.saves];
     this.currentId = made.id;
     return OK;

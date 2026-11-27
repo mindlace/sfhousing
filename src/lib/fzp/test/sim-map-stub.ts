@@ -165,8 +165,7 @@ export const stub: Stub = {
     setTimelineLookups: record('setTimelineLookups'),
     setHalos: record('setHalos'),
     setBarMode: record('setBarMode'),
-    collapseCredit: record('collapseCredit'),
-    setRunView: record('setRunView')
+    collapseCredit: record('collapseCredit')
   },
   reset() {
     stub.calls = [];

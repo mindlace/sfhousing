@@ -25,17 +25,8 @@
   import { lotsText } from '$lib/paint/rows';
   import { scoreCopy, type ScoreCopy } from '$lib/sim-page/policy';
   import type { SimLevers } from '$lib/sim/levers/types';
-  import type { Day as TreeDay } from '$lib/timelapse/time';
 
   export type MapLike = NonNullable<ReturnType<SimMapHandle['getMap']>>;
-
-  /** What the page's tree is given (game-sim #sec-design-props, #tbl-tree-props). */
-  export interface TreeArgs {
-    /** The forecast is not ready to run (game-sim #sec-design-run's conditions). */
-    busy: boolean;
-    /** Null until the last rung is met (`finished`). */
-    ending: { reachedOn: TreeDay; stateBy: TreeDay; perAddedHome: number | null } | null;
-  }
 
   /** What /sim's page needs from the timeline client (brush pickers, outlines, the map tap). */
   export interface TimelineClientApi {
@@ -107,7 +98,7 @@
   import { BR_BLOCK, watchCardArea } from '$lib/fzp/card-area-watch';
   import { cardArea, cardPlacement, type CardArea } from '$lib/fzp/card-place';
   import { installFzpDebug } from '$lib/fzp/debug';
-  import { DEFAULT_SPEED, RUN_MS, runRate } from '$lib/fzp/playback';
+  import { DEFAULT_SPEED } from '$lib/fzp/playback';
   import ProjectCardPanel from '$lib/fzp/ProjectCardPanel.svelte';
   import ProjectTooltip from '$lib/fzp/ProjectTooltip.svelte';
   import { provenanceSections } from '$lib/fzp/provenance';
@@ -115,7 +106,8 @@
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { TODAY, defaultGoal, goalStep, type Goal } from '$lib/goal/goal';
+  import { TODAY, defaultGoal, goalStep, readGoal, type Goal } from '$lib/goal/goal';
+  import { formatShortMonthYear } from '$lib/fzp/format';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -142,12 +134,7 @@
     startersFor,
     type ActivityItem
   } from './activity-view';
-  import {
-    ACTIVITY_LIMIT,
-    ActivityIndex,
-    type ActivityEvent,
-    type CityMarkerRow
-  } from './activity';
+  import { ACTIVITY_LIMIT, ActivityIndex, type ActivityEvent } from './activity';
   import { loadPlaces, placeOf } from './places';
   import { datasetUrl } from '$lib/sim/world/input/load';
   import type { NeighborhoodShapes } from '$lib/sim/levers/brushes';
@@ -161,7 +148,8 @@
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
   import { awaitsView, goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
   import { levelSet } from './pool-level';
-  import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
+  import { editedReveal, moved, resetReveal, revealOpen, scanned, type Reveal } from './reveal';
+  import { changeStart, resetDay } from './change-start';
   import {
     headlineAt,
     headlineSpoken,
@@ -178,32 +166,15 @@
   import MapKeyControl from '$lib/map/key/MapKeyControl.svelte';
   import { keyTally } from './key';
   import SimKey from './SimKey.svelte';
-  import { NODES } from '$lib/game/catalogue/nodes';
-  import { RUNGS, finished, goalAt, ladder } from '$lib/game/ladder';
+  import { ROUNDS, roundEntries } from '$lib/game/catalogue/rounds';
   import { OPEN_LIMITS } from '$lib/game/limits';
-  import { sideShown, type SideGoal } from '$lib/game/side-goals';
+  import { PENDING, judge, type Verdict } from '$lib/game/rounds';
   import type { GameStore } from '$lib/game/store.svelte';
+  import { roundPanel } from '$lib/game/round-panel';
   import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
-  import { goalUnlocks } from './game-copy';
-  import type { Sound } from '$lib/game/run/sound';
-  import { cancelRaf, raf } from '$lib/game/run/clock';
-  import { planDrops, type Drop, type Marker, type RunFeed } from '$lib/game/run/drops';
-  import RunLayer from '$lib/game/run/RunLayer.svelte';
-  import {
-    readRun,
-    resultOf,
-    type RunReading,
-    type RunResult,
-    type RunTake
-  } from '$lib/game/run-result';
-  import Tally from '$lib/game/ui/Tally.svelte';
-  import type { TimelineView } from '$lib/sim/world/score/types';
-  import RunClock from './RunClock.svelte';
-  import { RUN_BUSY } from '$lib/game/ui/words';
-  import { moneyFigureAt } from '$lib/fzp/money-view';
+  import RoundPanel from '$lib/game/ui/RoundPanel.svelte';
+  import { pinnedWords } from '$lib/game/ui/round-words';
   import type { CameraFrame } from '$lib/map/types';
-  import { RUN_VIEW, type GamePhase, type PhaseEvent } from '$lib/sim-page/game-phase';
-  import { RHNA_DEADLINE } from '$lib/sim/world/score/targets';
 
   interface Props {
     manifest: Manifest | null;
@@ -246,32 +217,16 @@
      */
     run?: SimPolicy4;
     /**
-     * The game: the goal in play (its rung's), the header's goal headline in place of the score,
+     * The game: the goal in play (its target's), the header's goal headline in place of the score,
      * no goal notice, and the limits the timeline holds to. The open game (`game.open`) is no
      * game: today's page. Default null.
      */
     game?: GameStore | null;
     /**
-     * The goal's amount. In a game, over `goalAt` of the rung in play (the `goal` seam is not
-     * read); without one, over the default goal (the `goal` seam wins). Default null: the
-     * default's.
+     * The goal's amount. In a game, over the game's goal (the `goal` seam is not read); without
+     * one, over the default goal (the `goal` seam wins). Default null: the default's.
      */
     goalAmount?: number | null;
-    /**
-     * The game's phase on the page (game-sim #sec-design-states); null with no game, the open
-     * game or one in its opening (today's layout). Default null.
-     */
-    phase?: GamePhase | null;
-    /** The phase events this component sends (the page applies `nextPhase`). */
-    onphase?(e: PhaseEvent): void;
-    /** The tree screen, given Tree's busy and ending; rendered in the tree phase only. */
-    tree?: Snippet<[TreeArgs]>;
-    /** The run's sounds; null for none. */
-    sound?: Sound | null;
-    /** "Collect for me" as it stands. */
-    collectForMe?: boolean;
-    /** A run's wall time in ms (default `RUN_MS`). */
-    runMs?: number;
     /** Edit mode: the camera the map opens on; undefined gives today's camera. */
     initialFrame?: CameraFrame;
     /** The lots of `policy`'s brush queries; null while one is unresolved (PolicySync). */
@@ -326,6 +281,11 @@
     onmiss?(): void;
     /** The header score is pressed. */
     onscore?(): void;
+    /**
+     * The gift was pressed on a win: the page takes it. True when taken (the pinned goal then
+     * stays pending until the next change); false leaves the win standing. No prop: no gift.
+     */
+    ongift?: (w: { goalMonth: Day | null }) => boolean;
     /**
      * Activity's starter is pressed: the page adds `choice` as its "+" menu does, announcing
      * "Added: {label}". Absent (read-only), Activity offers no starters.
@@ -386,13 +346,6 @@
     run = undefined,
     game = null,
     goalAmount = null,
-    // `phase` is the local FzpPhase below.
-    phase: gamePhase = null,
-    onphase = undefined,
-    tree = undefined,
-    sound = null,
-    collectForMe = false,
-    runMs = RUN_MS,
     initialFrame = undefined,
     lots,
     lotsFailed = false,
@@ -416,6 +369,7 @@
     onchunks = undefined,
     onmiss = undefined,
     onscore = undefined,
+    ongift = undefined,
     onstarter = undefined,
     refusal = null,
     ondismissrefusal = undefined,
@@ -448,8 +402,6 @@
   let client: TimelineClient | null = null;
   let clientApi: TimelineClientApi | null = null;
   let handle: SimMapHandle | null = null;
-  /** `handle` exists (it is not reactive): the forecast's ready condition reads this. */
-  let mapReady = $state(false);
   let map: MapLike | null = null;
   let dead = false;
 
@@ -460,6 +412,8 @@
   let reveal = $state.raw<Reveal>(revealOpen(untrack(() => initialCalibration?.asOf ?? 0)));
   /** Every refill's `from`, in arrival order (the e2e hook). */
   const refills: number[] = [];
+  /** The last height-limit city the worker posted (the e2e hook). */
+  let heightsSeen: HeightCity | null = null;
 
   // Until SimMap's handle exists, cells and chunk statuses wait here, in order.
   let pendingUpdates: TimelineUpdate[] = [];
@@ -473,23 +427,23 @@
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   /** The game in play; the open game is no game (G2). */
   const g = $derived(game && !game.open ? game : null);
-  /** The game's phase on the page (game-sim #sec-design-states); null: today's layout. */
-  const gp = $derived<GamePhase | null>(g ? gamePhase : null);
-  /** Starting, run and tally: the map in its run view. */
-  const runView = $derived(gp !== null && RUN_VIEW.has(gp));
-  /** Every phase but workshop: the map takes the mode box, and no bottom pane is mounted. */
-  const mapOnly = $derived(gp !== null && gp !== 'workshop');
   /**
-   * The page's goal. In a game, the rung in play's (`goalAmount` its amount when given; the seam
-   * is not read). Without one, the seam, else the default goal built from the dataset's date,
-   * with `goalAmount` as its amount when given.
+   * The page's goal. In a game, the default goal with the target as its deadline (the legal
+   * deadline while there is none) and `goalAmount` as its amount when given; the seam is not
+   * read. Without one, the seam, else the default goal built from the dataset's date, with
+   * `goalAmount` as its amount when given.
    */
-  const goal = $derived(
-    g
-      ? goalAt(asOf, g.state.rung, goalAmount ?? undefined)
-      : (goalSeam ??
-          (goalAmount !== null ? { ...defaultGoal(asOf), amount: goalAmount } : defaultGoal(asOf)))
-  );
+  const goal = $derived.by(() => {
+    const base = defaultGoal(asOf);
+    if (g) {
+      return {
+        ...base,
+        deadline: g.state.target ?? base.deadline,
+        amount: goalAmount ?? base.amount
+      };
+    }
+    return goalSeam ?? (goalAmount !== null ? { ...base, amount: goalAmount } : base);
+  });
   /** The document the worker runs: `run`, else the one on show. */
   const runDoc = $derived(run ?? policy);
   const current = $derived(session?.view ?? null);
@@ -780,71 +734,39 @@
     return outcomeText(o, goal, outcomeInForce);
   });
 
-  // ---- the run's state (game-sim #sec-design-run, #sec-design-feed) ----
-
-  /** The run's clock is running (RunClock's, bound). */
-  let running = $state(false);
-  /** The run's totals: zero at the start, then the latest `ontake` while in run. */
-  let take = $state.raw<RunTake>({ dropped: {}, collected: {} });
-  /** The run's planned drops; replaced as the forecast fills in run (the feed stays). */
-  let runDrops = $state.raw<readonly Drop[]>([]);
-  /** The map box's client size, bound: `projectPoint` never reads layout per call. */
-  let mapW = $state(0);
-  let mapH = $state(0);
-  /** The run's last day: the goal in play's deadline, clamped to the last day. */
-  const stop = $derived(Math.min(goal.deadline, lastDay));
-  /** Days per second that play today to the stop in `runMs`. */
-  const rate = $derived(runRate(asOf, stop, runMs));
-
   // ---- the game's goal headline (game-sim #sec-design-goal, #tbl-goal-props) ----
 
-  type SideEntry = { goal: SideGoal; value: number; target: number; met: boolean };
   /**
-   * GoalHeadline's props in a game; null without a game. In starting and run the homes are the
-   * view on show's at the playhead's month (null with no view or that month not filled); in the
-   * tally, tree and workshop the last run's on the rung in play. The side goals are read on the
-   * view on show at the deadline's month, with the live take in run, else the last run's take
-   * when it was on the rung in play; none with no view or that month not filled.
+   * GoalHeadline's props in a game; null without a game. The state and words are the shown
+   * verdict's; the bar is the homes at the playhead's month over the amount (empty with no view or
+   * that month not filled). The gift is offered only with `ongift`.
    */
   const goalProps = $derived.by(() => {
     if (!g) return null;
     const s = g.state;
-    const rung = s.rung;
-    const last = s.last !== null && s.last.rung === rung ? s.last : null;
-    const sideTake =
-      gp === 'run'
-        ? take
-        : last
-          ? { dropped: last.dropped, collected: last.collected }
-          : { dropped: {}, collected: {} };
     const view = shownView;
-    const side: SideEntry[] = [];
-    if (view) {
-      const i = indexOfDay(view.months, goal.deadline);
-      if (i <= view.filledThrough) {
-        for (const sg of sideShown(s)) {
-          const r = sg.read({ view, index: i, take: sideTake, inForce });
-          if (r !== null) side.push({ goal: sg, ...r, met: r.value >= r.target });
-        }
-      }
-    }
-    let homes = last ? last.homes : null;
-    if (gp === 'starting' || gp === 'run') {
-      const i = atToday ? TODAY : index;
-      homes = view && i <= view.filledThrough ? goal.measure.valueAt(view, i) : null;
-    }
-    return {
-      homes,
+    const i = atToday ? TODAY : index;
+    const homes = view && i <= view.filledThrough ? goal.measure.valueAt(view, i) : null;
+    const v = verdict;
+    const words = pinnedWords(v, {
       amount: goal.amount,
-      deadline: ladder(asOf)[rung].label,
-      unlocks:
-        rung + 1 < RUNGS
-          ? goalUnlocks(NODES.filter((n) => n.ring === rung + 1).length, true)
-          : null,
-      met: s.met.some((e) => e.rung === rung),
-      side
+      target: s.target,
+      legal: defaultGoal(asOf).deadline,
+      round: s.round,
+      finished: s.finished,
+      next: s.round < ROUNDS ? roundEntries(s.round + 1).length : 0
+    });
+    return {
+      state: v.tag,
+      words,
+      fill: homes === null || goal.amount <= 0 ? 0 : homes / goal.amount,
+      ...(ongift && v.tag === 'win' ? { ongift: takeGift } : {})
     };
   });
+  /** The ruler's goal flag names the target in a game that has one. */
+  const goalLabel = $derived(
+    g && g.state.target !== null ? `Target ${formatShortMonthYear(g.state.target)}` : undefined
+  );
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -858,330 +780,16 @@
     session?.notices.some((n) => n.id === 'error' || n.id === 'crash') ?? false
   );
 
-  // ---- the game's phases (game-sim #sec-design-states, #sec-design-run, #sec-design-buy) ----
-
-  /**
-   * The forecast is ready to run: the session is ready and not provisional, the numbers on show
-   * are current, the newest view has a filled month, the map handle exists, the lots have not
-   * failed, and no error or crash notice is up.
-   */
-  const ready = $derived(
-    !!session &&
-      session.phase === 'ready' &&
-      !session.provisional &&
-      !stale &&
-      !!current &&
-      current.filledThrough >= 0 &&
-      mapReady &&
-      !(lotsFailed && lots === null) &&
-      !halted
-  );
-  /**
-   * Tree's ending: null until the last rung is met; then that rung's day, the day RHNA asks for
-   * the goal's homes by, and the view on show's public dollars per added home at the deadline's
-   * month (null with no view, no money or that month not filled).
-   */
-  const ending = $derived.by<TreeArgs['ending']>(() => {
-    if (!g || !finished(g.state)) return null;
-    const last = g.state.met.find((m) => m.rung === RUNGS - 1)!;
-    const view = shownView;
-    let perAddedHome: number | null = null;
-    if (view?.money) {
-      const i = indexOfDay(view.months, goal.deadline);
-      if (i <= view.filledThrough) perAddedHome = moneyFigureAt(view.money, i).perAddedHome.all;
-    }
-    return { reachedOn: last.reachedOn, stateBy: RHNA_DEADLINE, perAddedHome };
-  });
-
-  // ---- the run (game-sim #sec-design-run, #sec-design-feed; R1's frame rule) ----
-
-  const marker = (m: CityMarkerRow): Marker => ({
-    row: m.row,
-    lng: m.lngLat[0],
-    lat: m.lngLat[1],
-    completed: m.completed,
-    homes: m.homes,
-    existing: m.existing,
-    policy: m.flags !== 0
-  });
-
-  /** One object for this component's life: RunLayer's `feed` prop never changes identity. */
-  const feed: RunFeed = {
-    get drops() {
-      return runDrops;
-    },
-    get day() {
-      return day;
-    },
-    get running() {
-      return gamePhase === 'run' && running;
-    },
-    project: projectPoint
-  };
-
-  function projectPoint(lng: number, lat: number): { x: number; y: number } | null {
-    if (!map) return null;
-    const p = map.project([lng, lat]);
-    return p.x >= 0 && p.y >= 0 && p.x <= mapW && p.y <= mapH ? { x: p.x, y: p.y } : null;
-  }
-
-  /** With no `sound`, RunLayer (whose `sound` is required) plays nothing. */
-  const SILENT: Sound = { pop() {}, collect() {}, goal() {}, buy() {} };
-
-  /** The `cityVersion` the drops were last planned at. */
-  let plannedVersion = -1;
-  function planRun(): void {
-    runDrops = planDrops(activityIndex.markers().map(marker), asOf, stop);
-    plannedVersion = cityVersion;
-  }
-  // In run each change of the city index plans the drops again (R1 matches them by row).
-  $effect(() => {
-    const v = cityVersion;
-    if (gp !== 'run') return;
-    untrack(() => {
-      if (v !== plannedVersion) planRun();
-    });
-  });
-
-  /** RunLayer's take: kept while in run, ignored otherwise. */
-  function onTake(t: RunTake): void {
-    if (gamePhase === 'run') take = t;
-  }
-
-  /** Ticks of the frame seam since `feed.running` last changed; 2 or more: the change has been seen. */
-  let ticksSinceRunning = $state(2);
-  /** An abort that came within two ticks of the run's start, applied on the second. */
-  let heldAbort = false;
-  let tickHandle: number | null = null;
-
-  /** Called whenever feed.running changes (run start, clock stop, abort): restarts the count. */
-  function markRunningChange(): void {
-    ticksSinceRunning = 0;
-    if (tickHandle !== null) cancelRaf(tickHandle);
-    tickHandle = raf(onTick);
-  }
-
-  /** One tick: counts, asks for the next while below 2, and on reaching 2 applies a held abort. */
-  function onTick(): void {
-    tickHandle = null;
-    if (dead) return;
-    ticksSinceRunning++;
-    if (ticksSinceRunning < 2) {
-      tickHandle = raf(onTick);
-      return;
-    }
-    if (heldAbort) {
-      heldAbort = false;
-      applyAbort();
-    }
-  }
-
-  /** Stops the clock and sends abort; held until the second tick when the run started fewer than 2 ticks ago. */
-  function abortRun(): void {
-    if (feed.running && ticksSinceRunning < 2) {
-      heldAbort = true;
-      return;
-    }
-    applyAbort();
-  }
-
-  function applyAbort(): void {
-    if (gp !== 'starting' && gp !== 'run') return;
-    running = false;
-    onphase?.('abort');
-  }
-
-  let feedRunning = false;
-  $effect(() => {
-    const r = feed.running;
-    untrack(() => {
-      if (r === feedRunning) return;
-      feedRunning = r;
-      markRunningChange();
-    });
-  });
-
-  /**
-   * The run starts: the card and tooltip close, the day goes to today (through `handleDay`), the
-   * reveal opens there, the take is zero, the drops are planned, the clock runs, and `ready` goes.
-   */
-  function startRun(): void {
-    closeCard();
-    hideTooltip();
-    playing = false;
-    day = asOf;
-    handleDay(asOf);
-    reveal = revealOpen(asOf);
-    take = { dropped: {}, collected: {} };
-    runSettled = false;
-    planRun();
-    // The count restarts before `running` turns true, so an abort in this same flush (before the
-    // effect on feed.running reruns) is held too.
-    markRunningChange();
-    running = true;
-    onphase?.('ready');
-  }
-
-  /** Starting and ready, with `running` seen false for two ticks: the run may start. */
-  const startable = $derived(gp === 'starting' && ready && ticksSinceRunning >= 2);
-  let wasStartable = false;
-  // On the first moment starting and ready hold together (and the frame rule allows).
-  $effect(() => {
-    const s = startable;
-    untrack(() => {
-      const rising = s && !wasStartable;
-      wasStartable = s;
-      if (rising) startRun();
-    });
-  });
-
-  // ---- settling (game-sim #sec-design-settle) ----
-
-  /** The tally on show: the result settled last and the homes before it; null before a settle. */
-  let tally = $state.raw<{ result: RunResult; before: number | null } | null>(null);
-  /** The run in progress has settled: a run settles once (reset as each run starts). */
-  let runSettled = false;
-
-  /**
-   * Settles the run: the result goes to the store, and the tally shows it even when the store
-   * refuses the write (the header's balance stays the store's).
-   */
-  function settleRun(view: TimelineView, reading: RunReading): void {
-    const game = g;
-    if (!game) return;
-    const s = game.state;
-    const before = s.last !== null && s.last.rung === s.rung ? s.last.homes : null;
-    const index = indexOfDay(view.months, goal.deadline);
-    const r = resultOf(
-      s,
-      reading,
-      take,
-      { view, index, take, inForce: !nothingInForce(resultsDoc) },
-      {
-        amount: goal.amount,
-        datasetVersion,
-        at: new Date().toISOString()
-      }
-    );
-    game.settle(r);
-    if (r.lump !== null) (sound ?? SILENT).goal();
-    tally = { result: r, before };
-    onphase?.('settled');
-  }
-
-  // Settling is tried whenever the phase is run and the clock has stopped at the stop day. It goes
-  // ahead only with the numbers current (not stale, not provisional) and a reading from `readRun`
-  // (whether the view covers the deadline is readRun's rule, G6); otherwise it waits, with the
-  // clock at the stop day, and is tried again as the view changes.
-  $effect(() => {
-    if (gp !== 'run' || running || day !== stop) return;
-    const view = shown.view;
-    if (!view || stale || !session || session.provisional) return;
-    const reading = readRun(view, goal);
-    if (!reading) return;
-    untrack(() => {
-      if (runSettled) return;
-      runSettled = true;
-      settleRun(view, reading);
-    });
-  });
-
-  /**
-   * In starting or run, an error or crash notice; in starting, a load failure: the run stops and
-   * `abort` goes, once as it comes up.
-   */
-  const abortWanted = $derived(
-    (gp === 'starting' || gp === 'run') &&
-      (halted || (gp === 'starting' && (phase === 'failed' || phase === 'no-scenario')))
-  );
-  let wasAbortWanted = false;
-  $effect(() => {
-    const a = abortWanted;
-    untrack(() => {
-      const rising = a && !wasAbortWanted;
-      wasAbortWanted = a;
-      if (rising) abortRun();
-    });
-  });
-
-  // On each change into starting the clock, the map's time and the headline are at today
-  // (`RunClock` at today); the reveal is left as it is.
-  let dayPhase: GamePhase | null = untrack(() => gp);
-  $effect(() => {
-    const p = gp;
-    untrack(() => {
-      if (p === dayPhase) return;
-      dayPhase = p;
-      if (p !== 'starting' || day === asOf) return;
-      day = asOf;
-      handleDay(asOf);
-    });
-  });
-
-  // Out of starting and run the clock does not run, and no abort is held.
-  $effect(() => {
-    if (gp === 'starting' || gp === 'run') return;
-    untrack(() => {
-      heldAbort = false;
-      if (running) running = false;
-    });
-  });
-
-  // The map's run view follows the phase (M1); with no phase it is never called.
-  let viewPhase: GamePhase | null = untrack(() => gp);
-  $effect(() => {
-    const p = gp;
-    untrack(() => {
-      if (p === viewPhase) return;
-      viewPhase = p;
-      if (p !== null) handle?.setRunView(RUN_VIEW.has(p));
-    });
-  });
-
-  // Out of today's layout the card and the tooltip are not mounted: an open card closes.
-  $effect(() => {
-    if (!mapOnly) return;
-    untrack(() => {
-      closeCard();
-      hideTooltip();
-    });
-  });
-
-  // Focus on each change of phase (not the phase the page lands in), once the DOM has updated: the
-  // map box in starting and run (so the arrow keys reach the window), Tally's first button,
-  // nothing in tree (Tree focuses its Run), and in workshop the inspector's heading with a policy
-  // selected, else Zoning's toggle.
-  let focusedPhase: GamePhase | null = untrack(() => gp);
-  $effect(() => {
-    const p = gp;
-    if (p === focusedPhase) return;
-    focusedPhase = p;
-    if (p === null) return;
-    void tick().then(() => {
-      if (dead || p !== gp) return;
-      if (p === 'starting' || p === 'run') mapBox?.focus({ preventScroll: true });
-      else if (p === 'tally') {
-        modeEl?.querySelector<HTMLElement>('[data-testid=tl-tally] button')?.focus();
-      } else if (p === 'workshop') {
-        const sel = untrack(() => selected)
-          ? '[data-testid=tl-inspector] [data-testid=inspector] h2'
-          : '[data-testid=tl-kind-zoning] button.toggle';
-        modeEl?.querySelector<HTMLElement>(sel)?.focus();
-      }
-    });
-  });
-
   // ---- the status slot (rules 31, 32) ----
 
   /**
-   * Play (or a run) waits at the computed edge for the forecast: true once playback or the run's
-   * clock has caught the edge while the forecast is short of the last day; false when it stops or
-   * the forecast is whole. It is not reset as the edge moves on, so it does not flicker with each
-   * fill.
+   * Play waits at the computed edge for the forecast: true once playback has caught the edge while
+   * the forecast is short of the last day; false when it stops or the forecast is whole. It is not
+   * reset as the edge moves on, so it does not flicker with each fill.
    */
   let playWaits = $state(false);
   $effect(() => {
-    if (!(playing || running) || filledEnd >= lastDay) playWaits = false;
+    if (!playing || filledEnd >= lastDay) playWaits = false;
     else if (day >= filledEnd) playWaits = true;
   });
   /**
@@ -1294,8 +902,6 @@
 
   function onWindowKey(e: KeyboardEvent): void {
     if (spaceTook && e.key === ' ' && e.repeat) return e.preventDefault();
-    // In starting, run and tally Space is taken and does nothing.
-    if (runView && isPlayKey(e, overlayOpen())) return e.preventDefault();
     if (!spacePlays || !playhead) return;
     if (!isPlayKey(e, overlayOpen())) return;
     e.preventDefault();
@@ -1518,12 +1124,9 @@
     statusCells.clear();
   }
 
-  /**
-   * Asks for the viewport's chunks. Not in the run view: the lock's `moveend` reports the whole
-   * city, whose chunks are not wanted.
-   */
+  /** Asks for the viewport's chunks. */
   function prefetchViewport(): void {
-    if (runView || !client || client.crashed || !map || !statics) return;
+    if (!client || client.crashed || !map || !statics) return;
     const b = map.getBounds();
     client.prefetch([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
   }
@@ -1556,11 +1159,6 @@
   function onMapReady(h: SimMapHandle): void {
     if (dead) return;
     handle = h;
-    mapReady = true;
-    // The run view as the phase has it (M1); with no phase it is never called.
-    const p = untrack(() => gp);
-    viewPhase = p;
-    if (p !== null) h.setRunView(RUN_VIEW.has(p));
     pushLookups();
     const queued = pendingUpdates;
     pendingUpdates = [];
@@ -1682,7 +1280,9 @@
         pushLookups();
       },
       onheights: (c) => {
-        if (!dead) onheights?.(c);
+        if (dead) return;
+        if (import.meta.env.VITE_E2E === '1') heightsSeen = c;
+        onheights?.(c);
       },
       onchunks: (c) => {
         if (dead) return;
@@ -1711,19 +1311,32 @@
 
   // An edit (a new run document): the edit is marked at once and playback pauses (rule 25). The
   // reveal starts looking for the first month it changed, against the numbers on show now (a
-  // search already under way keeps what was seen first). In starting or run (a worker's
-  // rejection undoing the store) the clock stops and `abort` goes.
+  // search already under way keeps what was seen first).
   $effect(() => {
     const p = runDoc;
     untrack(() => {
       if (!session || p === seenPolicy) return;
+      const before = seenPolicy;
       seenPolicy = p;
-      if (gp === 'starting' || gp === 'run') abortRun();
       const seen = shown.view ? { view: shown.view, inForce } : null;
       heldDoc = hold(session);
       session.edited();
-      reveal = editedReveal(reveal, seen);
+      if (!g) {
+        reveal = editedReveal(reveal, seen);
+        playing = false;
+        return;
+      }
+      // In a game the reset (P16) takes the place of the search and "Play from": a change that
+      // alters the forecast pauses, puts the playhead where it first takes effect (later than
+      // where it was or not), restarts the seen range there and clears the result state.
       playing = false;
+      const from = before === null ? null : changeStart(before, p, asOf);
+      if (from === null) return;
+      const at = resetDay(asOf, from);
+      reveal = resetReveal(reveal, at);
+      day = at;
+      handleDay(at);
+      held = null;
     });
   });
 
@@ -1733,6 +1346,50 @@
    * never pending).
    */
   const waiting = $derived(!session || session.pending || session.provisional);
+
+  // ---- the result state in a game (P19) ----
+
+  /**
+   * The first month the newest forecast reaches the goal's amount in its filled months, over the
+   * whole window (the legal deadline's goal, not the target's); null: not in them, or no game.
+   */
+  const goalMonth = $derived.by(() => {
+    if (!g || !current) return null;
+    const gl = { ...defaultGoal(asOf), amount: goal.amount };
+    return readGoal(gl, current, current.filledThrough)?.reachedOn ?? null;
+  });
+  /** The round's rule over the months seen; pending without a game. */
+  const judged = $derived.by<Verdict>(() => {
+    if (!g || !current) return PENDING;
+    return judge({
+      target: g.state.target,
+      round: g.state.round,
+      goalMonth,
+      whole: current.filledThrough >= current.lastIndex,
+      seenFrom: reveal.from,
+      seen: reveal.reached,
+      lastDay,
+      current: !stale && !waiting
+    });
+  });
+  /**
+   * The first win or late judged since the last change, held until the next (win and late are
+   * sticky); 'taken' once the page took the win's gift. A reset clears it.
+   */
+  let held = $state.raw<Verdict | 'taken' | null>(null);
+  $effect(() => {
+    const v = judged;
+    untrack(() => {
+      if (held === null && v.tag !== 'pending') held = v;
+    });
+  });
+  /** What the pinned goal shows. */
+  const verdict = $derived<Verdict>(held === 'taken' ? PENDING : (held ?? judged));
+  function takeGift(): void {
+    const v = verdict;
+    if (v.tag !== 'win' || !ongift) return;
+    if (ongift({ goalMonth: v.goalMonth })) held = 'taken';
+  }
   // The scan: once the edit is answered, as the new view fills. It runs when the view or the
   // waiting state changes, never as the playhead moves; `scanned` resumes where it stopped.
   $effect(() => {
@@ -1775,7 +1432,7 @@
       const held = hold(session);
       if (!session.send(runDoc, l)) return;
       heldDoc = held;
-      if (seen) reveal = editedReveal(reveal, seen);
+      if (seen && !g) reveal = editedReveal(reveal, seen);
     });
   });
 
@@ -1913,6 +1570,7 @@
       reached: reveal.reached,
       playFrom: playFromDay,
       refills,
+      heights: heightsSeen,
       completedNet: () =>
         current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
     }));
@@ -1922,8 +1580,6 @@
       if (client) onclient?.(null);
       uninstall();
       playing = false;
-      if (tickHandle !== null) cancelRaf(tickHandle);
-      tickHandle = null;
       if (statusTimer !== null) clearTimeout(statusTimer);
       attachMap(null);
       session?.dispose();
@@ -1939,16 +1595,17 @@
   {/if}
 {/snippet}
 
-<!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
-     share one cell, and "Updating" wins while both apply. The covered save state keeps its width
+<!-- The header's status slot (rule 32), at every width: the page's save state and "Updating" share
+     one cell, and "Updating" wins while both apply. The covered save state keeps its width
      (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
-     is as wide as the widest and nothing moves as either comes or goes. With autosave off
-     (`saveOff`) "Updating" sits beside the save state in a second cell instead, so "Autosave off"
-     stays visible and pressable; that cell's sizer keeps its width while "Updating" is away. The
-     save state's own live region opts back into visibility, so its announcements still reach
-     screen readers. The timeline's live region is apart, once, in the page; "Updating"'s
-     explanation (why the numbers are stale, or that Play waits for the months ahead) opens as a
-     popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
+     is as wide as the widest and nothing moves as either comes or goes (in a game, from sm only:
+     see the sizer). With autosave off (`saveOff`) "Updating" sits beside the save state in a second
+     cell instead, so "Autosave off" stays visible and pressable; that cell's sizer keeps its width
+     while "Updating" is away. The save state's own live region opts back into visibility, so its
+     announcements still reach screen readers. The timeline's live region is apart, once, in the
+     page; "Updating"'s explanation (why the numbers are stale, or that Play waits for the months
+     ahead) opens as a popover under the slot (`explain-under`, layout.css), so the header keeps its
+     size. -->
 {#snippet statusSlot()}
   <span class={['inline-grid items-center', saveOff && 'gap-x-2']} data-testid="tl-status-group">
     <span
@@ -1961,14 +1618,19 @@
            while "Updating" shows. -->
       <span
         class={[
-          'tl-status explain-under relative row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          'tl-status explain-under explain-end-phone relative row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
           saveOff ? 'col-start-2' : 'col-start-1',
           shownStatus === null && 'pointer-events-none'
         ]}
         data-testid="tl-status"
       >
+        <!-- The room the cell keeps whether or not "Updating" shows, so nothing moves when it
+             comes (rule 32): the word's width; in a game below sm, where the cell is icons and
+             the phone goal needs the room, the spinner's 24 px box. -->
         <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
-          >{UPDATING}</span
+          ><span class={[g && 'max-sm:hidden']}>{UPDATING}</span>{#if g}<span
+              class="hidden size-6 max-sm:block"
+            ></span>{/if}</span
         >
         <span
           bind:this={shownCell}
@@ -1976,7 +1638,15 @@
           data-testid="tl-status-shown"
         >
           {#if shownStatus !== null}
-            <Explain text={shownStatus === 'stale' ? STALE_NOTE : WAITING_NOTE}>{UPDATING}</Explain>
+            <Explain text={shownStatus === 'stale' ? STALE_NOTE : WAITING_NOTE}
+              >{#if g}<!-- Below sm a spinner, still under reduced motion; the word stays the
+                   button's name, visually hidden (and the live region speaks it). --><span
+                  aria-hidden="true"
+                  data-testid="tl-status-spinner"
+                  class="mx-[5px] hidden size-3.5 rounded-full border-2 border-line border-t-ink align-middle motion-safe:animate-spin max-sm:inline-block dark:border-line-dark dark:border-t-ink-dark"
+                ></span><span class="max-sm:sr-only">{UPDATING}</span
+                >{:else}{UPDATING}{/if}</Explain
+            >
           {/if}
         </span>
       </span>
@@ -1984,11 +1654,19 @@
   </span>
 {/snippet}
 
+<!-- The round panel under the pinned goal: the round's policies as set, and what earlier rounds
+     achieved. Information only. -->
+{#snippet roundPanelPart()}
+  {#if g}
+    <RoundPanel data={roundPanel(g.state, policy, defaultGoal(asOf).deadline)} />
+  {/if}
+{/snippet}
+
 <!-- In a game the pinned item is GoalHeadline, its two root nodes straight in the header's pinned
-     box (no wrapper), in every phase once the calibration is known. -->
+     box (no wrapper), once the calibration is known. -->
 {#snippet scoreBar()}
   {#if goalProps && calibration}
-    <GoalHeadline {...goalProps} />
+    <GoalHeadline {...goalProps} panel={roundPanelPart} />
   {:else if !g && session && calibration}
     <TimelineHeaderScore
       text={headText}
@@ -2071,6 +1749,7 @@
     reached={reveal.reached}
     playFrom={playFromDay}
     {goalDeadline}
+    {goalLabel}
     onday={handleDay}
   />
 {/snippet}
@@ -2099,7 +1778,6 @@
   class="sfh-fzp sfh-tl relative flex h-full flex-col max-md:overflow-y-auto"
   bind:clientHeight={modeClientH}
   data-testid="tl-mode"
-  data-phase={gp ?? 'none'}
 >
   {#if !noScenario}
     <!-- The status's one live region, at every width (polite, at most one change a second). -->
@@ -2139,20 +1817,6 @@
               <Message text={goalNotice} ondismiss={dismissGoal} testid="tl-goal-notice" />
             {/if}
           </div>
-          {#if gamePhase === 'tally' && tally}
-            <!-- The tally, where the win card sat: each result mounts a fresh Tally, whose counts
-                 roll once, from mount. -->
-            <div data-testid="tl-tally" class="pointer-events-auto max-w-full">
-              {#key tally.result}
-                <Tally
-                  result={tally.result}
-                  before={tally.before}
-                  deadline={ladder(asOf)[tally.result.rung].label}
-                  oncontinue={() => onphase?.('continue')}
-                />
-              {/key}
-            </div>
-          {/if}
         {/if}
         {#if phase === 'loading' && !halted}
           <div role="status" class="contents">
@@ -2207,39 +1871,11 @@
           </div>
         {/if}
       {/if}
-      {#if gp !== null && !noScenario}
-        <!-- Starting's waiting notice, with any error notice and its Retry; its polite region is
-             mounted with the phase so the notice is announced. A real box (not `contents`), so it
-             stays in the accessibility tree; while empty it is taken out of the flow, so it adds
-             no gap to the stack. -->
-        <div
-          role="status"
-          class="flex max-w-full flex-col items-center empty:absolute"
-          data-testid="run-waiting-live"
-        >
-          {#if gp === 'starting'}
-            <Message text={RUN_BUSY} testid="run-waiting" />
-          {/if}
-        </div>
-      {/if}
     </NoticePills>
 
-    <!-- Out of workshop the map takes the whole mode box at every width: no bottom pane. -->
-    <div class={['relative flex min-h-0 flex-1', !mapOnly && 'max-md:h-[40%] max-md:flex-none']}>
-      <!-- The map and everything positioned over it. In tree it stays mounted under the tree's
-           pane, inert; in starting and run it takes focus (the arrow keys reach the window). The
-           tabindex is only ever -1 (focusable by script, never a Tab stop). -->
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        bind:this={mapBox}
-        bind:clientWidth={mapW}
-        bind:clientHeight={mapH}
-        class="relative min-h-0 min-w-0 flex-1 focus:outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid dark:focus-visible:outline-accent-dark"
-        data-testid="tl-map-box"
-        inert={gp === 'tree'}
-        aria-hidden={gp === 'tree' ? 'true' : undefined}
-        tabindex={gp === 'starting' || gp === 'run' ? -1 : undefined}
-      >
+    <div class="relative flex min-h-0 flex-1 max-md:h-[40%] max-md:flex-none">
+      <!-- The map and everything positioned over it. -->
+      <div bind:this={mapBox} class="relative min-h-0 min-w-0 flex-1" data-testid="tl-map-box">
         <div class="tl-map h-full" data-testid="tl-map" data-stale={stale ? 'true' : undefined}>
           {#if manifest}
             <SimMap
@@ -2250,7 +1886,7 @@
               {view}
               {carZones}
               timelinePick={onPick}
-              tapCards={cards && !runView}
+              tapCards={cards}
               {initialFrame}
             />
           {:else}
@@ -2258,7 +1894,7 @@
           {/if}
         </div>
 
-        {#if manifest && session && !mapOnly}
+        {#if manifest && session}
           <!-- The map key and the page's Layers: after the map's own controls in Tab order, before
                the card. The key is open at rest from md; below md the control hides while the
                card's sheet covers its corner. -->
@@ -2275,7 +1911,7 @@
           </MapKeyControl>
         {/if}
 
-        {#if session && calibration && cardChance && !mapOnly}
+        {#if session && calibration && cardChance}
           <div class="tl-dim" data-stale={stale ? 'true' : undefined} data-testid="tl-card">
             <ProjectCardPanel
               state={cardState}
@@ -2294,36 +1930,9 @@
           </div>
           <ProjectTooltip state={tipState} {day} x={tipAt.x} y={tipAt.y} />
         {/if}
-
-        {#if runView && g}
-          <!-- The run's layer over the map's canvas and its own controls, under the notice stack
-               (md:z-30); one feed object for the component's life. -->
-          <div class="pointer-events-none absolute inset-0 z-20" data-testid="run-layer-box">
-            <RunLayer
-              {feed}
-              hands={g.limits.hands}
-              {collectForMe}
-              sound={sound ?? SILENT}
-              ontake={onTake}
-            />
-          </div>
-        {/if}
-        {#if (gp === 'starting' || gp === 'run') && calibration}
-          <RunClock
-            {asOf}
-            {stop}
-            end={filledEnd}
-            {rate}
-            bind:day
-            bind:running
-            onday={handleDay}
-            {raf}
-            {cancelRaf}
-          />
-        {/if}
       </div>
       {#if calibration && !noScenario}
-        <!-- A top-layer modal, so outside the map's box: in tree that box is inert and hidden. -->
+        <!-- A top-layer modal, so outside the map's box. -->
         <AboutDialog
           bind:this={about}
           {manifest}
@@ -2333,20 +1942,10 @@
           onopen={() => (playing = false)}
         />
       {/if}
-      {#if gp === 'tree' && tree}
-        <!-- The page's tree over the box that holds the map, on the opaque surface, filling the
-             page below the header (the notice stack stays above it). -->
-        <div
-          class="absolute inset-0 z-20 overflow-y-auto bg-surface text-ink dark:bg-surface-dark dark:text-ink-dark"
-          data-testid="game-tree-pane"
-        >
-          {@render tree({ busy: !ready, ending })}
-        </div>
-      {/if}
     </div>
   </div>
 
-  {#if mounted && session && calibration && !mapOnly}
+  {#if mounted && session && calibration}
     <!-- From md the bottom pane: a fixed 40% of the mode box, the timeline beside the detail
          column (rule 1). Below md the timeline is in flow and the column a sheet; while pinned
          the pane is the mode box's height, so the mode box scrolls the map away first, then the
@@ -2394,6 +1993,7 @@
           bind:pinHeight
           {pinned}
           limits={g?.limits ?? OPEN_LIMITS}
+          paneId={detailShown ? scoreControls : undefined}
         />
       </div>
 

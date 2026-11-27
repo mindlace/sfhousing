@@ -1,53 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { STOP_TYPES, type StopType } from '$lib/sim/levers/brushes';
-import type { TimerEdit } from '$lib/sim/levers/types';
-import { DEFAULT_BANDS, type TransitBand } from '$lib/sim-page/policy';
-import { PRESETS, type PresetId, type TimingSet } from '$lib/sim-page/timing';
-import { NEW_BAND_STEP_M } from '$lib/sim-page/transit-edit';
+import type { TransitBand } from '$lib/sim-page/policy';
+import type { PresetId, TimingSet } from '$lib/sim-page/timing';
+import { kindOpen } from '$lib/timeline/add';
 import type { Policy, PolicyKind, SimPolicy4 } from '$lib/timeline/policy4';
-import type { Pathway } from '$lib/timelapse/types';
-import { RUNGS } from './ladder';
+import { POLICY_KEYS, ROUNDS } from './catalogue/rounds';
 import {
-  BASE_HANDS,
   FREE_MEASURES,
-  FUNDING_PRESET_IDS,
+  OPEN_LIMITS,
+  canRemove,
+  isFixed,
   isGiven,
   limitsOf,
-  OPEN_LIMITS,
   runnable,
-  START_BANDS,
-  START_REACH_M,
-  START_STORIES,
-  within,
-  type Limits
+  whatFixed,
+  within
 } from './limits';
-import { NEW_GAME, type GameState, type MetRung } from './state';
-import type { Grant, TreeNode } from './tree';
+import { NEW_GAME, type GameState } from './state';
 
-function node(id: string, ...grants: Grant[]): TreeNode {
+const AT = '2026-11-26T00:00:00.000Z';
+const game = (o: Partial<GameState> = {}): GameState => ({
+  ...NEW_GAME,
+  phase: 'runs',
+  firstWinAt: AT,
+  ...o
+});
+
+function transit(id: string, stopTypes: StopType[], bands: TransitBand[]): Policy {
   return {
     id,
-    branch: 'zoning',
-    label: id,
-    line: '',
-    after: [],
-    ring: 0,
-    levels: grants.map((grant) => ({ price: { home: 1 }, grant, step: '' })),
-    source: null
-  };
-}
-
-function met(rung: number): MetRung {
-  return { rung, reachedOn: 0, datasetVersion: 'fixture-0', at: '2026-11-25T00:00:00.000Z' };
-}
-
-function owned(bought: Record<string, number>, metRungs: MetRung[] = []): GameState {
-  return { ...NEW_GAME, bought, met: metRungs };
-}
-
-function transit(stopTypes: StopType[], bands: TransitBand[]): Policy {
-  return {
-    id: 'z1',
     label: 'Transit',
     preset: null,
     on: true,
@@ -58,7 +39,7 @@ function transit(stopTypes: StopType[], bands: TransitBand[]): Policy {
 
 function painted(): Policy {
   return {
-    id: 'z2',
+    id: 'painted',
     label: 'Painted',
     preset: null,
     on: true,
@@ -78,17 +59,13 @@ function protection(): Policy {
   };
 }
 
-function permit(
-  preset: PresetId,
-  edits: TimerEdit[] = [],
-  routeShares: Record<Pathway, number> | null = null
-): Policy {
+function permit(preset: PresetId | null): Policy {
   const set: TimingSet = {
-    preset,
+    preset: preset ?? 'observed',
     presetTimers: [],
     presetRouteShares: null,
-    edits,
-    routeShares,
+    edits: [],
+    routeShares: null,
     localProgramStreamlined: false
   };
   return {
@@ -124,346 +101,204 @@ function money(tag: 'fund' | 'baseline' | 'terms', preset: string | null): Polic
   };
 }
 
-const L: Limits = {
-  open: false,
-  presets: new Set(['sb423Clock']),
-  measures: new Set(['housing-bond']),
-  stops: new Set(['metro']),
-  bands: 2,
-  stories: 8,
-  reachM: 805,
-  custom: false,
-  hands: BASE_HANDS
-};
+const RAIL = transit('transit-rail', ['regionalRail'], [{ maxM: 402, stories: 7 }]);
+const METRO = transit('transit-metro', ['metro'], [{ maxM: 402, stories: 6 }]);
+const GAME_TRANSIT = transit('game-transit', ['metro'], [{ maxM: 3219, stories: 40 }]);
+const KINDS: readonly PolicyKind[] = ['zoning', 'permitting', 'money'];
 
-const NONE = limitsOf(NEW_GAME, []);
-
-const EMPTY: Limits = {
-  open: false,
-  presets: new Set(),
-  measures: new Set(),
-  stops: new Set(),
-  bands: 0,
-  stories: 0,
-  reachM: 0,
-  custom: false,
-  hands: BASE_HANDS
-};
-
-const EDIT: TimerEdit = { pathway: 'streamlined', stage: 'filed', scale: 0.5, reach: 'all' };
-const SHARES: Record<Pathway, number> = { discretionary: 50, streamlined: 50, permitOnly: 0 };
+const R0 = limitsOf(game({ round: 0 }));
+const R1 = limitsOf(game({ round: 1 }));
+const DONE = limitsOf(game({ round: ROUNDS, finished: true }));
 
 describe('limitsOf', () => {
-  const nodes = [node('z', { tag: 'stop', stop: 'metro' }, { tag: 'stories', max: 8 })];
-
-  it('gives nothing for a new game', () => {
-    expect(limitsOf(NEW_GAME, nodes)).toEqual(EMPTY);
-    expect(NONE).toEqual(EMPTY);
+  it('round 0 offers nothing and no kind opens', () => {
+    expect(R0).toMatchObject({ open: false, whole: false, own: false, money: false });
+    expect(R0.offered.size).toBe(0);
+    expect(R0.editable.size).toBe(0);
+    expect(R0.stops.size).toBe(0);
+    for (const kind of KINDS) expect(kindOpen(kind, R0)).toBe(false);
   });
 
-  it('starts transit limits at the first stop type', () => {
-    const l = limitsOf(owned({ s: 1 }), [node('s', { tag: 'stop', stop: 'metro' })]);
-    expect([l.bands, l.stories, l.reachM]).toEqual([1, 4, 402]);
-    expect(l.stops).toEqual(new Set(['metro']));
-    expect(START_STORIES).toBe(Math.min(...DEFAULT_BANDS.map((b) => b.stories)));
-    expect(START_REACH_M).toBe(NEW_BAND_STEP_M);
-    expect(START_BANDS).toBe(1);
+  it("round 1 offers the round's three keys, regional rail and money", () => {
+    expect(R1.offered).toEqual(new Set(['transit-rail', 'sb423-clock', 'housing-bond']));
+    expect(R1.stops).toEqual(new Set(['regionalRail']));
+    expect(R1.money).toBe(true);
+    expect(R1.editable.size).toBe(0);
   });
 
-  it('holds transit limits at 0 with no stop type', () => {
-    const l = limitsOf(owned({ a: 1, b: 1, c: 1 }), [
-      node('a', { tag: 'stories', max: 8 }),
-      node('b', { tag: 'reach', maxM: 805 }),
-      node('c', { tag: 'bands', max: 2 })
-    ]);
-    expect([l.bands, l.stories, l.reachM]).toEqual([0, 0, 0]);
+  it('editable keys are offered and editable, whatever the round', () => {
+    const l = limitsOf(game({ round: 1, editable: ['transit-metro'] }));
+    expect(l.offered.has('transit-metro')).toBe(true);
+    expect(l.editable).toEqual(new Set(['transit-metro']));
+    expect(l.stops).toEqual(new Set(['regionalRail', 'metro']));
   });
 
-  it('folds every level and takes the largest', () => {
-    const fold = [
-      node('z', { tag: 'stop', stop: 'metro' }, { tag: 'stories', max: 8 }),
-      node('t', { tag: 'stories', max: 12 }, { tag: 'stories', max: 10 }),
-      node('r', { tag: 'reach', maxM: 805 }, { tag: 'reach', maxM: 1609 }),
-      node('b', { tag: 'bands', max: 2 }, { tag: 'bands', max: 3 }),
-      node(
-        'h',
-        { tag: 'hands', what: 'radius', value: 64 },
-        { tag: 'hands', what: 'radius', value: 56 },
-        { tag: 'hands', what: 'linger', value: 6000 },
-        { tag: 'hands', what: 'linger', value: 5000 },
-        { tag: 'hands', what: 'auto' }
-      )
-    ];
-    const l = limitsOf(owned({ z: 2, t: 2, r: 2, b: 2, h: 5 }), fold);
-    expect(l.stories).toBe(12);
-    expect(l.reachM).toBe(1609);
-    expect(l.bands).toBe(3);
-    expect(l.hands).toEqual({ radiusPx: 64, lingerMs: 6000, auto: true });
+  it('a finished game is whole: every key offered and editable, every stop type', () => {
+    expect(DONE.whole).toBe(true);
+    expect(DONE.offered).toEqual(new Set(POLICY_KEYS));
+    expect(DONE.editable).toEqual(new Set(POLICY_KEYS));
+    expect(DONE.stops).toEqual(new Set(STOP_TYPES));
   });
 
-  it("holds grants to the editor's bounds", () => {
-    const l = limitsOf(owned({ s: 1, t: 1, r: 1, b: 1 }), [
-      node('s', { tag: 'stop', stop: 'metro' }),
-      node('t', { tag: 'stories', max: 100 }),
-      node('r', { tag: 'reach', maxM: 5000 }),
-      node('b', { tag: 'bands', max: 3 })
-    ]);
-    expect([l.stories, l.reachM, l.bands]).toEqual([80, 3219, 3]);
-  });
-
-  it('counts a level past the last as the last, and an unknown node as nothing', () => {
-    const l = limitsOf(owned({ z: 5 }), nodes);
-    expect(l.stops).toEqual(new Set(['metro']));
-    expect(l.stories).toBe(8);
-    expect(limitsOf(owned({ nope: 1 }), nodes)).toEqual(limitsOf(NEW_GAME, nodes));
-  });
-
-  it('opens transit and custom timing once finished, and leaves bought sets as bought', () => {
-    const l = limitsOf(owned({ p: 1, m: 1 }, [met(RUNGS - 1)]), [
-      node('p', { tag: 'preset', preset: 'sb423Clock' }),
-      node('m', { tag: 'measure', preset: 'housing-bond' })
-    ]);
-    expect([l.stories, l.bands, l.reachM]).toEqual([80, 3, 3219]);
-    expect(l.stops).toEqual(new Set(STOP_TYPES));
-    expect(l.custom).toBe(true);
-    expect(l.presets).toEqual(new Set(['sb423Clock', 'observed']));
-    expect(l.measures).toEqual(new Set(['housing-bond']));
-  });
-
-  it('never lowers hands below the base', () => {
-    const l = limitsOf(owned({ h: 2 }), [
-      node(
-        'h',
-        { tag: 'hands', what: 'radius', value: 10 },
-        { tag: 'hands', what: 'linger', value: 1000 }
-      )
-    ]);
-    expect(l.hands).toEqual(BASE_HANDS);
+  it('own comes from the state', () => {
+    expect(limitsOf(game({ own: true })).own).toBe(true);
   });
 });
 
-describe('constants', () => {
-  it('has the base hands and free measures, frozen', () => {
-    expect(BASE_HANDS).toEqual({ radiusPx: 48, lingerMs: 4000, auto: false });
-    expect(Object.isFrozen(BASE_HANDS)).toBe(true);
+describe('OPEN_LIMITS', () => {
+  it('is open, whole and own with everything', () => {
+    expect(OPEN_LIMITS).toMatchObject({ open: true, whole: true, own: true, money: true });
+    expect(OPEN_LIMITS.offered).toEqual(new Set(POLICY_KEYS));
+    expect(OPEN_LIMITS.editable).toEqual(new Set(POLICY_KEYS));
+    expect(OPEN_LIMITS.stops).toEqual(new Set(STOP_TYPES));
     expect(Object.isFrozen(OPEN_LIMITS)).toBe(true);
-    expect(Object.isFrozen(FREE_MEASURES)).toBe(true);
-    expect(Object.isFrozen(FUNDING_PRESET_IDS)).toBe(true);
+  });
+
+  it('FREE_MEASURES is unchanged', () => {
     expect(FREE_MEASURES).toEqual(['state-off', 'federal-credits-off']);
   });
-
-  it('opens everything in OPEN_LIMITS', () => {
-    expect(OPEN_LIMITS.open).toBe(true);
-    expect(OPEN_LIMITS.presets).toEqual(new Set(PRESETS.map((p) => p.id)));
-    expect(OPEN_LIMITS.measures).toEqual(new Set(FUNDING_PRESET_IDS));
-    expect(OPEN_LIMITS.measures.size).toBe(11);
-    expect(OPEN_LIMITS.stops).toEqual(new Set(STOP_TYPES));
-    expect([OPEN_LIMITS.bands, OPEN_LIMITS.stories, OPEN_LIMITS.reachM]).toEqual([3, 80, 3219]);
-    expect(OPEN_LIMITS.custom).toBe(true);
-    expect(OPEN_LIMITS.hands).toBe(BASE_HANDS);
-  });
 });
 
-interface Row {
-  name: string;
-  kind: PolicyKind;
-  p: Policy;
-  l: Limits;
-  want: boolean;
-}
-
-const finishedLimits = (): Limits => limitsOf(owned({}, [met(RUNGS - 1)]), []);
-
-const ROWS: Row[] = [
-  { name: 'painted', kind: 'zoning', p: painted(), l: L, want: false },
-  { name: 'protection, no stop type', kind: 'zoning', p: protection(), l: NONE, want: false },
-  { name: 'protection, a stop type', kind: 'zoning', p: protection(), l: L, want: true },
-  {
-    name: 'transit at each limit exactly',
-    kind: 'zoning',
-    p: transit(
-      ['metro'],
-      [
-        { maxM: 402, stories: 6 },
-        { maxM: 805, stories: 8 }
-      ]
-    ),
-    l: L,
-    want: true
-  },
-  {
-    name: 'transit, stop type not bought',
-    kind: 'zoning',
-    p: transit(['regionalRail'], [{ maxM: 402, stories: 4 }]),
-    l: L,
-    want: false
-  },
-  {
-    name: 'transit, three bands',
-    kind: 'zoning',
-    p: transit(
-      ['metro'],
-      [
-        { maxM: 402, stories: 4 },
-        { maxM: 603, stories: 4 },
-        { maxM: 805, stories: 4 }
-      ]
-    ),
-    l: L,
-    want: false
-  },
-  {
-    name: 'transit, one story too tall',
-    kind: 'zoning',
-    p: transit(['metro'], [{ maxM: 402, stories: 9 }]),
-    l: L,
-    want: false
-  },
-  {
-    name: 'transit, one metre too far',
-    kind: 'zoning',
-    p: transit(['metro'], [{ maxM: 806, stories: 4 }]),
-    l: L,
-    want: false
-  },
-  { name: 'transit, nothing bought', kind: 'zoning', p: transit([], []), l: NONE, want: false },
-  {
-    name: 'permit not bought',
-    kind: 'permitting',
-    p: permit('noDiscretionary'),
-    l: L,
-    want: false
-  },
-  { name: 'permit bought', kind: 'permitting', p: permit('sb423Clock'), l: L, want: true },
-  {
-    name: 'permit, timer edit',
-    kind: 'permitting',
-    p: permit('sb423Clock', [EDIT]),
-    l: L,
-    want: false
-  },
-  {
-    name: 'permit, route shares',
-    kind: 'permitting',
-    p: permit('sb423Clock', [], SHARES),
-    l: L,
-    want: false
-  },
-  {
-    name: 'permit, timer edit, custom',
-    kind: 'permitting',
-    p: permit('sb423Clock', [EDIT]),
-    l: { ...L, custom: true },
-    want: true
-  },
-  {
-    name: 'permit, route shares, custom',
-    kind: 'permitting',
-    p: permit('sb423Clock', [], SHARES),
-    l: { ...L, custom: true },
-    want: true
-  },
-  { name: 'custom timing, playing', kind: 'permitting', p: permit('observed'), l: L, want: false },
-  {
-    name: 'custom timing, finished',
-    kind: 'permitting',
-    p: permit('observed'),
-    l: finishedLimits(),
-    want: true
-  },
-  {
-    name: 'permit, null preset',
-    kind: 'permitting',
-    p: { ...permit('sb423Clock'), preset: null },
-    l: L,
-    want: false
-  },
-  {
-    name: 'permit, null preset, custom',
-    kind: 'permitting',
-    p: { ...permit('sb423Clock'), preset: null },
-    l: { ...L, custom: true },
-    want: false
-  },
-  { name: 'money bought', kind: 'money', p: money('fund', 'housing-bond'), l: L, want: true },
-  {
-    name: 'free measure, nothing bought',
-    kind: 'money',
-    p: money('fund', 'state-off'),
-    l: { ...L, measures: new Set() },
-    want: false
-  },
-  {
-    name: 'free measure, one bought',
-    kind: 'money',
-    p: money('fund', 'state-off'),
-    l: L,
-    want: true
-  },
-  { name: 'fund, null preset', kind: 'money', p: money('fund', null), l: L, want: false },
-  { name: 'City funding scale', kind: 'money', p: money('baseline', null), l: L, want: false },
-  { name: 'market terms', kind: 'money', p: money('terms', null), l: L, want: false }
-];
-
 describe('within', () => {
-  it.each(ROWS)('$name', ({ kind, p, l, want }) => {
-    expect(within(kind, p, l)).toBe(want);
+  it('the round-1 transit policy at 3,219 m and 40 stories runs (any values)', () => {
+    const far = transit('transit-rail', ['regionalRail'], [{ maxM: 3219, stories: 40 }]);
+    expect(within('zoning', far, R1)).toBe(true);
   });
 
-  it.each(ROWS)('$name: the same answer on and off', ({ kind, p, l, want }) => {
-    expect(within(kind, { ...p, on: !p.on }, l)).toBe(want);
+  it("a round-2 key's policy in a round-1 game does not run", () => {
+    expect(within('zoning', METRO, R1)).toBe(false);
+    expect(within('permitting', permit('benchmarkPermits'), R1)).toBe(false);
+    expect(within('money', money('fund', 'general-revenue'), R1)).toBe(false);
   });
 
-  it.each(ROWS)('$name: true on OPEN_LIMITS', ({ kind, p }) => {
-    expect(within(kind, p, OPEN_LIMITS)).toBe(true);
+  it("the round's catalogue policies run", () => {
+    expect(within('zoning', RAIL, R1)).toBe(true);
+    expect(within('permitting', permit('sb423Clock'), R1)).toBe(true);
+    expect(within('money', money('fund', 'housing-bond'), R1)).toBe(true);
+  });
+
+  it('game-transit runs when own, not otherwise', () => {
+    expect(within('zoning', GAME_TRANSIT, R1)).toBe(false);
+    expect(within('zoning', GAME_TRANSIT, { ...R1, own: true })).toBe(true);
+    expect(within('zoning', GAME_TRANSIT, DONE)).toBe(true);
+  });
+
+  it('painted never runs in a game, even a finished one', () => {
+    expect(within('zoning', painted(), R1)).toBe(false);
+    expect(within('zoning', painted(), DONE)).toBe(false);
+  });
+
+  it('protections run once a stop type is offered', () => {
+    expect(within('zoning', protection(), R0)).toBe(false);
+    expect(within('zoning', protection(), R1)).toBe(true);
+  });
+
+  it('state-off runs once money is true', () => {
+    expect(within('money', money('fund', 'state-off'), R0)).toBe(false);
+    expect(within('money', money('fund', 'state-off'), R1)).toBe(true);
+  });
+
+  it('custom timing, own pools, scale and terms run only when whole', () => {
+    for (const [kind, p] of [
+      ['permitting', permit('observed')],
+      ['permitting', permit(null)],
+      ['money', money('fund', null)],
+      ['money', money('baseline', null)],
+      ['money', money('terms', null)]
+    ] as const) {
+      expect(within(kind, p, R1)).toBe(false);
+      expect(within(kind, p, DONE)).toBe(true);
+    }
   });
 
   it('refuses a selector that does not belong to the kind', () => {
-    expect(within('permitting', transit(['metro'], []), L)).toBe(false);
-    expect(within('zoning', permit('sb423Clock'), L)).toBe(false);
+    expect(within('permitting', RAIL, DONE)).toBe(false);
+    expect(within('zoning', permit('sb423Clock'), DONE)).toBe(false);
+  });
+
+  it('everything runs on OPEN_LIMITS, on or off', () => {
+    for (const [kind, p] of [
+      ['zoning', painted()],
+      ['zoning', GAME_TRANSIT],
+      ['permitting', permit(null)],
+      ['money', money('terms', null)]
+    ] as const) {
+      expect(within(kind, p, OPEN_LIMITS)).toBe(true);
+      expect(within(kind, { ...p, on: false }, OPEN_LIMITS)).toBe(true);
+    }
+  });
+});
+
+describe('whatFixed', () => {
+  const free = (preset: string) => ({ ...money('baseline', preset), id: preset });
+
+  it('a free measure is summary-only in a game before the end', () => {
+    for (const p of ['state-off', 'federal-credits-off']) {
+      expect(whatFixed(free(p), R1)).toBe(true);
+      expect(whatFixed(free(p), DONE)).toBe(false);
+      expect(whatFixed(free(p), OPEN_LIMITS)).toBe(false);
+    }
+  });
+
+  it('a catalogue policy follows isFixed; an own policy is not fixed', () => {
+    expect(whatFixed(RAIL, R1)).toBe(true);
+    expect(whatFixed(RAIL, limitsOf(game({ round: 1, editable: ['transit-rail'] })))).toBe(false);
+    expect(whatFixed(money('fund', null), R1)).toBe(false);
+    expect(whatFixed(GAME_TRANSIT, R1)).toBe(false);
+  });
+});
+
+describe('isFixed and canRemove', () => {
+  it('isFixed: an offered key not yet editable', () => {
+    expect(isFixed(RAIL, R1)).toBe(true);
+    expect(isFixed(RAIL, limitsOf(game({ round: 1, editable: ['transit-rail'] })))).toBe(false);
+    expect(isFixed(RAIL, DONE)).toBe(false);
+    expect(isFixed(RAIL, OPEN_LIMITS)).toBe(false);
+    expect(isFixed(GAME_TRANSIT, R1)).toBe(false);
+  });
+
+  it('canRemove: not a catalogue policy before the end', () => {
+    expect(canRemove(RAIL, R1)).toBe(false);
+    expect(canRemove(RAIL, limitsOf(game({ round: 1, editable: ['transit-rail'] })))).toBe(false);
+    expect(canRemove(RAIL, DONE)).toBe(true);
+    expect(canRemove(RAIL, OPEN_LIMITS)).toBe(true);
+    expect(canRemove(GAME_TRANSIT, R1)).toBe(true);
   });
 });
 
 describe('runnable', () => {
-  const ok1 = { ...protection(), id: 'ok1' };
-  const ok2 = { ...transit(['metro'], [{ maxM: 402, stories: 4 }]), id: 'ok2' };
   const doc = (zoning: Policy[]): SimPolicy4 => ({
     schema: 4,
     kinds: { zoning, permitting: [permit('sb423Clock')], money: [money('fund', 'housing-bond')] }
   });
 
   it('returns the same document when everything is within', () => {
-    const d = doc([ok1, ok2]);
-    expect(runnable(d, L)).toBe(d);
+    const d = doc([protection(), RAIL]);
+    expect(runnable(d, R1)).toBe(d);
   });
 
   it('drops what is outside and keeps order', () => {
-    const d = doc([ok1, painted(), ok2]);
-    const r = runnable(d, L);
-    expect(r.kinds.zoning).toEqual([ok1, ok2]);
+    const d = doc([protection(), painted(), RAIL, METRO]);
+    const r = runnable(d, R1);
+    expect(r.kinds.zoning).toEqual([protection(), RAIL]);
     expect(r.kinds.permitting).toBe(d.kinds.permitting);
     expect(r.kinds.money).toBe(d.kinds.money);
   });
 
   it('returns the document on OPEN_LIMITS', () => {
-    const d = doc([ok1, painted(), ok2]);
+    const d = doc([painted(), METRO]);
     expect(runnable(d, OPEN_LIMITS)).toBe(d);
   });
 });
 
 describe('isGiven', () => {
-  const route = (tag: 'routes' | 'transit', preset: string): Policy => ({
-    ...(tag === 'routes' ? permit('sb423Clock') : transit(['metro'], [])),
-    preset
-  });
-
   it.each([
     { name: 'fund with a preset', p: money('fund', 'housing-bond'), want: true },
     { name: 'baseline with a preset', p: money('baseline', 'state-off'), want: true },
     { name: 'terms with a preset', p: money('terms', 'x'), want: true },
     { name: 'fund with no preset', p: money('fund', null), want: false },
-    { name: 'routes with a preset', p: route('routes', 'sb423Clock'), want: false },
-    { name: 'transit with a preset', p: route('transit', 'x'), want: false }
+    { name: 'routes with a preset', p: permit('sb423Clock'), want: false },
+    { name: 'transit with a preset', p: { ...RAIL, preset: 'x' }, want: false }
   ])('$name', ({ p, want }) => {
     expect(isGiven(p)).toBe(want);
   });

@@ -24,6 +24,8 @@ There is no automated staging-to-prod interlock (as in planafoot): do not merge 
 
 `PUBLIC_APP_RELEASE` is set at deploy time to the commit SHA (staging) or tag (production).
 
+A tab left open across a deploy that moves the game's state to a new version (version 3, the policy rounds) can read back, from its account, a game it cannot parse until it reloads.
+
 `wrangler.jsonc` holds two Durable Object migrations, the same in both environments, applied by the deploy with no manual step. `v1-sim-object` created the class `SimObject` (`new_sqlite_classes`). `v2-delete-sim-object` deletes it and its stored data (`deleted_classes`); the Worker binds no Durable Object. A migration tag is never edited or reused.
 
 ### Contributors (fork PRs)
@@ -36,7 +38,7 @@ Nothing is promoted. The build computes the dataset version `<v>` from the sourc
 
 - **Guard.** Both deploy workflows run the step "Guard: this commit's dataset is published" before `npm run build`. It runs `npx tsx scripts/dataset-version.ts --check <host>` and sends a `HEAD` request (Node `fetch`, 15 s timeout, retried) for `/data/<v>/manifest.json` on the deployed host (either host serves any published version, so no R2 credentials are needed). If the manifest is missing the job fails without deploying and the running version stays up. The fix is to build and upload the dataset ([pipeline.md](pipeline.md), "Finishing a branch that changes the dataset").
 - **Smoke.** After the deploy, "Smoke: dataset manifest is served and the build uses it" checks the manifest again and that `/about` on the deployed host shows `<v>` (`/attribution` is a 308 to `/about#about-data`, and `curl -fsS` does not follow it).
-- **Reach check.** Before `upload`, `npx tsx scripts/reach-check.ts pipeline/out/<v>` must exit 0. Exit 1 means current law misses the first deadline, or the full tree misses the last, on that data: nothing is uploaded, and the owner decides the remedy ([game.md](game.md), "The reach check").
+- **Reach check.** Before `upload`, `npx tsx scripts/reach-check.ts pipeline/out/<v>` must exit 0. Exit 1 means the twelve policies, all on at their fixed values, miss the goal inside the window on that data: nothing is uploaded, and the owner decides the remedy ([game.md](game.md), "The reach check").
 - **Releases.** A release tag's tree computes its own `<v>`, so cutting a release is what moves production to a new dataset. `release-please.yml` needs no dataset step.
 - **Rollback** is a code revert. The reverted tree computes the old version, which is still in R2.
 - Versions are immutable and retained forever. There are no `chore(data)` or `data:` pointer PRs any more.

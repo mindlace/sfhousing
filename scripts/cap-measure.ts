@@ -1,14 +1,15 @@
 // `npx tsx scripts/cap-measure.ts <datasetDir> [--json]` (building-choice spec, Measurement to
 // report): net completed homes (`completedNet`) at months 168 (2040) and 479 (2066) for current
 // law, for current law plus one transit rule (all stop types, 805 m) at 12, 13, 16, 20, 40 and 80
-// stories, and for the full tree with its bands at the same caps, each beside the old dataset's
-// figure from the taller-caps report, with the share of simulated starts by construction type over
+// stories, and for every policy of the game's catalogue with its transit bands at the same caps,
+// each beside the old dataset's figure from the taller-caps report (whose third row was the points
+// game's full tree, not the catalogue), with the share of simulated starts by construction type over
 // the window. A report, never a gate: a cap that builds fewer homes than a lower one is shown, not
 // fixed. Always exits 0 once it has run; 2 when it could not run.
 import { pathToFileURL } from 'node:url';
 import { utcParts } from '../src/lib/fzp/time';
-import { fullTree } from '../src/lib/game/catalogue/play';
-import { GAME_TRANSIT_ID } from '../src/lib/game/grant';
+import { POLICY_KEYS } from '../src/lib/game/catalogue/rounds';
+import { catalogueDoc } from '../src/lib/game/offer';
 import { BUILDING_TYPES } from '../src/lib/sim/choice/types';
 import { STOP_TYPES } from '../src/lib/sim/levers/brushes';
 import { monthFirstDay } from '../src/lib/sim/world/months';
@@ -27,6 +28,9 @@ export const MONTHS = [168, 479] as const;
 
 export type At = { 168: number; 479: number };
 export type Who = 'current' | 'transit' | 'full';
+
+/** The transit rule's policy id. */
+export const TRANSIT_RULE_ID = 'cap-transit';
 
 /** The dataset the taller-caps report measured. */
 export const OLD_DATASET = '2026-11-25-76c90397';
@@ -108,7 +112,7 @@ const pct = (k: number, n: number) => (n === 0 ? '—' : `${Math.round((100 * k)
 const NAMES: Record<Who, string> = {
   current: 'Current law',
   transit: 'Transit rule',
-  full: 'Full tree'
+  full: 'Every policy'
 };
 
 /** The printed lines; `years` labels months 168 and 479 (the live dataset's by default). */
@@ -143,7 +147,7 @@ export function startsOf(world: World): Starts {
 /** Current law plus one transit rule: every stop type, `TRANSIT_MAX_M`, `stories`. */
 export function transitDoc(asOf: Day, stories: number): SimPolicy4 {
   const rule: Policy = {
-    id: GAME_TRANSIT_ID,
+    id: TRANSIT_RULE_ID,
     label: 'Transit rule',
     preset: null,
     on: true,
@@ -159,11 +163,11 @@ export function transitDoc(asOf: Day, stories: number): SimPolicy4 {
   return { ...DEFAULT_POLICY4, kinds: { ...DEFAULT_POLICY4.kinds, zoning: [rule] } };
 }
 
-/** The full tree with every band of its transit rule at `stories`; every other lever as bought. */
+/** Every policy of the catalogue on, every band of its transit policies at `stories`. */
 export function fullDoc(cal: Calibration, stories: number): SimPolicy4 {
-  const doc = fullTree(cal).doc;
+  const doc = catalogueDoc(cal, POLICY_KEYS);
   const zoning = doc.kinds.zoning.map((p) =>
-    p.id !== GAME_TRANSIT_ID
+    p.where.tag !== 'transit'
       ? p
       : {
           ...p,

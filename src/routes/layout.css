@@ -100,6 +100,14 @@
     color: var(--color-ink-dark);
   }
 }
+/* Below sm the header's status sits at the bar's right, after the pinned item: with
+   `explain-end-phone` beside `explain-under` the text opens leftwards from the box's right edge. */
+@media (width < 40rem) {
+  .explain-end-phone [role='tooltip'] {
+    left: auto;
+    right: 0;
+  }
+}
 
 /* A scroll box that says more is below (`moreBelow`, src/lib/shell/more-below.ts, sets data-more):
    put `more-below` on it and attach `{@attach moreBelow}`. While data-more is set a 24 px fade to

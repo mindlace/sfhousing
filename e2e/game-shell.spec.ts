@@ -1,10 +1,32 @@
-// The game shell end to end (game-shell): the opening on `/` and the first run's start at the same
-// address, `/sim` as a redirect to `/`, the header with no steps, the first load's brush, the
+// The game shell end to end (game-shell): the opening on `/` and the simulation after Start at the
+// same address, `/sim` as a redirect to `/`, the header with no steps, the first load's brush, the
 // simulation with no game, and `/p/<id>` in full. Runs against the VITE_E2E build on fixture-0,
-// with the real game switched on by e2e/helpers/game.ts before the first navigation.
-import { expect, test } from '@playwright/test';
+// with the real game switched on by e2e/helpers/game.ts before the first navigation. The round's
+// header at 320 and 375 px: the pinned goal's line whole in every state and status (none,
+// "Autosave off", "Updating", both), with the page's words and the widest, and the round panel
+// under the header.
+import { expect, test, type Page } from '@playwright/test';
+import type { GameState } from '../src/lib/game/state';
+import { expectHeaderRowFits } from './helpers/chrome';
 import { seedGoalAmount } from './helpers/game';
-import { untilPhase } from './helpers/play';
+import {
+  WIDEST_PINNED,
+  expectGoalLineWhole,
+  goalLine,
+  widestGameHeader
+} from './helpers/header-text';
+import {
+  FIXTURE_AMOUNT,
+  autosaveOff,
+  frameMap,
+  monthDay,
+  refusePolicyRecord,
+  seedRuns,
+  staleEdit,
+  waitResult,
+  waitSim
+} from './helpers/play';
+import { installPolicyHold, slider, waitFilled } from './helpers/run';
 import {
   gotoEditor,
   gotoHydrated,
@@ -14,7 +36,7 @@ import {
   smallText
 } from './helpers/sharing';
 
-test('a new visitor paints once, presses Start, and the first run starts at /', async ({
+test('a new visitor paints once, presses Start, and the simulation opens at /', async ({
   page,
   isMobile
 }) => {
@@ -30,28 +52,12 @@ test('a new visitor paints once, presses Start, and the first run starts at /', 
   const start = page.getByTestId('opening-start');
   await expect(start).toBeVisible();
   await start.click();
-  await untilPhase(page, 'run');
+  await waitSim(page);
 
   await expect(page).toHaveURL(/\/$/);
   expect(new URL(page.url()).pathname).toBe('/');
   expect(paths.length).toBeGreaterThan(0);
   expect(new Set(paths)).toEqual(new Set(['/']));
-  // The map box takes focus (tl-map-box, tabindex -1 while starting and running).
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const a = document.activeElement;
-        const root = document.querySelector('[data-testid="map-root"]');
-        return (
-          !!a &&
-          a !== document.body &&
-          a !== document.documentElement &&
-          a.contains(root) &&
-          a.closest('[data-testid="tl-map-box"]') !== null
-        );
-      })
-    )
-    .toBe(true);
 });
 
 test('the opening card is one element inside its box', async ({ page, isMobile }) => {
@@ -78,7 +84,7 @@ test('the header has no steps and reads SF Housing', async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
     await gotoEditor(page);
     await expect(page.getByRole('navigation', { name: 'Steps' })).toHaveCount(0);
-    // Below lg the site name is in the open Menu; from lg it is in the bar.
+    // Below sm, with the room score pinned, the site name is in the open Menu; from sm in the bar.
     await openHeaderMenu(page);
     const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing', exact: true });
     await expect(name).toBeVisible();
@@ -96,10 +102,10 @@ test("a new visitor's first load shows the brush at Room for 0 homes", async ({ 
   expect(messages.filter((m) => /hydrat/i.test(m))).toEqual([]);
 });
 
-test('with no game, / shows the simulation and no unit count', async ({ page }) => {
+test('with no game, / shows the simulation and no game panel', async ({ page }) => {
   await gotoHydrated(page, '/');
   await expect(page.getByTestId('tl-mode')).toBeVisible();
-  await expect(page.getByTestId('header-units')).toHaveCount(0);
+  await expect(page.getByTestId('game-panel')).toHaveCount(0);
   expect(await ops(page)).toBeNull();
 });
 
@@ -118,3 +124,142 @@ test('/p/<id> opens in full with no Remix and links Your game to /', async ({ pa
   await expect(page.getByText('Open with current data')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Your game' })).toHaveAttribute('href', '/');
 });
+
+// ---- the round's header at phone width (Review Focus 5) ----------------------------------------
+
+// Current law reaches FIXTURE_AMOUNT in Aug 2038: a target of Jan 2045 is beaten, Jan 2035 is not.
+const ROUND: Record<'pending' | 'win' | 'late', Partial<GameState>> = {
+  pending: { phase: 'runs', round: 1, target: monthDay(2045, 1) },
+  win: { phase: 'runs', round: 1, target: monthDay(2045, 1) },
+  late: { phase: 'runs', round: 1, target: monthDay(2035, 1) }
+};
+
+/**
+ * A seeded round at `width`, on the simulation, filled; the ruler's End unless pending. With
+ * `off`, storage refuses the policy record, so the autosave is off; with `hold`, the timeline
+ * worker's `setPolicy` can be held (`holdPolicy`), so an edit leaves the numbers stale.
+ */
+async function roundAt(
+  page: Page,
+  width: number,
+  state: 'pending' | 'win' | 'late',
+  opts: { off?: boolean; hold?: boolean } = {}
+) {
+  if (opts.off) await refusePolicyRecord(page);
+  if (opts.hold) await installPolicyHold(page);
+  await page.setViewportSize({ width, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await seedRuns(page, ROUND[state], FIXTURE_AMOUNT);
+  await gotoHydrated(page, '/');
+  await waitSim(page);
+  await frameMap(page);
+  await waitFilled(page);
+  if (state !== 'pending') {
+    await slider(page).focus();
+    await page.keyboard.press('End');
+  }
+  await waitResult(page, state);
+  await expect(autosaveOff(page)).toHaveCount(opts.off ? 1 : 0);
+}
+
+/**
+ * The line whole with the page's words, then with the widest words (`widestGameHeader`); the
+ * widest case's slack is recorded as an annotation.
+ */
+async function expectBothWhole(page: Page, word: string, label: string): Promise<void> {
+  expectGoalLineWhole(await goalLine(page, word));
+  await widestGameHeader(page);
+  const widest = await goalLine(page, word === 'before' ? 'before' : WIDEST_PINNED.phoneResult);
+  expectGoalLineWhole(widest);
+  test.info().annotations.push({ type: 'slack', description: `${label}: ${widest.slack} px` });
+  await expectHeaderRowFits(page);
+}
+
+/** Each state's word, and how many gifts it shows. */
+const STATES = [
+  { state: 'pending', word: 'before', gifts: 0 },
+  { state: 'win', word: 'early', gifts: 1 },
+  { state: 'late', word: 'late', gifts: 0 }
+] as const;
+
+// The widest words fit. Measured slack with them (px left at the line's right after its widest
+// row; both projects, 2026-11-26): at 320 px, 79 with no status or beside Updating (pending,
+// late), 51 in a win (the gift), 47 beside Autosave off (with or without Updating), 19 in a win
+// beside Autosave off (the result wrapped); at 375 px, 113 pending, 85 in a win, 81 beside
+// Autosave off, 74 in a win beside it, and 0.6 for a late line on one row (a pixel more and its
+// result wraps beneath).
+for (const width of [320, 375])
+  for (const off of [false, true])
+    for (const c of STATES) {
+      test(`at ${width} px ${c.state}${off ? ' beside Autosave off' : ''}: the goal line is whole, widest words too`, async ({
+        page
+      }) => {
+        await roundAt(page, width, c.state, { off });
+        await expectHeaderRowFits(page);
+        const gifts = await page
+          .getByTestId('goal-gift')
+          .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()));
+        expect(gifts).toHaveLength(c.gifts);
+        expect(gifts.every((r) => r.width >= 24 && r.height >= 24)).toBe(true);
+        await expect(page.getByTestId('goal-phone')).toContainText(c.word);
+        await expectBothWhole(page, c.word, `${width} ${c.state}${off ? ' off' : ''}`);
+      });
+    }
+
+// "Updating" shows only while the numbers are stale, and the judge gives no win or late on stale
+// numbers (`judge`, current false), so beside "Updating" the round reads pending.
+for (const width of [320, 375])
+  for (const off of [false, true])
+    test(`at ${width} px beside Updating${off ? ' and Autosave off' : ''}: the line does not move and is whole`, async ({
+      page
+    }) => {
+      await roundAt(page, width, 'pending', { off, hold: true });
+      const before = await page.getByTestId('goal-phone').boundingBox();
+      await staleEdit(page);
+      expect(await page.getByTestId('goal-phone').boundingBox()).toEqual(before);
+      await expect(page.getByTestId('tl-status-spinner')).toBeVisible();
+      expect((await page.getByRole('banner').boundingBox())!.height).toBe(48);
+      await expectBothWhole(page, 'before', `${width} updating${off ? ' off' : ''}`);
+    });
+
+test('at 375 px with no status the win line is one line', async ({ page }) => {
+  await roundAt(page, 375, 'win');
+  const drawn = await goalLine(page, 'early');
+  expectGoalLineWhole(drawn);
+  expect(new Set(drawn.parts.map((p) => Math.round(p.top))).size, JSON.stringify(drawn)).toBe(1);
+});
+
+test('at 320 px beside Autosave off the widest win wraps and keeps the header at its height', async ({
+  page
+}) => {
+  await roundAt(page, 320, 'win', { off: true });
+  await widestGameHeader(page);
+  const drawn = await goalLine(page, WIDEST_PINNED.phoneResult);
+  expectGoalLineWhole(drawn);
+  const rest = drawn.parts.find((p) => p.c === 'rest')!;
+  const result = drawn.parts.find((p) => p.c === 'result')!;
+  expect(result.top, JSON.stringify(drawn)).toBeGreaterThan(rest.top);
+  expect((await page.getByRole('banner').boundingBox())!.height).toBe(48);
+});
+
+for (const width of [320, 1280]) {
+  test(`at ${width} px the round panel opens inside the viewport, under the header`, async ({
+    page
+  }) => {
+    await roundAt(page, width, 'pending');
+    await page.getByTestId('goal-headline-button').click();
+    const panel = page.getByTestId('round-panel');
+    await expect(panel).toBeVisible();
+    // The pop-over that holds `round-panel` (GoalHeadline's panel container, by its id).
+    const box = await panel.evaluate((el) => {
+      const r = (el.closest('[id]') ?? el).getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    });
+    const header = (await page.getByRole('banner').boundingBox())!;
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(width);
+    expect(box.bottom).toBeLessThanOrEqual(800);
+    expect(box.top).toBeGreaterThanOrEqual(header.y + header.height - 0.5);
+    expect(box.top).toBeLessThanOrEqual(header.y + header.height + 8);
+  });
+}

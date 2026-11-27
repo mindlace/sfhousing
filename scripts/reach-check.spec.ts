@@ -1,55 +1,123 @@
-// The reach check (closing spec, "The check's own test"): current law and the full tree asked of
-// the fixture dataset at several amounts, the lines and exit it gives, and the ways it is refused.
+// The reach check: one rule (every policy on, at its fixed values, reaches the goal inside the
+// window) and a printed report of each policy's and each round's effect. The runs use a stub engine
+// whose numbers are synthetic; one run uses the fixture dataset at an amount of 1.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { formatShortMonthYear } from '../src/lib/fzp/format';
-import { RUNGS, ladder } from '../src/lib/game/ladder';
-import { fullTree } from '../src/lib/game/catalogue/play';
+import { dayFromUtc } from '../src/lib/fzp/time';
+import { CATALOGUE, POLICY_KEYS, type PolicyKey } from '../src/lib/game/catalogue/rounds';
+import { onKeys } from '../src/lib/game/offer';
 import { defaultGoal } from '../src/lib/goal/goal';
+import { baselineFixture } from '../src/lib/sim/levers/fixtures/finance';
+import miniCalibrationJson from '../src/lib/sim/world/fixtures/mini-calibration.json';
+import { miniMarket } from '../src/lib/sim/world/fixtures/mini-market';
 import type { TimelineView } from '../src/lib/sim/world/score/types';
+import { parseCalibration } from '../src/lib/timelapse/model';
+import type { Calibration } from '../src/lib/timelapse/types';
 import type { Day } from '../src/lib/timelapse/time';
-import { DEFAULT_POLICY4 } from '../src/lib/timeline/policy4';
-import { openEngine, type Engine } from './reach-measure';
+import { openEngine, type Engine } from './lib/engine-runner';
 import {
-  fillLine,
   main,
+  measure,
+  parseAmount,
   parseCheckArgs,
+  readReading,
   reachExit,
-  reachLines,
-  readReach,
+  reportLines,
   type CheckIo,
-  type Reach
+  type Reading,
+  type Report
 } from './reach-check';
 
 const FIXTURE = 'e2e/fixtures/data/fixture-0';
-/** Enough for one fill of the fixture's window; a hook argument, not a wait. */
+/** Enough for one fill of the fixture's window; a test timeout, not a wait. */
 const FILL_HOOK_MS = 600_000;
 const USAGE =
   'reach-check: usage: npx tsx scripts/reach-check.ts <datasetDir> | --version <v> ' +
   '[--from <origin>] [--amount <homes>] [--cars on|off]';
 
 const temps: string[] = [];
-
-let engine: Engine;
-let asOf: Day;
-let current: TimelineView;
-let full: TimelineView;
-
-beforeAll(async () => {
-  engine = await openEngine({ dir: FIXTURE });
-  asOf = engine.asOf;
-  current = await engine.view(DEFAULT_POLICY4);
-  full = await engine.view(fullTree(engine.cal).doc);
-}, FILL_HOOK_MS);
-
 afterAll(() => {
-  engine?.close();
   for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 });
 
-const viewOf = (who: 'current' | 'full') => (who === 'current' ? current : full);
+const miniCal = parseCalibration(structuredClone(miniCalibrationJson) as unknown);
+const cal: Calibration = {
+  ...miniCal,
+  market: miniMarket(),
+  baselineFunding: baselineFixture().baselineFunding
+};
+const asOf: Day = cal.asOf;
+const WINDOW = 480;
+const goal = defaultGoal(asOf);
+const AMOUNT = goal.amount;
+
+/** Calendar month i of the window, as the first day of that month. */
+const monthDay = (i: number): Day => {
+  const first = new Date(Date.UTC(1970, 0, 1) + asOf * 86_400_000);
+  const m = first.getUTCMonth() + i;
+  return dayFromUtc(first.getUTCFullYear() + Math.floor(m / 12), (m % 12) + 1, 1);
+};
+const months: Day[] = Array.from({ length: WINDOW }, (_, i) => monthDay(i));
+const mon = (i: number): string => formatShortMonthYear(months[i]);
+const END = mon(WINDOW - 1);
+
+/** Synthetic: the month index current law reaches the goal, and what each key takes off it. */
+const LAW_AT = 120;
+const SHIFT: Record<PolicyKey, number> = {
+  'transit-rail': 5,
+  'sb423-clock': 2,
+  'housing-bond': 1,
+  'transit-metro': 4,
+  'benchmark-permits': 1,
+  'general-revenue': 0,
+  'transit-bus': 0,
+  'revolving-fund': 0,
+  'federal-support': 0,
+  'no-discretionary': 2,
+  'public-bank': 1,
+  'state-double': 0
+};
+
+/** A view that reaches the amount in month `at` (never, for null) and ends on `end` homes. */
+function stubView(at: number | null, end: number): TimelineView {
+  const rows = months.map((_, i) => ({ completedNet: at !== null && i >= at ? end : 0 }));
+  return {
+    months,
+    lastIndex: WINDOW - 1,
+    filledThrough: WINDOW - 1,
+    rows,
+    baseline: { completedNet: 0 }
+  } as unknown as TimelineView;
+}
+
+/** Homes at the window's end: 111 per policy on, and 333 fewer for general revenue after rail. */
+function stubHomes(keys: Set<PolicyKey>, amount = AMOUNT): number {
+  const penalty = keys.has('general-revenue') && keys.has('transit-rail') ? 333 : 0;
+  return amount + 111 * keys.size - penalty;
+}
+
+function stubEngine(opts: { miss?: boolean; fillMs?: number } = {}): Engine & { closed: number } {
+  const out = {
+    datasetVersion: 'test-1',
+    asOf,
+    cal,
+    fillMs: opts.fillMs ?? 1234,
+    closed: 0,
+    view: async (doc: Parameters<Engine['view']>[0]) => {
+      const keys = onKeys(doc);
+      let at: number | null = LAW_AT;
+      for (const k of keys) at -= SHIFT[k];
+      return stubView(opts.miss === true ? null : at, stubHomes(keys));
+    },
+    close: () => {
+      out.closed += 1;
+    }
+  };
+  return out;
+}
 
 /** An io that records what is printed. */
 function recorder(open?: CheckIo['open']): { io: CheckIo; out: string[]; err: string[] } {
@@ -58,128 +126,243 @@ function recorder(open?: CheckIo['open']): { io: CheckIo; out: string[]; err: st
   return { io: { out: (l) => out.push(l), err: (l) => err.push(l), open }, out, err };
 }
 
-const reached = (who: Reach['who']): Reach => ({
-  who,
-  rung: who === 'current' ? 0 : RUNGS - 1,
-  amount: 100,
-  deadline: 0 as Day,
-  reachedOn: 0 as Day,
-  homesAtDeadline: 100,
-  marginMonths: 3
-});
-const missed = (who: Reach['who']): Reach => ({
-  ...reached(who),
-  reachedOn: null,
-  homesAtDeadline: 90,
-  marginMonths: null
-});
+const label = (k: PolicyKey): string => CATALOGUE.find((e) => e.key === k)!.label;
+const n = (x: number): string => x.toLocaleString('en-US');
 
-describe('reachExit gates on the full tree only', () => {
-  it('current law missed and the full tree reached is exit 0, with the miss still printed', () => {
-    const r = [missed('current'), reached('full')];
-    expect(reachExit(r)).toBe(0);
-    expect(reachLines('v', r)[2]).toMatch(/^Current law by .*: missed, 90 homes, 10 short$/);
-  });
-
-  it('current law reached and the full tree missed is exit 1', () => {
-    expect(reachExit([reached('current'), missed('full')])).toBe(1);
-  });
-});
-
-describe('readReach on the fixture', () => {
-  it('amount 1: both questions are reached in the first month', () => {
-    const r = [readReach(current, asOf, 'current', 1), readReach(full, asOf, 'full', 1)];
-    for (const x of r) expect(x.reachedOn).toBe(current.months[0]);
-    expect(reachExit(r)).toBe(0);
-  });
-
-  it("the goal's own amount: current law misses on the fixture", () => {
-    const c = readReach(current, asOf, 'current');
-    expect(c.amount).toBe(defaultGoal(asOf).amount);
-    expect(c.reachedOn).toBeNull();
-    expect(c.marginMonths).toBeNull();
-    expect(reachLines('fixture-0', [c, readReach(full, asOf, 'full')])[2]).toMatch(
-      /^Current law by [A-Z][a-z]{2} \d{4}: missed, [\d,]+ homes, [\d,]+ short$/
-    );
-  });
-
-  it.each(['current', 'full'] as const)(
-    '%s: homesAtDeadline is reached, one more misses by 1',
-    (who) => {
-      const h = readReach(viewOf(who), asOf, who).homesAtDeadline;
-      const other = who === 'current' ? 'full' : 'current';
-      const lineOf = (r: Reach) =>
-        reachLines(
-          'fixture-0',
-          who === 'current'
-            ? [r, readReach(viewOf(other), asOf, other)]
-            : [readReach(viewOf(other), asOf, other), r]
-        )[who === 'current' ? 2 : 3];
-      const at = readReach(viewOf(who), asOf, who, h);
-      expect(at.reachedOn).not.toBeNull();
-      expect(at.reachedOn! <= at.deadline).toBe(true);
-      expect(reachExit([at])).toBe(0);
-      const over = readReach(viewOf(who), asOf, who, h + 1);
-      expect(over.reachedOn).toBeNull();
-      expect(lineOf(over).endsWith(', 1 short')).toBe(true);
-      expect(reachExit([over])).toBe(who === 'full' ? 1 : 0);
-    }
-  );
-
-  it('rungs: full reads rung RUNGS - 1, current rung 0', () => {
-    expect(readReach(full, asOf, 'full').deadline).toBe(ladder(asOf)[RUNGS - 1].deadline);
-    expect(readReach(current, asOf, 'current').deadline).toBe(ladder(asOf)[0].deadline);
-  });
-});
-
-describe('reachLines', () => {
-  it('four lines, the first two fixed', () => {
-    const lines = reachLines('fixture-0', [
-      readReach(current, asOf, 'current'),
-      readReach(full, asOf, 'full')
+describe('main on a stub engine', () => {
+  it('prints the report exactly and exits 0', async () => {
+    const stub = stubEngine();
+    const { io, out, err } = recorder(async () => stub);
+    expect(await main(['x'], io)).toBe(0);
+    const lawAt = LAW_AT;
+    const allAt = LAW_AT - 16;
+    const aloneLine = (k: PolicyKey): string => {
+      const s = SHIFT[k];
+      const change = s === 0 ? 'no change' : `${s} month${s === 1 ? '' : 's'} earlier`;
+      return `  ${label(k)}: ${mon(lawAt - s)}, ${change}, +111 homes by ${END}`;
+    };
+    // Rounds before a key, plus the key; round 1 keys read against current law.
+    const roundOf = (k: PolicyKey) => CATALOGUE.find((e) => e.key === k)!.round;
+    const before = (k: PolicyKey) =>
+      CATALOGUE.filter((e) => e.round < roundOf(k)).map((e) => e.key);
+    const inRoundLine = (k: PolicyKey): string => {
+      const b = before(k);
+      const baseAt = lawAt - b.reduce((a, x) => a + SHIFT[x], 0);
+      const s = SHIFT[k];
+      const change = s === 0 ? 'no change' : `${s} month${s === 1 ? '' : 's'} earlier`;
+      const baseHomes = stubHomes(new Set(b));
+      const homes = stubHomes(new Set([...b, k]));
+      const d = homes - baseHomes;
+      return `  ${label(k)}: ${mon(baseAt - s)}, ${change}, ${d < 0 ? '-' : '+'}${n(Math.abs(d))} homes by ${END}`;
+    };
+    const roundTotals = [8, 5, 0, 3];
+    let above = lawAt;
+    const roundLines = roundTotals.map((t, i) => {
+      const keys = new Set(CATALOGUE.filter((e) => e.round <= i + 1).map((e) => e.key));
+      const at = above - t;
+      const change = t === 0 ? 'no change' : `${t} months earlier`;
+      const line = `  ${i + 1}: ${mon(at)}, ${change}, ${n(stubHomes(keys))} homes by ${END}`;
+      above = at;
+      return line;
+    });
+    expect(out).toEqual([
+      'Dataset test-1',
+      `Goal: ${n(AMOUNT)} homes`,
+      `Every policy: reached ${mon(allAt)}`,
+      `Current law: reached ${mon(lawAt)}`,
+      'Alone, against current law:',
+      ...POLICY_KEYS.map(aloneLine),
+      'In its round, against the rounds before:',
+      ...POLICY_KEYS.map(inRoundLine),
+      'Rounds, all on:',
+      ...roundLines,
+      'To judge:',
+      '  Round 3 gains nothing',
+      `  ${label('general-revenue')} in its round: 222 fewer homes`,
+      'Filled in 1.2 s (cars on)'
     ]);
-    expect(lines).toHaveLength(4);
-    expect(lines[0]).toBe('Dataset fixture-0');
-    expect(lines[1]).toBe(`Goal: ${defaultGoal(asOf).amount.toLocaleString('en-US')} homes`);
-    expect(lines[2].startsWith('Current law by ')).toBe(true);
-    expect(lines[3].startsWith('Full tree by ')).toBe(true);
+    expect(err).toEqual([]);
+    expect(stub.closed).toBe(1);
   });
 
-  const synthetic = (over: Partial<Reach>): Reach => ({
-    who: 'current',
-    rung: 0,
-    amount: 100,
-    deadline: ladder(asOf)[0].deadline,
-    reachedOn: null,
-    homesAtDeadline: 0,
-    marginMonths: null,
+  it('says to judge nothing when nothing needs judging', async () => {
+    const stub = stubEngine();
+    // Every policy brings one month and 1 home, so no round and no policy is flagged.
+    stub.view = async (doc) => {
+      const keys = onKeys(doc);
+      return stubView(LAW_AT - keys.size, AMOUNT + keys.size);
+    };
+    const { io, out } = recorder(async () => stub);
+    expect(await main(['x'], io)).toBe(0);
+    expect(out.slice(out.indexOf('To judge: nothing'))).toEqual([
+      'To judge: nothing',
+      'Filled in 1.2 s (cars on)'
+    ]);
+  });
+
+  it('exits 1 when every policy on misses, and still prints the report', async () => {
+    const stub = stubEngine({ miss: true });
+    const { io, out, err } = recorder(async () => stub);
+    expect(await main(['x'], io)).toBe(1);
+    expect(out[2]).toBe(`Every policy: not by ${END}`);
+    expect(out[3]).toBe(`Current law: not by ${END}`);
+    expect(out[5]).toBe(`  ${label('transit-rail')}: not by ${END}, n/a, +0 homes by ${END}`);
+    expect(out.at(-1)).toBe('Filled in 1.2 s (cars on)');
+    expect(err).toEqual([]);
+    expect(stub.closed).toBe(1);
+  });
+
+  it('passes the cars switch to open and names it in the fill line', async () => {
+    const seen: (string | undefined)[] = [];
+    const { io, out } = recorder(async (_src, opts) => {
+      seen.push(opts?.cars);
+      return stubEngine();
+    });
+    expect(await main(['x', '--cars', 'off'], io)).toBe(0);
+    expect(seen).toEqual(['off']);
+    expect(out.at(-1)).toBe('Filled in 1.2 s (cars off)');
+  });
+
+  it('a view that rejects is exit 2 and the engine is closed', async () => {
+    const stub = { ...stubEngine(), view: () => Promise.reject(new Error('boom')) };
+    let closed = 0;
+    stub.close = () => {
+      closed += 1;
+    };
+    const { io, out, err } = recorder(async () => stub);
+    expect(await main(['x'], io)).toBe(2);
+    expect(err).toEqual(['reach-check: boom']);
+    expect(out).toEqual([]);
+    expect(closed).toBe(1);
+  });
+});
+
+describe('measure', () => {
+  it('asks for 30 views at most, one per distinct list of keys', async () => {
+    const seen: string[] = [];
+    const stub = stubEngine();
+    const view = stub.view;
+    stub.view = async (doc) => {
+      seen.push([...onKeys(doc)].sort().join(','));
+      return view(doc);
+    };
+    const rep = await measure(stub);
+    expect(rep.alone).toHaveLength(12);
+    expect(rep.inRound).toHaveLength(12);
+    expect(rep.rounds.map((r) => r.round)).toEqual([1, 2, 3, 4]);
+    expect(rep.all).toEqual(rep.rounds[3].r);
+    expect(seen.length).toBeLessThanOrEqual(30);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it('reads an amount through to every reading', async () => {
+    const rep = await measure(stubEngine(), 5);
+    expect(rep.law.reachedOn).toBe(months[LAW_AT]);
+    expect(rep.law.homesAtEnd).toBe(AMOUNT);
+    expect((await measure(stubEngine(), AMOUNT + 1)).law.reachedOn).toBeNull();
+  });
+});
+
+describe('readReading', () => {
+  it('reads the first month the amount is met and the homes at the window end', () => {
+    const r = readReading(stubView(7, 90_000), asOf);
+    expect(r).toEqual({ reachedOn: months[7], homesAtEnd: 90_000 });
+  });
+
+  it('is null for a miss', () => {
+    expect(readReading(stubView(null, 0), asOf).reachedOn).toBeNull();
+  });
+
+  it('takes an amount other than the goal', () => {
+    expect(readReading(stubView(7, 90_000), asOf, 90_001).reachedOn).toBeNull();
+    expect(readReading(stubView(7, 90_000), asOf, 90_000).reachedOn).toBe(months[7]);
+  });
+});
+
+describe('reportLines', () => {
+  const at = (i: number, homes: number): Reading => ({ reachedOn: months[i], homesAtEnd: homes });
+  const miss = (homes: number): Reading => ({ reachedOn: null, homesAtEnd: homes });
+  const rep = (over: Partial<Report>): Report => ({
+    all: at(10, 1_000),
+    law: at(10, 1_000),
+    alone: [],
+    inRound: [],
+    rounds: [],
     ...over
   });
+  const lines = (r: Report) => reportLines('v', 500, months[WINDOW - 1], r);
 
-  it('one month early is singular', () => {
-    const reachedOn = ladder(asOf)[0].deadline;
-    const line = reachLines('x', [
-      synthetic({ reachedOn, marginMonths: 1 }),
-      synthetic({ who: 'full', reachedOn, marginMonths: 2 })
-    ]);
-    expect(line[2]).toBe(
-      `Current law by ${formatShortMonthYear(reachedOn)}: reached ${formatShortMonthYear(reachedOn)}, 1 month early`
+  it('words a policy later, the same, earlier and missed', () => {
+    const out = lines(
+      rep({
+        alone: [
+          { key: 'transit-rail', r: at(11, 1_000) },
+          { key: 'sb423-clock', r: at(10, 1_000) },
+          { key: 'housing-bond', r: at(9, 1_000) },
+          { key: 'transit-metro', r: miss(900) }
+        ]
+      })
     );
-    expect(line[3].endsWith(', 2 months early')).toBe(true);
+    expect(out.slice(5, 9)).toEqual([
+      `  Taller near BART and Caltrain: ${mon(11)}, 1 month later, +0 homes by ${END}`,
+      `  SB 423 clock: ${mon(10)}, no change, +0 homes by ${END}`,
+      `  Housing bond: ${mon(9)}, 1 month earlier, +0 homes by ${END}`,
+      `  Taller near Muni Metro: not by ${END}, n/a, -100 homes by ${END}`
+    ]);
+    expect(out.slice(out.indexOf('To judge:'))).toEqual([
+      'To judge:',
+      '  Taller near Muni Metro alone: 100 fewer homes'
+    ]);
   });
 
-  it('numbers are grouped', () => {
-    const missed = synthetic({ amount: 1_234_567, homesAtDeadline: 1_000 });
-    expect(reachLines('x', [missed, { ...missed, who: 'full' }])[2]).toContain(
-      'missed, 1,000 homes, 1,233,567 short'
+  it('flags a round that is missed, or not earlier than the row above', () => {
+    const out = lines(
+      rep({
+        rounds: [
+          { round: 1, r: at(8, 1_000) },
+          { round: 2, r: at(8, 1_000) },
+          { round: 3, r: at(9, 1_000) },
+          { round: 4, r: miss(1_000) }
+        ]
+      })
     );
+    expect(out.slice(out.indexOf('To judge:'))).toEqual([
+      'To judge:',
+      '  Round 2 gains nothing',
+      '  Round 3 gains nothing',
+      '  Round 4 gains nothing'
+    ]);
   });
 });
 
-describe('fillLine', () => {
-  it('names the seconds to one decimal and the switch', () => {
-    expect(fillLine(12_340, 'on')).toBe('Filled in 12.3 s (cars on)');
-    expect(fillLine(900, 'off')).toBe('Filled in 0.9 s (cars off)');
+describe('reachExit', () => {
+  const r = (reachedOn: Day | null): Reading => ({ reachedOn, homesAtEnd: 0 });
+  const rep = (all: Reading): Report => ({
+    all,
+    law: r(null),
+    alone: [],
+    inRound: [],
+    rounds: []
+  });
+
+  it('is 0 when every policy on reaches, whatever else misses', () => {
+    expect(reachExit(rep(r(months[3])))).toBe(0);
+  });
+
+  it('is 1 when every policy on misses', () => {
+    expect(reachExit(rep(r(null)))).toBe(1);
+  });
+});
+
+describe('parseAmount', () => {
+  it('is undefined when not given, a positive whole number or an error', () => {
+    expect(parseAmount(undefined)).toBeUndefined();
+    expect(parseAmount('5')).toBe(5);
+    expect(parseAmount('0')).toEqual({ error: '--amount must be a positive integer, got 0' });
+    expect(parseAmount('1.5')).toEqual({ error: '--amount must be a positive integer, got 1.5' });
+    expect(parseAmount(true)).toEqual({
+      error: '--amount must be a positive integer, got nothing'
+    });
   });
 });
 
@@ -247,8 +430,7 @@ describe('main refuses', () => {
     const dir = emptyDir();
     const { io, out, err } = recorder();
     expect(await main([dir], io)).toBe(2);
-    expect(err).toHaveLength(1);
-    expect(err[0]).toBe(`reach-check: no dataset at ${dir}`);
+    expect(err).toEqual([`reach-check: no dataset at ${dir}`]);
     expect(out).toEqual([]);
   });
 
@@ -261,46 +443,28 @@ describe('main refuses', () => {
   });
 });
 
-describe('main runs', () => {
-  it('amount 1 prints four lines and the fill line, and exits 0', async () => {
-    const { io, out, err } = recorder();
-    expect(await main([FIXTURE, '--amount', '1'], io)).toBe(0);
-    expect(out).toHaveLength(5);
-    expect(out[0]).toBe('Dataset fixture-0');
-    expect(out[4]).toMatch(/^Filled in \d+\.\d s \(cars on\)$/);
-    expect(err).toEqual([]);
-  });
+describe('main on the fixture', () => {
+  it(
+    'amount 1 is reached by every policy on and exits 0',
+    async () => {
+      const { io, out, err } = recorder();
+      expect(await main([FIXTURE, '--amount', '1'], io)).toBe(0);
+      expect(out[0]).toBe('Dataset fixture-0');
+      expect(out[1]).toBe('Goal: 1 homes');
+      expect(out[2]).toMatch(/^Every policy: reached [A-Z][a-z]{2} \d{4}$/);
+      expect(out.at(-1)).toMatch(/^Filled in \d+\.\d s \(cars on\)$/);
+      expect(err).toEqual([]);
+    },
+    FILL_HOOK_MS
+  );
 
-  it.each([
-    [[], 'on'],
-    [['--cars', 'off'], 'off']
-  ] as const)('%j passes cars %s to open', async (extra, cars) => {
-    const seen: (string | undefined)[] = [];
-    const { io, out } = recorder(async (_src, opts) => {
-      seen.push(opts?.cars);
-      return { ...engine, close: () => {} };
-    });
-    expect(await main([FIXTURE, '--amount', '1', ...extra], io)).toBe(0);
-    expect(seen).toEqual([cars]);
-    expect(out[4]).toBe(fillLine(engine.fillMs, cars));
-  });
-});
-
-it('a view that rejects is exit 2 and the engine is closed', async () => {
-  let closed = 0;
-  const stub: Engine = {
-    datasetVersion: engine.datasetVersion,
-    asOf: engine.asOf,
-    cal: engine.cal,
-    fillMs: engine.fillMs,
-    view: () => Promise.reject(new Error('boom')),
-    close: () => {
-      closed += 1;
-    }
-  };
-  const { io, out, err } = recorder(async () => stub);
-  expect(await main([FIXTURE], io)).toBe(2);
-  expect(err).toEqual(['reach-check: boom']);
-  expect(out).toEqual([]);
-  expect(closed).toBe(1);
+  it(
+    'opens an engine the check can close',
+    async () => {
+      const engine = await openEngine({ dir: FIXTURE });
+      expect(engine.fillMs).toBeGreaterThan(0);
+      engine.close();
+    },
+    FILL_HOOK_MS
+  );
 });

@@ -289,7 +289,7 @@ function gameOf(): GameSave {
     state: {
       ...structuredClone(NEW_GAME),
       phase: 'runs',
-      rung: 1,
+      round: 1,
       firstWinAt: '2026-11-22T10:00:00.000Z'
     },
     plan: null,

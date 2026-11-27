@@ -36,9 +36,4 @@ describe('SimMap SSR (C2)', () => {
     });
     expect(body).toContain(`--map-land: ${TOKENS.dark.land}`);
   });
-
-  it('the server render has no data-run-view', () => {
-    const { body } = render(SimMap, { props: { manifest: parseManifest(manifestJson) } });
-    expect(body).not.toContain('data-run-view');
-  });
 });

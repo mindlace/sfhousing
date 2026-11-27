@@ -31,9 +31,9 @@ never copied; "Room for N homes" reads `ROOM_MEANS` (`src/lib/paint/details.ts`)
 shortcuts table is `SHORTCUTS` (`src/lib/brush/shortcuts.ts`), the list Paint's Shortcuts button
 shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/shortcuts.ts`).
 Keyboard shortcuts live here only on the simulation: its header has no Shortcuts button. The
-tables are Painting, Timeline and Run (`RUN_SHORTCUTS`, the keys that move the collecting ring).
+tables are Painting and Timeline.
 
-Part 1 ends with the terms "The deadline" and "Units" (`MEANINGS`). Using it's The game section
+Part 1 ends with the term "The target" (`MEANINGS`), the word the header and the ruler use. Using it's The game section
 (id `about-levels`) is `GAME_STEPS` (an ordered list) then `GAME_NOTES` (paragraphs); Saved games
 is `SAVED_GAMES` (three paragraphs). The 12 in `SAVED_GAMES[0]` is read from `MAX_SAVES`
 (`src/lib/game/saves.ts`), never typed. The game's rules are in [game.md](game.md).
@@ -179,7 +179,7 @@ Every way into About is a link to `/about#…`, and every one says the same thin
 
 | Way in                                                         | Where it lands                                                            |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| The header's About (in the Menu below lg)                      | `/about`                                                                  |
+| The header's About (in the Menu, at every width)               | `/about`                                                                  |
 | The simulation's Details, its last line (`WORKED_OUT`)         | `/about#about-assumptions`                                                |
 | Paint's Details (`/`, `/p/<id>`), its last line (`WORKED_OUT`) | `/about#about-meanings`, where the goal links the SF Planning RHNA Primer |
 | A project card's sources                                       | the entry (`src-…`, through `open(id)`)                                   |

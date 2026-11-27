@@ -77,7 +77,7 @@ export async function clientNavigate(page: Page, path: string): Promise<void> {
 }
 
 /**
- * Below 1024 px, opens the header's Menu (where the actions live); from 1024 px, does nothing.
+ * Opens the header's Menu (saved games, the account entry and About, and below 1024 px the actions).
  * Every spec opens the Menu through this. It waits for hydration first: a tap on the Menu button
  * before hydration is lost (the toggle is a Svelte handler, and the server's HTML has none), so a
  * click on a loaded machine left `aria-expanded` false (issues #96, #109). It finds the button by

@@ -8,6 +8,7 @@
  * `FINANCE_LIMITS` over the document is refused. Programme terms are reconciled where the edit is
  * committed, not here. Pure TS.
  */
+import { keyOfId } from '$lib/game/catalogue/rounds';
 import { limitAlert } from '$lib/sim-page/funding-copy';
 import { canonicalJson, DEFAULT_POLICY, type SimPolicy } from '$lib/sim-page/policy';
 import { PRESETS, timingLabel, type TimingSet } from '$lib/sim-page/timing';
@@ -149,7 +150,11 @@ function readTiming(p: Policy, si: number, old: TimingSet, set: TimingSet): Read
     p.spans.some((x, i) => i !== si && x.what.tag === 'timing' && x.what.set.preset !== set.preset)
   )
     return { refused: PRESET_PER_POLICY };
-  const relabel = isDefaultTimingLabel(p.label, old) && timingLabel(set) !== timingLabel(old);
+  // A catalogue policy (its id names its key) keeps the catalogue's name.
+  const relabel =
+    keyOfId(p) === null &&
+    isDefaultTimingLabel(p.label, old) &&
+    timingLabel(set) !== timingLabel(old);
   return {
     policy: withSpan(
       { ...p, preset: set.preset, label: relabel ? timingLabel(set) : p.label },

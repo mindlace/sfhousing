@@ -10,7 +10,7 @@
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
-  import { OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
+  import { isFixed, OPEN_LIMITS, within, type Limits } from '$lib/game/limits';
   import { marketLevel } from '$lib/sim/world/input/market';
   import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
   import { monthLastDay } from '$lib/sim/world/months';
@@ -20,7 +20,6 @@
   import type { ChartLens } from './chart-lens';
   import { kindOpen } from './add';
   import FixedRow from './FixedRow.svelte';
-  import { LOCKED_LANE } from './game-copy';
   import KindRow from './KindRow.svelte';
   import Lane from './Lane.svelte';
   import type { Policy, PolicyKind, SimPolicy4 } from './policy4';
@@ -75,8 +74,10 @@
      * that the page's box scrolls. Default true.
      */
     pinned?: boolean;
-    /** What is bought: a kind not open is locked, as is a policy not within. Default: all open. */
+    /** What the game offers: "+" only on a kind that opens; a policy not within is locked. */
     limits?: Limits;
+    /** The pane a policy row's New and Edit open, while it is shown (PolicyRow). */
+    paneId?: string;
   }
 
   let {
@@ -100,12 +101,12 @@
     stale = false,
     pinHeight = $bindable(0),
     pinned = true,
-    limits = OPEN_LIMITS
+    limits = OPEN_LIMITS,
+    paneId = undefined
   }: Props = $props();
 
-  /** A locked kind's lane words; null while the kind is open. */
-  const lockOf = (kind: PolicyKind): string | null => (kindOpen(kind, limits) ? null : LOCKED_LANE);
   const lockedIn = (kind: PolicyKind) => (p: Policy) => !within(kind, p, limits);
+  const fixedIn = (p: Policy) => isFixed(p, limits);
 
   const windowEnd = $derived(monthLastDay(asOf, WINDOW_MONTHS));
   const playheadPct = $derived(dayPct(playheadDay, asOf, windowEnd));
@@ -298,8 +299,10 @@
           day={playheadDay}
           {reached}
           {stale}
-          locked={lockOf(kind)}
+          canAdd={kindOpen(kind, limits)}
           isLocked={lockedIn(kind)}
+          isFixed={fixedIn}
+          {paneId}
         />
       {/each}
 
@@ -366,8 +369,10 @@
           day={playheadDay}
           {reached}
           {stale}
-          locked={lockOf(sheet)}
+          canAdd={kindOpen(sheet, limits)}
           isLocked={lockedIn(sheet)}
+          isFixed={fixedIn}
+          {paneId}
         />
         <div
           class="line"
@@ -403,7 +408,7 @@
   }
   @media (min-width: 768px) {
     .tl {
-      --lab: 168px;
+      --lab: 288px;
     }
   }
   .grid {
@@ -480,7 +485,9 @@
      lane sits on the next line in the lane column (column 1 empty): the lanes keep the ruler's
      width and x scale. The name line rides over the playhead line (z-index 2, an opaque surface),
      so the line passes under the words. A lane that never holds anything (the world heading's) is
-     not drawn. From md nothing changes (there the rows share out a tall box's spare height, as
+     not drawn. A policy row with controls has no label box (`display: contents`, PolicyRow): this
+     rule does not reach it, and its switch, name and button keep the ground and the z-index
+     themselves. From md nothing changes (there the rows share out a tall box's spare height, as
      before). */
   @media (max-width: 767.98px) {
     /* The lines pack at the top of a tall box rather than share out its spare height. */

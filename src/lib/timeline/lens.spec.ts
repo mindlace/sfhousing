@@ -384,6 +384,25 @@ describe('timing presets and labels', () => {
     expect(out.doc.kinds.permitting[0].label).toBe(timingLabel(edited));
   });
 
+  it('a catalogue policy (its id names its key) keeps its name through a custom edit', () => {
+    const named = timingLabel(setOf('noDiscretionary'));
+    const edited: TimingSet = {
+      ...setOf('noDiscretionary'),
+      routeShares: { discretionary: 0, streamlined: 80, permitOnly: 20 }
+    };
+    const own = withSet(
+      timingDoc([setOf('noDiscretionary')], named),
+      ref('permitting', 't'),
+      edited
+    );
+    expect(own.doc.kinds.permitting[0].label).toBe(timingLabel(edited));
+    const doc = timingDoc([setOf('noDiscretionary')], named);
+    doc.kinds.permitting[0] = { ...doc.kinds.permitting[0], id: 'no-discretionary' };
+    const out = withSet(doc, ref('permitting', 'no-discretionary'), edited);
+    expect(out.doc.kinds.permitting[0].label).toBe(named);
+    expect(out.doc.kinds.permitting[0].preset).toBe('noDiscretionary');
+  });
+
   it('a preset change in one span of a multi-span policy is refused; the document still parses', () => {
     const doc = timingDoc([setOf('benchmarkPermits'), setOf('benchmarkPermits')], 'x');
     expect(() => parsePolicy4(structuredClone(doc), { asOf: null })).not.toThrow();

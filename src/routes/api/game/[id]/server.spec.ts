@@ -327,13 +327,45 @@ describe('PUT /api/game/[id] signed in', () => {
     expect(mint).not.toHaveBeenCalled();
   });
 
-  it('stores a save whose bought names a node the catalogue lacks, and GET reads it back', async () => {
+  it('stores a save whose editable names a key the catalogue lacks, and GET reads it back', async () => {
     const c = await setup();
     const id = newId();
-    const s = makeSave(id, { state: { ...makeSave(id).state, bought: { 'no-such-node': 1 } } });
+    const s = makeSave(id, {
+      state: { ...makeSave(id).state, phase: 'runs', round: 1, editable: ['no-such-key'] }
+    });
     expect((await put(c, id, { baseRev: null, save: s })).status).toBe(200);
     const res = await GET(event(c, id, { user: ANA }));
     expect(await res.json()).toEqual({ rev: 1, save: s });
+  });
+
+  it('a version 2 save PUT by an old browser is stored upgraded, plan and policy unchanged', async () => {
+    const c = await setup();
+    const id = newId();
+    const old = {
+      ...makeSave(id),
+      plan: '{"v":1}',
+      policy: '{"schema":4}',
+      state: {
+        v: 2,
+        phase: 'runs',
+        firstWinAt: WON,
+        bought: { 'sb423-clock': 1, 'stop-rail': 1 },
+        units: { home: 9 },
+        rung: 1,
+        met: [{ rung: 0, reachedOn: 33000, datasetVersion: 'v', at: WON }],
+        side: {},
+        runs: 1,
+        last: null
+      }
+    };
+    expect((await put(c, id, { baseRev: null, save: old })).status).toBe(200);
+    const res = await GET(event(c, id, { user: ANA }));
+    const body = (await res.json()) as { save: GameSave };
+    expect(body.save.state).toMatchObject({ v: 3, round: 2, editable: ['sb423-clock'] });
+    const [row] = await c.db.select().from(gameSave).where(eq(gameSave.id, id));
+    expect(row.rung).toBe(2);
+    expect(body.save.plan).toBe('{"v":1}');
+    expect(body.save.policy).toBe('{"schema":4}');
   });
 
   it('a signed-in save with no win is stored', async () => {

@@ -2,35 +2,34 @@
 
 ## The game
 
-The game is one loop on one map. Paint rooms for homes until the goal is met, then run the forecast
-to a deadline, collect homes as they complete, spend them in the tree on policies and money, and
-run again; each deadline met opens the next, earlier one. The rules and saved games live in
-`src/lib/game/`:
+The game is one map. Paint rooms for homes until the goal is met; after Start the page is the
+simulation tool for the rest of the game: the map with the opening's camera and buildings, the
+timeline, Play and Pause, held to the policies the rounds offer so far. Twelve real policies come
+three a round over four rounds (`catalogue/rounds.ts`); round 0 is current law. The saved state is
+version 3: the round, the month to beat, the policies the player can edit and the wins. The rules
+and saved games live in `src/lib/game/`:
 
-| File                                 | Holds                                                                                           |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `state.ts`                           | `GameState`, `MetRung`, `NEW_GAME`, `UNIT_KINDS`                                                |
-| `save-shape.ts`                      | `GameSave`, `SaveEntry`, `parseGameSave`, `parseGameState`, `parseRunResult`                    |
-| `units.ts`                           | `credit`, `affords`, `spend`, `shortBy`, `total`                                                |
-| `tree.ts`                            | `TreeNode`, `Grant`, `treeView`, `buy`                                                          |
-| `limits.ts`                          | `Limits`, `limitsOf`, `within`, `runnable`, `isGiven`, `OPEN_LIMITS`                            |
-| `grant.ts`                           | `applyGrant`, `GAME_TRANSIT_ID`                                                                 |
-| `ladder.ts`                          | `RUNGS`, `ladder`, `goalAt`, `finished`, `takeNext`, `fitGame`                                  |
-| `run-result.ts`                      | `readRun`, `resultOf`, `settle`, `RunResult`                                                    |
-| `side-goals.ts`                      | `SIDE_GOALS`, `sideShown`, `SideInput`                                                          |
-| `words.ts`                           | The store's and the sync's words                                                                |
-| `catalogue/`                         | `nodes.ts` (the nodes), `tuning.ts` (numbers), `ladder-years.ts` (years), `play.ts` (code play) |
-| `run/`                               | Drops, the run layer, the ring, sound, prefs                                                    |
-| `ui/`                                | The screens and header parts                                                                    |
-| `store.svelte.ts`, `saves.ts`        | The store, `MAX_SAVES`, storage keys                                                            |
-| `save-sync.svelte.ts`, `save-api.ts` | The browser's sync with an account                                                              |
-| `e2e.ts`                             | The e2e seam's readers                                                                          |
+| File                                 | Holds                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `state.ts`                           | `GameState`, `Win`, `NEW_GAME`                                                             |
+| `upgrade.ts`                         | `upgradeV2`, `V2_LADDER_YEARS`, `V2_KEYS`: a version 2 game read as version 3              |
+| `save-shape.ts`                      | `GameSave`, `SaveEntry`, `parseGameSave`, `parseGameState`                                 |
+| `rounds.ts`                          | `judge`, `Verdict`, `monthsBetween`, `spanText`, `fitState`, `takeWin`                     |
+| `offer.ts`                           | `addEntry`, `offerThrough`, `keyedById`, `catalogueDoc`, `onKeys`                          |
+| `round-panel.ts`                     | `roundPanel` (the round panel's text), `giftItems` (the explainers' text)                  |
+| `limits.ts`                          | `Limits`, `limitsOf`, `within`, `runnable`, `isGiven`, `isFixed`, `whatFixed`, `canRemove` |
+| `words.ts`                           | The store's and the sync's words                                                           |
+| `catalogue/rounds.ts`                | The twelve policies (`CATALOGUE`, `POLICY_KEYS`, `ROUNDS`, `keyOf`, `keyOfId`, `keyIds`)   |
+| `ui/`                                | The screens and header parts                                                               |
+| `store.svelte.ts`, `saves.ts`        | The store, `MAX_SAVES`, storage keys                                                       |
+| `save-sync.svelte.ts`, `save-api.ts` | The browser's sync with an account                                                         |
+| `e2e.ts`                             | The e2e seam's readers                                                                     |
 
 Syncing saved games to an account is [game-save.md](game-save.md). The page's shell, autosave and
-workshop are [sim-page.md](sim-page.md); the timeline and its worker messages are
+the simulation are [sim-page.md](sim-page.md); the timeline and its worker messages are
 [timeline-ui.md](timeline-ui.md); the map's interfaces are [map-interfaces.md](map-interfaces.md).
 
-## The page and its phases
+## The page
 
 The game has one address, `/`. `/sim` is a 308 to `/` (`src/routes/sim/+page.ts`), query dropped.
 
@@ -43,303 +42,192 @@ card shows (`OpeningCard`, `opening-start`). Start reads the map's camera and ca
 then `SimPage`) mounts with that camera as `initialFrame`, so the map remounts once at Start and
 keeps its view.
 
-After Start the page is in a phase (`src/lib/sim-page/game-phase.ts`; `tl-mode` carries it as
-`data-phase`):
+After Start the page is one screen, the simulation tool, at every load: the map (never locked or
+flattened), the timeline with its Playhead, chart and rows, Play and Pause (Space too), the map
+key, project cards and the tooltip, held to what the game offers ([Limits](#limits)). When the
+document loads in a game, `SimPage`'s `load` adds every catalogue policy of rounds 1 to the
+current round, and every editable key, that the document lacks, off (`offerThrough`), as the
+store's reset (no undo step).
 
-| Phase      | What shows                                       | Left by                                   |
-| ---------- | ------------------------------------------------ | ----------------------------------------- |
-| `starting` | The map in its run view while the forecast fills | `ready` to `run`; `abort` to `tree`       |
-| `run`      | Drops appear and the clock plays to the deadline | `settled` to `tally`; `abort` to `tree`   |
-| `tally`    | The result of the run                            | `continue` to `tree`                      |
-| `tree`     | The tree over the map                            | `run` to `starting`; `edit` to `workshop` |
-| `workshop` | The forecasting tool, held to what is bought     | `back` to `tree`                          |
+A catalogue policy's key is its id (`keyOfId`): `addEntry` names a transit policy `transit-rail`
+and the policies a preset adds `housing-bond`, `housing-bond-2`, ... (`keyIds`). An edit to what a
+given measure pays clears its `preset` (the player's own measure, `lens.ts`), but never its id, so
+the policy stays keyed: it runs, its row reads Edit and the open editor stays open, and no load adds
+a second copy. A catalogue timing policy keeps its name through a custom edit (`readTiming` leaves
+a policy `keyOfId` names alone). `keyOf` tries the id, then the preset: a document from before the
+ids (a version 2 game's, its bought policies added with "+") is keyed by preset, and
+`offerThrough` first gives each such policy its key's id (`keyedById`, for keys no id names yet),
+changing nothing else, before any edit can clear the preset. Published documents carry these ids;
+outside a game they are plain ids.
 
-`nextPhase(phase, event, runs)` is the only move; an event the table lacks leaves the phase. With
-no run settled (`runs` 0), `abort` from `starting` or `run` gives `starting` again. `landing(state)`
-is where a mount lands: `starting` while `runs` is 0, else `tree`. The map is in its run view in
-`starting`, `run` and `tally` (`RUN_VIEW`; the map's root carries `data-run-view="on"`).
+The header has no steps; the site name is the way home. In the opening it shows the name, the save
+state, the pinned room score, Publish and the Menu button. After it: the name, the round ("Current
+law", "Round 2", "Every policy": plain text, not a control; `round-label`, below sm in the Menu's
+panel beside the name as `round-label-menu`; only on `/`, never for the open game and never on
+`/p/<id>`, `/s/<id>` or another page, whatever game the browser holds), the save state (or
+"Updating"), the pinned goal (`GoalHeadline`: pending, win or late) and the actions: Undo and Redo while a pointer is
+coarse, Publish and the Menu button. The Menu holds the saved games (`GamePanel`), the account entry
+and About. In the open game the Menu has no game part. Below sm the pinned item leads the bar
+and grows to the Menu button, the status cell between them.
 
-The header has no steps; the site name is the way home. In the opening it shows the name, the unit
-count, the save state, the pinned room score and Publish. After it: the name, the unit count, the
-save state (or "Updating"), the pinned goal (`GoalHeadline`) and the actions: "Back to the tree"
-(`game-back`) in the workshop, Undo and Redo while a pointer is coarse and the map is not in its
-run view, and Publish. In the open game there is no unit count and no game part.
+In a game the goal is `defaultGoal(asOf)` with the target as its deadline (the legal deadline,
+`defaultGoal(asOf).deadline`, while there is none) and the e2e amount when one is set.
 
 ## The game's state
 
-`GameState` (`state.ts`), version 2:
+`GameState` (`state.ts`), version 3:
 
-| Field        | Holds                                                                       |
-| ------------ | --------------------------------------------------------------------------- |
-| `phase`      | `'opening'` or `'runs'`                                                     |
-| `firstWinAt` | ISO time of the first room goal met, or null                                |
-| `bought`     | Node id to the level bought, 1 or more                                      |
-| `units`      | What the player holds, by `UnitKind`                                        |
-| `rung`       | The deadline in play                                                        |
-| `met`        | `MetRung[]`: `rung`, `reachedOn`, `datasetVersion`, `at`; ascending by rung |
-| `side`       | Side goal id to the ISO time it was met                                     |
-| `runs`       | Runs settled                                                                |
-| `last`       | The last `RunResult`, or null                                               |
+| Field        | Holds                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| `phase`      | `'opening'` or `'runs'`                                                                     |
+| `firstWinAt` | ISO time of the first room goal met, or null                                                |
+| `round`      | Rounds offered so far, 0 (current law) to `ROUNDS` (4)                                      |
+| `target`     | The first day of the month to beat, or null (none yet: the legal deadline stands)           |
+| `editable`   | Catalogue keys the player can edit, sorted                                                  |
+| `wins`       | `Win[]`: `round`, `goalMonth`, `beat` (the target it beat, or null), `at`, `datasetVersion` |
+| `finished`   | The last round was won: every policy but painted zoning                                     |
+| `own`        | Upgraded from version 2 with a run played: transit rules outside the catalogue run          |
 
-`NEW_GAME` is the frozen new game: phase `'opening'`, nothing bought, no units, rung 0, no runs.
-Nothing is reset in place: a new game is a new save made from `NEW_GAME` (`structuredClone`).
+`NEW_GAME` is the frozen new game: phase `'opening'`, round 0, no target, nothing editable, no
+wins, not finished, not own. Nothing is reset in place: a new game is a new save made from
+`NEW_GAME` (`structuredClone`).
 
 `firstWinAt` is set once, by `game.won()`, at the first room goal met. That is also when the
 account is made: the sync mints an anonymous account at the first win ([auth.md](auth.md)). A
 refused write leaves `firstWinAt` null, so the next win tries again.
 
-## Units
+`takeWin(state, { goalMonth, on, datasetVersion, at })` (`rounds.ts`) is what a win does: the
+target becomes `goalMonth` (kept when null), a `Win` is added with the old target as `beat`, every
+key in `on` that is offered becomes editable, and the round goes up by one; a win in the last round
+sets `finished` with every key editable; a win once finished changes only the target and the wins.
+`fitState(state)` fits a state to this build: unknown and duplicate editable keys dropped (sorted),
+the round held to `ROUNDS`; it returns the same object when nothing changes.
 
-`UnitKind` is `'home'`, the only kind (`UNIT_KINDS`). `Units` is a partial record of whole
-numbers by kind. `credit(a, b)` adds, `affords(have, price)` compares kind by kind, `spend`
-subtracts and throws `RangeError` when it does not afford, `shortBy` is what is missing (only
-kinds that are short), `total` sums every kind. Every sum goes through `UNIT_KINDS`, so a second
-kind is one new entry there; a price or reward in it needs no other change. Giving kinds different
-worth is a table `total` would read; none exists yet.
+### Taking a win
 
-## The tree
+There is no victory dialog: the win is the pinned goal's state and its gift. Pressing the gift
+calls `SimPage`'s `takeWin`: `game.takeWin` with `onKeys(document)` (the keys whose policies are
+on), then the store reset to `offerThrough(document, round, cal, editable)` of the new state (no
+undo step, so Undo and Redo are cleared and no earlier step can remove an offered policy), the
+autosave flushed, and the explainers (`GiftDialog`) opened on `giftItems(before, after)`. After the
+last Accept focus goes to `goal-headline-button`. The pinned goal stays pending until the next
+change. After a reload the same unchanged forecast reads late ("Not earlier") once the target is
+seen: the win set the target to its goal month, so the goal month equals the target and is not
+earlier. Both are by design. When the store refuses the write nothing changes: the document, the history and the held
+win stay, and the gift can be pressed again. When `giftItems` is empty (the game was finished
+before) no dialog opens (a `GiftDialog` with no items renders nothing) and focus goes to
+`goal-headline-button`, as after the last Accept: the pressed gift is gone with the win. The undo
+handler for a rejected run restores its document through `offerThrough` with the game's current
+state, so the offered policies are never lost.
 
-`TreeNode` (`tree.ts`): `id`, `branch` (`permitting`, `zoning`, `money` or `hands`), `label`,
-`line`, `after` (nodes, any one bought opens it), `ring` (the first rung that shows it), `levels`
-(`NodeLevel`: `price`, `grant`, `step`) and `source` (text and link, or null).
+## Version 2 games
 
-- `levelOf(s, node)` is the level bought, never above the node's last.
-- `isShown(s, node)`: `s.rung >= node.ring` and `after` is empty or one of them is bought.
-- `treeView(s)` is a `NodeView` for each shown node: `level`, and `state` `'ready'` (the next
-  level is affordable), `'short'` (with `short`, what is missing) or `'done'`.
-- `buy(s, id)` is pure: `{ ok: true, state, grant }` with the price spent and the level raised, or
-  `{ ok: false, reason }` with `'unknown'`, `'hidden'`, `'done'` or `'short'`.
+A game the points build saved (units, the tree's purchases, the ladder of deadlines, side goals and
+the last run) is upgraded wherever it is parsed, in the browser and by `PUT /api/game`, and never
+moved aside or deleted. `upgradeV2` (`upgrade.ts`) reads it leniently: only `phase`, `firstWinAt`,
+`bought`, `rung`, `met` and `runs` are checked; anything else (units, side goals, the last run, a
+field no build knew) is ignored.
 
-A `Grant` is `preset` (a permitting timing), `measure` (a funding preset), `stop` (a stop type),
-`bands`, `stories`, `reach` (the zoning rule's limits) or `hands` (the ring's `radius`, `linger`
-or `auto`).
+- An opening is `NEW_GAME` with its `firstWinAt`.
+- No run played: round 0 and nothing else.
+- Otherwise: round `min(rung + 1, 4)`; the target is the first day of December of
+  `V2_LADDER_YEARS[top - 1]` (2060, 2055, 2045, 2040) for the highest rung met above 0, else null;
+  `editable` the bought node ids among the nine permitting and money keys (the version 2 node ids
+  are the catalogue keys); one `Win` per met rung (`goalMonth` the first day of its `reachedOn`
+  month, `beat` that rung's month, null for rung 0); `finished` when rung 4 was met (round 4 then);
+  `own` true.
 
-`catalogue/nodes.ts` lists the catalogue: each entry names its branch, `after` and a `stage` 0 to 4. `NODES` gives each entry its `ring` (`ringOf(stage)` on this build's ladder) and its prices
-from `PRICES` in `tuning.ts`; a node with no price per level throws at load. Every permitting and
-money node names its source from the preset's own provenance; zoning and hands nodes have none.
-
-A new branch is a `Branch` value, a `layout.ts` entry (`BRANCH_ORDER`), a name in `BRANCH_NAMES`
-(`ui/words.ts`), catalogue entries and their prices, and a `Grant` tag with its case in
-`limitsOf` and `applyGrant`.
-
-## Tuning
-
-`catalogue/tuning.ts` holds `RUNG_LUMP`, `SIDE_TUNING` and `PRICES`, the only numbers
-`scripts/tree-balance.ts` tunes. The ladder's years are the other measured value, in
-`catalogue/ladder-years.ts`. Both files hold the values measured and tuned on the production
-dataset; the comment in `ladder-years.ts` names the dataset and the reach. Only people edit them.
-Code and tests elsewhere pass their own prices, years and rung counts, and read neither file.
-
-```
-npx tsx scripts/tree-balance.ts <datasetDir> [--order <name>] [--amount <homes>] [--json]
-npx tsx scripts/tree-balance.ts --version <datasetVersion> [--from <origin>]
-```
-
-It plays the tree against the engine in several purchase orders, once by hand (a share of the
-drops collected, from the ring's size and linger) and once with "Collect for me". Each play reports
-its runs, what was bought, a clock from assumed seconds (`CLOCK`) and five pacing checks
-(`TARGETS`): first purchase, early runs per purchase, runs per purchase, the longest gap between
-map changes, and purchases between deadlines. A last block reads each side goal against current
-law at its rung's deadline and flags a goal that current law already meets
-(`at-or-below-current-law`, with the number to raise to) or that no play met (`never-met`).
-
-Exit 0 when every gated play finished and passed its checks and no side goal is flagged; 1
-otherwise; 2 when it could not run. Only the hand plays of five orders gate the exit (`GATED`:
-`catalogue`, `permitting-first`, `zoning-first`, `hands-first`, `cheapest`). `tuning.ts` is
-kept at numbers under which it exits 0 on the production dataset.
-
-Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `083fb7ae`), cars on, with
-`LADDER_YEARS = [2060, 2055, 2045, 2040]`: exit 0 with all eleven side goals offered. Gated hand
-plays (runs, purchases, clock): `catalogue` 18, 16, 10:28; `permitting-first` 18, 16, 10:28;
-`zoning-first` 19, 16, 10:56; `hands-first` 10, 24, 7:16; `cheapest` 11, 26, 7:52. No side goal
-is flagged, and no goal is left out. Changes in `tuning.ts`: `funded-homes` (target 21,000) and
-`affordable-homes` (20,000) are back; `funded-homes` and `building-homes` (6,000) are raised to
-1.25 times current law at Dec 2060 (current law 16,262 and 4,430, raised to 21,000 and 6,000); prices `no-discretionary` 28,000,
-`taller-1` 8,000 and 16,000, `reach-1` 12,000, `stop-rapid` 26,000, `taller-2` 24,000 and 29,000,
-so the catalogue, zoning-first and hands-first plays regain their early pace and three purchases
-between deadlines, and `policy-homes-3` comes into view in time to be met.
-
-## Grants and the policy document
-
-The store does not hold the policy document; the page applies grants. `SimPage`'s `buy(id)` calls
-`game.buy(id)` and, when it is accepted, `applyGrant(doc, grant, { cal, limits })` as one undo step
-named "Bought: ...", written at once, with `limits` read after the purchase.
-
-`applyGrant` (`grant.ts`) uses the editor's own functions:
-
-- `preset` and `measure` add the policy from that preset, on from month 1 (`addPolicy`), or switch
-  an existing one of that preset on. A preset the dataset does not offer changes nothing.
-- `stop`, `bands`, `stories` and `reach` edit one zoning rule, `GAME_TRANSIT_ID`
-  (`'game-transit'`, labelled "Transit rule"), made when the first of them arrives: every stop type
-  bought, one band at the limits, from month 1.
-- `hands` changes no policy.
-
-Each node's switch on the tree, and the Inspector's own On switch, turn its policies off and on. A
-node switched off keeps what it cost: there is no refund. Edit on a bought node adds its policy
-back when the document has none. `src/lib/sim-page/game-levers.ts` makes the switch and restore
-documents.
-
-`catalogue/play.ts` plays the tree in code: `buyAndApply(played, id, cal)` is `buy` then
-`applyGrant`; `fullTree(cal)` buys every level of every node in catalogue order at no cost, at the
-last rung with the last rung unmet, and returns the state and its runnable document. The scripts
-and `scripts/reach-check.ts` use them.
+`own` keeps a version 2 game's own transit rule (`game-transit`) running at whatever reach and
+height it holds, even above today's maxima. Its plan and policy text pass through unchanged.
 
 ## Limits
 
-`limitsOf(state)` (`limits.ts`) is what the bought nodes allow:
+`limitsOf(state)` (`limits.ts`) is what the game offers:
 
-- `presets` and `measures`: the permitting presets and funding presets granted.
-- `stops`: the stop types granted. Once one is, the transit rule's floor is `START_BANDS` 1 band,
-  `START_STORIES` 4 stories and `START_REACH_M` 402 m; `bands`, `stories` and `reachM` then rise
-  with the nodes that grant them, to the editor's own maxima. With no stop type all three are 0.
-- `hands`: `radiusPx`, `lingerMs` and `auto`, from `BASE_HANDS` (48 px, 4,000 ms, off) raised by
-  the nodes.
-- `custom`: whether custom timings run.
-- `open`: false.
+| Field      | Holds                                                               |
+| ---------- | ------------------------------------------------------------------- |
+| `open`     | False: a game                                                       |
+| `whole`    | `finished`: every lever but painted zoning                          |
+| `own`      | The state's `own`                                                   |
+| `offered`  | The keys of rounds 1 to `round`, plus `editable`                    |
+| `editable` | `editable` (only known keys); every key when whole                  |
+| `stops`    | The offered transit entries' stop types; every stop type when whole |
+| `money`    | Any money entry offered: the free measures run and "+" offers them  |
 
-`finished(state)` (the last rung met) lifts the rest: every stop type, the observed preset, the
-editor's maxima for bands, stories and reach, and custom timings. `OPEN_LIMITS` is every limit
-open, used by the open game and by a page with no game.
+`OPEN_LIMITS` is open, whole and own with every key offered and editable, every stop type and
+money: the open game and a page with no game.
 
-`within(kind, policy, limits)` says whether one policy runs; `runnable(doc, limits)` keeps the
-policies that do, and returns `doc` itself when none goes. What never runs in a game: painted
-zoning, a category policy with no stop type bought, money that is not made from a funding preset
-(`isGiven`: a string `preset` and `where.tag` `fund`, `baseline` or `terms`), a funding preset not
-granted, and custom timings before the end. `FREE_MEASURES` (`state-off`, `federal-credits-off`)
-run as soon as any measure is bought. The workshop shows the whole document, and the worker runs
-and Publish sends the runnable one.
+`within(kind, policy, limits)` says whether one policy runs: everything when open; the selector
+must fit the kind; a catalogue policy (`keyOf`) runs when its key is offered, whatever its values;
+otherwise painted zoning never runs in a game, a protection runs once a stop type is offered, a
+transit rule outside the catalogue runs when whole or own, other timings when whole, and money
+outside the catalogue when whole, or when it is a `FREE_MEASURES` preset (`state-off`,
+`federal-credits-off`, `isGiven`) and money is offered. `runnable(doc, limits)` keeps the policies
+that do, and returns `doc` itself when none goes. The simulation shows the whole document, and the
+worker runs and Publish sends the runnable one.
 
-## The ladder
-
-`LADDER_YEARS` (`catalogue/ladder-years.ts`) are the earlier deadline years, the rungs after rung 0 (the window's end), latest
-first, at most four. `npx tsx scripts/reach-measure.ts <datasetDir> --write` sets them: it runs the
-full tree, reads the month the goal is reached, and writes the years from the largest multiple of
-five at least five years before the window's end year down to the first multiple of five at or
-after the reached year (the first and last kept, with two between, when more than four fit). The
-document names the rule, not the years. `RUNGS` is `LADDER_YEARS.length + 1`.
-
-- `ladder(asOf)` is each rung's `deadline` and its short month-year `label`. Rung 0 is
-  `defaultGoal(asOf).deadline`; rung k is the last day of December of `LADDER_YEARS[k - 1]`, never
-  after the rung before it and never before the dataset date's month.
-- `goalAt(asOf, rung, amount?)` is `defaultGoal(asOf)` with that deadline and, when given, that
-  amount. It throws `RangeError` for a rung outside `0` to `RUNGS - 1`.
-- `takeNext(state)` moves to the next rung when the rung in play is met and one follows.
-- `finished(state)` is true once the last rung is in `met`.
-- `fitGame(state)` fits a state to this build: it drops `bought` entries for nodes the catalogue
-  lacks, lowers a level above a node's last, drops `side` entries for goals `SIDE_GOALS` lacks and
-  lowers `rung` and drops `met` entries at `RUNGS` or above. It returns the same object when
-  nothing changes.
-
-A met deadline stays met after a data update: `settle` never removes a `met` entry, and a
-`MetRung` keeps the `datasetVersion` it was earned on.
-
-## Side goals
-
-`side-goals.ts` defines small goals a run can meet beside its deadline. `SIDE_GOALS` is each
-goal's definition with its target and reward from `SIDE_TUNING` by id; a goal with no
-`SIDE_TUNING` entry is not offered; on the production dataset all eleven have one. A goal has a
-`ring` (the first rung that shows it), a `label` and `read(input)`, which returns the value against
-the target or null when the view lacks what it reads.
-
-`SideInput` is `{ view, index, take, inForce }`: the forecast's view, the deadline's month in it,
-the run's take, and whether any policy of the runnable document is in force. Each goal reads what
-the page already has: `planEffect` (homes the plan adds over current law), the take, the money
-pools the player added, homes under construction. A goal that reads `planEffect` reads 0 while
-`inForce` is false, since the view's twin is then the old zoning, not current law.
-
-`sideShown(state)` is the first `SIDE_SHOWN` (3) goals whose ring is open and not yet met.
-
-## A run
-
-The run is not the playhead. The workshop's playhead plays a forecast for looking; a run is a
-clock in `TimelineMode` from today to the stop day (the goal's deadline, or the window's last day),
-of `runMs` wall time: `RUN_MS` (20 s, `src/lib/fzp/playback.ts`), or the e2e seam's. `runRate(asOf,
-stop, ms)` gives the days per second.
-
-- **The drops' feed.** `planDrops(markers, asOf, stop)` (`run/drops.ts`) is one drop for each
-  city marker completed after today and by the stop day whose worth (`homes - existing`) is above
-  0, ascending by day then row; `TimelineMode` plans them from the activity index and plans again
-  as the forecast fills, matching drops by `row`. `RunFeed` is `{ drops, day, running, project }`.
-- **`feed.running`** holds each value for at least one animation frame: `TimelineMode` counts
-  two ticks of its frame seam after each change (`markRunningChange`, `onTick`), starts a run only
-  once they have passed and holds an abort that comes sooner, so the run layer always sees a run
-  start and end.
-- **Settling.** When the clock has stopped at the stop day with current numbers, `readRun(view,
-goal)` reads the deadline's month. It returns null until the view is filled through that month,
-  read clamped to the view's months (`deadlineIndex`). `resultOf(state, reading, take, input,
-meta)` builds the `RunResult`: homes, `reachedOn`, the stages and money waiting, `dropped`,
-  `collected`, `lump` (`RUNG_LUMP` when this run first meets its rung) and the side goals met
-  (shown, not yet met, value at or above target). `settle(state, result)` credits what was
-  collected, the lump and each side reward, records the rung in `met` when `reachedOn` is set and
-  the rung is not there, records each side goal, adds 1 to `runs` and sets `last`.
-- **What a run pays:** what was collected, plus the lump once per rung, plus each side reward once.
-  A result settled twice pays its lump and side rewards once (`settle` pays only what it records),
-  and `game.settle` refuses a second settle of one result (same `at` and `rung`).
-- **A first run that fails** (the forecast cannot load, or the run halts before one settled)
-  starts again: `abort` with `runs` 0 gives `starting`.
-- **A bought node** shows in the next run, not before it: a purchase changes the policy document,
-  the forecast fills again and Run waits (`aria-busy`, "tree-busy") until it is ready.
-
-## Drops, the ring and sound
-
-`RunLayer` (`run/RunLayer.svelte`) is a canvas over the map with `pointer-events: none`, listening
-on the window. Its props: `feed`, `hands`, `collectForMe`, `sound` and `ontake`.
-
-- A drop appears when `feed.day` reaches its day and counts in `dropped` then. A drop whose
-  `policy` flag is set pops as a diamond in the policy mark's colour; the rest are circles in the
-  accent.
-- A drop is collected, once, when its projected point is within `hands.radiusPx` of the ring. It
-  leaves the larger of `hands.lingerMs` and 400 ms after it appeared; when the run ends first, 400
-  ms after the end (at the end under reduced motion). With `collectForMe` or `hands.auto`, every
-  drop is collected as it appears.
-- The ring follows the pointer. Arrow keys move it by `RING_KEYS.stepPx` (16 px), Shift by
-  `shiftStepPx` (64 px), sweeping the ground between. The map box takes focus in `starting` and
-  `run`, so the keys reach the ring.
-- `ontake` sends the run's totals as they change and once when `running` turns false. The layer's
-  root carries `data-dropped` and `data-collected` (homes) and `data-state` (`running` or `idle`).
-- "Collect for me" is a switch in the game panel (`sfhousing:run:collect`); the sound switch is
-  `sfhousing:run:muted`. `onPrefs(fn)` calls `fn` after either is written in this page, and a
-  change applies to a run in progress. With `hands-auto` bought the switch is on and disabled.
-- With reduced motion, drops and counts appear and go without movement. Nothing flashes more than
-  three times a second. A screen reader hears the run's totals once, at its end (`run-live`),
-  never each drop.
-- `createSound(muted)` (`run/sound.ts`) makes `pop`, `collect`, `goal` and `buy` with the Web Audio
-  API and loads no file. It is silent while `muted()` is true and before a user gesture.
-- Nothing the layer does reaches the worker or the policy document.
-
-The layer's words are in `run/words.ts` (`runOverText`, `dropCountText`).
+`isFixed(policy, limits)`: a catalogue policy the player cannot edit yet (not open, not whole, its
+key not editable); only its switch, order and When work, and its What is the summary.
+`whatFixed(policy, limits)` is what the Inspector reads: `isFixed`, or, in a game before the end, a
+given measure outside the catalogue (the free measures, which run at any values). `canRemove(policy,
+limits)`: no game, a finished game, or a policy outside the catalogue.
 
 ## The screens and header parts
 
 All in `src/lib/game/ui/`; none renders for the open game.
 
 - **`OpeningCard`** (`opening-card`, `opening-start`): the room goal met; Start has focus.
-- **`GoalHeadline`** (`goal-headline`, `goal-headline-button`, `goal-line2`, `side-goals`,
-  `side-goal`, `goal-side-mark`, `goal-live`): the pinned goal. Line 1 is the homes of the amount by
-  the deadline (a rolling count) and a bar; line 2 is what the goal unlocks and the side goals met.
-  The button opens the side goals pop-over.
-- **`GameCell`** (`header-units`, `header-game-panel`): the unit count, rolling to each total. From
-  lg it sits in the bar with the panel as a pop-over; in the Menu the panel opens in place.
-- **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `game-sound`, `game-collect`,
-  `save-row`, `game-error`): the current game's name and stage, the sync line, the two switches and
-  the saved games (switch, rename in place, delete after one question, "New game"). A change that
-  loads another game calls `reloadGame()` (`ui/reload.ts`), a full page load of `/`. At `MAX_SAVES`
-  "New game" is `aria-disabled`; a refused change shows `FULL_TEXT` or `STORAGE_TEXT`.
-- **`Tally`** (`tally`, `tally-homes`, `tally-change`, `tally-bar`, `tally-units`, `tally-lump`,
-  `tally-side`, `tally-stage`, `tally-money`, `tally-continue`): the run's result, with the
-  `AccountOffer` under Continue. Its counts roll once from mount; Continue
-  takes focus; Escape continues.
-- **`Tree`** (`tree`, `tree-branch`, `tree-node`, `tree-node-open`, `tree-node-edit`,
-  `tree-node-on`, `tree-detail`, `tree-buy`, `tree-source`, `tree-busy`, `tree-next`, `tree-run`,
-  `tree-ending`, `tree-publish`, `tree-live`, `tree-root`): fills the page below the header
-  (`game-tree-pane` in `TimelineMode`; the map stays mounted under it, inert). It shows current law
-  as the root, the branches of node cards, one open node's detail, the balance, "Take the next
-  goal" while one is offered, and Run, which has focus on mount. Once the last rung is met it shows
-  the ending (`tree-ending`): the month reached, the month the state asks by, the levers bought,
-  and Publish.
-- The tree's Publish presses the header's Publish ([Publishing](#publishing)).
+- **`GoalHeadline`** (`goal-headline` with `data-state`, `goal-box`, `goal-headline-button`,
+  `goal-line1`, `goal-phone`, `goal-bar`, `goal-line2`, `goal-gift`, `goal-live`): the pinned goal,
+  the round's result state (P19). Props `{ state, words, fill, ongift?, panel? }`: `state` is
+  `'pending'`, `'win'` or `'late'`; `words` from `pinnedWords(verdict, ctx)` (`ui/round-words.ts`),
+  drawn from sm as line 1, the bar (`fill`, 0 to 1: the homes at the playhead's month over the
+  amount) and line 2. Below sm it is `goal-phone` (count, " homes" in pending, a space, the rest:
+  the month, "by Mar 2058"; then in a win or late a separator and the result, "2 yr 3 mo
+  early"), from the bar's left up to the Menu with the bar under it. It reads on one line when it
+  fits; when it does not, the result wraps beneath as a second line, within the 48 px bar, with no
+  leading dot (the row starts one separator to the left of the clipped line), and nothing is cut
+  off. The line is an inline-size container: at 17rem or less "homes" hides, at 13rem or less the
+  short count ("82k") replaces the full one; the month and the result always show. Below sm the
+  header's status cell is icons in a game: a spinner for "Updating" in a box always reserved, an
+  icon-only "Autosave off" ([timeline-ui.md](timeline-ui.md), rule 32). A win reads "early" in
+  words and adds an accent border; with `ongift` it carries the gift, a 24 px button named by
+  `words.gift` that jiggles once every `JIGGLE_MS` (4 s, `ui/motion.ts`; a 600 ms turn,
+  the keyframes' first 15%) and is still under reduced motion. Win and late arriving after mount put
+  `words.live` in the polite `goal-live` region; the state at mount says nothing. With `panel` the
+  lines are a button (`aria-expanded`, `aria-controls`) that opens it under the goal; without, they
+  are plain text and no control. The panel is a header overlay (`headerOverlay`: it and the Menu
+  never show together), not modal, and holds nothing focusable; Escape and a press outside close
+  it, and focus ends on the button (after a press, only when nothing else took it). The status cell
+  is never inside it. `TimelineMode` gives it the shown verdict ([timeline-ui.md](timeline-ui.md),
+  "In a game"): a policy change resets the timeline and clears a held win or late; and the round
+  panel as its `panel` (below).
+- **`RoundPanel`** (`round-panel`, props `{ data: RoundPanelData }`): information only, with no
+  button or link in it. `roundPanel(state, doc, legal)` gives `title` (`roundName`), `items` (the
+  current round's policies as `${label}: ${rulesText(entry, policy)}` read from the document, so
+  as set, with " (off)" when the policy is off; "No policies yet" in round 0; none when finished)
+  and `earlier` (newest first: "Round 1: goal reached Jun 2060, 1 yr 4 mo earlier", with no
+  "earlier" part when the win beat no month; "Baseline: Oct 2061", or "Baseline: after Oct 2066"
+  when current law did not reach the goal; a win after the one that finished the game, the first
+  of round 4, reads "Every policy: goal reached …", read from the order of `wins`, so a saved
+  state needs nothing new).
+- **`GiftDialog`** (`gift-dialog`, `gift-step`, `gift-accept`): the explainers, a native modal
+  `<dialog>` (the page is inert behind it) over `GiftItem[]` from `giftItems(before, after)`: one
+  per policy of the new round (title, step "1 of 3", the line, and for a zoning policy its fixed
+  bands as rules), or one "Every policy" when the win finished the game, or none when the game was
+  finished before. Accept (focused, the only control; Tab stays on it) shows the next; after the
+  last the dialog closes and calls `onclose`. Escape acts as Accept: the policies are in already.
+- **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): rendered in
+  place inside the header Menu's panel (`SiteHeader`, after mount, never for the open game; its root
+  carries `data-header-keep-open`, so a press on its buttons leaves the Menu open). The current
+  game's name and stage (`entryStage(phase, round, finished)`: "Painting" in the opening, else
+  `roundName(round, finished)`, so a finished game reads "Every policy" there and in its row),
+  the sync line and the saved games (switch, rename in place,
+  delete after one question, "New game"). A change that loads another game calls `reloadGame()`
+  (`ui/reload.ts`), a full page load of `/`. At `MAX_SAVES` "New game" is `aria-disabled`; a
+  refused change shows `FULL_TEXT` or `STORAGE_TEXT`.
 
-The words are in `ui/words.ts`.
+The words are in `ui/words.ts` and `ui/round-words.ts`.
 
 ## The store
 
@@ -348,33 +236,31 @@ The words are in `ui/words.ts`.
 Reactive getters: `state`, `limits` (`OPEN_LIMITS` for the open game, else `limitsOf(state)`),
 `saves` (`SaveEntry[]`, latest first, ties by id), `currentId`. Plain: `open`, `sync`.
 
-| Method             | Does                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------ |
-| `won()`            | Sets `firstWinAt` once                                                               |
-| `startRuns()`      | Sets `phase` `'runs'`; refused (`storage`) while `firstWinAt` is null                |
-| `buy(id)`          | `buy` of the tree, written; a refused write answers `{ ok: false, reason: 'short' }` |
-| `settle(result)`   | `settle` of a run, written; the same result again writes nothing                     |
-| `takeNext()`       | `takeNext` of the ladder, written when the rung moves                                |
-| `touched()`        | The page's autosave wrote a record key: the save's records and time update           |
-| `newGame()`        | A new game becomes current                                                           |
-| `switchTo(id)`     | Another game becomes current                                                         |
-| `rename(id, name)` | Trims, keeps 60 code points, ignores an empty name; a duplicate is allowed           |
-| `remove(id)`       | Removes a game; removing the current one makes the latest other game current         |
-| `read(id)`         | A copy of the save; the current one with its record keys as they are                 |
-| `adopt(saves)`     | Takes saves from the account                                                         |
-| `rekey(id, newId)` | Gives a save a new id                                                                |
-| `beforeLeave(fn)`  | Registers `fn`; returns its remover                                                  |
+| Method             | Does                                                                         |
+| ------------------ | ---------------------------------------------------------------------------- |
+| `won()`            | Sets `firstWinAt` once                                                       |
+| `startRuns()`      | Sets `phase` `'runs'`; refused (`storage`) while `firstWinAt` is null        |
+| `takeWin(w)`       | `takeWin` of `rounds.ts` at the store's clock, written                       |
+| `touched()`        | The page's autosave wrote a record key: the save's records and time update   |
+| `newGame()`        | A new game becomes current                                                   |
+| `switchTo(id)`     | Another game becomes current                                                 |
+| `rename(id, name)` | Trims, keeps 60 code points, ignores an empty name; a duplicate is allowed   |
+| `remove(id)`       | Removes a game; removing the current one makes the latest other game current |
+| `read(id)`         | A copy of the save; the current one with its record keys as they are         |
+| `adopt(saves)`     | Takes saves from the account                                                 |
+| `rekey(id, newId)` | Gives a save a new id                                                        |
+| `beforeLeave(fn)`  | Registers `fn`; returns its remover                                          |
 
 Every write is one sequence: it puts back the keys it wrote and keeps memory as it was when one
 throws, and answers `{ ok: false, reason: 'storage' }`; `full` and `changed` are the other
 refusals. Each accepted write calls `sync.changed(id)`, or `sync.removed(id)` for a removed game;
 `newGame` calls `changed` for the game left and the game made, `switchTo` for the game left.
-`rekey` and `adopt` call neither. In memory mode `won`, `startRuns`, `buy`, `settle`, `takeNext`, `touched` and
+`rekey` and `adopt` call neither. In memory mode `won`, `startRuns`, `takeWin`, `touched` and
 `rename` change memory and call the sync, writing nothing; `switchTo` of the current id answers `ok`;
-the others answer `storage`.
+the others answer `storage`. The open game's `takeWin` answers `ok` and changes nothing.
 
-Every save the store reads, from storage or from the account, goes through `parseGameSave` and
-then `fitGame` on its state.
+Every save the store reads, from storage or from the account, goes through `parseGameSave` (which
+upgrades a version 2 state) and then `fitState` on its state.
 
 `beforeLeave`: a page that autosaves a record key registers its autosave's `flush()` when it
 mounts and removes it on unmount. `newGame`, `switchTo` of another game, `remove` of the current
@@ -386,23 +272,32 @@ next. Two tabs share one storage, each keeps its own memory, and the last write 
 
 ## Saved games and storage
 
-`GameSave` (`save-shape.ts`) is version 2: `id`, `name`, `nameIsDefault`, `state`, `plan` and
-`policy` (the text of the two record keys, or null) and `savedAt`. `parseGameSave` returns a new
-save of the known fields, or null; it checks the whole `GameState` (`parseGameState`) including
-that the phase agrees with the rest. `MAX_SAVES` is 12 and `SAVE_NAME_MAX` is 60 code points.
-`defaultSaveName(from, taken)` (`words.ts`) names a game: "Game, 22 Nov", or "{name} (this
-device)" for a conflict; the first candidate not in `taken`, with " (2)", " (3)" and so on, cut to
-60 code points. `saves.ts` imports only by relative path, because `e2e/helpers/game.ts` loads it
-under Playwright.
+`GameSave` (`save-shape.ts`) is the envelope, still version 2 (only the state inside moved to
+version 3): `id`, `name`, `nameIsDefault`, `state`, `plan` and `policy` (the text of the two record
+keys, or null) and `savedAt`. `parseGameSave` returns a new save of the known fields, or null;
+`parseGameState` takes a version 3 state strictly (each field's type, `round` a whole number,
+`target` null or a whole number, `editable` non-empty strings, each `Win` valid, and the phase
+agreeing: an opening has round 0, no target, no wins, nothing editable and is not finished; the
+runs have a `firstWinAt`) and a version 2 state through `upgradeV2`. `MAX_SAVES` is 12 and
+`SAVE_NAME_MAX` is 60 code points. `defaultSaveName(from, taken)` (`words.ts`) names a game: "Game,
+22 Nov", or "{name} (this device)" for a conflict; the first candidate not in `taken`, with " (2)",
+" (3)" and so on, cut to 60 code points. `saves.ts`, `save-shape.ts`, `state.ts` and `upgrade.ts`
+import values only by relative path, because `e2e/helpers/game.ts` loads them under Playwright.
 
-| Key                                            | Holds                                                               |
-| ---------------------------------------------- | ------------------------------------------------------------------- |
-| `sfhousing:saves:v1`                           | The index `{ v: 2, current, saves: SaveEntry[] }`, latest first     |
-| `sfhousing:save:<id>`                          | One `GameSave` as JSON                                              |
-| `sfhousing:save:corrupt:<ISO>`                 | The raw text of a save or index that would not parse                |
-| `sfhousing:sim:corrupt:<ISO>`                  | The v1 policy text, copied aside when `sfhousing:sim:v2` was absent |
-| `sfhousing:plan:v1`, `sfhousing:sim:v2`        | The current game's records, as the pages write them                 |
-| `sfhousing:run:collect`, `sfhousing:run:muted` | The run's two switches                                              |
+| Key                                     | Holds                                                               |
+| --------------------------------------- | ------------------------------------------------------------------- |
+| `sfhousing:saves:v1`                    | The index `{ v: 2, current, saves: SaveEntry[] }`, latest first     |
+| `sfhousing:save:<id>`                   | One `GameSave` as JSON                                              |
+| `sfhousing:save:corrupt:<ISO>`          | The raw text of a save or index that would not parse                |
+| `sfhousing:sim:corrupt:<ISO>`           | The v1 policy text, copied aside when `sfhousing:sim:v2` was absent |
+| `sfhousing:plan:v1`, `sfhousing:sim:v2` | The current game's records, as the pages write them                 |
+
+A `SaveEntry` carries `phase`, `round` and `finished`. An index the points build wrote has `rung`
+in its entries: it is read as the round and the index is rewritten with `round`. An entry with no
+`finished` (written before it) reads false and is rewritten from its save on the next read, as any
+entry that differs from its save. A version 2 save stays as
+it was stored until the game's next write, which stores it as version 3. Loading removes
+`sfhousing:run:collect` and `sfhousing:run:muted`, the old run's switches, which nothing reads.
 
 The store reads storage once, at construction:
 
@@ -427,11 +322,12 @@ is not a save moves aside. The server side is [game-save.md](game-save.md).
 
 Memory mode is a store with no usable storage: it keeps its games and writes nothing.
 
-`openGame()` is a store in memory mode with one game "Game": phase `'runs'`, every node bought at
-its last level, every rung met, no units, `limits` equal to `OPEN_LIMITS`, `open` true and a sync
-that does nothing (`state` `'local'`, no account). It is the whole tool with no runs, tally or
-tree: `SimRoute` hands the page no game for it, so the page has no phase. `open` is true only for
-this store and never changes; pages read `open`. Its writes do nothing.
+`openGame()` is a store in memory mode with one game "Game": phase `'runs'`, `firstWinAt`
+`1970-01-01T00:00:00.000Z`, the last round, finished, every key editable and `own` (a state that
+passes its own parser), `limits` equal to `OPEN_LIMITS`, `open` true and a sync that does nothing
+(`state` `'local'`, no account). It is the whole tool: `SimRoute` hands the page no game for it, so
+there is no goal headline and nothing is locked. `open` is true only for this store and never
+changes; pages read `open`. Its writes do nothing.
 
 The server renders the open game: the layout provides `openGame()` when not in the browser, and
 `/` renders an empty frame until it mounts. `/s/<id>` shows a published policy read-only: the page
@@ -448,75 +344,119 @@ client navigation, so this runs once per document.
 
 Until mounted, the server's store is the open game and the browser's may be at any phase, so the
 first client render must match the server's. A component whose markup depends on the game (the
-phase, the units, the saved games, a game-only control) keeps its own `mounted` flag, set in
+phase, the round, the saved games, a game-only control) keeps its own `mounted` flag, set in
 `onMount`, and renders no game part until then. `+page.svelte` renders its empty frame until
-mount; `SiteHeader` renders `GameCell` only after mount. Scripts, effects and `onMount` may read
+mount; `SiteHeader` renders `GamePanel` only after mount. Scripts, effects and `onMount` may read
 the store at any time.
 
 ## Publishing
 
 Publish sends the plan in the opening and the runnable document after it: `SimPage`'s `publishDoc`
 is the document with `run` (`runnable(doc, limits)`) as its policy, so a game publishes what runs
-and never a locked policy. The ending's Publish (`tree-publish`) presses the header's Publish and
-opens the same dialog (below lg it opens the Menu first, where the button is). The header's Publish
-opens nothing while the document is empty. There is no Remix.
+and never a locked policy. The header's Publish opens nothing while the document is empty. There
+is no Remix.
 
 ## The e2e seams
 
-On a `VITE_E2E=1` build (`src/lib/game/e2e.ts`, `src/lib/sim-page/e2e-run.ts`):
+On a `VITE_E2E=1` build (`src/lib/game/e2e.ts`):
 
 - `sfhousing:e2e:game`: `e2eOpen(storage)` is true when the key is absent, storage is null, or
   reading throws: the layout provides the open game. Without `VITE_E2E=1` it is false.
 - `sfhousing:e2e:goal`: `e2eGoalAmount(storage)` is that amount (a whole number of 1 or more), else
-  null. Paint and the simulation read it once for the goal's amount. The fixture city is too small
-  for the real goal, so the journeys use amount 1.
-- `sfhousing:e2e:run-ms`: `e2eRunMs(storage)` is the run's wall time, 100 to 20,000 ms, else null
-  and the run takes `RUN_MS`. The journeys use a short run, 2,000 ms, or 8,000 ms where a player
-  has to sweep.
+  null. The opening and the simulation each read it once, when they mount, for the goal's amount.
+  The fixture city is too small for the real goal: the opening's specs use amount 1 (one stroke
+  makes room for about 70 homes), the rounds use `FIXTURE_AMOUNT` (below), and a journey that goes
+  from one to the other sets the key between them (`setGoalAmount`, before Start).
+- `window.__sfhFzp` (`src/lib/fzp/debug.ts`, fields in [timeline-ui.md](timeline-ui.md)): the
+  playhead's `day`, `playing`, the `policy` on show and `heights`, the last height-limit city the
+  worker posted (its `sourceIds` name the rules that set a limit).
 
-The page marks its state for specs: `data-phase` on `tl-mode`, `data-dropped`, `data-collected`
-and `data-state` on `run-layer`, and `data-run-view` on the map's root.
+A spec knows the page is the simulation tool when its dock (`tl-dock`) shows, and the round's
+result by the pinned goal's `data-state` (`goal-headline`: `pending`, `win` or `late`).
 
-`e2e/helpers/game.ts` (before the page loads): `seedGame(page, state?)` stores a version 2 game
-over `NEW_GAME` and switches the real game on (a phase `'runs'` state gets a `firstWinAt`);
-`newVisitor(page)` switches it on with nothing stored; `seedGoalAmount(page, amount)`;
-`seedRunMs(page, ms)`. Each page takes one of `seedGame` or `newVisitor`.
+`e2e/helpers/game.ts` (before the page loads): `seedGame(page, state?)` stores a game over
+`NEW_GAME` and switches the real game on (a phase `'runs'` state gets a `firstWinAt`);
+`seedV2Game(page, v2, policy?, plan?)` stores a raw version 2 save as the points build wrote it
+(its index entry with `rung`), with `policy` and `plan` (document texts) as its autosave records
+(`{ v: 1, savedAt, plan }`, under the record keys and in the save), for the upgrade journey;
+`newVisitor(page)` switches it on with nothing stored; `seedGoalAmount(page, amount)`. Each page
+takes one of `seedGame`, `seedV2Game` or `newVisitor`.
 
 `e2e/helpers/sharing.ts`: `gotoEditor(page)` calls `newVisitor` the first time it is called for a
 page and goes to `/`; a spec that seeds its own game and wants `/` calls `gotoHydrated(page, '/')`.
 
 `e2e/helpers/play.ts` plays the game; every wait is a state in the page or in storage:
 
-| Helper                               | Does                                                                                                               |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `seedRuns(page, state?)`             | Amount 1, a 2,000 ms run and a seeded game (default: one run settled)                                              |
-| `savedGame(page)`                    | The current game as storage holds it                                                                               |
-| `waitSaved(page, ok)`                | Polls `savedGame` every 50 ms until `ok` holds                                                                     |
-| `waitPhase(page, p)`                 | Waits for `tl-mode`'s `data-phase`                                                                                 |
-| `untilPhase(page, 'run' or 'tally')` | `waitPhase`, bounded by the test's timeout, for a phase after Start, Run or a run's end                            |
-| `runTotals(page)`                    | The run layer's dropped and collected                                                                              |
-| `tabTo(page, target)`                | Tab, at most 80 presses, until `target` has focus                                                                  |
-| `sweepRing(page)`                    | Shift and arrow keys in a spiral out from the centre until a drop is collected or the run ends; at most 3,000 keys |
-| `buyNode(page, id, by)`              | Opens a node and presses Buy by pointer or keys; waits for the save                                                |
-| `firstReady(page)`                   | The `data-node` of the first ready node                                                                            |
-| `openGamePanel(page)`                | Opens the game panel from the unit count (the Menu first below lg)                                                 |
-| `playToEnding(page)`                 | Seeds every rung but the last met and stop-rail's price, buys stop-rail, runs once; returns its label              |
-| `RUNGS`                              | `LADDER_YEARS.length + 1`                                                                                          |
+| Helper                            | Does                                                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `seedRuns(page, state?, amount?)` | The goal's amount (default 1) and a seeded game (default: in the runs, round 1)                                         |
+| `setGoalAmount(page, amount)`     | Writes the goal's amount now; the part that mounts next reads it                                                        |
+| `savedGame(page)`                 | The current game as storage holds it                                                                                    |
+| `waitSaved(page, ok)`             | Polls `savedGame` every 50 ms until `ok` holds                                                                          |
+| `waitSim(page)`                   | Waits for the simulation tool: `tl-dock` visible                                                                        |
+| `frameMap(page)`                  | The simulation's map, once ready, on the fixture's frame (zoom 18.5, flat), idle                                        |
+| `waitResult(page, state)`         | Waits for `goal-headline`'s `data-state`                                                                                |
+| `playToResult(page)`              | Plays at 3x until the state leaves pending, bounded by the test's timeout; the state                                    |
+| `takeGift(page, by)`              | Presses the gift (`'pointer'`, or `'keys'`: Shift+Tab to it, Enter) and Accept through every explainer; the titles seen |
+| `tabTo`, `tabBackTo`, `tabCount`  | Tab (or Shift+Tab), at most 80 presses, until `target` has focus; `tabCount` says how many                              |
+| `openGamePanel(page)`             | Opens the header Menu, which holds the game panel                                                                       |
+| `policyRow`, `policyRowNamed`     | A policy's row parts by id (a catalogue transit rule's id is its key) or by label                                       |
 
-`e2e/helpers/header-text.ts` has `widestGameHeader(page)`, which writes the widest unit count and
-goal line into the header for the width checks.
+`FIXTURE_AMOUNT` (438), `FIXTURE_ROUTE` (`'switch'`), `FIXTURE_TARGET` (null),
+`FIXTURE_LAW_MONTH` (Aug 2038) and `FIXTURE_RAIL_MONTH` (Sep 2033) are the probe's: on fixture-0
+at 438 homes current law reaches the goal in Aug 2038 and the rail rule alone in Sep 2033, 59
+months earlier, so switching the rail rule on in round 1 wins. The rail rule wins from 434 to 442
+homes (re-probed on the building-choice engine, 2026-11-27); 438 sits in the middle. Below 434 it
+is no earlier than current law; at higher amounts it wins too, but each play from today is longer,
+and a test has 30 s. The probe is
+a scratch script over `openEngine` (`scripts/lib/engine-runner.ts`) and `catalogueDoc`; run it
+again and update the constants when the engine or the fixture changes the months. `monthDay(y, m)`
+is the first day of a month as a `Day`.
 
-`e2e/game-journey.spec.ts` has three journeys on fixture-0 at amount 1:
+`e2e/helpers/header-text.ts` has `widestGameHeader(page)`, which writes the pinned goal's widest
+words (`WIDEST_PINNED`, measured in the line's font: the month phrase "before May 2066" and the
+result "10 yr 11 mo early") into its two lines and into each part of its phone line, and
+`goalLine(page, word)` with `expectGoalLineWhole`, which check every drawn part of the phone line
+lies inside its clipped box (the bar's own overflow cannot show a clip inside the line). Their
+helpers for the status: `refusePolicyRecord` (autosave off) and `staleEdit` ("Updating", after
+`installPolicyHold`) in `play.ts`.
 
-1. **A new visitor by pointer** paints to the room goal, starts, runs, tallies, buys, edits in the
-   workshop, runs again, takes the next goal, and finds one saved game on the server.
-2. **By keyboard only** (desktop project): the same loop with the ring and `Tab` and `Enter`.
-3. **The ending**: every rung but the last met and stop-rail's price in hand, stop-rail bought
-   before the run; the tree then shows "Every goal met", the month reached and the month asked by,
-   lists that node's label, and its Publish opens the publish dialog.
+### The journeys
 
-`e2e/game-a11y.spec.ts` runs the accessibility checklist on each state; the bench is
-`e2e/bench/game-run.bench.ts` ([map-perf.md](map-perf.md)).
+`e2e/game-journey.spec.ts`, at `FIXTURE_AMOUNT`. Each journey is two tests cut at round 1 (the
+second seeds round 1 with current law's month to beat, the state the first ends in), since a
+journey whole plays about 8 s of months on top of the page's work and nears a test's 30 s:
+
+- **By pointer** (both projects): a new visitor paints to a room goal of 1, reads the opening's
+  camera, sets the amount and presses Start, and puts that camera back; the simulation keeps the
+  opening's pitch with buildings drawn; Play at 3x to current law's
+  win, the gift, three explainers, three New rows off. Then round 1: Play, the rail rule
+  switched on (playback stops, the playhead goes to the later of today and its first month,
+  pending), played to the win "4 yr 11 mo early", the gift, round 2's explainers; the rail row
+  reads Edit and band 2 set to 1,200 m holds; the account holds the one game, in round 2.
+- **By keyboard only** (desktop): the same loop with Tab, Shift+Tab, Enter, Space and the
+  ruler's End: Enter stamps on the map and presses Start, End wins current law, the gift by keys
+  (focus then on the goal); the New pane by Enter (focus stays on New) and closed; the rail rule
+  switched on by Space; 3x by Enter, Space plays to the win; Edit by Enter, 1,200 m typed into
+  band 2.
+- **Late**: round 1 with Jan 2035 to beat; played to it: `late`, "3 yr 7 mo late", no gift, the
+  saved state unchanged.
+- **The ending**: round 4 with Jan 2045 to beat; played to the win, the gift "Open the gift: every
+  policy", one explainer "Every policy", the saved game finished; the zoning "+" offers "Transit
+  rule".
+- **A saved version 2 game** (`seedV2Game`, its own transit rule at 3,219 m and 12 stories, a
+  plan): it opens on the simulation in round 2 with its plan kept, the rule in the document as
+  stored and on, the worker's height limits naming it with contours at its 12 stories, and its
+  editor showing 3219.
+
+`e2e/game-a11y.spec.ts` runs the accessibility checklist on each state ([accessibility.md](accessibility.md)).
+`e2e/game-shell.spec.ts` checks the round's header at 320 and 375 px in pending, win and late,
+with no status and beside "Autosave off", and pending beside "Updating" alone and with "Autosave
+off" (stale numbers read pending): every part of the goal line inside the line's box and the
+viewport, with the page's words and with the widest, the row fitting, the word ("before",
+"early", "late") drawn, and the line not moving when "Updating" comes; the win on one line at
+375 px with no status, and the widest win wrapped within the 48 px bar at 320 px beside "Autosave
+off"; and the round panel inside the viewport under the header at 320 and 1280 px.
 
 ## The reach check
 
@@ -525,83 +465,101 @@ npx tsx scripts/reach-check.ts <datasetDir> [--amount <homes>] [--cars on|off]
 npx tsx scripts/reach-check.ts --version <datasetVersion> [--from <origin>] [--amount <homes>] [--cars on|off]
 ```
 
-`--cars off` runs the worlds without the car system (default `on`, [cars.md](cars.md)).
+`--cars off` runs the worlds without the car system (default `on`, [cars.md](cars.md)). Two
+sources: a built dataset directory, or a published version fetched from an origin (`--from`,
+default production). Amount 82,069 homes unless `--amount` gives another.
 
-Two sources: a built dataset directory, or a published version fetched from an origin (`--from`,
-default production). Two questions, each reached or missed, at one amount (82,069 homes unless
-`--amount` gives another) on the engine of `scripts/reach-measure.ts`:
+**The rule.** Every policy of the catalogue on at its fixed values (`catalogueDoc` with all twelve
+keys, `src/lib/game/catalogue/rounds.ts`) must reach the goal inside the window. It is the only
+gate: exit 0 when it does (`Report.all.reachedOn` is not null), 1 when it does not.
 
-1. Does current law (the empty policy document) reach the goal by rung 0's deadline? Reported,
-   not gated (owner ruling, 2026-11-26).
-2. Does the full tree (`fullTree`) reach it by the last rung's deadline? This is the gate.
-
-Five lines on stdout:
+**The report.** Beside the rule the check asks the engine for current law, every policy alone
+against current law, every policy over the rounds before its own (round 1 policies read as alone),
+and rounds 1 to 4 all on: 30 views at most, one at a time, a repeated list of keys read once
+(`measure`). Each reading (`readReading`) is the first month the goal's amount is met and the homes
+by the window's last month. Lines on stdout, in this order:
 
 ```
 Dataset <datasetVersion>
 Goal: <amount> homes
-Current law by <Mon YYYY>: reached <Mon YYYY>, <n> months early
-Full tree by <Mon YYYY>: missed, <homes> homes, <short> short
+Every policy: reached <Mon YYYY>            (or: not by <Mon YYYY>, the window's last month)
+Current law: reached <Mon YYYY>
+Alone, against current law:
+  <label>: <Mon YYYY>, <n> months earlier, +<homes> homes by <Mon YYYY>
+In its round, against the rounds before:
+  <label>: ...                              (one line per policy, catalogue order)
+Rounds, all on:
+  <k>: <Mon YYYY>, <n> months earlier, <homes> homes by <Mon YYYY>   (against the row above)
+To judge: nothing                           (or "To judge:" and the lines below)
 Filled in <s> s (cars on|off)
 ```
 
-Lines 3 and 4 each read "reached <month>, <n> months early" ("1 month early" for 1) or "missed,
-<homes> homes, <short> short". The first month on a line is the rung's deadline. Line 5 is the
-opening fill's wall-clock time (`Engine.fillMs`) and the car switch.
+A policy line reads `no change` for 0 months, `<n> months later` when later, and `n/a` for the
+months with `not by <Mon YYYY>` for the month when it misses (or when what it is compared with
+misses). "To judge" lists `Round k gains nothing` for a round that is not earlier than the row
+above (current law for round 1) or misses, and `<label> alone: <n> fewer homes` or
+`<label> in its round: <n> fewer homes` for a policy that builds fewer homes than what it is
+compared with. The last line is the opening fill's wall-clock time (`Engine.fillMs`) and the car
+switch. Nothing in the report gates; it is for the person reading it.
 
-Exit 0 when the full tree is reached (current law's line is printed either way); 1 when the full
-tree is missed; 2 when the check could not run, with one
-stderr line, `reach-check: <reason>`, and nothing on stdout (no source, both a directory and
-`--version`, an unknown flag, `--from` without `--version`, an `--amount` that is not a whole
-number above 0, a `--cars` that is not `on` or `off`, or the engine failing).
+Exit 2 when the check could not run, with one stderr line, `reach-check: <reason>`, and nothing on
+stdout (no source, both a directory and `--version`, an unknown flag, `--from` without
+`--version`, an `--amount` that is not a whole number above 0, a `--cars` that is not `on` or
+`off`, or the engine failing).
 
 It is run before every dataset upload, on the directory that is then uploaded, and must exit 0
-([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`.
+([pipeline.md](pipeline.md)). Its test is `scripts/reach-check.spec.ts`, on a stub engine with
+synthetic numbers and the fixture dataset at an amount of 1; no test holds a figure measured on the
+production dataset.
 
-Result of 2026-11-25 on dataset `2026-11-25-76c90397` (main `083fb7ae`), cars on, against
-`LADDER_YEARS = [2060, 2055, 2045, 2040]` (measured by `reach-measure.ts` on the same version):
-
-```
-Dataset 2026-11-25-76c90397
-Goal: 82,069 homes
-Current law by Oct 2066: reached Oct 2061, 60 months early
-Full tree by Dec 2040: reached Aug 2037, 40 months early
-Filled in 2.4 s (cars on)
-```
-
-The fill time is ballpark: it was taken at a 1-minute load of 2.4.
-
-Result of 2026-11-27 on dataset `2026-11-27-247eaa0b` (the building-choice build), cars on, load 1.2
-(`LADDER_YEARS` unchanged, [2060, 2055, 2045, 2040]; the deadlines are re-derived elsewhere). Exit 0:
+Result of 2026-11-27 on dataset `2026-11-27-247eaa0b` (the building-choice engine), cars on (the
+fill time is ballpark):
 
 ```
 Dataset 2026-11-27-247eaa0b
 Goal: 82,069 homes
-Current law by Oct 2066: reached May 2064, 29 months early
-Full tree by Dec 2040: reached Nov 2037, 37 months early
-Filled in 3.7 s (cars on)
+Every policy: reached Aug 2052
+Current law: reached May 2064
+Alone, against current law:
+  Taller near BART and Caltrain: Feb 2063, 15 months earlier, +2,237 homes by Oct 2066
+  SB 423 clock: Apr 2064, 1 month earlier, +314 homes by Oct 2066
+  Housing bond: Oct 2063, 7 months earlier, +1,175 homes by Oct 2066
+  Taller near Muni Metro: Feb 2061, 39 months earlier, +4,093 homes by Oct 2066
+  Benchmark permits: Nov 2063, 6 months earlier, +1,023 homes by Oct 2066
+  General revenue: May 2063, 12 months earlier, +2,402 homes by Oct 2066
+  Taller near bus: Aug 2060, 45 months earlier, +5,375 homes by Oct 2066
+  Revolving fund: May 2064, no change, +2 homes by Oct 2066
+  Federal support: May 2063, 12 months earlier, +1,584 homes by Oct 2066
+  No discretionary review: Mar 2063, 14 months earlier, +2,982 homes by Oct 2066
+  Public bank: Apr 2064, 1 month earlier, +679 homes by Oct 2066
+  State money doubled: May 2064, no change, +0 homes by Oct 2066
+In its round, against the rounds before:
+  Taller near BART and Caltrain: Feb 2063, 15 months earlier, +2,237 homes by Oct 2066
+  SB 423 clock: Apr 2064, 1 month earlier, +314 homes by Oct 2066
+  Housing bond: Oct 2063, 7 months earlier, +1,175 homes by Oct 2066
+  Taller near Muni Metro: Jun 2059, 26 months earlier, +2,645 homes by Oct 2066
+  Benchmark permits: Oct 2060, 10 months earlier, +476 homes by Oct 2066
+  General revenue: Apr 2060, 16 months earlier, +1,442 homes by Oct 2066
+  Taller near bus: Jun 2054, 34 months earlier, +3,179 homes by Oct 2066
+  Revolving fund: Mar 2057, 1 month earlier, +4 homes by Oct 2066
+  Federal support: Sep 2056, 7 months earlier, +120 homes by Oct 2066
+  No discretionary review: Aug 2052, 21 months earlier, +2,761 homes by Oct 2066
+  Public bank: May 2054, no change, +105 homes by Oct 2066
+  State money doubled: May 2054, no change, +0 homes by Oct 2066
+Rounds, all on:
+  1: Aug 2061, 33 months earlier, 87,722 homes by Oct 2066
+  2: Apr 2057, 52 months earlier, 92,561 homes by Oct 2066
+  3: May 2054, 35 months earlier, 95,818 homes by Oct 2066
+  4: Aug 2052, 21 months earlier, 98,496 homes by Oct 2066
+To judge: nothing
+Filled in 2.7 s (cars on)
 ```
-
-Pacing on that dataset (`npx tsx scripts/tree-balance.ts pipeline/out/2026-11-27-247eaa0b`, run as
-information only: `tuning.ts` is not changed by this build). Six orders, each played by hand and with
-Collect for me. Four of the five pacing checks pass in all 12 plays: first purchase 1:32 (target
-2:00), early runs per purchase at most 1, runs per purchase at most 3 (3 by hand in the catalogue and
-permitting-first orders), longest gap between map changes 1:28 at most (target 5:00). "Fewest
-purchases between deadlines" (target 3) fails in 8 of the 12: the catalogue, permitting-first,
-zoning-first, money-first and hands-first orders by hand (1, 1, 1, 1, 2) and the catalogue,
-permitting-first and money-first orders with Collect for me (2, 2, 2); it passes for zoning-first
-(Collect for me) and both cheapest and hands-first (Collect for me) plays. Every play's last run
-reaches the last rung (Dec 2040) on time, the by-hand ones in runs 10 to 20, the Collect for me ones
-in runs 5 to 7.
-Current law at each deadline stands below every side-goal target it is measured against (for
-example `collect-run` 18,822 of 24,000, `funded-homes` 14,457 of 21,000, `affordable-homes` 15,602
-of 20,000, `building-homes` 1,950 of 6,000). The exit is 1 because of the failing check.
 
 ## Words
 
 `src/lib/game/words.ts` holds the store's and the sync's words: `syncText`, `playedText(savedAt,
 now)` ("Today", "Yesterday", "4 Mar", "4 Mar 2025"), `defaultSaveName`, `FULL_TEXT` and
-`STORAGE_TEXT`. `ui/words.ts` holds the screens' words, `run/words.ts` the run layer's, and
-`src/lib/timeline/game-copy.ts` the simulation page's (the labels of a purchase and a restore, the
-locked lane and "Back to the tree"). A page that shows a full list, a refused write or the sync's
-state imports these; none writes its own wording.
+`STORAGE_TEXT`. `ui/words.ts` and `ui/round-words.ts` hold the screens' words, and
+`src/lib/timeline/copy.ts` the simulation page's (`NOT_IN_GAME`, under a policy that does not run
+in the game). A page that shows a full list, a refused write or the sync's state imports these;
+none writes its own wording.

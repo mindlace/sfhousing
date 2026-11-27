@@ -223,8 +223,35 @@ describe('TransitLayerRow', () => {
     expect(Number(input.max)).toBeGreaterThanOrEqual(5000);
     await distance(2).fill('4000');
     await userEvent.keyboard('{Enter}');
-    expect(onedit.mock.calls.at(-1)![0].bands[1].maxM).toBe(3219);
-    await expect.element(distance(2)).toHaveValue(3219);
+    expect(onedit.mock.calls.at(-1)![0].bands[1].maxM).toBe(1200);
+    await expect.element(distance(2)).toHaveValue(1200);
+  });
+
+  it("a bus rule's distance input stops at 800 m, a rail rule's at 1,200 m", async () => {
+    setup({
+      rule: {
+        ...metro,
+        stopTypes: ['rapidBus'],
+        bands: [
+          { maxM: 402, stories: 8 },
+          { maxM: 700, stories: 4 }
+        ]
+      }
+    });
+    await expect.element(distance(2)).toHaveAttribute('max', '800');
+  });
+
+  it("a rail rule's distance input stops at 1,200 m", async () => {
+    setup({ rule: { ...metro, stopTypes: ['regionalRail'] } });
+    await expect.element(distance(2)).toHaveAttribute('max', '1200');
+  });
+
+  it('a rail rule stored at 3,219 m shows it and is valid', async () => {
+    setup({
+      rule: { ...metro, stopTypes: ['regionalRail'], bands: [{ maxM: 3219, stories: 8 }] }
+    });
+    await expect.element(distance(1)).toHaveValue(3219);
+    expect((distance(1).element() as HTMLInputElement).checkValidity()).toBe(true);
   });
 
   it("a distance input's bounds come from its neighbours, not a fixed cap", async () => {
@@ -339,7 +366,7 @@ describe('TransitLayerRow', () => {
     await more(3).click({ force: true });
     await removeBand(1).click();
     await fewer(1).click({ force: true });
-    expect(onedit.mock.calls.length).toBeGreaterThan(10);
+    expect(onedit.mock.calls.length).toBeGreaterThan(9);
     expectValid(onedit.mock.calls);
   });
 
@@ -401,6 +428,15 @@ describe('TransitLayerRow', () => {
       expect(
         page.getByRole('group', { name: 'Stop types' }).getByRole('button').elements()
       ).toHaveLength(4);
+    });
+  });
+
+  describe('stopsFixed', () => {
+    it('shows the stop types as text, with no chip', async () => {
+      render(TransitLayerRowHost, { props: { rule: metro, part: 'stops', stopsFixed: true } });
+      const group = page.getByRole('group', { name: 'Stop types' });
+      await expect.element(group).toHaveTextContent(STOP_LABELS.metro);
+      expect(group.getByRole('button').elements()).toHaveLength(0);
     });
   });
 });
