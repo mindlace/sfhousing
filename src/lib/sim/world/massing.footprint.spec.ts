@@ -455,6 +455,7 @@ describe('simulated massing on the scenario record (IA-8)', () => {
   // options draw nothing and 641 of the rest another home count (a known gap since the run time
   // starts options, raised in Task 9b's report). What holds: a drawn building is no taller than
   // the option, and most options draw one.
+  // Interim: loosened until the map draws the chosen option, when massing must hold its homes again.
   it('draws most allowed options of an uncapped parcel, none taller than the option', () => {
     const parcels = input.parcels;
     const t = input.options;

@@ -5,7 +5,7 @@ import type { S207Status } from '../../src/lib/data/policy-codec';
 import { envelopeRow, type EnvelopeRow, type OptionSize } from '../../src/lib/data/envelope-row';
 import { mostPermissive } from '../../src/lib/data/stock-layers';
 import { S207, STANDARDS, type Sb79Tier, type TodBand } from '../sb79-config';
-import { storiesFromFt } from './heights';
+import { baseHeightFt, storiesFromFt } from './heights';
 import { unitsFor } from './sb79';
 
 export { envelopeRow, type EnvelopeRow };
@@ -42,6 +42,22 @@ export function s207Status(a: {
   const min = unitsFor(S207.minDensityDuPerAcre(tier, band), a.lotAreaM2, 1, S207.rounding);
   if (a.fzpCap >= min) return 'meets-minimum';
   return 'applies';
+}
+
+/**
+ * The height limit §207.11 reads ((b)(3) and (c)(2), "the applicable height limit"): the Local
+ * Program height (else the base) on a Local Program lot; elsewhere the code limit on the base,
+ * the mapped height capped at 35 ft on RH-1 lots (Planning Code Sec. 261(b)(1), `baseHeightFt`).
+ * null without a height district.
+ */
+export function s207HeightFt(a: {
+  localProgram: boolean;
+  baseFt: number | null;
+  lpFt: number | null;
+  zoningCode: string | null;
+}): number | null {
+  if (a.baseFt === null) return null;
+  return a.localProgram ? (a.lpFt ?? a.baseFt) : baseHeightFt(a.baseFt, a.zoningCode);
 }
 
 /** §207.11(c): the stories and cap of a lot where §207.11 applies. */

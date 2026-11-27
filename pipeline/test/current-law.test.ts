@@ -1,6 +1,6 @@
 // Current law per lot (pipeline/lib/current-law.ts): §207.11 (Ord. 082-26 §5) over FZP.
 import { describe, expect, it } from 'vitest';
-import { currentLawRow, envelopeRow, s207Row } from '../lib/current-law';
+import { currentLawRow, envelopeRow, s207HeightFt, s207Row } from '../lib/current-law';
 import { unitsFor } from '../lib/sb79';
 
 const ACRE = 4046.86;
@@ -134,5 +134,27 @@ describe('envelopeRow', () => {
     expect(row({ existingUnits: 5, cap: 5 })).toMatchObject({ top: 0, hostable: true });
     expect(row({ eligible: false }).hostable).toBe(false);
     expect(row({ stories: 0 }).hostable).toBe(false);
+  });
+});
+
+describe('s207HeightFt (the code height limit §207.11 reads)', () => {
+  it('reads 35 ft on an RH-1 lot in 40-X off the Local Program (Sec. 261(b)(1))', () => {
+    const h = { localProgram: false, baseFt: 40, lpFt: null };
+    expect(s207HeightFt({ ...h, zoningCode: 'RH-1' })).toBe(35);
+    expect(s207HeightFt({ ...h, zoningCode: 'RH-2' })).toBe(40);
+    expect(s207HeightFt({ ...h, localProgram: true, lpFt: 65, zoningCode: 'RH-1' })).toBe(65);
+    expect(
+      s207HeightFt({ localProgram: false, baseFt: null, lpFt: null, zoningCode: 'RH-1' })
+    ).toBe(null);
+  });
+
+  it('raises an RH-1 lot in 40-X to 40 ft (4 stories) under §207.11', () => {
+    const r = s207Row({
+      ...BASE,
+      fzpStories: 3,
+      fzpHeightFt: s207HeightFt({ localProgram: false, baseFt: 40, lpFt: null, zoningCode: 'RH-1' })
+    });
+    expect(r.status).toBe('applies');
+    expect(r.stories).toBe(4);
   });
 });

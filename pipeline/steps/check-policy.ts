@@ -19,7 +19,7 @@ import { envelopeRow, optionsOfRow, topHomesAt } from '../../src/lib/data/envelo
 import type { OptionTable } from '../../src/lib/data/option-table';
 import type { InvariantProfile } from '../config';
 import { mostPermissive } from '../../src/lib/data/stock-layers';
-import { s207Envelope, s207Status } from '../lib/current-law';
+import { s207Envelope, s207HeightFt, s207Status } from '../lib/current-law';
 import { parseHeightDistrict, storiesFromFt } from '../lib/heights';
 import { reportedQuality } from '../lib/quality';
 import { rentControlExcluded, stopTiers, unitsFor, zoneClassOf } from '../lib/sb79';
@@ -321,9 +321,18 @@ function checkV33(
       const band = pol.todBand[i] as TodBand;
       const best = STANDARDS[tier]?.[band] ? { tier, band } : null; // todBand 0: outside
       const fzpCap = p!.fzpCap[i] === NULL_CAP ? null : p!.fzpCap[i];
-      // The height of the envelope the project uses: lpFt on a Local Program lot, else baseFt.
+      // The height limit of the envelope the project uses: lpFt on a Local Program lot, else the
+      // code limit on baseFt (35 ft on RH-1, Sec. 261(b)(1)).
+      const code = pol.useDistricts[pol.useDistrict[i]];
       const fzpHeightFt =
-        hd.kind !== 'height' ? null : p!.localProgram[i] === 1 ? (hd.lpFt ?? hd.baseFt) : hd.baseFt;
+        hd.kind !== 'height'
+          ? null
+          : s207HeightFt({
+              localProgram: p!.localProgram[i] === 1,
+              baseFt: hd.baseFt,
+              lpFt: hd.lpFt,
+              zoningCode: code === '' ? null : code
+            });
       const want = s207Status({
         best,
         eligible: p!.eligible[i] === 1,

@@ -25,7 +25,7 @@ import type { ScenarioParcels } from '../../src/lib/data/scenario-codec';
 import { decodeTransit } from '../../src/lib/data/transit-codec';
 import type { Day } from '../../src/lib/timelapse/time';
 import type { Provenance } from '../../src/lib/timelapse/types';
-import { currentLawRow, envelopeRow, s207Row } from '../lib/current-law';
+import { currentLawRow, envelopeRow, s207HeightFt, s207Row } from '../lib/current-law';
 import { fzpYieldCapOf } from '../lib/density-caps';
 import type { Duck } from '../lib/duck';
 import { parseHeightDistrict } from '../lib/heights';
@@ -419,8 +419,15 @@ export async function writePolicy(a: {
     const lp = s.localProgram[i] === 1;
     const binHeightFt = hd.kind === 'height' ? (lp ? (hd.lpFt ?? hd.baseFt) : hd.baseFt) : null;
     const binR4 = hd.kind === 'height' && hd.r4;
-    const heightFt = lp ? (r.lp_ft ?? r.base_ft) : r.base_ft;
-    if (binHeightFt !== heightFt || binR4 !== r.r4) inc('s207.base_ft_mismatch');
+    const mappedFt = lp ? (r.lp_ft ?? r.base_ft) : r.base_ft;
+    if (binHeightFt !== mappedFt || binR4 !== r.r4) inc('s207.base_ft_mismatch');
+    // §207.11 reads the code height limit: 35 ft on an RH-1 lot off the Local Program.
+    const heightFt = s207HeightFt({
+      localProgram: lp,
+      baseFt: r.base_ft,
+      lpFt: r.lp_ft,
+      zoningCode: r.zoning_code
+    });
     const s207 = s207Row({
       best,
       eligible: s.eligible[i] === 1,
