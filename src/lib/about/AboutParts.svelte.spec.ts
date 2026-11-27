@@ -92,7 +92,7 @@ async function expectNotices() {
 }
 
 describe('AboutMeanings', () => {
-  it('meanings: every term in order; the goal reads "82,069 homes by the deadline" and "June 2022" from GOAL_BASE; the deadline, word for word', async () => {
+  it('meanings: every term in order; the goal reads "82,069 homes by the target" and "June 2022" from GOAL_BASE; the target, word for word', async () => {
     render(AboutMeanings, { level: 2 });
     const terms = [...document.querySelectorAll('dt')].map((d) => d.textContent?.trim());
     expect(terms).toEqual([
@@ -102,7 +102,7 @@ describe('AboutMeanings', () => {
       'Current law',
       'The goal',
       'The goal + 15%',
-      'The deadline'
+      'The target'
     ]);
     expect(MEANINGS.map((m) => m.term)).toEqual(terms);
     const t = text();
@@ -111,7 +111,7 @@ describe('AboutMeanings', () => {
       'Every eligible lot you painted, rebuilt to its height at once. Homes in replaced buildings are subtracted.'
     );
     expect(t).toContain(
-      '82,069 homes by the deadline, counted from June 2022, so homes built since then count. ' +
+      '82,069 homes by the target, counted from June 2022, so homes built since then count. ' +
         "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
         'Allocation, which asks for them by January 2031.'
     );

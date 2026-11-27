@@ -59,7 +59,7 @@ export const MEANINGS: readonly {
   {
     term: 'The goal',
     body:
-      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the deadline, ` +
+      `${formatCount(GOAL_BASE.amount)} ${GOAL_BASE.measure.unit} by the target, ` +
       `counted from ${formatMonthYear(GOAL_BASE.countsFrom)}, so homes built since then count. ` +
       "It is San Francisco's share of RHNA 2023–2031, the state's Regional Housing Needs " +
       `Allocation, which asks for them by ${formatMonthYear(RHNA_DEADLINE)}.`,
@@ -70,7 +70,7 @@ export const MEANINGS: readonly {
     body: `The state asks for room for at least ${bufferPercent}% more: ${formatCount(bufferAmount(GOAL_BASE))} ${GOAL_BASE.measure.unit}.`
   },
   {
-    term: 'The deadline',
+    term: 'The target',
     body:
       `When the goal must be met. It starts as the end of the ${WINDOW_MONTHS / 12}-year ` +
       'window; each win moves it to the month your forecast reached the goal.'

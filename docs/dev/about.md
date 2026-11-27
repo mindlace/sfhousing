@@ -33,7 +33,7 @@ shows; the Timeline table after it is `TIMELINE_SHORTCUTS` (`src/lib/timeline/sh
 Keyboard shortcuts live here only on the simulation: its header has no Shortcuts button. The
 tables are Painting and Timeline.
 
-Part 1 ends with the term "The deadline" (`MEANINGS`). Using it's The game section
+Part 1 ends with the term "The target" (`MEANINGS`), the word the header and the ruler use. Using it's The game section
 (id `about-levels`) is `GAME_STEPS` (an ordered list) then `GAME_NOTES` (paragraphs); Saved games
 is `SAVED_GAMES` (three paragraphs). The 12 in `SAVED_GAMES[0]` is read from `MAX_SAVES`
 (`src/lib/game/saves.ts`), never typed. The game's rules are in [game.md](game.md).
