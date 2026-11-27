@@ -308,7 +308,7 @@ of the row's best option (`uncoveredPerHome ÷ costPerHome` of the prototype it 
 per-project share behind `typicalUncoveredShare`). `calibration.market` is recomputed from the
 refitted model by the unchanged `market.ts`.
 
-**Live figures** (build `2026-11-27-49765dbb`, Task 13a, not uploaded):
+**Live figures** (build `2026-11-27-247eaa0b`, Task 13a, not uploaded):
 
 - choiceSpread 0.1036, tier 2, fitted inside the search, from 556 records (817 measured, 2
   without a panel row, 201 over their limit, 58 with no gaining option; the affordable rule is
@@ -365,13 +365,13 @@ agree exactly). The transit rule is `GAME_TRANSIT_ID` with all four stop types a
 tree is `fullTree(cal)` with every band of its transit rule set to the cap. The old figures
 (`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
 
-**Live figures** (build `2026-11-27-49765dbb`, not uploaded; records 2016-11-27 to 2026-11-27).
+**Live figures** (build `2026-11-27-247eaa0b`, not uploaded; records 2016-11-27 to 2026-11-27).
 Record check: 6 pass, 10 miss, 41 report, exit 1. With only the records at or under their limit,
 the records' height ÷ limit means are 0.903 (n 323), 0.839 (n 52), 0.753 (n 28), 0.568 (n 8) and
-0.548 (n 26) for ≤ 4, ≤ 6, ≤ 8, ≤ 12 and above 12, against sim 0.749, 0.695, 0.665, 0.675 and
+0.548 (n 26) for ≤ 4, ≤ 6, ≤ 8, ≤ 12 and above 12, against sim 0.747, 0.695, 0.665, 0.675 and
 0.420; the share of all records built over their limit is 0.193, 0.485, 0.364, 0.273 and 0.316. ≤ 8,
 ≤ 12 and above 12 have fewer than 30 in-limit records and are report lines. The code limits pass
-(no V above 6, no III above 8 among 423 starts). Permit-issued medians pass at ≤ 4 and ≤ 7,
+(no V above 6, no III above 8 among 426 starts). Permit-issued medians pass at ≤ 4 and ≤ 7,
 construction at ≤ 7, and homes per project at ≤ 4. The ten misses, with their figures and reasons,
 are in "Known misses" below. Large lots are report only (records n 28).
 
@@ -390,14 +390,14 @@ other step up builds more.
 
 ## Known misses (owner ruling 2026-11-27)
 
-The record check on `2026-11-27-49765dbb` (6 pass, 10 miss, 41 report) misses the lines below. The
+The record check on `2026-11-27-247eaa0b` (6 pass, 10 miss, 41 report) misses the lines below. The
 owner ruled on 2026-11-27 that they are accepted for this dataset. The follow-up is the density-bonus
 spec, which lets a project build over its limit.
 
 | Line                                       | Sim                 | Records               | Reason the records support                                                                                                                                                                                                                                                           |
 | ------------------------------------------ | ------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| height ÷ limit ≤ 4: mean                   | 0.749 (n 261)       | 0.903 ± 0.100 (n 323) | today's market: at 2026 prices 508 of the 556 fit records' lots sit at break-even (186 at their own year's prices), where the choice ranks by price and favours small B-priced Type III; even era-priced, the fit's own expected mean is 0.717 against 0.883 in its in-limit records |
-| height ÷ limit ≤ 4: share ≥ 0.9            | 0.437 (n 261)       | 0.703 ± 0.051 (n 323) | as above                                                                                                                                                                                                                                                                             |
+| height ÷ limit ≤ 4: mean                   | 0.747 (n 264)       | 0.903 ± 0.100 (n 323) | today's market: at 2026 prices 508 of the 556 fit records' lots sit at break-even (186 at their own year's prices), where the choice ranks by price and favours small B-priced Type III; even era-priced, the fit's own expected mean is 0.717 against 0.883 in its in-limit records |
+| height ÷ limit ≤ 4: share ≥ 0.9            | 0.436 (n 264)       | 0.703 ± 0.051 (n 323) | as above                                                                                                                                                                                                                                                                             |
 | height ÷ limit ≤ 6: mean                   | 0.695 (n 67)        | 0.839 ± 0.100 (n 52)  | as above; the fit's era-priced expected mean is 0.731                                                                                                                                                                                                                                |
 | height ÷ limit ≤ 6: share ≥ 0.9            | 0.194 (n 67)        | 0.442 ± 0.138 (n 52)  | as above                                                                                                                                                                                                                                                                             |
 | Type I share 8 to 12 stories               | 0.923 (n 13)        | 0.984 ± 0.032 (n 62)  | small sim n: one Type III start among 13                                                                                                                                                                                                                                             |
