@@ -49,10 +49,11 @@ flattened), the timeline with its Playhead, chart and rows, Play and Pause (Spac
 key, project cards and the tooltip, held to what is bought ([Limits](#limits)).
 
 The header has no steps; the site name is the way home. In the opening it shows the name, the save
-state, the pinned room score, Publish and the Menu button. After it: the name, the save state (or "Updating"), the pinned goal (`GoalHeadline`, whose homes are the view on show's at
-the playhead's month) and the actions: Undo and Redo while a pointer is coarse, Publish and the Menu button. The Menu
-holds the saved games (`GamePanel`), the account entry and About. In the open game the Menu has no
-game part.
+state, the pinned room score, Publish and the Menu button. After it: the name, the save state (or
+"Updating"), the pinned goal (`GoalHeadline`, whose homes are the view on show's at the playhead's
+month) and the actions: Undo and Redo while a pointer is coarse, Publish and the Menu button. The
+Menu holds the saved games (`GamePanel`), the account entry and About. In the open game the Menu has
+no game part.
 
 ## The game's state
 

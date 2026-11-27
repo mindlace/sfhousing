@@ -179,7 +179,7 @@ Every way into About is a link to `/about#…`, and every one says the same thin
 
 | Way in                                                         | Where it lands                                                            |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| The header's About (in the Menu below lg)                      | `/about`                                                                  |
+| The header's About (in the Menu, at every width)               | `/about`                                                                  |
 | The simulation's Details, its last line (`WORKED_OUT`)         | `/about#about-assumptions`                                                |
 | Paint's Details (`/`, `/p/<id>`), its last line (`WORKED_OUT`) | `/about#about-meanings`, where the goal links the SF Planning RHNA Primer |
 | A project card's sources                                       | the entry (`src-…`, through `open(id)`)                                   |

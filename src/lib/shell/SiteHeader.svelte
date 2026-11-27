@@ -120,11 +120,19 @@
     mounted = true;
     const mq = matchMedia(WIDE);
     wide = mq.matches;
-    const onChange = () => {
+    // Moving the actions between the bar and the panel remounts them, and a modal dialog they own
+    // (Publish's) would go with them: while one is open the move waits for its close.
+    const settle = () => {
+      if (document.querySelector('dialog:modal')) return;
       wide = mq.matches;
     };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    mq.addEventListener('change', settle);
+    // `close` does not bubble: seen in the capture phase, for any dialog.
+    document.addEventListener('close', settle, true);
+    return () => {
+      mq.removeEventListener('change', settle);
+      document.removeEventListener('close', settle, true);
+    };
   });
 </script>
 

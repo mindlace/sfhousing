@@ -1,4 +1,4 @@
-import { createRawSnippet, mount, unmount } from 'svelte';
+import { createRawSnippet, mount, tick, unmount } from 'svelte';
 import SaveIndicator from '$lib/sharing/SaveIndicator.svelte';
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -768,6 +768,40 @@ describe('SiteHeader', () => {
         await expect.element(menu()).toHaveAttribute('aria-expanded', 'false');
       });
     }
+
+    describe('crossing lg with a modal dialog open in the actions', () => {
+      const withDialog = createRawSnippet(() => ({
+        render: () =>
+          '<span><button>Publish</button><dialog data-testid="pub"><button>Send</button></dialog></span>'
+      }));
+      const dialog = () => document.querySelector('dialog') as HTMLDialogElement;
+
+      for (const [from, to] of [
+        [1280, 800],
+        [800, 1280]
+      ])
+        it(`${from} to ${to} px keeps the same open dialog, and the actions move once it closes`, async () => {
+          await page.viewport(from, 800);
+          render(SiteHeader, { actions: withDialog });
+          const inPanel = () => panelOf().contains(dialog());
+          await expect.poll(() => inPanel()).toBe(from < 1024);
+          const el = dialog();
+          el.showModal();
+          await page.viewport(to, 800);
+          // Let the media query's change run.
+          await expect
+            .poll(() => window.matchMedia('(min-width: 1024px)').matches)
+            .toBe(to >= 1024);
+          await tick();
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          expect(dialog()).toBe(el);
+          expect(el.open).toBe(true);
+          expect(el.matches(':modal')).toBe(true);
+          el.close();
+          await expect.poll(() => dialog() !== el || inPanel()).toBe(true);
+          await expect.poll(() => inPanel()).toBe(to < 1024);
+        });
+    });
 
     it('the Menu button is at least 24x24 at 1280px', async () => {
       await page.viewport(1280, 800);

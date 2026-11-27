@@ -906,7 +906,7 @@ test.describe('account entry', () => {
     test.use({ viewport: { width: 1024, height: 768 } });
 
     for (const path of ['opening', '/']) {
-      test(`${path} at 1024×768: visible, clear of the header score and the actions, axe clean`, async ({
+      test(`${path} at 1024×768: waits in the Menu, then shows clear of the header's items; axe clean closed and open`, async ({
         page
       }) => {
         if (path === 'opening') await gotoEditor(page);
