@@ -6,10 +6,13 @@
   then the short count replaces the full one; the rest is always shown. A win carries the gift
   (with `ongift`), a 24 px button that jiggles (still under reduced motion), and an accent border
   on top of its words. Win and late arriving after mount are announced in `goal-live`. With
-  `panel` the lines are a button that opens it under the goal; without, plain text.
+  `panel` the lines are a button that opens it under the goal; without, plain text. The panel is a
+  header overlay (`headerOverlay`): opening it closes the Menu and the reverse. It is not modal and
+  holds nothing focusable. Escape and a press outside close it, and focus ends on the button.
 -->
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte';
+  import { headerOverlay } from '$lib/shell/header-actions.svelte';
   import { useGame } from '../store.svelte';
   import { JIGGLE_MS } from './motion';
   import type { PinnedWords } from './round-words';
@@ -30,6 +33,43 @@
   const uid = $props.id();
   const panelId = `${uid}-panel`;
   let open = $state(false);
+  let button = $state<HTMLButtonElement>();
+  let box = $state<HTMLElement>();
+  let area = $state<HTMLElement>();
+
+  const openOnly = headerOverlay(panelId, () => (open = false));
+
+  function toggle(): void {
+    open = !open;
+    if (open) openOnly();
+  }
+
+  /** Escape: unless a modal dialog or something above took the key first. */
+  function onkeydown(e: KeyboardEvent): void {
+    if (!open || e.key !== 'Escape' || e.defaultPrevented) return;
+    if (document.querySelector('dialog:modal')) return;
+    open = false;
+    button?.focus();
+  }
+
+  /**
+   * A press outside the goal and its panel closes it. The pressed thing takes focus if it can; if
+   * nothing does, focus goes back to the button once the press ends.
+   */
+  function onpointerdown(e: PointerEvent): void {
+    const t = e.target as Node | null;
+    if (!open || !t || box?.contains(t) || area?.contains(t)) return;
+    open = false;
+    if (document.querySelector('dialog:modal')) return;
+    window.addEventListener(
+      'pointerup',
+      () => {
+        const a = document.activeElement;
+        if (!a || a === document.body) button?.focus();
+      },
+      { once: true }
+    );
+  }
 
   const shown = $derived(Math.max(0, Math.min(1, Number.isFinite(fill) ? fill : 0)));
   const gift = $derived(result === 'win' && ongift && words.gift ? words.gift : null);
@@ -78,11 +118,14 @@
   >
 {/snippet}
 
+<svelte:window {onkeydown} {onpointerdown} />
+
 {#if !game.open}
   <span class="inline-flex min-w-0 max-sm:flex-1" data-testid="goal-headline" data-state={result}>
     <!-- At most 44 px: line 1 17.5, the bar 4, line 2 15 (text-xs sets its own 16 px line
          height, hence leading-tight), two 2 px gaps and the border; no vertical padding. -->
     <span
+      bind:this={box}
       data-testid="goal-box"
       class={[
         'flex max-w-80 min-w-6 items-center gap-1 rounded-md border bg-surface px-2 text-sm leading-tight whitespace-nowrap text-ink tabular-nums max-sm:max-w-none max-sm:flex-1 max-sm:px-1.5 dark:bg-surface-dark dark:text-ink-dark',
@@ -93,12 +136,13 @@
     >
       {#if panel}
         <button
+          bind:this={button}
           type="button"
           data-testid="goal-headline-button"
           class="flex min-w-0 flex-1 flex-col justify-center gap-0.5 self-stretch text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent dark:focus-visible:outline-accent-dark"
           aria-expanded={open}
           aria-controls={panelId}
-          onclick={() => (open = !open)}>{@render lines()}</button
+          onclick={toggle}>{@render lines()}</button
         >
       {:else}
         <span
@@ -129,6 +173,7 @@
     </span>
     {#if panel}
       <div
+        bind:this={area}
         id={panelId}
         class={open
           ? 'absolute top-full z-40 mt-1 max-w-sm rounded-lg border bg-surface p-3 shadow-lg dark:border-gray-700 dark:bg-chrome-dark'

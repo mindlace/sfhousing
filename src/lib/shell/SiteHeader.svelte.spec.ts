@@ -852,6 +852,67 @@ describe('SiteHeader', () => {
       expect(page.getByTestId('game-panel').elements()).toEqual([]);
     });
 
+    describe('the round label', () => {
+      const label = () => page.getByTestId('round-label');
+      const runs = (over: Record<string, unknown> = {}) =>
+        seededGame({ state: { phase: 'runs', firstWinAt: WON, round: 2, ...over } }).game;
+
+      it('"Round 2" is plain text after the site name: not a button, not a link', async () => {
+        await page.viewport(1280, 800);
+        render(GameHeaderHost, { game: runs(), routeId: '/' });
+        await expect.element(label()).toHaveTextContent('Round 2');
+        const el = label().element();
+        expect(el.closest('button, a')).toBeNull();
+        expect(el.querySelector('button, a, [tabindex]')).toBeNull();
+        expect(el.hasAttribute('tabindex')).toBe(false);
+        const name = page.getByRole('banner').getByRole('link', { name: 'SF Housing' }).element();
+        expect(name.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      });
+
+      it('reads Current law in round 0 and Every policy when finished', async () => {
+        await page.viewport(1280, 800);
+        const r = await render(GameHeaderHost, { game: runs({ round: 0 }), routeId: '/' });
+        await expect.element(label()).toHaveTextContent('Current law');
+        r.unmount();
+        render(GameHeaderHost, { game: runs({ round: 4, finished: true }), routeId: '/' });
+        await expect.element(label()).toHaveTextContent('Every policy');
+      });
+
+      it('is absent for the open game and in the opening', async () => {
+        await page.viewport(1280, 800);
+        const r = await render(SiteHeader, { routeId: '/' });
+        await expect.element(page.getByRole('link', { name: 'SF Housing' })).toBeVisible();
+        expect(page.getByTestId('round-label').elements()).toEqual([]);
+        r.unmount();
+        render(GameHeaderHost, { game: seededGame().game, routeId: '/' });
+        await expect.element(page.getByRole('link', { name: 'SF Housing' })).toBeVisible();
+        expect(page.getByTestId('round-label').elements()).toEqual([]);
+      });
+
+      it('below sm with a pinned item it waits in the Menu beside the name, as text', async () => {
+        await page.viewport(375, 812);
+        render(GoalPinnedHeader, { game: runs(), headline: HEADLINE });
+        await expect.element(page.getByTestId('goal-headline')).toBeVisible();
+        expect(label().element().getClientRects()).toHaveLength(0);
+        const menu = page.getByRole('button', { name: 'Menu', exact: true });
+        await menu.click();
+        const inMenu = page.getByTestId('round-label-menu');
+        await expect.element(inMenu).toBeVisible();
+        await expect.element(inMenu).toHaveTextContent('Round 2');
+        expect(inMenu.element().closest('button, a')).toBeNull();
+        const panel = document.getElementById(menu.element().getAttribute('aria-controls')!)!;
+        expect(panel.contains(inMenu.element())).toBe(true);
+      });
+
+      it('from sm with a pinned item the Menu does not repeat it', async () => {
+        await page.viewport(1280, 800);
+        render(GoalPinnedHeader, { game: runs(), headline: HEADLINE });
+        await expect.element(label()).toBeVisible();
+        await page.getByRole('button', { name: 'Menu', exact: true }).click();
+        expect(page.getByTestId('round-label-menu').element().getClientRects()).toHaveLength(0);
+      });
+    });
+
     it('the Menu button is named Menu and has no dot, whatever the game holds', async () => {
       await page.viewport(800, 800);
       const { game } = seededGame({

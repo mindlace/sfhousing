@@ -1,11 +1,11 @@
 <!--
-  The site header. There are no steps: the name is the way home. The bar holds the name, the page's
-  status, the pinned item (centred in the bar from lg when both sides fit; a side that does not
+  The site header. There are no steps: the name is the way home. The bar holds the name, the round
+  (plain text, after mount, for a game in its runs; never the open game), the page's status, the pinned item (centred in the bar from lg when both sides fit; a side that does not
   pushes it off centre, never clips; below sm it leads the bar and grows to the Menu, the status
   after it), and, from lg, the page's actions, then the Menu button (a hamburger named "Menu", never
   a dot) at every width. The Menu's panel (under the header; from lg a pop-over at the right, below
-  lg full width) holds, in order: the site name (below sm, on a page that pins an item: Paint, /sim,
-  /p/:id), the actions (below lg only), the game panel (saved games, New game, the sync line; after
+  lg full width) holds, in order: the site name and the round (below sm, on a page that pins an item:
+  Paint, /sim, /p/:id), the actions (below lg only), the game panel (saved games, New game, the sync line; after
   mount, never for the open game), the account entry (Sign in, or @handle; Sign in shows only while
   a sign-in method is in effect, `signInAvailable`) and About (on every route: the map pages have no
   footer). The status is the page's one status cell, never in the Menu: left of the pinned item,
@@ -24,6 +24,7 @@
   import { AUTH_COPY } from '$lib/account/copy';
   import GamePanel from '$lib/game/ui/GamePanel.svelte';
   import { useGame } from '$lib/game/store.svelte';
+  import { roundName } from '$lib/game/ui/round-words';
   import { headerOverlay } from './header-actions.svelte';
   import { SITE_NAME } from './name';
 
@@ -66,6 +67,12 @@
   const game = useGame();
   // The first client render matches the server's: the game's state shows only after mount.
   let mounted = $state(false);
+  /** The round, plain text after the name: a game in its runs, never the open game. */
+  const round = $derived(
+    mounted && !game.open && game.state.phase === 'runs'
+      ? roundName(game.state.round, game.state.finished)
+      : null
+  );
   const account = $derived(user ?? (mounted ? game.sync.account : null));
   // From lg the actions are in the bar, below lg in the Menu: one instance at any width.
   let wide = $state(false);
@@ -172,6 +179,15 @@
     <a href="/" class={['shrink-0 font-semibold whitespace-nowrap', pinned && 'max-sm:hidden']}
       >{SITE_NAME}</a
     >
+    {#if round !== null}
+      <span
+        data-testid="round-label"
+        class={[
+          'shrink-0 text-sm font-medium whitespace-nowrap text-ink-muted dark:text-ink-dark-muted',
+          pinned && 'max-sm:hidden'
+        ]}>{round}</span
+      >
+    {/if}
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
     <!-- In the grid (from lg, with a pinned item) it takes its content's width, so a status too
          wide for the left track widens the track (the score moves) rather than running under it. -->
@@ -227,11 +243,18 @@
     onclick={onpanelclick}
   >
     {#if pinned}
-      <a
-        href="/"
-        class="inline-flex min-h-6 min-w-6 items-center self-start font-semibold whitespace-nowrap sm:hidden"
-        >{SITE_NAME}</a
-      >
+      <div class="flex items-center gap-2 self-start sm:hidden">
+        <a href="/" class="inline-flex min-h-6 min-w-6 items-center font-semibold whitespace-nowrap"
+          >{SITE_NAME}</a
+        >
+        {#if round !== null}
+          <span
+            data-testid="round-label-menu"
+            class="text-sm font-medium whitespace-nowrap text-ink-muted dark:text-ink-dark-muted"
+            >{round}</span
+          >
+        {/if}
+      </div>
     {/if}
     {#if !wide && actions}
       <div class="flex flex-wrap items-center gap-2">{@render actions()}</div>

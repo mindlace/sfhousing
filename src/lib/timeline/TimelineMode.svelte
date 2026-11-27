@@ -171,7 +171,9 @@
   import { OPEN_LIMITS } from '$lib/game/limits';
   import { PENDING, judge, type Verdict } from '$lib/game/rounds';
   import type { GameStore } from '$lib/game/store.svelte';
+  import { roundPanel } from '$lib/game/round-panel';
   import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
+  import RoundPanel from '$lib/game/ui/RoundPanel.svelte';
   import { pinnedWords } from '$lib/game/ui/round-words';
   import type { CameraFrame } from '$lib/map/types';
 
@@ -1642,11 +1644,19 @@
   </span>
 {/snippet}
 
+<!-- The round panel under the pinned goal: the round's policies as set, and what earlier rounds
+     achieved. Information only. -->
+{#snippet roundPanelPart()}
+  {#if g}
+    <RoundPanel data={roundPanel(g.state, policy, defaultGoal(asOf).deadline)} />
+  {/if}
+{/snippet}
+
 <!-- In a game the pinned item is GoalHeadline, its two root nodes straight in the header's pinned
      box (no wrapper), once the calibration is known. -->
 {#snippet scoreBar()}
   {#if goalProps && calibration}
-    <GoalHeadline {...goalProps} />
+    <GoalHeadline {...goalProps} panel={roundPanelPart} />
   {:else if !g && session && calibration}
     <TimelineHeaderScore
       text={headText}

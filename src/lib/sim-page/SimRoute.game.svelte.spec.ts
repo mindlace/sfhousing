@@ -18,6 +18,8 @@ import { LIMITS_LAYER_ID } from '$lib/map/height/limits-layer';
 import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
 import { tinyLimits } from '$lib/map/height/test/fixtures';
 import { clampBbox } from '$lib/sim-page/lid-request';
+import { E2E_GOAL_KEY } from '$lib/game/e2e';
+import { isFixed } from '$lib/game/limits';
 import { offerThrough } from '$lib/game/offer';
 import { openGame, type GameStore } from '$lib/game/store.svelte';
 import { stubTouchLaptop } from '$lib/paint/test/pointer-stub';
@@ -27,6 +29,7 @@ import { fundingCalibration } from '$lib/sim-page/test/funding';
 import { WINDOW_MONTHS } from '$lib/sim/timeline-client';
 import { monthFirstDay } from '$lib/sim/world/months';
 import type { ScoreStatics } from '$lib/sim/world/score/types';
+import type { GameState } from '$lib/game/state';
 import type { Day } from '$lib/timelapse/time';
 import { addPolicy } from '$lib/timeline/add';
 import type { Policy, SimPolicy4 } from '$lib/timeline/policy4';
@@ -35,6 +38,7 @@ import {
   compiledMsg,
   errorMsg,
   filledMsg,
+  refillMsg,
   type FakeTimelineWorker
 } from '$lib/timeline/test/fake-timeline-worker';
 import { statics as baseStatics } from '$lib/timeline/test/fixtures';
@@ -521,5 +525,220 @@ describe('SimRoute in a game: the tool', () => {
     } finally {
       await scheme('light');
     }
+  });
+});
+
+// ---- taking a win: the gift, the explainers, the offered policies ----
+
+describe('SimRoute in a game: taking a win', () => {
+  /** The goal month's index in LONG, and the amount the fake worker's rows reach there. */
+  const K = 5;
+  const GOAL = 1001 + 3 * K;
+  const fcal = fundingCalibration();
+  const M = LONG.months;
+  const slider = () => page.getByRole('slider', { name: 'Date in the simulation' });
+  const gift = () => page.getByTestId('goal-gift');
+  const dialog = () => page.getByTestId('gift-dialog');
+  const accept = () => page.getByTestId('gift-accept');
+  const policies = (doc: SimPolicy4): Policy[] => [
+    ...doc.kinds.zoning,
+    ...doc.kinds.permitting,
+    ...doc.kinds.money
+  ];
+
+  /** A game in the runs at `round`; the goal is the amount the rows reach at month K. */
+  function seed(mem: Storage, round: number, over: Partial<GameState> = {}): GameStore {
+    mem.setItem(E2E_GOAL_KEY, String(GOAL));
+    return gameWith({ phase: 'runs', round, ...over }, { storage: mem });
+  }
+
+  /** Mounted, opened, compiled and filled through the whole window at rev 1. */
+  async function openedLong(game: GameStore, mem: Storage) {
+    const r = mount(game, mem, fcal);
+    await expect.poll(() => w()?.lastOf('openTimeline')).toBeTruthy();
+    w().emit(compiledMsg(1, LONG));
+    w().emit(filledMsg(1, 0, WINDOW_MONTHS + 1, {}));
+    await expect.poll(() => debug().filledThrough).toBe(WINDOW_MONTHS);
+    await inTool();
+    // A game past round 0 adds the offered policies after the open: their lots are resolved and
+    // that edit is answered too.
+    if (game.state.round > 0) {
+      let asked = 0;
+      await expect
+        .poll(() => {
+          for (const q of w().all('resolveBrush').slice(asked)) {
+            w().emit({
+              type: 'brushLots',
+              reqId: q.reqId,
+              result: { ok: true, lots: [], points: new Float64Array() }
+            });
+            asked++;
+          }
+          return w().lastOf('setPolicy')?.rev;
+        })
+        .toBe(2);
+      w().emit(compiledMsg(2, LONG));
+      w().emit(refillMsg(2, 0));
+      w().emit(filledMsg(2, 0, WINDOW_MONTHS + 1, {}));
+      await expect.poll(() => debug().stale).toBe(false);
+    }
+    return r;
+  }
+
+  /** The playhead to month K by key: the win is seen. */
+  async function seeWin() {
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}' + '{ArrowRight}'.repeat(K));
+    await expect.poll(() => debug().day).toBe(M[K]);
+    await expect.element(gift()).toBeVisible();
+  }
+
+  async function acceptAll(n: number) {
+    for (let i = 0; i < n; i++) await accept().click();
+    await expect.poll(() => document.querySelector('[data-testid=gift-dialog]')).toBeNull();
+  }
+
+  it('the gift takes the win: round 1, the target, and the three policies off, before any Accept', async () => {
+    const mem = new MemoryStorage();
+    const game = seed(mem, 0);
+    await openedLong(game, mem);
+    await seeWin();
+    await gift().click();
+    expect(game.state.round).toBe(1);
+    expect(game.state.target).toBe(M[K]);
+    expect(game.state.wins).toHaveLength(1);
+    await expect.element(dialog()).toBeVisible();
+    const doc = debug().policy;
+    expect(policies(doc).map((p) => [p.label, p.on])).toEqual([
+      ['Taller near BART and Caltrain', false],
+      ['SB 423 clock', false],
+      ['Housing bond', false]
+    ]);
+    // The autosave was flushed: the policy record holds them too.
+    await expect.poll(() => policies(storedPolicy(mem)).length).toBe(3);
+    await expect.element(gift()).not.toBeInTheDocument();
+  });
+
+  it('the explainers: one per policy, three Accepts close it, focus on the goal, each fixed', async () => {
+    const mem = new MemoryStorage();
+    const game = seed(mem, 0);
+    await openedLong(game, mem);
+    await seeWin();
+    await gift().click();
+    await expect
+      .element(page.getByRole('heading', { name: 'Taller near BART and Caltrain' }))
+      .toBeVisible();
+    await expect.element(page.getByTestId('gift-step')).toHaveTextContent('1 of 3');
+    await expect.element(accept()).toHaveTextContent('Accept');
+    await accept().click();
+    await expect.element(page.getByRole('heading', { name: 'SB 423 clock' })).toBeVisible();
+    await accept().click();
+    await expect.element(page.getByRole('heading', { name: 'Housing bond' })).toBeVisible();
+    await expect.element(page.getByTestId('gift-step')).toHaveTextContent('3 of 3');
+    await accept().click();
+    await expect.poll(() => document.querySelector('[data-testid=gift-dialog]')).toBeNull();
+    await expect.element(page.getByTestId('goal-headline-button')).toHaveFocus();
+    const doc = debug().policy;
+    expect(policies(doc)).toHaveLength(3);
+    for (const p of policies(doc)) expect(isFixed(p, game.limits)).toBe(true);
+    expect(page.getByTestId('goal-headline').element().getAttribute('data-state')).toBe('pending');
+  });
+
+  it('after the gift Undo is not possible; switching a rule on then Undo and Redo keeps the policies and the game', async () => {
+    stubTouchLaptop();
+    const mem = new MemoryStorage();
+    const game = seed(mem, 0);
+    await openedLong(game, mem);
+    await seeWin();
+    await gift().click();
+    await acceptAll(3);
+    await expect.element(undoButton()).toBeDisabled();
+    (document.activeElement as HTMLElement | null)?.blur();
+    await userEvent.keyboard('{Control>}z{/Control}');
+    await tick();
+    expect(policies(debug().policy)).toHaveLength(3);
+    const before = structuredClone($state.snapshot(game.state));
+
+    await page
+      .getByTestId('tl-kind-zoning')
+      .getByRole('button', { name: /^Zoning/ })
+      .click();
+    await page.getByTestId('tl-kind-zoning').getByTestId('tl-bar').first().click();
+    const on = inspector().getByRole('switch', { name: 'On' });
+    await expect.element(on).toHaveAttribute('aria-checked', 'false');
+    await on.click();
+    const rail = () => debug().policy.kinds.zoning.find((p) => p.id === 'transit-rail')!;
+    await expect.poll(() => rail().on).toBe(true);
+    await expect.element(undoButton()).toBeEnabled();
+    await undoButton().click();
+    await expect.poll(() => rail().on).toBe(false);
+    expect(policies(debug().policy)).toHaveLength(3);
+    await redoButton().click();
+    await expect.poll(() => rail().on).toBe(true);
+    expect(policies(debug().policy)).toHaveLength(3);
+    expect($state.snapshot(game.state)).toEqual(before);
+  });
+
+  it('in round 1 with the rail rule on, the gift makes it editable; the rest stay fixed', async () => {
+    const mem = new MemoryStorage();
+    const seeded = offerThrough(EMPTY, 1, fcal);
+    store(mem, {
+      ...seeded,
+      kinds: {
+        ...seeded.kinds,
+        zoning: seeded.kinds.zoning.map((p) => ({ ...p, on: true }))
+      }
+    });
+    const game = seed(mem, 1, { target: M[K + 6] });
+    await openedLong(game, mem);
+    const railOf = () => debug().policy.kinds.zoning.find((p) => p.id === 'transit-rail')!;
+    expect(railOf().on).toBe(true);
+    expect(isFixed(railOf(), game.limits)).toBe(true);
+    await seeWin();
+    await gift().click();
+    await expect.element(dialog()).toBeVisible();
+    expect(game.state.round).toBe(2);
+    expect(game.state.editable).toEqual(['transit-rail']);
+    await acceptAll(3);
+    expect(isFixed(railOf(), game.limits)).toBe(false);
+    const rest = policies(debug().policy).filter((p) => p.id !== 'transit-rail');
+    // Round 1's other two, and the three of round 2 just offered.
+    expect(rest).toHaveLength(5);
+    for (const p of rest) expect(isFixed(p, game.limits)).toBe(true);
+    expect(rest.filter((p) => p.on)).toEqual([]);
+  });
+
+  it('a refused store write changes nothing and the win stands', async () => {
+    const mem = new MemoryStorage();
+    const game = seed(mem, 0);
+    await openedLong(game, mem);
+    await seeWin();
+    const before = structuredClone($state.snapshot(game.state));
+    const doc = debug().policy;
+    const refuse = vi.spyOn(game, 'takeWin').mockReturnValue({ ok: false, reason: 'storage' });
+    await gift().click();
+    expect(refuse).toHaveBeenCalledTimes(1);
+    expect($state.snapshot(game.state)).toEqual(before);
+    expect(debug().policy).toEqual(doc);
+    expect(document.querySelector('[data-testid=gift-dialog]')).toBeNull();
+    await expect.element(gift()).toBeVisible();
+    expect(page.getByTestId('goal-headline').element().getAttribute('data-state')).toBe('win');
+    // The win is still takeable once the store accepts it.
+    refuse.mockRestore();
+    await gift().click();
+    expect(game.state.round).toBe(1);
+  });
+
+  it('a win in a finished game opens no dialog and leaves focus where it was', async () => {
+    const mem = new MemoryStorage();
+    const game = seed(mem, 4, { finished: true, target: M[K + 6] });
+    await openedLong(game, mem);
+    await seeWin();
+    const focused = gift().element();
+    focused.focus();
+    await gift().click();
+    expect(game.state.finished).toBe(true);
+    expect(game.state.target).toBe(M[K]);
+    expect(document.querySelector('[data-testid=gift-dialog]')).toBeNull();
   });
 });

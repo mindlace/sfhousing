@@ -257,6 +257,32 @@ describe('TimelineMode in a game: the goal and the header', () => {
     await expect.element(line2()).toHaveTextContent(words({ finished: true }).line2);
   });
 
+  it('pressing the goal opens the round panel: round 0 has no policies yet, no buttons in it', async () => {
+    await opened({ game: gameWith({ phase: 'runs' }) }, LONG);
+    const button = page.getByTestId('goal-headline-button');
+    await button.click();
+    const panel = page.getByTestId('round-panel');
+    await expect.element(panel).toBeVisible();
+    await expect.element(panel).toHaveTextContent('Current law');
+    await expect.element(panel).toHaveTextContent('No policies yet');
+    expect(panel.element().querySelectorAll('button, a, [tabindex]')).toHaveLength(0);
+    await userEvent.keyboard('{Escape}');
+    await expect.element(button).toHaveAttribute('aria-expanded', 'false');
+    await expect.element(button).toHaveFocus();
+  });
+
+  it("the round panel lists the round's policies as the document has them", async () => {
+    const policy = offerThrough(DEFAULT_POLICY4, 1, cal);
+    await opened({ game: gameWith({ phase: 'runs', round: 1 }), initialPolicy: policy }, LONG);
+    await page.getByTestId('goal-headline-button').click();
+    const panel = page.getByTestId('round-panel');
+    await expect.element(panel).toHaveTextContent('Round 1');
+    await expect
+      .element(panel)
+      .toHaveTextContent('Taller near BART and Caltrain (off): 75 ft within 402 m');
+    await expect.element(panel).toHaveTextContent('SB 423 clock (off)');
+  });
+
   it('there is no goal notice in a game, where the page without one has one', async () => {
     const plain = await opened({}, LONG);
     await toEnd();

@@ -34,8 +34,10 @@
   import type { ParcelId } from '$lib/data/parcel';
   import { e2eGoalAmount } from '$lib/game/e2e';
   import { OPEN_LIMITS, runnable, within, type Limits } from '$lib/game/limits';
-  import { offerThrough } from '$lib/game/offer';
+  import { offerThrough, onKeys } from '$lib/game/offer';
+  import { giftItems, type GiftItem } from '$lib/game/round-panel';
   import type { GameStore } from '$lib/game/store.svelte';
+  import GiftDialog from '$lib/game/ui/GiftDialog.svelte';
   import { packedCellLayer, type SolidPolygonLayerCtor } from '$lib/map/generated-controller';
   import { LID_MAX_SPAN_M } from '$lib/map/height/lids';
   import { LIDS_FADE, type LimitsView } from '$lib/map/height/limits-style';
@@ -269,6 +271,36 @@
     synced = r;
     // A load, not a change: no debounce (`PolicySync.open`).
     sync.open(r);
+  }
+
+  /** The explainers after a gift, one per new policy; null: none open. */
+  let gift = $state.raw<GiftItem[] | null>(null);
+
+  /**
+   * The gift: game.takeWin with the keys whose policies are on, then the store reset to
+   * offerThrough(doc, after.round, cal, after.editable) (no undo step, history cleared), the
+   * autosave flushed (leave()), and the explainers opened on giftItems(before, after). False when
+   * the store refused: nothing changes and the win stands.
+   */
+  function takeWin(w: { goalMonth: Day | null }): boolean {
+    const g = game;
+    if (!g || g.open || !cal) return false;
+    const before = g.state;
+    const done = g.takeWin({ goalMonth: w.goalMonth, on: onKeys(store.policy), datasetVersion });
+    if (!done.ok) return false;
+    load(store.policy);
+    leave();
+    const items = giftItems(before, g.state);
+    if (items.length > 0) gift = items;
+    return true;
+  }
+
+  /** The explainers are accepted: focus goes to the pinned goal. */
+  function giftClosed(): void {
+    gift = null;
+    void tick().then(() =>
+      document.querySelector<HTMLElement>('[data-testid=goal-headline-button]')?.focus()
+    );
   }
 
   /** Opens the document once the calibration is known (rule 40, R-3). */
@@ -1294,6 +1326,7 @@
   onmiss={onMiss}
   onscore={pressScore}
   onstarter={readonly || game ? undefined : addStarter}
+  ongift={game && !game.open && !readonly ? takeWin : undefined}
   {refusal}
   ondismissrefusal={() => (refusal = null)}
   ondetails={showDetails}
@@ -1310,5 +1343,8 @@
     ondone={() => {}}
     eraseHint={ERASE_HINT}
   />
+{/if}
+{#if gift}
+  <GiftDialog items={gift} onclose={giftClosed} />
 {/if}
 <p role="status" aria-live="polite" class="sr-only">{brush.announcement}</p>

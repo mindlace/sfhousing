@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRawSnippet, type ComponentProps } from 'svelte';
 import { render } from 'vitest-browser-svelte';
-import { cdp, page } from 'vitest/browser';
+import { cdp, page, userEvent } from 'vitest/browser';
 import axe from 'axe-core';
 import '../../../routes/layout.css';
 import { dayFromUtc } from '$lib/fzp/time';
@@ -135,6 +135,62 @@ describe('GoalHeadline', () => {
     await b.click();
     await expect.element(b).toHaveAttribute('aria-expanded', 'true');
     await expect.element(page.getByText('Round 2')).toBeVisible();
+  });
+
+  describe('the panel closes by Escape and by a press outside', () => {
+    const panelSnippet = () => createRawSnippet(() => ({ render: () => '<p>Round 2</p>' }));
+    const button = () => page.getByTestId('goal-headline-button');
+
+    it('Escape closes it and focus is on the button', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await button().click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
+      await userEvent.keyboard('{Escape}');
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(button()).toHaveFocus();
+    });
+
+    it('a press outside closes it, focus on the button; a press inside keeps it open', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await button().click();
+      await page.getByText('Round 2').click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
+      await page.getByTestId('outside').click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
+      await expect.element(button()).toHaveFocus();
+    });
+
+    it('another header overlay opening closes it', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await button().click();
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'true');
+      window.dispatchEvent(new CustomEvent('sfh-header-overlay-open', { detail: 'menu' }));
+      await expect.element(button()).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('opening it announces itself to the other overlays', async () => {
+      await page.viewport(1280, 800);
+      const seen: string[] = [];
+      const on = (e: Event) => seen.push((e as CustomEvent<string>).detail);
+      window.addEventListener('sfh-header-overlay-open', on);
+      try {
+        await mount({ panel: panelSnippet() });
+        await button().click();
+        expect(seen).toHaveLength(1);
+      } finally {
+        window.removeEventListener('sfh-header-overlay-open', on);
+      }
+    });
+
+    it('Escape with the panel shut does nothing to the focus', async () => {
+      await page.viewport(1280, 800);
+      await mount({ panel: panelSnippet() });
+      await userEvent.keyboard('{Escape}');
+      await expect.element(button()).not.toHaveFocus();
+    });
   });
 
   it('the state at mount is not announced; win and late arriving later are', async () => {

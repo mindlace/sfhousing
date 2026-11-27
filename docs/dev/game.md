@@ -16,6 +16,7 @@ and saved games live in `src/lib/game/`:
 | `save-shape.ts`                      | `GameSave`, `SaveEntry`, `parseGameSave`, `parseGameState`                                 |
 | `rounds.ts`                          | `judge`, `Verdict`, `monthsBetween`, `spanText`, `fitState`, `takeWin`                     |
 | `offer.ts`                           | `addEntry`, `offerThrough`, `catalogueDoc`, `onKeys`                                       |
+| `round-panel.ts`                     | `roundPanel` (the round panel's text), `giftItems` (the explainers' text)                  |
 | `limits.ts`                          | `Limits`, `limitsOf`, `within`, `runnable`, `isGiven`, `isFixed`, `whatFixed`, `canRemove` |
 | `words.ts`                           | The store's and the sync's words                                                           |
 | `catalogue/rounds.ts`                | The twelve policies (`CATALOGUE`, `POLICY_KEYS`, `ROUNDS`, `keyOf`)                        |
@@ -49,7 +50,9 @@ current round, and every editable key, that the document lacks, off (`offerThrou
 store's reset (no undo step).
 
 The header has no steps; the site name is the way home. In the opening it shows the name, the save
-state, the pinned room score, Publish and the Menu button. After it: the name, the save state (or
+state, the pinned room score, Publish and the Menu button. After it: the name, the round ("Current
+law", "Round 2", "Every policy": plain text, not a control; `round-label`, below sm in the Menu's
+panel beside the name as `round-label-menu`; never for the open game), the save state (or
 "Updating"), the pinned goal (`GoalHeadline`: pending, win or late) and the actions: Undo and Redo while a pointer is
 coarse, Publish and the Menu button. The Menu holds the saved games (`GamePanel`), the account entry
 and About. In the open game the Menu has no game part. Below sm the pinned item leads the bar
@@ -87,6 +90,18 @@ key in `on` that is offered becomes editable, and the round goes up by one; a wi
 sets `finished` with every key editable; a win once finished changes only the target and the wins.
 `fitState(state)` fits a state to this build: unknown and duplicate editable keys dropped (sorted),
 the round held to `ROUNDS`; it returns the same object when nothing changes.
+
+### Taking a win
+
+There is no victory dialog: the win is the pinned goal's state and its gift. Pressing the gift
+calls `SimPage`'s `takeWin`: `game.takeWin` with `onKeys(document)` (the keys whose policies are
+on), then the store reset to `offerThrough(document, round, cal, editable)` of the new state (no
+undo step, so Undo and Redo are cleared and no earlier step can remove an offered policy), the
+autosave flushed, and the explainers (`GiftDialog`) opened on `giftItems(before, after)`. After the
+last Accept focus goes to `goal-headline-button`. The pinned goal stays pending until the next
+change. When the store refuses the write nothing changes: the document, the history and the held
+win stay, and the gift can be pressed again. When `giftItems` is empty (the game was finished
+before) no dialog opens and focus stays where it was.
 
 ## Version 2 games
 
@@ -159,9 +174,25 @@ All in `src/lib/game/ui/`; none renders for the open game.
   the keyframes' first 15%) and is still under reduced motion. Win and late arriving after mount put
   `words.live` in the polite `goal-live` region; the state at mount says nothing. With `panel` the
   lines are a button (`aria-expanded`, `aria-controls`) that opens it under the goal; without, they
-  are plain text and no control. The status cell is never inside it. `TimelineMode` gives it the
-  shown verdict ([timeline-ui.md](timeline-ui.md), "In a game"): a policy change resets the
-  timeline and clears a held win or late; the round panel and taking the win come with the page.
+  are plain text and no control. The panel is a header overlay (`headerOverlay`: it and the Menu
+  never show together), not modal, and holds nothing focusable; Escape and a press outside close
+  it, and focus ends on the button (after a press, only when nothing else took it). The status cell
+  is never inside it. `TimelineMode` gives it the shown verdict ([timeline-ui.md](timeline-ui.md),
+  "In a game"): a policy change resets the timeline and clears a held win or late; and the round
+  panel as its `panel` (below).
+- **`RoundPanel`** (`round-panel`, props `{ data: RoundPanelData }`): information only, with no
+  button or link in it. `roundPanel(state, doc, legal)` gives `title` (`roundName`), `items` (the
+  current round's policies as `${label}: ${rulesText(entry, policy)}` read from the document, so
+  as set, with " (off)" when the policy is off; "No policies yet" in round 0; none when finished)
+  and `earlier` (newest first: "Round 1: goal reached Jun 2060, 1 yr 4 mo earlier", with no
+  "earlier" part when the win beat no month; "Baseline: Oct 2061", or "Baseline: after Oct 2066"
+  when current law did not reach the goal).
+- **`GiftDialog`** (`gift-dialog`, `gift-step`, `gift-accept`): the explainers, a native modal
+  `<dialog>` (the page is inert behind it) over `GiftItem[]` from `giftItems(before, after)`: one
+  per policy of the new round (title, step "1 of 3", the line, and for a zoning policy its fixed
+  bands as rules), or one "Every policy" when the win finished the game, or none when the game was
+  finished before. Accept (focused, the only control; Tab stays on it) shows the next; after the
+  last the dialog closes and calls `onclose`. Escape acts as Accept: the policies are in already.
 - **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): rendered in
   place inside the header Menu's panel (`SiteHeader`, after mount, never for the open game; its root
   carries `data-header-keep-open`, so a press on its buttons leaves the Menu open). The current
