@@ -181,6 +181,44 @@ The first city run, 2026-11-14, on one machine (15 cores). The build is dataset 
 
 **Parts first.** 210 buildings have counted parts. 70 of them (33.3%) have `parts_coverage` under 0.5. Coverage is p10 0.185, p50 0.730 and p90 1.0. Sutro Tower is bid `c5cbfced-fe3d-43ce-9d7a-63302127f0f9`: its footprint holds the point (-122.4528, 37.7552), with 34 parts and coverage 0.993. All 34 of its `part` pieces (100%) carry parcel `2724003`, and its top is 298 m. Its uncovered sliver fell back `unreliable` and is dropped. The building whose point-on-surface is nearest that point is a different, 14 m² shed (`f13e7d30-…`). So find landmarks by footprint distance, not by `lng`/`lat`.
 
+### Round 2 (2026-11-27): the parts check, terraces and z12–13 parts
+
+Dataset `2026-11-27-d3347aa7` (base `2026-11-25-76c90397`). Every invariant passes:
+
+- V11: z12 buildings 801,237 B.
+- V37: `src box/base/front/step/part 1365/161302/38852/16062/967; fallback 0.8%; reg fit 89.3%`.
+- `tiles.buildings.drops_z14plus` 0 and `boxes.step.over_cap` 0.
+
+`boxes` took 2,974 s.
+
+**Two rules came out of the first round:**
+
+- **Vegetation rule.** The cloud has no vegetation classes, so the multi-return rule flags glass: 59.7% of Salesforce Tower's interior cells. That flag had cut its terraces to slivers. Derive now keeps a flagged cell at `vegKeepAboveM` (60 m) or more as building. Citywide that keeps 538,937 cells (33,684 m²) on 355 footprints.
+- **Direction rule.** A part is disputed only when the LiDAR stands above its drawn top. Sutro's 232 m part reads 67 m: the pulses fall through the lattice. Under the two-sided rule, Sutro was rejected.
+
+With both rules in place, `taperRoughM` went from 1 to 4. At 1, Salesforce's near-vertical taper still broke into slivers: profile error 864 m², against 248 m² at 4.
+
+**Parts.**
+
+- 469 parts checked, 16 disputed, 11 buildings rejected (65 under the two-sided rule at `partTolM` 5).
+- `boxes.step.sliced` 190; `.max_per_building` 26; `.capped` 186.
+- 555 California, Transamerica and the ten tiered-parts buildings with the most part area keep their parts.
+
+**Acceptance.**
+
+- **Salesforce:** parts rejected (3 of 3 checked parts drawn too low: 203.5 m against about 270 m). It is sliced and tops at 325.9 m. Plan-area error over 130–330 m is 250 m² (bar 350; its parts drew 852, roofer 262).
+- **Sutro:** parts trusted (4 checked, 0 disputed), with 34 `part` rows. At z13 its features are its parts up to 232.3 m; tippecanoe drops the 0.6 m² mast tips at 298 m.
+
+**z12 gate** (against staging's base):
+
+- z12 bytes 783,877 → 801,237 (+17,360);
+- z12 parcels 30,597 → 30,663;
+- z13 parcels 64,001 → 63,820.
+
+**Model check.** The model counts are unchanged. The one count that differs, `gross.bytes.file` (1 B), is the deflate of a payload identical apart from the embedded dataset version.
+
+**Known limit: parts drawn too tall.** A part drawn above a solid roof stays trusted. 35 parts buildings have parts drawn more than the tolerance above a LiDAR surface with a raised share of 0.9 or more, covering a quarter or more of their part area. Two examples: Oracle Park, drawn as 60 m prisms over 26 m stands; `83955c81`, drawn at 137 m over a 94 m roof. They draw as on main.
+
 ## The spike's frames
 
 The registration design comes from a spike on 2026-11-13 (462 detached buildings and 3 rowhouse blocks; scripts, `models.json` and figures in `docs/superpowers/design/2026-11-13-offset-spike/`):
