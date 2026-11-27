@@ -79,7 +79,12 @@ describe('PolicyDetails', () => {
     setup(bond, 'housing-bond');
     const pane = page.getByTestId('policy-details');
     await expect.element(pane).toHaveTextContent('Public money · off · New');
-    await expect.element(pane).toHaveTextContent('Rules');
+    // The entry's line, once, and no Rules row repeating it.
+    const text = pane.element().textContent ?? '';
+    const line = 'A City bond for affordable homes, repaid over 20 years.';
+    expect(text.split(line)).toHaveLength(2);
+    expect(text.toLowerCase().split('city bond for affordable homes')).toHaveLength(2);
+    expect(text).not.toContain('Rules');
   });
 
   it('Close and Escape call onclose', async () => {

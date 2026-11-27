@@ -769,24 +769,32 @@ describe('the rows below md: a name line above each lane', () => {
     }
   });
 
-  it('below md each policy row in the sheet shows its name on its own line above its lane', async () => {
+  it('below md a policy row is two rows: switch | name, then New or Edit | the lane', async () => {
     await phone();
     await kindButton('Permitting').click();
     const sheet = page.getByRole('dialog', { name: 'Permitting' });
     await expect.element(sheet).toBeVisible();
-    const grid = sheet.element().querySelector('.grid')!;
-    const g = rect(grid);
     const rows = [...sheet.element().querySelectorAll('[data-testid=tl-policy]')];
     expect(rows).toHaveLength(2);
+    // Two boxes share a row when their vertical ranges overlap by more than a pixel.
+    const sameRow = (a: DOMRect, b: DOMRect) => a.top < b.bottom - 1 && b.top < a.bottom - 1;
     for (const row of rows) {
-      const { lab, lane } = parts(row);
-      const l = rect(lab);
-      const n = rect(lane);
-      expect(Math.abs(l.left - g.left)).toBeLessThanOrEqual(1);
-      expect(n.top).toBeGreaterThanOrEqual(l.bottom - 1);
-      expect(whole(lab.querySelector('.name')!)).toBe(true);
-      // The words sit over the playhead line (the line passes under the name line).
-      const cs = getComputedStyle(lab);
+      const sw = rect(row.querySelector('[role=switch]')!);
+      const name = row.querySelector<HTMLElement>('.name')!;
+      const nm = rect(name);
+      const btn = rect(row.querySelector('[data-testid=tl-policy-edit]')!);
+      const lane = rect(parts(row).lane);
+      for (const r of [sw, nm, btn, lane]) expect(r.width).toBeGreaterThan(0);
+      expect(sameRow(sw, nm)).toBe(true);
+      expect(sw.right).toBeLessThanOrEqual(nm.left + 1);
+      expect(sameRow(btn, lane)).toBe(true);
+      expect(btn.top).toBeGreaterThanOrEqual(nm.bottom - 1);
+      expect(lane.top).toBeGreaterThanOrEqual(nm.bottom - 1);
+      expect(Math.abs(btn.left - sw.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(lane.left - nm.left)).toBeLessThanOrEqual(1);
+      expect(whole(name)).toBe(true);
+      // The name rides over the playhead line, on an opaque ground.
+      const cs = getComputedStyle(name);
       expect(cs.position).toBe('relative');
       expect(Number(cs.zIndex)).toBeGreaterThan(1);
       expect(cs.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
@@ -1223,6 +1231,11 @@ describe('Timeline policy rows: switch, New and Edit', () => {
     editable: new Set(['transit-rail'] as const),
     stops: new Set(['regionalRail', 'metro'] as const)
   });
+  afterEach(async () => {
+    await cdp().send('Emulation.setEmulatedMedia', {
+      features: [{ name: 'prefers-color-scheme', value: 'light' }]
+    });
+  });
   const policyRow = (label: string) =>
     page.getByTestId('tl-kind-zoning').getByTestId('tl-policy').filter({ hasText: label });
 
@@ -1317,6 +1330,72 @@ describe('Timeline policy rows: switch, New and Edit', () => {
     await expect.element(rows.nth(1)).toBeInTheDocument();
     expect(all('[data-testid=tl-kind-permitting] [role=switch]')).toHaveLength(2);
     expect(all('[data-testid=tl-kind-permitting] [data-testid=tl-policy-edit]')).toHaveLength(2);
+    expect(all('[data-testid=tl-policy-new]')).toHaveLength(0);
+  });
+
+  /** The channels of a computed `rgb()` or `rgba()` colour. */
+  const channels = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number);
+  const lum = (c: string) => {
+    const [r, g, b] = channels(c)
+      .slice(0, 3)
+      .map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a: string, b: string) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it('an off New row dims only its name: switch and New are at full opacity from md', async () => {
+    await open();
+    const row = policyRow('Taller near Muni Metro').element();
+    for (const part of [
+      row.querySelector('[role=switch]')!,
+      row.querySelector('[data-testid=tl-policy-new]')!
+    ]) {
+      for (let e: Element | null = part; e && e !== row.parentElement; e = e.parentElement)
+        expect(getComputedStyle(e).opacity, e.className).toBe('1');
+    }
+    expect(getComputedStyle(row.querySelector('.name')!).opacity).toBe('1');
+  });
+
+  for (const mode of ['light', 'dark'] as const) {
+    it(`an off row's muted name keeps 4.5:1 in ${mode}`, async () => {
+      await cdp().send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: mode }]
+      });
+      const { view } = await open();
+      view.container.style.background = `var(--color-surface${mode === 'dark' ? '-dark' : ''})`;
+      const name = policyRow('Taller near Muni Metro').element().querySelector('.name')!;
+      const ground = getComputedStyle(view.container).backgroundColor;
+      const on = policyRow('Taller near BART and Caltrain').element().querySelector('.name')!;
+      expect(getComputedStyle(name).color).not.toBe(getComputedStyle(on).color);
+      expect(ratio(getComputedStyle(name).color, ground)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
+  it('a free measure reads Edit in a game before the end', async () => {
+    const free: Policy = { ...money, id: 'm3', label: 'State money off', preset: 'state-off' };
+    await setup({
+      limits: limitsWith({ money: true }),
+      policy: { schema: 4, kinds: { zoning: [], permitting: [], money: [free] } }
+    });
+    await kindButton('Public money').click();
+    const row = page.getByTestId('tl-kind-money').getByTestId('tl-policy');
+    await expect.element(row.getByTestId('tl-policy-edit')).toBeVisible();
+    expect(row.getByTestId('tl-policy-new').all()).toHaveLength(0);
+    expect(row.getByRole('switch').all()).toHaveLength(1);
+  });
+
+  it('a finished game has the switch and Edit on every row', async () => {
+    await setup({ policy: gameDoc, limits: limitsWith({ whole: true }) });
+    await kindButton('Zoning').click();
+    await expect.element(policyRow('Taller near Muni Metro')).toBeInTheDocument();
+    expect(all('[data-testid=tl-kind-zoning] [role=switch]')).toHaveLength(2);
+    expect(all('[data-testid=tl-kind-zoning] [data-testid=tl-policy-edit]')).toHaveLength(2);
     expect(all('[data-testid=tl-policy-new]')).toHaveLength(0);
   });
 

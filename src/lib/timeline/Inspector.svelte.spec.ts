@@ -486,6 +486,35 @@ describe('Inspector', () => {
   });
 });
 
+describe('Inspector: an editable catalogue transit rule in a game', () => {
+  it('shows its stop types as text, with no chip', async () => {
+    const railDoc: SimPolicy4 = {
+      schema: 4,
+      kinds: {
+        zoning: [
+          {
+            ...transit,
+            id: 'transit-rail',
+            label: 'Taller near BART and Caltrain',
+            where: { tag: 'transit', stopTypes: ['regionalRail'] }
+          }
+        ],
+        permitting: [],
+        money: []
+      }
+    };
+    const l = limitsWith({
+      offered: new Set(['transit-rail']),
+      editable: new Set(['transit-rail']),
+      stops: new Set(['regionalRail', 'metro'])
+    });
+    setup({ doc: railDoc, initial: { kind: 'zoning', id: 'transit-rail', span: 0 }, limits: l });
+    const group = page.getByRole('group', { name: 'Stop types' });
+    await expect.element(group).toHaveTextContent('Regional rail');
+    expect(group.getByRole('button').all()).toHaveLength(0);
+  });
+});
+
 describe('Inspector under limits', () => {
   /** Round 1 of a game: its three policies offered, none editable yet. */
   const round1 = limitsWith({
@@ -583,7 +612,7 @@ describe('Inspector under limits', () => {
 
 describe('Inspector with given measures', () => {
   const givenLimits = limitsWith({ offered: new Set(['housing-bond']), money: true });
-  // The housing bond as `addPolicy` makes it, then a neighbour below it on the money row.
+  // The free measure `state-off` as `addPolicy` makes it, then a neighbour below it on the money row.
   const EMPTY: SimPolicy4 = { schema: 4, kinds: { zoning: [], permitting: [], money: [] } };
   const made = addPolicy(
     EMPTY,

@@ -163,8 +163,9 @@
     flex: 1;
     min-width: 0;
   }
-  .lab.off {
-    opacity: 0.6;
+  /* Off dims the name's colour only, never the switch or New or Edit (they keep their contrast). */
+  .lab.off .name {
+    color: var(--color-ink-muted);
   }
   .name,
   .note {
@@ -314,15 +315,13 @@
       border-radius: 0;
       padding-left: 4px;
     }
-    .lab.ctl.off .name {
-      opacity: 0.6;
-    }
   }
   @media (prefers-color-scheme: dark) {
     .lab {
       border-bottom-color: var(--color-line-dark);
     }
-    .note {
+    .note,
+    .lab.off .name {
       color: var(--color-ink-dark-muted);
     }
     .new {

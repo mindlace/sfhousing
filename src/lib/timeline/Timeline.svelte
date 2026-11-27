@@ -480,7 +480,9 @@
      lane sits on the next line in the lane column (column 1 empty): the lanes keep the ruler's
      width and x scale. The name line rides over the playhead line (z-index 2, an opaque surface),
      so the line passes under the words. A lane that never holds anything (the world heading's) is
-     not drawn. From md nothing changes (there the rows share out a tall box's spare height, as
+     not drawn. A policy row with controls has no label box (`display: contents`, PolicyRow): this
+     rule does not reach it, and its switch, name and button keep the ground and the z-index
+     themselves. From md nothing changes (there the rows share out a tall box's spare height, as
      before). */
   @media (max-width: 767.98px) {
     /* The lines pack at the top of a tall box rather than share out its spare height. */

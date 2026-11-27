@@ -60,7 +60,12 @@
       ? `${from}, no end`
       : `${from} to ${formatShortMonthYear(monthLastDay(asOf, m.to))}`;
   });
-  const rules = $derived(entry === undefined ? '' : rulesText(entry, policy));
+  /** Rules only where they say more than the entry's line (a non-zoning entry's are its line). */
+  const rules = $derived.by(() => {
+    if (entry === undefined) return '';
+    const r = rulesText(entry, policy);
+    return entry.kind !== 'zoning' && entry.line.toLowerCase().startsWith(r.toLowerCase()) ? '' : r;
+  });
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
