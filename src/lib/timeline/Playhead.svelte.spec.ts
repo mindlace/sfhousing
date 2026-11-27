@@ -434,6 +434,14 @@ describe('Playhead', () => {
     expect(document.querySelector('[data-testid=tl-goal-flag]')).toBeNull();
   });
 
+  it('the goal flag reads goalLabel when given', async () => {
+    const deadline = dayFromUtc(2031, 1, 1);
+    await setup({ goalDeadline: deadline, goalLabel: 'Target Jan 2031' });
+    const goal = page.getByTestId('tl-goal-flag');
+    await expect.element(goal).toHaveTextContent('Target Jan 2031');
+    near(centre(rect(goal.element())), xOf(deadline), 'goal flag');
+  });
+
   it('draws no To beat flag and says no To beat sentence', async () => {
     await setup({ goalDeadline: dayFromUtc(2030, 11, 31) });
     expect(document.querySelector('[data-testid=tl-bar-flag]')).toBeNull();

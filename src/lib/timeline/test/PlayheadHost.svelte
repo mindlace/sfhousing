@@ -17,6 +17,7 @@
     reached?: Day;
     playFrom?: Day | null;
     goalDeadline?: Day | null;
+    goalLabel?: string;
     startDay?: Day;
     startPlaying?: boolean;
     startSpeed?: Speed;

@@ -41,6 +41,8 @@
     playFrom?: Day | null;
     /** The goal flag's day; null hides the flag and the description's deadline sentence. */
     goalDeadline?: Day | null;
+    /** The goal flag's words (default GOAL_FLAG); a game names its target ("Target Jun 2060"). */
+    goalLabel?: string;
     /** Called exactly once per day change. */
     onday?: (day: Day) => void;
     /** Test seams. */
@@ -59,6 +61,7 @@
     reached,
     playFrom = null,
     goalDeadline = null,
+    goalLabel = GOAL_FLAG,
     onday,
     raf = (cb) => requestAnimationFrame(cb),
     cancelRaf = (h) => cancelAnimationFrame(h)
@@ -296,7 +299,7 @@
           class="goal text-ink-muted dark:text-ink-dark-muted"
           data-testid="tl-goal-flag"
           aria-hidden="true"
-          style:left="{at(goalDeadline)}%">{GOAL_FLAG}</span
+          style:left="{at(goalDeadline)}%">{goalLabel}</span
         >
       {/if}
     </div>

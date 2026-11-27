@@ -2,7 +2,7 @@
   Test host: TimelineMode under the real SiteHeader, wired as the root layout wires it, and the
   page's part of the document: `policy`, `lots`, `lotsFailed` and the selection live here, and
   `ctl` lets a test set them as the page's store and PolicySync would, and call `showDetails` and
-  `showActivity`. `onedit` applies the change; `onundoto` (rule 34) sets the document unless the
+  `showActivity`. `onedit` applies the change (`ctl.edit` calls it); `onundoto` (rule 34) sets the document unless the
   test passes its own. With `withInspector` the inspector renders the Details face (or `face`'s).
   `readonly` is the page's (default false). `regionHeight` is the mode box's height (700 px unless given). With
   `saveStatus` the status is the real SaveIndicator, as SimPage renders it (`ctl.setSaveStatus`),
@@ -53,6 +53,8 @@
       setPolicy?: (p: SimPolicy4) => void;
       setRun?: (p: SimPolicy4) => void;
       setLots?: (l: Lots | null) => void;
+      /** The page's `onedit`, as a policy row calls it. */
+      edit?: (change: (p: SimPolicy4) => SimPolicy4) => void;
       setLotsFailed?: (f: boolean) => void;
       showDetails?: () => Promise<void>;
       showActivity?: () => Promise<void>;
@@ -85,6 +87,9 @@
   let lotsFailed = $state(false);
   let selected = $state.raw<SpanRef | null>(null);
   let mode = $state<ReturnType<typeof TimelineMode>>();
+  function onedit(change: (p: SimPolicy4) => SimPolicy4): void {
+    policy = change(policy);
+  }
   untrack(() => {
     ctl.showDetails = () => mode!.showDetails();
     ctl.showActivity = () => mode!.showActivity();
@@ -92,6 +97,7 @@
     ctl.setPolicy = (p) => (policy = p);
     ctl.setRun = (p) => (run = p);
     ctl.setLots = (l) => (lots = l);
+    ctl.edit = onedit;
     ctl.setLotsFailed = (f) => (lotsFailed = f);
   });
 </script>
@@ -126,7 +132,7 @@
     saveOff={saveOff ?? save === 'off'}
     {selected}
     onselect={(r) => (selected = r)}
-    onedit={(change) => (policy = change(policy))}
+    {onedit}
     onadd={() => {}}
     onundoto={onundoto ?? ((p) => (policy = p))}
     inspector={withInspector ? inspector : undefined}

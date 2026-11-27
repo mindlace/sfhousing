@@ -50,9 +50,10 @@ store's reset (no undo step).
 
 The header has no steps; the site name is the way home. In the opening it shows the name, the save
 state, the pinned room score, Publish and the Menu button. After it: the name, the save state (or
-"Updating"), the pinned goal (`GoalHeadline`) and the actions: Undo and Redo while a pointer is
+"Updating"), the pinned goal (`GoalHeadline`: pending, win or late) and the actions: Undo and Redo while a pointer is
 coarse, Publish and the Menu button. The Menu holds the saved games (`GamePanel`), the account entry
-and About. In the open game the Menu has no game part.
+and About. In the open game the Menu has no game part. Below sm the pinned item leads the bar
+and grows to the Menu button, the status cell between them.
 
 In a game the goal is `defaultGoal(asOf)` with the target as its deadline (the legal deadline,
 `defaultGoal(asOf).deadline`, while there is none) and the e2e amount when one is set.
@@ -144,12 +145,23 @@ limits)`: no game, a finished game, or a policy outside the catalogue.
 All in `src/lib/game/ui/`; none renders for the open game.
 
 - **`OpeningCard`** (`opening-card`, `opening-start`): the room goal met; Start has focus.
-- **`GoalHeadline`** (`goal-headline`, `goal-box`, `goal-line1`, `goal-bar`, `goal-line2`,
-  `goal-live`): the pinned goal. Props `{ words, fill }`: `words` from `pinnedWords`
-  (`ui/round-words.ts`), drawn as line 1, the bar (`fill`, 0 to 1: the homes at the playhead's
-  month over the amount) and line 2; `words.live` in its polite live region. In a game
-  `TimelineMode` gives it the pending words (`pinnedWords(PENDING, ...)`); the round's result
-  states come later.
+- **`GoalHeadline`** (`goal-headline` with `data-state`, `goal-box`, `goal-headline-button`,
+  `goal-line1`, `goal-phone`, `goal-bar`, `goal-line2`, `goal-gift`, `goal-live`): the pinned goal,
+  the round's result state (P19). Props `{ state, words, fill, ongift?, panel? }`: `state` is
+  `'pending'`, `'win'` or `'late'`; `words` from `pinnedWords(verdict, ctx)` (`ui/round-words.ts`),
+  drawn from sm as line 1, the bar (`fill`, 0 to 1: the homes at the playhead's month over the
+  amount) and line 2. Below sm it is one line, `goal-phone` (count, " homes" in pending, a space,
+  the rest), from the bar's left up to the Menu with the bar under it; the line is an inline-size
+  container: at 17rem or less "homes" hides, at 13rem or less the short count ("82k") replaces the
+  full one, and the rest ("by Mar 2058 · 2 yr 3 mo early") always shows. A win reads "early" in
+  words and adds an accent border; with `ongift` it carries the gift, a 24 px button named by
+  `words.gift` that jiggles once every `JIGGLE_MS` (4 s; a `JIGGLE_TURN_MS` 600 ms turn,
+  `ui/motion.ts`) and is still under reduced motion. Win and late arriving after mount put
+  `words.live` in the polite `goal-live` region; the state at mount says nothing. With `panel` the
+  lines are a button (`aria-expanded`, `aria-controls`) that opens it under the goal; without, they
+  are plain text and no control. The status cell is never inside it. `TimelineMode` gives it the
+  shown verdict ([timeline-ui.md](timeline-ui.md), "In a game"): a policy change resets the
+  timeline and clears a held win or late; the round panel and taking the win come with the page.
 - **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): rendered in
   place inside the header Menu's panel (`SiteHeader`, after mount, never for the open game; its root
   carries `data-header-keep-open`, so a press on its buttons leaves the Menu open). The current

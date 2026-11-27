@@ -106,7 +106,8 @@
   import { SummaryRequester, type SummaryState } from '$lib/fzp/summary-request';
   import { monthStart } from '$lib/fzp/time';
   import type { FzpPhase, Speed } from '$lib/fzp/types';
-  import { TODAY, defaultGoal, goalStep, type Goal } from '$lib/goal/goal';
+  import { TODAY, defaultGoal, goalStep, readGoal, type Goal } from '$lib/goal/goal';
+  import { formatShortMonthYear } from '$lib/fzp/format';
   import type { HeightCity } from '$lib/map/height/types';
   import SimMap from '$lib/map/SimMap.svelte';
   import type { ChunkStatus, TimelinePick, TimelineUpdate } from '$lib/map/types';
@@ -148,7 +149,8 @@
   import { nothingInForce, type PolicyKind, type SimPolicy4 } from './policy4';
   import { awaitsView, goalOutcome, outcomeKey, outcomeText, type GoalOutcome } from './outcome';
   import { levelSet } from './pool-level';
-  import { editedReveal, moved, revealOpen, scanned, type Reveal } from './reveal';
+  import { editedReveal, moved, resetReveal, revealOpen, scanned, type Reveal } from './reveal';
+  import { changeStart, resetDay } from './change-start';
   import {
     headlineAt,
     headlineSpoken,
@@ -167,7 +169,7 @@
   import SimKey from './SimKey.svelte';
   import { ROUNDS, roundEntries } from '$lib/game/catalogue/rounds';
   import { OPEN_LIMITS } from '$lib/game/limits';
-  import { PENDING } from '$lib/game/rounds';
+  import { PENDING, judge, type Verdict } from '$lib/game/rounds';
   import type { GameStore } from '$lib/game/store.svelte';
   import GoalHeadline from '$lib/game/ui/GoalHeadline.svelte';
   import { pinnedWords } from '$lib/game/ui/round-words';
@@ -279,6 +281,11 @@
     /** The header score is pressed. */
     onscore?(): void;
     /**
+     * The gift was pressed on a win: the page takes it. True when taken (the pinned goal then
+     * stays pending until the next change); false leaves the win standing. No prop: no gift.
+     */
+    ongift?: (w: { goalMonth: Day | null }) => boolean;
+    /**
      * Activity's starter is pressed: the page adds `choice` as its "+" menu does, announcing
      * "Added: {label}". Absent (read-only), Activity offers no starters.
      */
@@ -361,6 +368,7 @@
     onchunks = undefined,
     onmiss = undefined,
     onscore = undefined,
+    ongift = undefined,
     onstarter = undefined,
     refusal = null,
     ondismissrefusal = undefined,
@@ -726,9 +734,9 @@
   // ---- the game's goal headline (game-sim #sec-design-goal, #tbl-goal-props) ----
 
   /**
-   * GoalHeadline's props in a game; null without a game. The words are the pending state's (the
-   * result states come with the round's verdict); the bar is the homes at the playhead's month
-   * over the amount (empty with no view or that month not filled).
+   * GoalHeadline's props in a game; null without a game. The state and words are the shown
+   * verdict's; the bar is the homes at the playhead's month over the amount (empty with no view or
+   * that month not filled). The gift is offered only with `ongift`.
    */
   const goalProps = $derived.by(() => {
     if (!g) return null;
@@ -736,7 +744,8 @@
     const view = shownView;
     const i = atToday ? TODAY : index;
     const homes = view && i <= view.filledThrough ? goal.measure.valueAt(view, i) : null;
-    const words = pinnedWords(PENDING, {
+    const v = verdict;
+    const words = pinnedWords(v, {
       amount: goal.amount,
       target: s.target,
       legal: defaultGoal(asOf).deadline,
@@ -744,8 +753,17 @@
       finished: s.finished,
       next: s.round < ROUNDS ? roundEntries(s.round + 1).length : 0
     });
-    return { words, fill: homes === null || goal.amount <= 0 ? 0 : homes / goal.amount };
+    return {
+      state: v.tag,
+      words,
+      fill: homes === null || goal.amount <= 0 ? 0 : homes / goal.amount,
+      ...(ongift && v.tag === 'win' ? { ongift: takeGift } : {})
+    };
   });
+  /** The ruler's goal flag names the target in a game that has one. */
+  const goalLabel = $derived(
+    g && g.state.target !== null ? `Target ${formatShortMonthYear(g.state.target)}` : undefined
+  );
   // The held document goes once the numbers on show are current again.
   $effect(() => {
     if (!stale) untrack(() => (heldDoc = null));
@@ -1293,12 +1311,27 @@
     const p = runDoc;
     untrack(() => {
       if (!session || p === seenPolicy) return;
+      const before = seenPolicy;
       seenPolicy = p;
       const seen = shown.view ? { view: shown.view, inForce } : null;
       heldDoc = hold(session);
       session.edited();
-      reveal = editedReveal(reveal, seen);
+      if (!g) {
+        reveal = editedReveal(reveal, seen);
+        playing = false;
+        return;
+      }
+      // In a game the reset (P16) takes the place of the search and "Play from": a change that
+      // alters the forecast pauses, puts the playhead where it first takes effect (later than
+      // where it was or not), restarts the seen range there and clears the result state.
       playing = false;
+      const from = before === null ? null : changeStart(before, p, asOf);
+      if (from === null) return;
+      const at = resetDay(asOf, from);
+      reveal = resetReveal(reveal, at);
+      day = at;
+      handleDay(at);
+      held = null;
     });
   });
 
@@ -1308,6 +1341,50 @@
    * never pending).
    */
   const waiting = $derived(!session || session.pending || session.provisional);
+
+  // ---- the result state in a game (P19) ----
+
+  /**
+   * The first month the newest forecast reaches the goal's amount in its filled months, over the
+   * whole window (the legal deadline's goal, not the target's); null: not in them, or no game.
+   */
+  const goalMonth = $derived.by(() => {
+    if (!g || !current) return null;
+    const gl = { ...defaultGoal(asOf), amount: goal.amount };
+    return readGoal(gl, current, current.filledThrough)?.reachedOn ?? null;
+  });
+  /** The round's rule over the months seen; pending without a game. */
+  const judged = $derived.by<Verdict>(() => {
+    if (!g || !current) return PENDING;
+    return judge({
+      target: g.state.target,
+      round: g.state.round,
+      goalMonth,
+      whole: current.filledThrough >= current.lastIndex,
+      seenFrom: reveal.from,
+      seen: reveal.reached,
+      lastDay,
+      current: !stale && !waiting
+    });
+  });
+  /**
+   * The first win or late judged since the last change, held until the next (win and late are
+   * sticky); 'taken' once the page took the win's gift. A reset clears it.
+   */
+  let held = $state.raw<Verdict | 'taken' | null>(null);
+  $effect(() => {
+    const v = judged;
+    untrack(() => {
+      if (held === null && v.tag !== 'pending') held = v;
+    });
+  });
+  /** What the pinned goal shows. */
+  const verdict = $derived<Verdict>(held === 'taken' ? PENDING : (held ?? judged));
+  function takeGift(): void {
+    const v = verdict;
+    if (v.tag !== 'win' || !ongift) return;
+    if (ongift({ goalMonth: v.goalMonth })) held = 'taken';
+  }
   // The scan: once the edit is answered, as the new view fills. It runs when the view or the
   // waiting state changes, never as the playhead moves; `scanned` resumes where it stopped.
   $effect(() => {
@@ -1350,7 +1427,7 @@
       const held = hold(session);
       if (!session.send(runDoc, l)) return;
       heldDoc = held;
-      if (seen) reveal = editedReveal(reveal, seen);
+      if (seen && !g) reveal = editedReveal(reveal, seen);
     });
   });
 
@@ -1515,11 +1592,11 @@
 <!-- The header's status slot (rule 32), at every width: the page's save state and "Updating"
      share one cell, and "Updating" wins while both apply. The covered save state keeps its width
      (`visibility: hidden`, and the snippet's `covered` makes its own controls inert), so the cell
-     is as wide as the widest and nothing moves as either comes or goes. With autosave off
-     (`saveOff`) "Updating" sits beside the save state in a second cell instead, so "Autosave off"
-     stays visible and pressable; that cell's sizer keeps its width while "Updating" is away. The
-     save state's own live region opts back into visibility, so its announcements still reach
-     screen readers. The timeline's live region is apart, once, in the page; "Updating"'s
+     is as wide as the widest and nothing moves as either comes or goes (from sm; below sm see
+     the sizer). With autosave off (`saveOff`) "Updating" sits beside the save state in a second
+     cell instead, so "Autosave off" stays visible and pressable; that cell's sizer keeps its
+     width while "Updating" is away. The save state's own live region opts back into visibility,
+     so its announcements still reach screen readers. The timeline's live region is apart, once, in the page; "Updating"'s
      explanation (why the numbers are stale, or that Play waits for the months ahead) opens as a
      popover under the slot (`explain-under`, layout.css), so the header keeps its size. -->
 {#snippet statusSlot()}
@@ -1534,14 +1611,20 @@
            while "Updating" shows. -->
       <span
         class={[
-          'tl-status explain-under relative row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
+          'tl-status explain-under explain-end-phone relative row-start-1 inline-grid text-sm text-ink-muted tabular-nums dark:text-ink-dark-muted',
           saveOff ? 'col-start-2' : 'col-start-1',
           shownStatus === null && 'pointer-events-none'
         ]}
         data-testid="tl-status"
       >
-        <span aria-hidden="true" class="invisible col-start-1 row-start-1 whitespace-nowrap"
-          >{UPDATING}</span
+        <!-- Below sm the cell keeps no room for "Updating" while it is away: the pinned goal
+             takes that width and narrows (its line drops "homes" first) when it comes. -->
+        <span
+          aria-hidden="true"
+          class={[
+            'invisible col-start-1 row-start-1 whitespace-nowrap',
+            shownStatus === null && 'max-sm:hidden'
+          ]}>{UPDATING}</span
         >
         <span
           bind:this={shownCell}
@@ -1644,6 +1727,7 @@
     reached={reveal.reached}
     playFrom={playFromDay}
     {goalDeadline}
+    {goalLabel}
     onday={handleDay}
   />
 {/snippet}

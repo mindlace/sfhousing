@@ -233,7 +233,7 @@ describe('SiteHeader', () => {
       expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth);
     });
 
-    it('at 375px keeps the order status, pinned, Menu', async () => {
+    it('at 375px keeps the order pinned (from the left), status, Menu', async () => {
       await page.viewport(375, 812);
       const st = createRawSnippet(() => ({ render: () => '<span data-testid="st">saved</span>' }));
       render(SiteHeader, { routeId: '/sim', actions, pinned, status: st });
@@ -241,8 +241,10 @@ describe('SiteHeader', () => {
       const status = page.getByTestId('st').element();
       const score = page.getByRole('button', { name: '1,234 homes added' }).element();
       const m = menu().element();
-      expect(x(status)).toBeLessThan(x(score));
-      expect(x(score)).toBeLessThan(x(m));
+      const bar = page.getByRole('banner').element().getBoundingClientRect();
+      expect(x(score) - bar.left).toBeLessThanOrEqual(16);
+      expect(x(score)).toBeLessThan(x(status));
+      expect(x(status)).toBeLessThan(x(m));
     });
 
     it('at 375px with a pinned item the site name waits in the Menu', async () => {
@@ -502,7 +504,7 @@ describe('SiteHeader', () => {
           }
         });
 
-      it('at 375px it leads the bar (the site title waits in the Menu), outside the Menu', async () => {
+      it('at 375px it sits after the pinned item, before the Menu (the site title waits in the Menu)', async () => {
         await page.viewport(375, 812);
         render(HeaderScoreHeader, { props: { actions, status, total: 12345, delta: 12345 } });
         const host = page.getByTestId('status-slot').element() as HTMLElement;
@@ -514,15 +516,13 @@ describe('SiteHeader', () => {
             []
           );
           const c = chip.element().getBoundingClientRect();
-          const bar = page.getByRole('banner').element().getBoundingClientRect();
-          expect(c.left).toBeGreaterThanOrEqual(bar.left);
-          expect(c.left - bar.left).toBeLessThanOrEqual(24);
-          expect(c.right).toBeLessThanOrEqual(
+          expect(c.left).toBeGreaterThanOrEqual(
             page
               .getByRole('button', { name: '12,345 homes added' })
               .element()
-              .getBoundingClientRect().left
+              .getBoundingClientRect().right
           );
+          expect(c.right).toBeLessThanOrEqual(menu().element().getBoundingClientRect().left);
           const panel = document.getElementById(menu().element().getAttribute('aria-controls')!);
           expect(panel?.contains(host)).toBe(false);
           // The widest states fit: no horizontal scroll, header still one 48 px row.
@@ -882,6 +882,7 @@ describe('SiteHeader', () => {
     });
 
     const HEADLINE = {
+      state: 'pending' as const,
       words: pinnedWords(PENDING, {
         amount: 82069,
         target: dayFromUtc(2055, 12, 1),

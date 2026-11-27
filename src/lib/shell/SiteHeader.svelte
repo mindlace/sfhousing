@@ -1,14 +1,15 @@
 <!--
   The site header. There are no steps: the name is the way home. The bar holds the name, the page's
   status, the pinned item (centred in the bar from lg when both sides fit; a side that does not pushes
-  it off centre, never clips), and, from lg, the page's actions, then the Menu button (a hamburger
+  it off centre, never clips; below sm it leads the bar and grows to the Menu, the status after
+  it), and, from lg, the page's actions, then the Menu button (a hamburger
   named "Menu", never a dot) at every width. The Menu's panel (under the header; from lg a pop-over
   at the right, below lg full width) holds, in order: the site name (below sm, on a page that pins an
   item: Paint, /sim, /p/:id), the actions (below lg only), the game panel (saved games, New game, the
   sync line; after mount, never for the open game), the account entry (Sign in, or @handle; Sign in
   shows only while a sign-in method is in effect, `signInAvailable`) and About (on every route: the
-  map pages have no footer). The status is the page's one status cell, left-aligned at every width
-  and never in the Menu: on Paint and /sim the save state (nothing when saved), and on /sim
+  map pages have no footer). The status is the page's one status cell, never in the Menu (left-aligned,
+  except below sm with a pinned item, where it sits between the pinned item and the Menu): on Paint and /sim the save state (nothing when saved), and on /sim
   "Updating" takes its place while the numbers are stale or Play waits, beside it when autosave is
   off, with its explanation button. The actions render once: in the bar when `wide` (known after
   mount), else in the panel.
@@ -148,7 +149,13 @@
     pinned && 'lg:grid lg:grid-cols-[1fr_auto_1fr]'
   ]}
 >
-  <div class={pinned ? 'flex min-w-0 flex-1 items-center gap-2 lg:min-w-auto' : 'contents'}>
+  <!-- Below sm, with a pinned item, the pinned box leads the bar and takes the width up to the
+       Menu, and this group (the status alone there) sits between it and the Menu. -->
+  <div
+    class={pinned
+      ? 'flex min-w-0 flex-1 items-center gap-2 max-sm:order-2 max-sm:flex-none max-sm:has-[[data-header-status]:empty]:hidden lg:min-w-auto'
+      : 'contents'}
+  >
     <!-- Below sm a page that pins an item needs the room: the name waits in the Menu. -->
     <a href="/" class={['shrink-0 font-semibold whitespace-nowrap', pinned && 'max-sm:hidden']}
       >{SITE_NAME}</a
@@ -167,9 +174,9 @@
     </div>
   </div>
   {#if pinned}
-    <div class="flex min-w-0 items-center">{@render pinned()}</div>
+    <div class="flex min-w-0 items-center max-sm:order-1 max-sm:flex-1">{@render pinned()}</div>
   {/if}
-  <div class="flex shrink-0 items-center gap-2 lg:justify-self-end lg:*:shrink-0">
+  <div class="flex shrink-0 items-center gap-2 max-sm:order-3 lg:justify-self-end lg:*:shrink-0">
     <!-- From lg nothing here shrinks, so the group's full width counts in the right track's
          minimum (a row too wide moves the score rather than squeezing a control). -->
     {#if wide}{@render actions?.()}{/if}

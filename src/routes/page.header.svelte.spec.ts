@@ -100,12 +100,19 @@ describe('/ header save state', () => {
       expect(box(banner).height).toBe(48);
       expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+      // Below sm the site title waits in the Menu (Paint pins its score) and the pinned score
+      // leads the bar, the status cell after it; from sm the score sits between the status cell
+      // and the actions.
+      const lead =
+        width >= 640
+          ? [
+              page.getByRole('link', { name: /SF Housing/ }).element(),
+              chip.element(),
+              page.getByTestId('score-bar').element()
+            ]
+          : [page.getByTestId('score-bar').element(), chip.element()];
       const row = [
-        // Below sm the site title waits in the Menu (Paint pins its score).
-        ...(width >= 640 ? [page.getByRole('link', { name: /SF Housing/ }).element()] : []),
-        chip.element(),
-        // The pinned score sits between the status cell and the actions.
-        page.getByTestId('score-bar').element(),
+        ...lead,
         ...(width >= 1024
           ? [
               page.getByRole('button', { name: /Publish/ }),

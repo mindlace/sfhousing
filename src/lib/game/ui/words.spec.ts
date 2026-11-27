@@ -26,7 +26,7 @@ it('the game panel', () => {
   expect(w.CANCEL).toBe('Cancel');
 });
 it('the durations', () => {
-  expect([m.ROLL_MS, m.MET_MS]).toEqual([400, 1200]);
+  expect([m.JIGGLE_MS, m.JIGGLE_TURN_MS]).toEqual([4000, 600]);
 });
 describe('wording', () => {
   it('no text has 12 words or more', () => {

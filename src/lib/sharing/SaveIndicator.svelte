@@ -9,7 +9,8 @@
     covered = false
   }: {
     status: SaveStatus;
-    /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left). */
+    /** The popover's edge: 'end' (right-aligned, for a right-hand slot) or 'start' (left; right
+     *  below sm, where a header status sits after the pinned item). */
     align?: 'start' | 'end';
     /**
      * Another status covers this one in its cell (/sim's "Updating"): the button goes inert and
@@ -86,7 +87,7 @@
         // chip, z-10 to z-30), which come later in the page.
         'absolute top-full z-40 mt-1 w-64 max-w-[calc(100vw-2rem)]',
         SURFACE_POP,
-        align === 'start' ? 'left-0' : 'right-0'
+        align === 'start' ? 'left-0 max-sm:right-0 max-sm:left-auto' : 'right-0'
       ]}
     >
       {COPY.n4}

@@ -26,10 +26,11 @@ import type { ScoreStatics, TimelineView } from '$lib/sim/world/score/types';
 import type { Day } from '$lib/timelapse/time';
 import manifestJson from '../../../e2e/fixtures/data/fixture-0/manifest.json';
 import type { AddChoice } from './add';
+import { offerThrough } from '$lib/game/offer';
 import { DEFAULT_POLICY4, type Policy, type SimPolicy4 } from './policy4';
 import type { Lots } from './session.svelte';
 import { playheadAt } from './results';
-import { FakeTimelineWorker, compiledMsg, filledMsg } from './test/fake-timeline-worker';
+import { FakeTimelineWorker, compiledMsg, filledMsg, refillMsg } from './test/fake-timeline-worker';
 import { chunk, statics as baseStatics } from './test/fixtures';
 import { GAME_ID, gameWith } from './test/game';
 import { isValidId } from '$lib/ids/base58';
@@ -90,6 +91,7 @@ type Over = Partial<{
   onstarter: (choice: AddChoice, label: string) => void;
   withInspector: boolean;
   inspectorOpen: boolean;
+  ongift: (w: { goalMonth: Day | null }) => boolean;
 }>;
 
 let workers: FakeTimelineWorker[];
@@ -101,6 +103,7 @@ function setup(over: Over = {}) {
     setPolicy?: (p: SimPolicy4) => void;
     setRun?: (p: SimPolicy4) => void;
     setLots?: (l: Lots | null) => void;
+    edit?: (change: (p: SimPolicy4) => SimPolicy4) => void;
   } = {};
   const createWorker = vi.fn(() => {
     const f = new FakeTimelineWorker();
@@ -127,6 +130,7 @@ function setup(over: Over = {}) {
       ...(over.initialRun ? { initialRun: over.initialRun } : {}),
       ...(over.initialFrame ? { initialFrame: over.initialFrame } : {}),
       ...(over.onstarter ? { onstarter: over.onstarter } : {}),
+      ...(over.ongift ? { ongift: over.ongift } : {}),
       ...(over.withInspector !== undefined ? { withInspector: over.withInspector } : {}),
       ...(over.inspectorOpen !== undefined ? { inspectorOpen: over.inspectorOpen } : {})
     }
@@ -134,7 +138,8 @@ function setup(over: Over = {}) {
   return {
     r,
     setRun: (p: SimPolicy4) => ctl.setRun!(p),
-    setLots: (l: Lots | null) => ctl.setLots!(l)
+    setLots: (l: Lots | null) => ctl.setLots!(l),
+    edit: (change: (p: SimPolicy4) => SimPolicy4) => ctl.edit!(change)
   };
 }
 
@@ -297,6 +302,224 @@ describe('TimelineMode in a game: the goal and the header', () => {
     await opened({ game: gameWith({ phase: 'runs', round: 1 }) }, LONG);
     await expect.element(page.getByTestId('tl-kind-zoning')).toBeInTheDocument();
     expect([plus('zoning'), plus('permitting'), plus('money')]).toEqual([true, false, true]);
+  });
+});
+
+describe('TimelineMode in a game: the reset and the result (P16, P19)', () => {
+  /** The months of LONG: M[k] is the first day of the k-th calendar month from today's. */
+  const M = LONG.months;
+  /** The goal month under `chunk`'s rows (homes 1,000 + 3k + 1 at month k, base 0). */
+  const K = 40;
+  const amount = 1001 + 3 * K;
+  const state = () => headline().element().getAttribute('data-state');
+  const gift = () => page.getByTestId('goal-gift');
+  /** Model month k's first day (k >= 1), where a reconciled span starts. */
+  const start = (k: number) => monthFirstDay(asOf, k);
+  /** Protection over newer lots from `from`, on or off. */
+  const from = (day: Day, on: boolean): Policy => ({
+    ...protect(5),
+    on,
+    spans: [{ from: day, to: null, what: { tag: 'protect', years: 5 } }]
+  });
+  const switchOn = (p: SimPolicy4): SimPolicy4 => ({
+    ...p,
+    kinds: { ...p.kinds, zoning: p.kinds.zoning.map((x) => ({ ...x, on: true })) }
+  });
+
+  /** The playhead by key: Home, then `k` calendar months on. */
+  async function keysTo(k: number) {
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}' + '{ArrowRight}'.repeat(k));
+    await expect.poll(() => debug().day).toBe(M[k]);
+  }
+  /** The page's onedit with `change`, and the lots PolicySync settles, so the edit goes out. */
+  async function edit(
+    s: Awaited<ReturnType<typeof opened>>,
+    change: (p: SimPolicy4) => SimPolicy4
+  ) {
+    s.edit(change);
+    s.setLots({});
+    await tick();
+  }
+  /** The worker's answer to rev `rev`: the whole window again, every value shifted by `base`. */
+  async function answer(rev: number, base = 0) {
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(rev);
+    emit(compiledMsg(rev, LONG));
+    emit(refillMsg(rev, 0));
+    emit(filledMsg(rev, 0, WINDOW_MONTHS + 1, { base }));
+    await expect.poll(() => debug().stale).toBe(false);
+    await expect.poll(() => debug().filledThrough).toBe(WINDOW_MONTHS);
+  }
+  const game0 = () => gameWith({ phase: 'runs' });
+
+  it('round 0: reaching the goal month gives the win; going back keeps it; no ongift, no gift', async () => {
+    await opened({ game: game0(), goalAmount: amount }, LONG);
+    await keysTo(K - 1);
+    expect(state()).toBe('pending');
+    await keysTo(K);
+    await expect.poll(state).toBe('win');
+    await expect.element(line2()).toHaveTextContent('Current law');
+    expect(none('goal-gift')).toBeNull();
+    (slider().element() as HTMLElement).focus();
+    await userEvent.keyboard('{Home}');
+    await expect.poll(() => debug().day).toBe(asOf);
+    expect(state()).toBe('win');
+  });
+
+  it('the gift shows in a win when the page gives ongift', async () => {
+    await opened({ game: game0(), goalAmount: amount, ongift: () => false }, LONG);
+    await keysTo(K);
+    await expect.element(gift()).toBeVisible();
+  });
+
+  it('while the numbers are stale, passing the goal month leaves pending', async () => {
+    const s = await opened(
+      { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(2), false)) },
+      LONG
+    );
+    await edit(s, switchOn);
+    await expect.poll(() => w().lastOf('setPolicy')?.rev).toBe(2);
+    expect(debug().stale).toBe(true);
+    await keysTo(K + 5);
+    await tick();
+    expect(state()).toBe('pending');
+  });
+
+  it('a switch at the window end pauses and puts the playhead at the first month, pending', async () => {
+    const s = await opened(
+      { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(2), false)) },
+      LONG
+    );
+    await toEnd();
+    await expect.poll(state).toBe('win');
+    await edit(s, switchOn);
+    await expect.poll(() => debug().day).toBe(start(2));
+    expect(debug().playing).toBe(false);
+    expect(debug().reached).toBe(start(2));
+    expect(debug().playFrom).toBeNull();
+    expect(state()).toBe('pending');
+  });
+
+  it("a switch from today's model month puts the playhead at its first day", async () => {
+    const s = await opened(
+      { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(1), false)) },
+      LONG
+    );
+    await toEnd();
+    await edit(s, switchOn);
+    await expect.poll(() => debug().day).toBe(Math.max(asOf, start(1)));
+    expect(state()).toBe('pending');
+  });
+
+  it('while playing before the first month, a switch pauses and moves the playhead forward to it', async () => {
+    const s = await opened(
+      { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(30), false)) },
+      LONG
+    );
+    await keysTo(3);
+    await page.getByTestId('tl-play').click();
+    await expect.poll(() => debug().playing).toBe(true);
+    await edit(s, switchOn);
+    await expect.poll(() => debug().day).toBe(start(30));
+    expect(debug().playing).toBe(false);
+    expect(debug().reached).toBe(start(30));
+  });
+
+  it('a change after the new goal month: the end is pending; back onto the goal month wins', async () => {
+    const s = await opened(
+      { game: game0(), goalAmount: amount, initialPolicy: mk(from(start(50), false)) },
+      LONG
+    );
+    await keysTo(3);
+    await edit(s, switchOn);
+    await expect.poll(() => debug().day).toBe(start(50));
+    // The new forecast reaches the goal at month 30, before the reset day.
+    await answer(2, 30);
+    expect(debug().day).toBe(start(50));
+    await toEnd();
+    await tick();
+    expect(state()).toBe('pending');
+    await keysTo(30);
+    await expect.poll(state).toBe('win');
+  });
+
+  it('adding an off policy moves nothing and keeps a held win', async () => {
+    const s = await opened({ game: game0(), goalAmount: amount }, LONG);
+    await keysTo(K);
+    await expect.poll(state).toBe('win');
+    await edit(s, (p) => offerThrough(p, 1, cal));
+    await answer(2);
+    expect(debug().day).toBe(M[K]);
+    expect(state()).toBe('win');
+  });
+
+  it('a target before the goal month: at the target the state is late, 2 years late, no gift', async () => {
+    const target = M[K - 24];
+    await opened(
+      {
+        game: gameWith({ phase: 'runs', round: 1, target }),
+        goalAmount: amount,
+        ongift: () => true
+      },
+      LONG
+    );
+    await keysTo(K - 25);
+    expect(state()).toBe('pending');
+    await keysTo(K - 24);
+    await expect.poll(state).toBe('late');
+    await expect.element(line2()).toHaveTextContent('2 years late');
+    expect(none('goal-gift')).toBeNull();
+  });
+
+  it('pressing the gift calls ongift with the goal month; taken, the goal stays pending until a change', async () => {
+    const ongift = vi.fn(() => true);
+    const s = await opened(
+      { game: game0(), goalAmount: amount, ongift, initialPolicy: mk(from(start(2), false)) },
+      LONG
+    );
+    await keysTo(K);
+    await gift().click();
+    expect(ongift).toHaveBeenCalledWith({ goalMonth: M[K] });
+    await expect.poll(state).toBe('pending');
+    await toEnd();
+    await keysTo(K);
+    expect(state()).toBe('pending');
+    // A change clears it: the forecast is judged afresh.
+    await edit(s, switchOn);
+    await answer(2);
+    await keysTo(K);
+    await expect.poll(state).toBe('win');
+  });
+
+  it('a gift ongift declines leaves the win standing', async () => {
+    const ongift = vi.fn(() => false);
+    await opened({ game: game0(), goalAmount: amount, ongift }, LONG);
+    await keysTo(K);
+    await gift().click();
+    expect(ongift).toHaveBeenCalledOnce();
+    expect(state()).toBe('win');
+  });
+
+  it('at 320 px the win reads in one line beside the status cell and the Menu', async () => {
+    await page.viewport(320, 700);
+    await opened({ game: game0(), goalAmount: amount, ongift: () => false }, LONG);
+    await keysTo(K);
+    await expect.poll(state).toBe('win');
+    const phone = page.getByTestId('goal-phone').element() as HTMLElement;
+    await expect.element(page.getByTestId('goal-phone')).toBeVisible();
+    // The rest ends inside the line: nothing of "early" is clipped.
+    const rest = phone.querySelector<HTMLElement>('.goal-rest')!.getBoundingClientRect();
+    expect(rest.right).toBeLessThanOrEqual(phone.getBoundingClientRect().right + 0.5);
+    expect(phone.scrollWidth).toBeLessThanOrEqual(phone.clientWidth);
+    const banner = page.getByRole('banner').element() as HTMLElement;
+    expect(banner.scrollWidth).toBeLessThanOrEqual(banner.clientWidth);
+  });
+
+  it("the ruler's goal flag reads the target at the target", async () => {
+    const target = dayFromUtc(2060, 6, 1);
+    await opened({ game: gameWith({ phase: 'runs', round: 1, target }) }, LONG);
+    const flag = page.getByTestId('tl-goal-flag');
+    await expect.element(flag).toHaveTextContent('Target Jun 2060');
   });
 });
 
