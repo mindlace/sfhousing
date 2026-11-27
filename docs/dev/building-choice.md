@@ -340,23 +340,26 @@ stories its start was allowed (`env`), its type (`btype`), its lot's area, its c
 the days it entered `permitIssued`, `construction` and `complete`. `simStats` then computes each
 statistic over the window of those 120 months as `recordTargets` computes it over the records:
 
-| Check                    | Simulated population                                                                                                                                                                                                                                                                                                                                          | Status                                     |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Height ÷ limit by bucket | starts in the window: stories ÷ `env` (uncapped, as Task 5's records), by `LIMIT_BUCKETS`; mean (± 0.10) and share ≥ 0.9 (2 SE) against the records built at or under their limit only (`inLimitHeightRatio`, owner ruling 2026-11-27: the density bonus is a later spec); a report line per bucket gives the share of all its records built over their limit | checked where the in-limit records' n ≥ 30 |
-| Code limits              | starts in the window: Type V above 6, Type III above 8                                                                                                                                                                                                                                                                                                        | exact: any one misses                      |
-| Type I at 8 to 12        | permits issued in the window (entered `permitIssued`) at 8 to 12 stories                                                                                                                                                                                                                                                                                      | checked (2 SE)                             |
-| Type shares by band      | the same permits by `HEIGHT_BANDS` and type                                                                                                                                                                                                                                                                                                                   | report                                     |
-| Stage medians by band    | `permitIssued` (issued to construction) and `construction` (construction to completion): spells entered in the window and completed by its end (ruling F8)                                                                                                                                                                                                    | checked (2 SE)                             |
-| Issued to completion     | the two stages summed per project, beside the raw pull's 28.4, 36.8, 36.5, 33.7 and 40.1 months                                                                                                                                                                                                                                                               | report                                     |
-| Homes per project        | permits issued in the window for 10 or more homes, median by band                                                                                                                                                                                                                                                                                             | checked (2 SE)                             |
-| Large lots               | permits issued on lots of 1,500 m² or more with `env` ≥ 13: Type I at 13 or more stories                                                                                                                                                                                                                                                                      | checked (2 SE) where n ≥ 30; report here   |
-| Cohorts                  | height ÷ limit, affordable (`kind` 1) and private, and their difference                                                                                                                                                                                                                                                                                       | report                                     |
+| Check                    | Simulated population                                                                                                                                                                                                                                                                                                                                                                                | Status                                     |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Height ÷ limit by bucket | starts in the window: stories ÷ `env` (uncapped, as Task 5's records), by `LIMIT_BUCKETS`; mean (± 0.10) and share ≥ 0.9 (2 SE) against the records built at or under their limit only (`inLimitHeightRatio`, owner ruling 2026-11-27: the density bonus is a later spec); a report line per bucket gives the share of all its records built over their limit                                       | checked where the in-limit records' n ≥ 30 |
+| Code limits              | starts in the window: Type V above 6, Type III above 8                                                                                                                                                                                                                                                                                                                                              | exact: any one misses                      |
+| Type I at 8 to 12        | permits issued in the window (entered `permitIssued`) at 8 to 12 stories                                                                                                                                                                                                                                                                                                                            | checked (2 SE)                             |
+| Type shares by band      | the same permits by `HEIGHT_BANDS` and type                                                                                                                                                                                                                                                                                                                                                         | report                                     |
+| Stage medians by band    | `permitIssued` (issued to construction) and `construction` (construction to completion): spells entered in the window and completed by its end (ruling F8), against targets on the spells the height-time fit uses (`stageMonthTargets`: entered 2015 on, purge-censored, both ends recorded; the spec's Call, fits and checks on the same intervals), not `record-targets.json`'s latest ten years | checked (2 SE)                             |
+| Issued to completion     | the two stages summed per project, beside the raw pull's 28.4, 36.8, 36.5, 33.7 and 40.1 months                                                                                                                                                                                                                                                                                                     | report                                     |
+| Homes per project        | permits issued in the window for 10 or more homes, median by band                                                                                                                                                                                                                                                                                                                                   | checked (2 SE)                             |
+| Large lots               | permits issued on lots of 1,500 m² or more with `env` ≥ 13: Type I at 13 or more stories                                                                                                                                                                                                                                                                                                            | checked (2 SE) where n ≥ 30; report here   |
+| Cohorts                  | height ÷ limit, affordable (`kind` 1) and private, and their difference                                                                                                                                                                                                                                                                                                                             | report                                     |
 
 The in-limit targets are `recordTargets` run on the histories whose proposed stories are at most
 their base stories at filing, read from `pipeline/.cache/derived/<v>/project-histories.json`
 (`--histories <file>` overrides it; an `asOf` other than the targets' is refused, exit 2). A
-checked target that the simulation has no project for misses. `checkLines(targets, sim, inLimit)` and
-`recordExit(lines)` are the pure parts its spec tests.
+checked target that the simulation has no project for misses. A miss listed in `scripts/record-check-accepted.ts` (the owner-accepted lines below, by line key, with
+the ruling's date and dataset) prints as `accepted` and does not fail the check; any other miss
+exits 1, and a listed line that passes again is printed so it can be dropped. `checkLines(targets,
+sim, inLimit)`, `stageMonthTargets`, `acceptMisses` and `recordExit(lines)` are the pure parts its
+spec tests.
 
 `cap-measure` runs the same runner over the whole window (480 months) with the score series fed
 as the ensemble's plain loop feeds it, so `rows[i].completedNet` is the view's row for row (its spec
@@ -366,14 +369,18 @@ tree is `fullTree(cal)` with every band of its transit rule set to the cap. The 
 (`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
 
 **Live figures** (build `2026-11-27-247eaa0b`, not uploaded; records 2016-11-27 to 2026-11-27).
-Record check: 6 pass, 10 miss, 41 report, exit 1. With only the records at or under their limit,
+Record check: 6 pass, 1 miss, 9 accepted, 41 report, exit 1 (stage targets on the fit's spells;
+against the latest-ten-years targets it was 6 pass, 10 miss). With only the records at or under their limit,
 the records' height ÷ limit means are 0.903 (n 323), 0.839 (n 52), 0.753 (n 28), 0.568 (n 8) and
 0.548 (n 26) for ≤ 4, ≤ 6, ≤ 8, ≤ 12 and above 12, against sim 0.747, 0.695, 0.665, 0.675 and
 0.420; the share of all records built over their limit is 0.193, 0.485, 0.364, 0.273 and 0.316. ≤ 8,
 ≤ 12 and above 12 have fewer than 30 in-limit records and are report lines. The code limits pass
-(no V above 6, no III above 8 among 426 starts). Permit-issued medians pass at ≤ 4 and ≤ 7,
-construction at ≤ 7, and homes per project at ≤ 4. The ten misses, with their figures and reasons,
-are in "Known misses" below. Large lots are report only (records n 28).
+(no V above 6, no III above 8 among 426 starts). Permit-issued medians pass at ≤ 7, construction at
+≤ 4 (sim 22.7 against 23.6 ± 1.351, n 342; it missed 26.2 on the latest ten years) and ≤ 7, and
+homes per project at ≤ 4. Permit issued to construction at ≤ 4 now misses (sim 7.852 against
+6.900 ± 0.943, n 424; it passed the latest-ten-years target 6.571 ± 1.687, n 246). The nine
+accepted misses and the one not yet ruled on, with their figures and reasons, are in "Known
+misses" below. Large lots are report only (records n 28).
 
 Cap report on `2026-11-27-247eaa0b` (`completedNet` 2040 / 2066, old figures from `2026-11-25-76c90397` in brackets; share of starts V / III / I in percent), from `npx tsx scripts/cap-measure.ts pipeline/out/2026-11-27-247eaa0b`:
 
@@ -384,12 +391,15 @@ Cap report on `2026-11-27-247eaa0b` (`completedNet` 2040 / 2066, old figures fro
 
 Current law: 46,058 / 75,289 (47,502 / 79,338); starts 66% V, 25% III, 9% I (n 1,625).
 
-Every step up in the cap builds more homes in both years, in both rows: no cap builds fewer than a lower one, so nothing here needs a reason beyond the records'. The report is not a gate. Against the old tables the full tree's 12-story figures are lower (69,977 against 80,685 by 2040) and its 40- and 80-story 2066 figures higher (213,396 against 197,592; 242,764 against 222,488); the mix of starts moved from Type V to Type III and Type I as the records' height checks say it should not be (see "Known misses").
+Every step up in the cap builds more homes in both years, in both rows: no cap builds fewer than a lower one, so nothing here needs a reason beyond the records'. The report is not a gate. Against the old tables the full tree's 12-story figures are lower (69,977 against 80,685 by 2040) and its 40- and 80-story 2066 figures higher (213,396 against 197,592; 242,764 against 222,488); against the old dataset, starts moved from Type V toward Type III and Type I. The records do not support that shift: on lots limited to 6 stories or fewer the simulation builds further below the limit than the records do, and at 7 stories or fewer it builds far fewer Type I projects (see "Known misses").
 
 ## Known misses (owner ruling 2026-11-27)
 
-The record check on `2026-11-27-247eaa0b` (6 pass, 10 miss, 41 report) misses the lines below. The
-owner ruled on 2026-11-27 that they are accepted for this dataset. The follow-up is the density-bonus
+The record check on `2026-11-27-247eaa0b` (6 pass, 10 miss, 41 report, on the latest-ten-years stage
+targets) missed ten lines. The owner ruled on 2026-11-27 that they are accepted for this dataset.
+With the stage targets on the fit's own spells, construction to completion at ≤ 4 stories passes
+(sim 22.7 months against 23.6 ± 1.351, n 342), so nine stay accepted; they are listed in
+`scripts/record-check-accepted.ts`, and the record check prints them as `accepted`. The follow-up is the density-bonus
 spec, which lets a project build over its limit.
 
 | Line                                       | Sim                 | Records               | Reason the records support                                                                                                                                                                                                                                                           |
@@ -399,18 +409,25 @@ spec, which lets a project build over its limit.
 | height ÷ limit ≤ 6: mean                   | 0.695 (n 67)        | 0.839 ± 0.100 (n 52)  | as above; the fit's era-priced expected mean is 0.731                                                                                                                                                                                                                                |
 | height ÷ limit ≤ 6: share ≥ 0.9            | 0.194 (n 67)        | 0.442 ± 0.138 (n 52)  | as above                                                                                                                                                                                                                                                                             |
 | Type I share 8 to 12 stories               | 0.923 (n 13)        | 0.984 ± 0.032 (n 62)  | small sim n: one Type III start among 13                                                                                                                                                                                                                                             |
-| permit issued to construction ≤ 12 stories | 1.166 months (n 12) | 8.279 ± 2.727 (n 41)  | small sim n (passed at n 9 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                 |
-| construction to completion ≤ 4 stories     | 22.7 months (n 95)  | 26.2 ± 1.299 (n 233)  | the height-time step pools ≤ 4 at 23.6 months (`heightTime`); its own fit, not the choice                                                                                                                                                                                            |
-| construction to completion ≤ 12 stories    | 18.2 months (n 6)   | 22.9 ± 2.875 (n 36)   | small sim n (passed at n 4 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                 |
+| permit issued to construction ≤ 12 stories | 1.166 months (n 12) | 6.735 ± 2.298 (n 53)  | small sim n (passed at n 9 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                 |
+| construction to completion ≤ 12 stories    | 18.2 months (n 6)   | 23.3 ± 2.458 (n 46)   | small sim n (passed at n 4 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                 |
 | homes per project ≤ 7 stories              | 30.5 (n 34)         | 57 ± 16.9 (n 100)     | today's market: smaller Type III and Type V buildings chosen at break-even; the records' Type I share at ≤ 7 stories is 0.511 against the sim's 0.077                                                                                                                                |
 | homes per project ≤ 12 stories             | 66 (n 13)           | 102 ± 18.0 (n 55)     | small sim n (passed at n 11 on `2026-11-27-3abc9cb0`)                                                                                                                                                                                                                                |
+
+Not yet ruled on: the corrected stage targets add one miss, which is not in the accepted list, so
+the record check exits 1 until the owner rules on it.
+
+| Line                                      | Sim                  | Records               | Reason                                                                                                                                                                                                     |
+| ----------------------------------------- | -------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| permit issued to construction ≤ 4 stories | 7.852 months (n 153) | 6.900 ± 0.943 (n 424) | the fit's spells (2015 on) are more than the latest ten years', so the tolerance narrows from 1.687 to 0.943; the sim misses by 0.009 months. It passed the latest-ten-years target (6.571 ± 1.687, n 246) |
 
 Open notes:
 
 - **The cost index's licence.** The DGS California Construction Cost Index page states no terms of
   use, and the index derives from ENR's Building Cost Index. Its values are fetched into the raw
-  cache and pinned in the lock (`dgs-ccci`), never committed or shipped; whether its R2 source
-  archive is acceptable is for the owner to confirm before the next upload.
+  cache and pinned in the lock (`dgs-ccci`), never committed or shipped. Ruling: the CSV may be
+  archived in R2 under `sources/`, a private cache copy that is not served (only `data/` is
+  public); its values are never shipped.
 - **The margin and the market slope overlap.** With the fitted spread, `choiceMargin` correlates
   r = -0.857 with the slope's cost share (calibration report section 16), so the start odds may
   count one change in cost against value twice (spec, Non-goals).

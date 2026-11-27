@@ -1,7 +1,7 @@
 <article>
   <header>
     <h1>Building choice: the developer picks the building a cap allows</h1>
-    <p><strong>Status: approved (2026-11-26); amended 2026-11-26 (owner): costs, values and stage-time multipliers are dated step series, shape only.</strong> For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
+    <p><strong>Status: approved (2026-11-26); amended 2026-11-26 (owner): costs, values and stage-time multipliers are dated step series, shape only; the deadlines are not re-derived here and the reach check gates the full tree only. Amended 2026-11-27 (owner): the record check's listed misses are accepted (<a href="#acceptance-ruling">Acceptance</a>).</strong> For each lot, list the buildings it could hold at or below its cap, cost and time each by construction type, and start the one a developer would build; check the picks against DBI records.</p>
   </header>
 
   <section id="sec-intent">
@@ -26,7 +26,7 @@
         <li>Large lots can hold the forms real large sites use: a full-coverage Type I block, or several towers.</li>
         <li>The picks match San Francisco records (built height against the zoned limit, construction type by height, build time by height) within stated tolerances.</li>
         <li>Every parameter names its evidence tier. Invented values are flagged.</li>
-        <li>Start odds, the size model and the game's measures (<code>LADDER_YEARS</code>, the reach measures) are re-derived on the new yields.</li>
+        <li>Start odds and the size model are re-derived on the new yields. The game's deadlines (<code>LADDER_YEARS</code>) and tuning are not re-derived here (amended 2026-11-26, owner: another agent owns them); <code>reach-check</code> gates the full tree, and <code>tree-balance</code> runs as a report.</li>
       </ul>
     </section>
     <section id="sec-goals-non">
@@ -185,7 +185,7 @@ share(option)       ∝ exp(residualLandValue(option, choiceValue) / (choiceSpre
       <li><strong>At run time:</strong> for a cap from a lever or a game grant, filter the lot's <code>optionCount</code> options by stories and the unit cap, then compute <code>optionCount</code> exponentials. This builds the choice row in place of <code>sizeCum</code>, memoised as <code>precomputeOf</code> is today, with the memo keyed by (lot, step), so a start reads the row for the cost step in force at its month. That is O(<code>optionCount</code>) per lot with no generator call. The per-project columns <code>level</code>, <code>yields</code> and <code>stories</code> (<code>world.ts</code>, <code>columns.ts</code>) hold the option index and the option's homes.</li>
       <li><strong>Performance budget.</strong> <code>precomputeOf</code> on the live dataset stays within 1.5 times its current time, and the purchase-to-ready wait in <code>bench:map</code> stays within its pass bar (<code>docs/dev/map-perf.md</code>). Both are measured on a quiet machine.</li>
     </ul>
-    <aside data-kind="warning"><strong>Warning</strong> This is a dataset change. Upload follows <code>docs/dev/pipeline.md</code>: build, then <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> must exit 0, then upload, then signoff. If current law no longer meets the first deadline, the ladder moves; see <a href="#sec-blast">blast radius</a>, game.</aside>
+    <aside data-kind="warning"><strong>Warning</strong> This is a dataset change. Upload follows <code>docs/dev/pipeline.md</code>: build, then <code>npx tsx scripts/record-check.ts pipeline/out/&lt;v&gt;</code> and <code>npx tsx scripts/reach-check.ts pipeline/out/&lt;v&gt;</code> must exit 0, then upload, then signoff. Amended 2026-11-26 (owner): the reach check gates the full tree meeting the last deadline only; current law against the first deadline is no longer a gate, and the deadlines are not re-derived here (see <a href="#sec-blast">blast radius</a>, game).</aside>
   </section>
 
   <section id="sec-odds">
@@ -216,7 +216,7 @@ share(option)       ∝ exp(residualLandValue(option, choiceValue) / (choiceSpre
         <tr><th scope="row">Map massing and cards</th><td><code>scenario/massing.ts</code> (<code>massingFor</code>, <code>simKey</code>); <code>world/map-stream.ts</code>; <code>runner/{lookups,dataset,warm}.ts</code>; <code>scenario/card.ts</code>; <code>scenario/scenario-host.ts</code> (paint preview); <code>generator/cache.ts</code></td><td>The drawn building is the chosen option (type, form, stories, plates), so the map matches the homes. <code>simKey</code> includes the option. The paint preview shows the most-homes option. A card shows the chosen building; naming its type is optional.</td></tr>
         <tr><th scope="row">Building boxes</th><td><code>render-boxes</code></td><td>None: these are existing buildings.</td></tr>
         <tr><th scope="row">Pipeline</th><td><code>pipeline/steps/{scenario,policy,gross,check,check-gross}.ts</code>; <code>pipeline/lib/fzp-cal/{initiation,size,panel,transitions}.ts</code>; <code>pipeline/sources/datasf.ts</code></td><td>Option rows, <code>locationValue</code>, and the cost and time tables. Fetch <code>proposed_construction_type</code> from i98e-djp9. Refit initiation, <code>choiceSpread</code> and the stage multiplier. V17 and V36 are rewritten for option rows. New checks: no Type V above 6 stories and no Type III above 8.</td></tr>
-        <tr><th scope="row">Game</th><td><code>src/lib/game/catalogue/ladder-years.ts</code>; <code>catalogue/tuning.ts</code>; <code>scripts/{reach-check,reach-measure,tree-balance,money-monotone}.ts</code></td><td>Re-derive <code>LADDER_YEARS</code> with <code>reach-measure --write</code> and re-run <code>tree-balance</code>. The taller nodes' rewards may move.</td></tr>
+        <tr><th scope="row">Game</th><td><code>src/lib/game/catalogue/ladder-years.ts</code>; <code>catalogue/tuning.ts</code>; <code>scripts/{reach-check,reach-measure,tree-balance,money-monotone}.ts</code></td><td>Amended 2026-11-26 (owner): the deadlines (<code>LADDER_YEARS</code>) and tuning are not re-derived here; another agent owns them. <code>reach-check</code> gates the full tree only; <code>tree-balance</code> and <code>money-monotone</code> run as reports.</td></tr>
         <tr><th scope="row">Goldens</th><td><code>world.golden</code>, <code>model.golden</code>, the generator golden; <code>simulate.golden</code> and other tests that fail only because they run the old engine are dropped (Call, Non-goals)</td><td>Regenerate the world and generator goldens, with the change explained in the commit.</td></tr>
         <tr><th scope="row">Docs</th><td><code>docs/dev/{fzp-mode,world-core,world-score,finance-model,market,cars,game,pipeline}.md</code>; a new <code>docs/dev/building-choice.md</code></td><td>Describe the option set, the choice rule and the tiers.</td></tr>
       </tbody>
@@ -241,7 +241,8 @@ share(option)       ∝ exp(residualLandValue(option, choiceValue) / (choiceSpre
       </tbody>
     </table>
     <aside data-kind="decision"><strong>Call:</strong> Record checks may drive refits <em>and</em> model changes: forms, location-value smoothing, multipliers, coverage. Realism is the goal. The only forbidden tuning is aiming at homes rising with the cap. If a check still misses after a model change, the builder reports the miss and stops for the owner before upload.</aside>
-    <p>The existing checks still pass: <code>reach-check</code> (after any ladder change), the pipeline invariants, the unit and e2e suites, and signoff.</p>
+    <aside data-kind="decision" id="acceptance-ruling"><strong>Amended 2026-11-27 (owner):</strong> the built height ÷ limit checks compare like with like, on the records built at or under their limit; each bucket reports the share of its records built over the limit (the density bonus). The stage-interval checks are taken on the spells the height-time fit uses. The lines listed as known misses on <code>2026-11-27-247eaa0b</code> are accepted (<code>docs/dev/building-choice.md</code>, "Known misses"; listed in <code>scripts/record-check-accepted.ts</code>): the record check exits 0 when only those lines miss and 1 on any other. The density bonus, which lets a project build over its limit, is the next spec.</aside>
+    <p>The existing checks still pass: <code>reach-check</code> (the full tree; amended 2026-11-26), the pipeline invariants, the unit and e2e suites, and signoff.</p>
   </section>
 
   <section id="sec-measure">
