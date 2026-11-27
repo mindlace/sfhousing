@@ -48,11 +48,11 @@ After Start the page is one screen, the simulation tool, at every load: the map 
 flattened), the timeline with its Playhead, chart and rows, Play and Pause (Space too), the map
 key, project cards and the tooltip, held to what is bought ([Limits](#limits)).
 
-The header has no steps; the site name is the way home. In the opening it shows the name, the unit
-count, the save state, the pinned room score and Publish. After it: the name, the unit count, the
-save state (or "Updating"), the pinned goal (`GoalHeadline`, whose homes are the view on show's at
-the playhead's month) and the actions: Undo and Redo while a pointer is coarse, and Publish. In the
-open game there is no unit count and no game part.
+The header has no steps; the site name is the way home. In the opening it shows the name, the save
+state, the pinned room score, Publish and the Menu button. After it: the name, the save state (or "Updating"), the pinned goal (`GoalHeadline`, whose homes are the view on show's at
+the playhead's month) and the actions: Undo and Redo while a pointer is coarse, Publish and the Menu button. The Menu
+holds the saved games (`GamePanel`), the account entry and About. In the open game the Menu has no
+game part.
 
 ## The game's state
 
@@ -220,10 +220,10 @@ All in `src/lib/game/ui/`; none renders for the open game.
   `side-goal`, `goal-side-mark`, `goal-live`): the pinned goal. Line 1 is the homes of the amount by
   the deadline (a rolling count) and a bar; line 2 is what the goal unlocks and the side goals met.
   The button opens the side goals pop-over.
-- **`GameCell`** (`header-units`, `header-game-panel`): the unit count, rolling to each total. From
-  lg it sits in the bar with the panel as a pop-over; in the Menu the panel opens in place.
-- **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): the
-  current game's name and stage, the sync line and the saved games (switch, rename in place,
+- **`GamePanel`** (`game-panel`, `game-stage`, `game-sync`, `save-row`, `game-error`): rendered in
+  place inside the header Menu's panel (`SiteHeader`, after mount, never for the open game; its root
+  carries `data-header-keep-open`, so a press on its buttons leaves the Menu open). The current
+  game's name and stage, the sync line and the saved games (switch, rename in place,
   delete after one question, "New game"). A change that loads another game calls `reloadGame()`
   (`ui/reload.ts`), a full page load of `/`. At `MAX_SAVES` "New game" is `aria-disabled`; a
   refused change shows `FULL_TEXT` or `STORAGE_TEXT`.
@@ -338,7 +338,7 @@ Until mounted, the server's store is the open game and the browser's may be at a
 first client render must match the server's. A component whose markup depends on the game (the
 phase, the units, the saved games, a game-only control) keeps its own `mounted` flag, set in
 `onMount`, and renders no game part until then. `+page.svelte` renders its empty frame until
-mount; `SiteHeader` renders `GameCell` only after mount. Scripts, effects and `onMount` may read
+mount; `SiteHeader` renders `GamePanel` only after mount. Scripts, effects and `onMount` may read
 the store at any time.
 
 ## Publishing
@@ -370,17 +370,16 @@ page and goes to `/`; a spec that seeds its own game and wants `/` calls `gotoHy
 
 `e2e/helpers/play.ts` plays the game; every wait is a state in the page or in storage:
 
-| Helper                   | Does                                                               |
-| ------------------------ | ------------------------------------------------------------------ |
-| `seedRuns(page, state?)` | Amount 1 and a seeded game (default: one run settled)              |
-| `savedGame(page)`        | The current game as storage holds it                               |
-| `waitSaved(page, ok)`    | Polls `savedGame` every 50 ms until `ok` holds                     |
-| `waitSim(page)`          | Waits for the simulation tool: `tl-dock` visible                   |
-| `tabTo(page, target)`    | Tab, at most 80 presses, until `target` has focus                  |
-| `openGamePanel(page)`    | Opens the game panel from the unit count (the Menu first below lg) |
+| Helper                   | Does                                                  |
+| ------------------------ | ----------------------------------------------------- |
+| `seedRuns(page, state?)` | Amount 1 and a seeded game (default: one run settled) |
+| `savedGame(page)`        | The current game as storage holds it                  |
+| `waitSaved(page, ok)`    | Polls `savedGame` every 50 ms until `ok` holds        |
+| `waitSim(page)`          | Waits for the simulation tool: `tl-dock` visible      |
+| `tabTo(page, target)`    | Tab, at most 80 presses, until `target` has focus     |
+| `openGamePanel(page)`    | Opens the header Menu, which holds the game panel     |
 
-`e2e/helpers/header-text.ts` has `widestGameHeader(page)`, which writes the widest unit count and
-goal line into the header for the width checks.
+`e2e/helpers/header-text.ts` has `widestGameHeader(page)`, which writes the widest goal line into the header for the width checks.
 
 `e2e/game-a11y.spec.ts` runs the accessibility checklist on each state.
 

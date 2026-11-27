@@ -80,10 +80,10 @@ test("a new visitor's first load shows the brush at Room for 0 homes", async ({ 
   expect(messages.filter((m) => /hydrat/i.test(m))).toEqual([]);
 });
 
-test('with no game, / shows the simulation and no unit count', async ({ page }) => {
+test('with no game, / shows the simulation and no game panel', async ({ page }) => {
   await gotoHydrated(page, '/');
   await expect(page.getByTestId('tl-mode')).toBeVisible();
-  await expect(page.getByTestId('header-units')).toHaveCount(0);
+  await expect(page.getByTestId('game-panel')).toHaveCount(0);
   expect(await ops(page)).toBeNull();
 });
 

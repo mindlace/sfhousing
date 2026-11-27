@@ -33,7 +33,7 @@ export function entry(name: string, over: Partial<SaveEntry> = {}): SaveEntry {
 
 const OK: StoreChange = { ok: true };
 
-/** The G7 members GameCell and GamePanel read, reactive ($state.raw), recording each call. */
+/** The G7 members GamePanel reads, reactive ($state.raw), recording each call. */
 export class FakeGame {
   state = $state.raw<GameState>(NEW_GAME);
   limits = $state.raw<Limits>(limitsOf(NEW_GAME));

@@ -751,6 +751,7 @@ describe('TimelineMode', () => {
 
     it('About open: Space does not play', async () => {
       await opened();
+      await page.getByRole('button', { name: 'Menu', exact: true }).click();
       await page.getByRole('link', { name: 'About', exact: true }).click();
       await expect.element(page.getByRole('dialog', { name: 'About this model' })).toBeVisible();
       spaceOn(document.body);
@@ -2254,10 +2255,7 @@ describe('TimelineMode', () => {
       await chip.click();
       await expect.poll(() => pop.hidden).toBe(false);
       await frame();
-      const lead =
-        width >= 1024
-          ? page.getByRole('link', { name: 'About', exact: true })
-          : page.getByRole('button', { name: 'Menu' });
+      const lead = page.getByRole('button', { name: 'Menu' });
       const rects = () => ({
         cell: page.getByTestId('tl-status-group').element().getBoundingClientRect().toJSON(),
         score: scoreBar().element().getBoundingClientRect().toJSON(),

@@ -1,12 +1,11 @@
 <script lang="ts">
-  /** The game panel, the content of the header's game cell: saved games and the sync line. */
+  /** The game panel, in place in the header Menu: saved games, New game and the sync line. */
   import { tick } from 'svelte';
   import { page } from '$app/state';
   import { moreBelow } from '$lib/shell/more-below';
   import { BUTTON, BUTTON_PRIMARY, BUTTON_QUIET } from '$lib/shell/ui';
   import { MAX_SAVES, SAVE_NAME_MAX } from '../saves';
   import { useGame, type StoreChange } from '../store.svelte';
-  import { total } from '../units';
   import { FULL_TEXT, STORAGE_TEXT, playedText, syncText } from '../words';
   import { reloadGame } from './reload';
   import {
@@ -20,8 +19,7 @@
     deleteAsk,
     deleteName,
     entryStage,
-    renameName,
-    unitsName
+    renameName
   } from './words';
 
   const game = useGame();
@@ -43,9 +41,7 @@
     `/signin?returnTo=${encodeURIComponent(page.url.pathname + page.url.search)}`
   );
   const currentName = $derived(game.saves.find((e) => e.id === game.currentId)?.name ?? '');
-  const stage = $derived(
-    `${entryStage(game.state.phase, game.state.rung)} · ${unitsName(total(game.state.units))}`
-  );
+  const stage = $derived(entryStage(game.state.phase, game.state.rung));
 
   async function focusLater(id: string): Promise<void> {
     await tick();
@@ -183,7 +179,8 @@
   <section
     aria-labelledby={headingId}
     data-testid="game-panel"
-    class="flex w-80 max-w-full flex-col gap-3 text-sm"
+    data-header-keep-open
+    class="flex max-w-full flex-col gap-3 text-sm"
     onmousedowncapture={keepFocus}
   >
     <div class="flex flex-col gap-1">

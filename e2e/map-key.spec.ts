@@ -14,6 +14,7 @@ import {
   PLAN_KEY,
   chooseTool,
   gotoEditor,
+  openHeaderMenu,
   paintOnce,
   smallText,
   waitForMap,
@@ -672,6 +673,7 @@ test('1024 px signed in on the simulation: no View in the header, the status cel
   await gotoSim(page);
   const banner = page.getByRole('banner');
   await expect(banner.getByRole('button', { name: 'View', exact: true })).toHaveCount(0);
+  await openHeaderMenu(page);
   const account = page.locator('[data-header-account]');
   await expect(account).toBeVisible();
   // The plan's measure: a 24-character handle (shown at its 160 px cap), the playhead at End.

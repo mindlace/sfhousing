@@ -44,8 +44,8 @@ describe('/ header save state', () => {
     const publish = page.getByRole('button', { name: /Publish/ });
     await expect.element(publish).toBeVisible();
     expect(status.contains(publish.element())).toBe(false);
-    const units = page.getByTestId('header-units').element();
-    expect(box(saved.element()).left).toBeGreaterThanOrEqual(box(units).right);
+    const name = page.getByRole('link', { name: 'SF Housing', exact: true }).element();
+    expect(box(saved.element()).left).toBeGreaterThanOrEqual(box(name).right);
     expect(box(saved.element()).right).toBeLessThanOrEqual(box(publish.element()).left);
   });
 
@@ -65,18 +65,16 @@ describe('/ header save state', () => {
     await expect.element(page.getByRole('link', { name: 'SF Housing', exact: true })).toBeVisible();
   });
 
-  it('in the opening at 1280px: name, unit count, save state, Room for 0 homes, Publish, Sign in, About, in order', async () => {
+  it('in the opening at 1280px: name, save state, Room for 0 homes, Publish, Menu, in order', async () => {
     await page.viewport(1280, 800);
     render(PaintHeaderHost, { props: { data: homeData() } });
     await expect.element(page.getByTestId('score-bar')).toHaveTextContent('Room for 0 homes');
     const row = [
       page.getByRole('link', { name: 'SF Housing', exact: true }),
-      page.getByTestId('header-units'),
       page.getByTestId('save-state'),
       page.getByTestId('score-bar'),
       page.getByRole('button', { name: /Publish/ }),
-      page.getByRole('link', { name: 'Sign in' }),
-      page.getByRole('link', { name: 'About', exact: true })
+      page.getByRole('button', { name: 'Menu' })
     ].map((l) => l.element());
     for (let i = 1; i < row.length; i++)
       expect(box(row[i]).left, `item ${i} after item ${i - 1}`).toBeGreaterThanOrEqual(
@@ -105,15 +103,13 @@ describe('/ header save state', () => {
       const row = [
         // Below sm the site title waits in the Menu (Paint pins its score).
         ...(width >= 640 ? [page.getByRole('link', { name: /SF Housing/ }).element()] : []),
-        ...(width >= 1024 ? [page.getByTestId('header-units').element()] : []),
         chip.element(),
         // The pinned score sits between the status cell and the actions.
         page.getByTestId('score-bar').element(),
         ...(width >= 1024
           ? [
               page.getByRole('button', { name: /Publish/ }),
-              page.getByRole('link', { name: 'Sign in' }),
-              page.getByRole('link', { name: 'About', exact: true })
+              page.getByRole('button', { name: 'Menu' })
             ]
           : [page.getByRole('button', { name: 'Menu' })]
         ).map((l) => l.element())

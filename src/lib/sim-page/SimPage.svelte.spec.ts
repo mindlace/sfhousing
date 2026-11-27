@@ -864,6 +864,8 @@ describe('SimPage publish and view', () => {
     expect(cell.getBoundingClientRect().right).toBeLessThanOrEqual(
       page.getByTestId('score-bar').element().getBoundingClientRect().left
     );
+    // The account entry waits in the Menu.
+    await header().getByRole('button', { name: 'Menu', exact: true }).click();
     const account = header().getByRole('link', { name: `@${'a'.repeat(24)}` });
     await expect.element(account).toBeVisible();
   });

@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Test host: SiteHeader with the game provided (its unit count, GameCell, sits in the bar or the
-  // Menu), plus an area outside the header to press.
+  // Test host: SiteHeader with the game provided (its game panel sits in the Menu), plus an
+  // area outside the header to press.
   import type { Snippet } from 'svelte';
   import { provideGame, type GameStore } from '$lib/game/store.svelte';
   import SiteHeader from '../SiteHeader.svelte';

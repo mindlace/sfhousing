@@ -1,19 +1,17 @@
 <!--
-  The site header. There are no steps: the name is the way home. From lg: the name, the game's
-  unit count (GameCell, after mount, never for the open game), the page's status, the pinned item
-  centred in the bar (when both sides fit; a side that does not pushes it off centre, never
-  clips), and the actions on the right. Below lg: the name, the status, the pinned item and a hamburger Menu
-  button (named "Menu", never a dot) whose panel (under the header) holds the unit count and the
-  actions.
-  Below sm, on a page that pins an item (Paint, /sim, /p/:id), the site name moves into
-  the panel too. The account entry (Sign in, or @handle) follows the actions in the same group;
-  Sign in shows only while a sign-in method is in effect (`signInAvailable`). The About entry
-  follows the account entry on every route (the map pages have no footer). The status is the
-  page's one status cell, left-aligned at every width and never in the Menu: on Paint and /sim
-  the save state (nothing when saved), and on /sim "Updating" takes its place while the numbers
-  are stale or Play waits, beside it when autosave is off, with its explanation button. The status
-  and the actions render once at every width: from lg the panel is `display: contents`, so the
-  actions sit in the header row.
+  The site header. There are no steps: the name is the way home. The bar holds the name, the page's
+  status, the pinned item (centred in the bar from lg when both sides fit; a side that does not pushes
+  it off centre, never clips), and, from lg, the page's actions, then the Menu button (a hamburger
+  named "Menu", never a dot) at every width. The Menu's panel (under the header; from lg a pop-over
+  at the right, below lg full width) holds, in order: the site name (below sm, on a page that pins an
+  item: Paint, /sim, /p/:id), the actions (below lg only), the game panel (saved games, New game, the
+  sync line; after mount, never for the open game), the account entry (Sign in, or @handle; Sign in
+  shows only while a sign-in method is in effect, `signInAvailable`) and About (on every route: the
+  map pages have no footer). The status is the page's one status cell, left-aligned at every width
+  and never in the Menu: on Paint and /sim the save state (nothing when saved), and on /sim
+  "Updating" takes its place while the numbers are stale or Play waits, beside it when autosave is
+  off, with its explanation button. The actions render once: in the bar when `wide` (known after
+  mount), else in the panel.
   Placement: the `<header>` is `relative`, and the pinned slot's box is a direct child of it with
   no position class (never `relative`, `absolute`, `fixed` or `sticky`) and no wrapper of its own
   around the snippet, so a pinned item's pop-over (GoalHeadline's side goals) places itself against
@@ -22,7 +20,7 @@
 <script lang="ts">
   import { onMount, tick, type Snippet } from 'svelte';
   import { AUTH_COPY } from '$lib/account/copy';
-  import GameCell from '$lib/game/ui/GameCell.svelte';
+  import GamePanel from '$lib/game/ui/GamePanel.svelte';
   import { useGame } from '$lib/game/store.svelte';
   import { headerOverlay } from './header-actions.svelte';
   import { SITE_NAME } from './name';
@@ -65,8 +63,7 @@
   // The first client render matches the server's: the game's state shows only after mount.
   let mounted = $state(false);
   const account = $derived(user ?? (mounted ? game.sync.account : null));
-  // From lg the unit count is in the bar, below lg in the Menu: one instance at any width, so a
-  // resize across lg remounts it closed.
+  // From lg the actions are in the bar, below lg in the Menu: one instance at any width.
   let wide = $state(false);
 
   let open = $state(false);
@@ -114,7 +111,7 @@
     if (item.matches('[aria-expanded], [aria-haspopup]')) return;
     // Inside a dialog an action opened (Publish's own buttons): closing would hide the dialog.
     if (item.closest('dialog')) return;
-    // GameCell's buttons (the unit count, the game panel's rows) act in place.
+    // The game panel's buttons (saved games, New game) act in place.
     if (item.matches('button') && item.closest('[data-header-keep-open]')) return;
     void close(false);
   }
@@ -125,7 +122,6 @@
     wide = mq.matches;
     const onChange = () => {
       wide = mq.matches;
-      if (mq.matches) open = false;
     };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
@@ -149,7 +145,6 @@
     <a href="/" class={['shrink-0 font-semibold whitespace-nowrap', pinned && 'max-sm:hidden']}
       >{SITE_NAME}</a
     >
-    {#if mounted && !game.open && wide}<GameCell inMenu={false} />{/if}
     <!-- The status, then the space that pushes the pinned item and the actions right. -->
     <!-- In the grid (from lg, with a pinned item) it takes its content's width, so a status too
          wide for the left track widens the track (the score moves) rather than running under it. -->
@@ -166,29 +161,34 @@
   {#if pinned}
     <div class="flex min-w-0 items-center">{@render pinned()}</div>
   {/if}
-  <button
-    bind:this={menuButton}
-    type="button"
-    class="relative inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 lg:hidden dark:border-gray-600"
-    aria-label="Menu"
-    aria-expanded={open}
-    aria-controls={panelId}
-    data-header-menu
-    onclick={toggle}
-  >
-    <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none">
-      <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="2" />
-    </svg>
-  </button>
+  <div class="flex shrink-0 items-center gap-2 lg:justify-self-end lg:*:shrink-0">
+    <!-- From lg nothing here shrinks, so the group's full width counts in the right track's
+         minimum (a row too wide moves the score rather than squeezing a control). -->
+    {#if wide}{@render actions?.()}{/if}
+    <button
+      bind:this={menuButton}
+      type="button"
+      class="relative inline-flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 dark:border-gray-600"
+      aria-label="Menu"
+      aria-expanded={open}
+      aria-controls={panelId}
+      data-header-menu
+      onclick={toggle}
+    >
+      <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none">
+        <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="2" />
+      </svg>
+    </button>
+  </div>
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
     bind:this={panel}
     id={panelId}
+    data-header-panel
     class={[
-      'lg:contents',
       open
-        ? 'max-lg:absolute max-lg:inset-x-0 max-lg:top-full max-lg:z-50 max-lg:flex max-lg:flex-col max-lg:gap-3 max-lg:border-b max-lg:bg-surface max-lg:p-4 max-lg:shadow-lg dark:max-lg:border-gray-700 dark:max-lg:bg-chrome-dark'
-        : 'max-lg:hidden'
+        ? 'absolute top-full z-50 flex max-h-[calc(100vh-4rem)] flex-col gap-3 overflow-y-auto border-b bg-surface p-4 shadow-lg max-lg:inset-x-0 lg:right-4 lg:w-96 lg:rounded-lg lg:border dark:border-gray-700 dark:bg-chrome-dark'
+        : 'hidden'
     ]}
     onclick={onpanelclick}
   >
@@ -199,15 +199,15 @@
         >{SITE_NAME}</a
       >
     {/if}
-    {#if mounted && !game.open && !wide}<GameCell inMenu />{/if}
-    <!-- From lg nothing here shrinks, so the group's full width counts in the right track's
-         minimum (a row too wide moves the score rather than squeezing a control). -->
-    <div class="flex items-center gap-2 max-lg:flex-wrap lg:justify-self-end lg:*:shrink-0">
-      {@render actions?.()}
+    {#if !wide && actions}
+      <div class="flex flex-wrap items-center gap-2">{@render actions()}</div>
+    {/if}
+    {#if mounted && !game.open}<GamePanel />{/if}
+    <div class="flex flex-wrap items-center gap-2">
       {#if account || signInAvailable}
         <a
           href={account ? '/account' : '/signin'}
-          class={[tab(false), 'max-w-40 text-sm lg:max-xl:max-w-24']}
+          class={[tab(false), 'max-w-40 text-sm']}
           title={account ? `@${account.handle}` : undefined}
           data-header-account
           ><span class="truncate">{account ? `@${account.handle}` : AUTH_COPY.signIn}</span></a

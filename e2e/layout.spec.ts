@@ -653,7 +653,7 @@ test.describe('desktop', () => {
     await expectNoFooter(page);
     await expect(
       page.getByRole('banner').getByRole('link', { name: 'About', exact: true })
-    ).toBeVisible();
+    ).toBeHidden();
     await expectAboutReachable(page);
     const region = await box(page.locator('#map-region'));
     const innerHeight = await page.evaluate(() => window.innerHeight);
@@ -894,8 +894,8 @@ test.describe('landscape phone 667×375', () => {
   });
 });
 
-// The account entry (Sign in) follows the actions in the header's right group from lg and waits in
-// the Menu below it, so it never crowds the page's pinned score, status or actions.
+// The account entry (Sign in) waits in the header's Menu at every width, so it never crowds the
+// page's pinned score, status or actions.
 test.describe('account entry', () => {
   const account = (page: Page): Locator =>
     page.getByRole('banner').getByRole('link', { name: 'Sign in', exact: true });
@@ -912,6 +912,9 @@ test.describe('account entry', () => {
         if (path === 'opening') await gotoEditor(page);
         else await page.goto(path);
         await expect(headerScore(page)).toBeVisible();
+        await expect(account(page)).toBeHidden();
+        await expectNoA11yViolations(page);
+        await openHeaderMenu(page);
         await expect(account(page)).toBeVisible();
         await expect(account(page)).toHaveAttribute('href', '/signin');
         const entry = await box(account(page));
@@ -944,8 +947,7 @@ test.describe('account entry', () => {
         banner.getByRole('link', { name: /^SF Housing/ }),
         headerScore(page),
         banner.getByRole('button', { name: /^(Publish|Share link)/ }),
-        banner.getByRole('link', { name: `@${handle}` }),
-        banner.getByRole('link', { name: 'About', exact: true })
+        banner.getByRole('button', { name: 'Menu', exact: true })
       ];
       for (const item of items) await expect(item).toBeInViewport({ ratio: 1 });
       await expect(banner.getByRole('button', { name: /^(Undo|Redo)/ })).toHaveCount(0);
@@ -960,6 +962,13 @@ test.describe('account entry', () => {
       const fit = await banner.evaluate((b) => ({ scroll: b.scrollWidth, client: b.clientWidth }));
       expect(fit.scroll).toBeLessThanOrEqual(fit.client);
       expect((await box(banner)).height).toBe(48);
+      await expectNoA11yViolations(page);
+      await openHeaderMenu(page);
+      const entry = banner.getByRole('link', { name: `@${handle}` });
+      await expect(entry).toBeInViewport({ ratio: 1 });
+      await expect(banner.getByRole('link', { name: 'About', exact: true })).toBeInViewport({
+        ratio: 1
+      });
       await expectNoA11yViolations(page);
     });
 
@@ -1015,8 +1024,7 @@ test.describe('account entry', () => {
             ? (['Undo', 'Redo'] as const).map((n, i) => [n, history[i]] as [string, Locator])
             : []),
           ['Publish', banner.getByRole('button', { name: /^(Publish|Share link)/ })],
-          ['handle', banner.getByRole('link', { name: `@${handle}` })],
-          ['About', banner.getByRole('link', { name: 'About', exact: true })]
+          ['Menu', banner.getByRole('button', { name: 'Menu', exact: true })]
         ];
         for (const [name, item] of items)
           await expect(item, `${name} on screen`).toBeInViewport({ ratio: 1 });
@@ -1025,9 +1033,8 @@ test.describe('account entry', () => {
           expect(boxes[i].x, `${items[i][0]} clear of ${items[i - 1][0]}`).toBeGreaterThanOrEqual(
             boxes[i - 1].x + boxes[i - 1].width - 0.5
           );
-        // Nothing clipped: each item's content fits its box (the handle truncates by design).
+        // Nothing clipped: each item's content fits its box.
         for (const [name, item] of items) {
-          if (name === 'handle') continue;
           const fit = await item.evaluate((el) => ({ s: el.scrollWidth, c: el.clientWidth }));
           expect(fit.s, `${name} clips`).toBeLessThanOrEqual(fit.c + 0.5);
         }
@@ -1091,7 +1098,7 @@ test.describe("the game's header on the simulation", () => {
       await waitSim(page);
       const headline = page.getByTestId('goal-headline-button');
       await expect(headline).toBeVisible();
-      await expect(page.getByTestId('header-units')).toBeAttached();
+      await expect(page.getByTestId('game-panel')).toBeAttached();
       await widestGameHeader(page);
       await expect(headline).toContainText('82,069 of 82,069 homes by Sep 2066');
       if (width === 375) await expectPhoneHeaderFits(page);

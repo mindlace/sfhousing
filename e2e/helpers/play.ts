@@ -67,11 +67,9 @@ export async function tabTo(page: Page, target: Locator): Promise<void> {
   throw new Error('tabTo: target not reached in 80 presses');
 }
 
-/** Opens the game panel from the unit count (the Menu first below lg); returns the panel. */
+/** Opens the header's Menu, which holds the game panel; returns the panel. */
 export async function openGamePanel(page: Page): Promise<Locator> {
   await openHeaderMenu(page);
-  const units = page.getByTestId('header-units');
-  if ((await units.getAttribute('aria-expanded')) !== 'true') await units.click();
   const panel = page.getByTestId('game-panel');
   await expect(panel).toBeVisible();
   return panel;

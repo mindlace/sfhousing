@@ -73,7 +73,7 @@ async function mount(init: FakeGameInit = { saves: THREE() }) {
 }
 
 describe('GamePanel', () => {
-  it('the heading is the current game and the stage line reads its goal and units', async () => {
+  it('the heading is the current game and the stage line reads its goal', async () => {
     const { unmount } = await mount({
       saves: THREE(),
       currentId: 'id-Richmond',
@@ -82,10 +82,10 @@ describe('GamePanel', () => {
     await expect.element(page.getByRole('heading', { level: 2 })).toHaveTextContent('Richmond');
     await expect
       .element(page.getByTestId('game-stage'))
-      .toHaveTextContent(`Goal ${RUNGS} of ${RUNGS} · 1,240 units`);
+      .toHaveTextContent(`Goal ${RUNGS} of ${RUNGS}`);
     unmount();
     await mount({ saves: THREE() });
-    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting · 0 units');
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting');
   });
 
   it('a row reads Painting or Goal N of M, then Playing or when it was played', async () => {
@@ -320,7 +320,7 @@ describe('GamePanel', () => {
     await expect
       .element(page.getByRole('heading', { level: 2 }))
       .toHaveTextContent(store.saves[0].name);
-    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting · 0 units');
+    await expect.element(page.getByTestId('game-stage')).toHaveTextContent('Painting');
     await newGameButton().click();
     expect(store.saves).toHaveLength(2);
     expect(reloadGame).toHaveBeenCalledTimes(1);

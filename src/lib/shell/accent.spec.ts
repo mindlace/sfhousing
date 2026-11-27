@@ -83,7 +83,6 @@ const THEMED_FILES = [
   'src/lib/sim-page/SimNotices.svelte',
   'src/lib/game/ui/GoalHeadline.svelte',
   'src/lib/game/ui/OpeningCard.svelte',
-  'src/lib/game/ui/GameCell.svelte',
   'src/lib/game/ui/GamePanel.svelte'
 ];
 /** Themed files whose colours come from tokens and custom properties only: no hex at all. */
