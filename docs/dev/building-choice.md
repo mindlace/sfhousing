@@ -308,23 +308,21 @@ of the row's best option (`uncoveredPerHome ÷ costPerHome` of the prototype it 
 per-project share behind `typicalUncoveredShare`). `calibration.market` is recomputed from the
 refitted model by the unchanged `market.ts`.
 
-**Live figures** (build `2026-11-27-6264ccf1`, uncommitted tree, not uploaded):
+**Live figures** (build `2026-11-27-49765dbb`, Task 13a, not uploaded):
 
-- choiceSpread 99.99, at the search's upper bound, from 562 records (817 measured, 2 without a
-  panel row, 49 affordable-cohort records left out under 'most-homes', 144 over their limit, 60
-  with no gaining option). Log-likelihood -1853.9 at 0.01, -813.1 at 0.1, -792.5 at 1, -789.2 at
-  10, -788.9 at 100: the records rule out a sharp choice but do not identify the spread above
-  about 1. A fit at either bound ships as tier 4, "invented (fit at search bound)", and the build
-  warns. On the first build's 581 records the mean built stories ÷ limit is 0.81; a uniform draw
-  over the allowed gaining options gives 0.68; the tallest allowed option matches 43% of records
-  and the most-homes option 24%.
-- Affordable rule 'most-homes': affordable mean 1.228 (n = 38), private 1.014 (n = 481),
-  difference 0.214 against 2 SE = 0.1995.
-- `choiceMargin` bins merge to `[-100, 0, 0.001, 0.02]`, coefficients 0.720, -1.833, 0.827,
-  0.287: a lot exactly at break-even starts least often. Its correlation with the slope's cost
-  share is r = -0.0046.
+- choiceSpread 0.1036, tier 2, fitted inside the search, from 556 records (817 measured, 2
+  without a panel row, 201 over their limit, 58 with no gaining option; the affordable rule is
+  'market', so no cohort record is left out), each at its own year's market. Log-likelihood
+  -1698.9 at 0.01, -732.0 at 0.1, -744.3 at 1, -745.5 at 10, -745.6 at 100. At today's one step
+  the same fit runs to the search's upper bound (log-likelihood -745.7): at 2026 prices 508 of the
+  556 records' lots sit at break-even, against 186 at their own year's prices.
+- Affordable rule 'market': affordable mean 1.234 (n = 38), private 1.087 (n = 481), difference
+  0.148 against 2 SE = 0.198.
+- `choiceMargin` bins merge to `[-100, 0, 0.001, 0.02]`, coefficients 0.909, -1.981, 0.780,
+  0.293. Its correlation with the slope's cost share is r = -0.857 (it was -0.005 with the spread
+  at its bound): the margin and the market slope now measure much the same thing.
 - Height bands merge to ≤ 4, 5 to 7 and 8+; construction months 23.6, 25.8, 23.6.
-- `today.all` -0.545606, `today.private` -0.619108 (docs/dev/market.md).
+- `today.all` -0.60289, `today.private` -0.691301 (docs/dev/market.md).
 
 **V25** (`choiceOutcomes`, `invariants.ts`) checks both keys: one step each from `asOf`, a
 spread above 0, a known affordable rule, positive anchors and cost ratio, carrying in [0, 1],
@@ -364,17 +362,23 @@ agree exactly). The transit rule is `GAME_TRANSIT_ID` with all four stop types a
 tree is `fullTree(cal)` with every band of its transit rule set to the cap. The old figures
 (`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
 
-**Live figures** (build `2026-11-27-3abc9cb0`, uncommitted tree, not uploaded; records 2016-11-27
-to 2026-11-27). Record check: 9 pass, 11 miss, 32 report, exit 1. Height ÷ limit misses in every
-checked bucket: sim mean 0.759, 0.709, 0.631 and 0.459 against records 1.027, 1.296, 1.145 and 0.904
-(≤ 4, ≤ 6, ≤ 8, above 12), share ≥ 0.9 0.436, 0.221, 0.114 and 0.071 against 0.760, 0.713, 0.568 and
-0.421, the near-uniform choice the spread at its search bound gives (see "Calibration" above). 116
-of the 433 starts face an envelope above their base stories; divided by base stories instead, the
-≤ 4 mean is 0.824, still a miss. The code limits pass (no V above 6, no III above 8 among 433
-starts). Type I at 8 to 12: 0.909 (n 11) against 0.984 ± 0.032, a miss. Permit-issued medians pass
-at ≤ 4, ≤ 7 and ≤ 12; construction ≤ 4 misses (23.7 against 26.2 ± 1.3 months), ≤ 7 and ≤ 12 pass.
-Homes per project pass at ≤ 4 and ≤ 12 and miss at ≤ 7 (33 against 57 ± 16.9). Large lots are
-report only (records n 28).
+**Live figures** (build `2026-11-27-49765dbb`, Task 13a, not uploaded; records 2016-11-27 to
+2026-11-27). Record check: 6 pass, 14 miss, 32 report, exit 1. Height ÷ limit misses in every
+checked bucket: sim mean 0.749, 0.695, 0.665 and 0.420 against records 1.027, 1.296, 1.145 and 0.904
+(≤ 4, ≤ 6, ≤ 8, above 12), share ≥ 0.9 0.437, 0.194, 0.139 and 0.063 against 0.760, 0.713, 0.568 and
+0.421. The records' means include the 201 projects built over their limit (density bonus), which
+no option can reach; the fit's own in-limit records average 0.883 at ≤ 4. The simulation chooses at
+today's prices, where most lots sit at break-even, so the sharper fitted spread moves little
+(the spread at its bound gave 0.759, 0.709, 0.631 and 0.459 on `2026-11-27-3abc9cb0`). The code
+limits pass (no V above 6, no III above 8 among 423 starts). Type I at 8 to 12: 0.923 (n 13)
+against 0.984 ± 0.032, a miss. Permit-issued medians pass at ≤ 4 and ≤ 7 and miss at ≤ 12 (1.2
+against 8.3 ± 2.7 months, sim n 12); construction misses at ≤ 4 (22.7 against 26.2 ± 1.3) and ≤ 12
+(18.2 against 22.9 ± 2.9, sim n 6), passes at ≤ 7. Homes per project pass at ≤ 4 and miss at ≤ 7
+(30.5 against 57 ± 16.9) and ≤ 12 (66 against 102 ± 18.0, sim n 13). The three ≤ 12 lines passed
+on `2026-11-27-3abc9cb0` with sim n 4 to 11; the check gates on the records' n only. Large lots
+are report only (records n 28).
+
+The cap report below is still `2026-11-27-3abc9cb0`'s.
 
 Cap report (`completedNet` 2040 / 2066, old figures in brackets; share of starts V / III / I):
 
