@@ -27,7 +27,6 @@ test('the tool offers no Public money before round 1', async ({ page }) => {
   await waitSim(page);
   const money = page.getByTestId('tl-kind-money');
   await expect(money).toBeAttached();
-  await expect(money.getByTestId('tl-locked-lane')).toHaveCount(0);
   await expect(money.locator('button.plus')).toHaveCount(0);
 });
 
@@ -103,11 +102,12 @@ async function publishFromOpenGame(
   }
 }
 
-/** The view outside the game: no phase, no tree, no lock and no Remix. */
+/** The view outside the game: no pinned goal, nothing fixed or locked, no Remix. */
 async function expectOutsideGame(page: Page): Promise<void> {
-  await expect(page.getByTestId('tl-mode')).not.toHaveAttribute('data-phase');
-  await expect(page.getByTestId('game-tree-pane')).toHaveCount(0);
-  await expect(page.getByTestId('tl-locked-lane')).toHaveCount(0);
+  await expect(page.getByTestId('tl-mode')).toBeVisible();
+  await expect(page.getByTestId('goal-headline')).toHaveCount(0);
+  await expect(page.getByTestId('tl-policy-new')).toHaveCount(0);
+  await expect(page.locator('[data-testid="tl-policy"][data-locked]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Remix/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: /Remix/ })).toHaveCount(0);
 }

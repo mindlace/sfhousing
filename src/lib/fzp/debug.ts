@@ -1,6 +1,7 @@
 // e2e debug hook for /sim's timeline (timeline-ui rule 42): `window.__sfhFzp`, state getters over
 // TimelineMode. Compiled in only when VITE_E2E === '1' (like src/lib/map/debug.ts); otherwise a
 // constant-false branch Vite drops.
+import type { HeightCity } from '$lib/map/height/types';
 import type { SimPolicy4 } from '$lib/timeline/policy4';
 import type { Day } from '$lib/timelapse/time';
 import type { FzpPhase, Speed } from './types';
@@ -27,6 +28,8 @@ export interface SfhFzpDebug {
   readonly playFrom: Day | null;
   /** Every `refill`'s `from`, in arrival order, since mount. */
   readonly refills: readonly number[];
+  /** The last height-limit city the worker posted (contours, labels, rule ids); null before one. */
+  readonly heights: HeightCity | null;
   /** The world's completed net homes per filled month (no baseline), from month 0. */
   completedNet(): number[];
 }
@@ -75,6 +78,9 @@ export function installFzpDebug(get: () => SfhFzpDebug): () => void {
     },
     get refills() {
       return get().refills;
+    },
+    get heights() {
+      return get().heights;
     },
     completedNet() {
       return get().completedNet();

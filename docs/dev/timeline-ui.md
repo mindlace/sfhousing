@@ -14,7 +14,7 @@ Developer notes for `src/lib/timeline/` and `src/lib/sim-page/SimPage.svelte`. S
 | `Inspector`               | `Inspector.svelte`, `WhenEditor.svelte`, `WhatEditor.svelte`, `AddMenu.svelte` | the selected span's editor, hosting today's editors through `lens.ts`                                       |
 | `PolicyStore<SimPolicy4>` | `src/lib/sim-page/policy-store.svelte.ts`                                      | undo and redo; takes an optional `normalize(next, prev)` run inside `apply` and `undoTo`                    |
 
-`src/lib/fzp/debug.ts` keeps `window.__sfhFzp`, now with `phase`, `day`, `asOf`, `playing`, `speed`, `filledThrough`, `lastIndex`, `policy`, `stale`, `reached` (the furthest day reached), `playFrom` (the day "Play from" offers, else null), `refills` (every `refill`'s `from`, in arrival order) and `completedNet()` (the plan world's completed net homes by month; VITE_E2E builds only). `e2e/helpers/run.ts` waits on it (`waitFilled`, `openKind`, `addPolicy`). `window.__sfhSim.preview` is unchanged.
+`src/lib/fzp/debug.ts` keeps `window.__sfhFzp`, now with `phase`, `day`, `asOf`, `playing`, `speed`, `filledThrough`, `lastIndex`, `policy`, `stale`, `reached` (the furthest day reached), `playFrom` (the day "Play from" offers, else null), `refills` (every `refill`'s `from`, in arrival order), `heights` (the last height-limit city the worker posted: contours, labels and `sourceIds`, the rule ids; null before one) and `completedNet()` (the plan world's completed net homes by month; VITE_E2E builds only). `e2e/helpers/run.ts` waits on it (`waitFilled`, `openKind`, `addPolicy`). `window.__sfhSim.preview` is unchanged.
 
 ## The screen
 

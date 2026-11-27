@@ -336,15 +336,22 @@ On a `VITE_E2E=1` build (`src/lib/game/e2e.ts`):
 - `sfhousing:e2e:game`: `e2eOpen(storage)` is true when the key is absent, storage is null, or
   reading throws: the layout provides the open game. Without `VITE_E2E=1` it is false.
 - `sfhousing:e2e:goal`: `e2eGoalAmount(storage)` is that amount (a whole number of 1 or more), else
-  null. Paint and the simulation read it once for the goal's amount. The fixture city is too small
-  for the real goal, so the journeys use amount 1.
+  null. The opening and the simulation each read it once, when they mount, for the goal's amount.
+  The fixture city is too small for the real goal: the opening's specs use amount 1 (one stroke
+  makes room for about 70 homes), the rounds use `FIXTURE_AMOUNT` (below), and a journey that goes
+  from one to the other sets the key between them (`setGoalAmount`, before Start).
+- `window.__sfhFzp` (`src/lib/fzp/debug.ts`, fields in [timeline-ui.md](timeline-ui.md)): the
+  playhead's `day`, `playing`, the `policy` on show and `heights`, the last height-limit city the
+  worker posted (its `sourceIds` name the rules that set a limit).
 
-A spec knows the page is the simulation tool when its dock (`tl-dock`) shows.
+A spec knows the page is the simulation tool when its dock (`tl-dock`) shows, and the round's
+result by the pinned goal's `data-state` (`goal-headline`: `pending`, `win` or `late`).
 
 `e2e/helpers/game.ts` (before the page loads): `seedGame(page, state?)` stores a game over
 `NEW_GAME` and switches the real game on (a phase `'runs'` state gets a `firstWinAt`);
-`seedV2Game(page, v2, policy?)` stores a raw version 2 save as the points build wrote it (its index
-entry with `rung`), with `policy` as its policy record when given, for the upgrade journey;
+`seedV2Game(page, v2, policy?, plan?)` stores a raw version 2 save as the points build wrote it
+(its index entry with `rung`), with `policy` and `plan` (document texts) as its autosave records
+(`{ v: 1, savedAt, plan }`, under the record keys and in the save), for the upgrade journey;
 `newVisitor(page)` switches it on with nothing stored; `seedGoalAmount(page, amount)`. Each page
 takes one of `seedGame`, `seedV2Game` or `newVisitor`.
 
@@ -353,19 +360,65 @@ page and goes to `/`; a spec that seeds its own game and wants `/` calls `gotoHy
 
 `e2e/helpers/play.ts` plays the game; every wait is a state in the page or in storage:
 
-| Helper                   | Does                                                       |
-| ------------------------ | ---------------------------------------------------------- |
-| `seedRuns(page, state?)` | Amount 1 and a seeded game (default: in the runs, round 1) |
-| `savedGame(page)`        | The current game as storage holds it                       |
-| `waitSaved(page, ok)`    | Polls `savedGame` every 50 ms until `ok` holds             |
-| `waitSim(page)`          | Waits for the simulation tool: `tl-dock` visible           |
-| `tabTo(page, target)`    | Tab, at most 80 presses, until `target` has focus          |
-| `openGamePanel(page)`    | Opens the header Menu, which holds the game panel          |
+| Helper                            | Does                                                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `seedRuns(page, state?, amount?)` | The goal's amount (default 1) and a seeded game (default: in the runs, round 1)                                         |
+| `setGoalAmount(page, amount)`     | Writes the goal's amount now; the part that mounts next reads it                                                        |
+| `savedGame(page)`                 | The current game as storage holds it                                                                                    |
+| `waitSaved(page, ok)`             | Polls `savedGame` every 50 ms until `ok` holds                                                                          |
+| `waitSim(page)`                   | Waits for the simulation tool: `tl-dock` visible                                                                        |
+| `frameMap(page)`                  | The simulation's map, once ready, on the fixture's frame (zoom 18.5, flat), idle                                        |
+| `waitResult(page, state)`         | Waits for `goal-headline`'s `data-state`                                                                                |
+| `playToResult(page)`              | Plays at 3x until the state leaves pending, bounded by the test's timeout; the state                                    |
+| `takeGift(page, by)`              | Presses the gift (`'pointer'`, or `'keys'`: Shift+Tab to it, Enter) and Accept through every explainer; the titles seen |
+| `tabTo`, `tabBackTo`, `tabCount`  | Tab (or Shift+Tab), at most 80 presses, until `target` has focus; `tabCount` says how many                              |
+| `openGamePanel(page)`             | Opens the header Menu, which holds the game panel                                                                       |
+| `policyRow`, `policyRowNamed`     | A policy's row parts by id (a catalogue transit rule's id is its key) or by label                                       |
+
+`FIXTURE_AMOUNT` (443), `FIXTURE_ROUTE` (`'switch'`), `FIXTURE_TARGET` (null),
+`FIXTURE_LAW_MONTH` (Sep 2039) and `FIXTURE_RAIL_MONTH` (Aug 2038) are the probe's: on fixture-0
+at 443 homes current law reaches the goal in Sep 2039 and the rail rule alone in Aug 2038, 13
+months earlier, so switching the rail rule on in round 1 wins. Below 443 no round-1 rule wins; at
+higher amounts it does too, but each play from today is longer, and a test has 30 s. The probe is
+a scratch script over `openEngine` (`scripts/lib/engine-runner.ts`) and `catalogueDoc`; run it
+again and update the constants when the engine or the fixture changes the months. `monthDay(y, m)`
+is the first day of a month as a `Day`.
 
 `e2e/helpers/header-text.ts` has `widestGameHeader(page)`, which writes the pinned goal's widest
-words (`WIDEST_PINNED`) into its two lines for the width checks.
+words (`WIDEST_PINNED`) into its two lines and its phone line for the width checks.
 
-`e2e/game-a11y.spec.ts` runs the accessibility checklist on each state.
+### The journeys
+
+`e2e/game-journey.spec.ts`, at `FIXTURE_AMOUNT`. Each journey is two tests cut at round 1 (the
+second seeds round 1 with current law's month to beat, the state the first ends in), since a
+journey whole plays about 8 s of months on top of the page's work and nears a test's 30 s:
+
+- **By pointer** (both projects): a new visitor paints to a room goal of 1, tilts the map, sets
+  the amount and presses Start; the map is pitched with buildings drawn; Play at 3x to current
+  law's win, the gift, three explainers, three New rows off. Then round 1: Play, the rail rule
+  switched on (playback stops, the playhead goes to the later of today and its first month,
+  pending), played to the win "1 yr 1 mo early", the gift, round 2's explainers; the rail row
+  reads Edit and band 2 set to 1,200 m holds; the account holds the one game, in round 2.
+- **By keyboard only** (desktop): the same loop with Tab, Shift+Tab, Enter, Space and the
+  ruler's End: Enter stamps on the map and presses Start, End wins current law, the gift by keys
+  (focus then on the goal); the New pane by Enter (focus stays on New) and closed; the rail rule
+  switched on by Space; 3x by Enter, Space plays to the win; Edit by Enter, 1,200 m typed into
+  band 2.
+- **Late**: round 1 with Jan 2035 to beat; played to it: `late`, "4 yr 8 mo late", no gift, the
+  saved state unchanged.
+- **The ending**: round 4 with Jan 2045 to beat; played to the win, the gift "Open the gift: every
+  policy", one explainer "Every policy", the saved game finished; the zoning "+" offers "Transit
+  rule".
+- **A saved version 2 game** (`seedV2Game`, its own transit rule at 3,219 m and 12 stories, a
+  plan): it opens on the simulation in round 2 with its plan kept, the rule in the document as
+  stored and on, the worker's height limits naming it with contours at its 12 stories, and its
+  editor showing 3219.
+
+`e2e/game-a11y.spec.ts` runs the accessibility checklist on each state ([accessibility.md](accessibility.md)).
+`e2e/game-shell.spec.ts` checks the round's header at 320 px (pending, win, late), a win beside
+"Autosave off" at 320 and 375 px, and the round panel inside the viewport under the header at 320
+and 1280 px. The win and late lines clip at 320 px, and a win beside "Autosave off" clips at 320
+and 375 px: those cases are `test.fixme`, with their measured boxes in the spec.
 
 ## The reach check
 

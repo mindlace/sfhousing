@@ -413,6 +413,8 @@
   let reveal = $state.raw<Reveal>(revealOpen(untrack(() => initialCalibration?.asOf ?? 0)));
   /** Every refill's `from`, in arrival order (the e2e hook). */
   const refills: number[] = [];
+  /** The last height-limit city the worker posted (the e2e hook). */
+  let heightsSeen: HeightCity | null = null;
 
   // Until SimMap's handle exists, cells and chunk statuses wait here, in order.
   let pendingUpdates: TimelineUpdate[] = [];
@@ -1279,7 +1281,9 @@
         pushLookups();
       },
       onheights: (c) => {
-        if (!dead) onheights?.(c);
+        if (dead) return;
+        heightsSeen = c;
+        onheights?.(c);
       },
       onchunks: (c) => {
         if (dead) return;
@@ -1567,6 +1571,7 @@
       reached: reveal.reached,
       playFrom: playFromDay,
       refills,
+      heights: heightsSeen,
       completedNet: () =>
         current ? current.rows.slice(0, current.filledThrough + 1).map((r) => r.completedNet) : []
     }));

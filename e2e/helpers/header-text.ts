@@ -2,22 +2,33 @@
 // tests (layout.spec.ts and the specs of the game's screens).
 import type { Page } from '@playwright/test';
 
-/** The pinned goal's widest words: line 1 of a pending round, line 2 before a round's offer. */
+/**
+ * The pinned goal's widest words (`pinnedWords`, src/lib/game/ui/round-words.ts): line 1 of a
+ * pending round with a target, line 2 before a round's offer, and the phone line's widest count and
+ * rest (a win: "by" a month, then a span early with two-digit years and months).
+ */
 export const WIDEST_PINNED = {
   line1: '82,069 homes before Sep 2066',
-  line2: 'Beat it: 3 new policies'
+  line2: 'Beat it: 3 new policies',
+  phoneCount: '82,069',
+  phoneRest: 'by Sep 2066 · 10 yr 11 mo early'
 } as const;
 
 /**
- * Writes the pinned goal's widest words into its two lines. Text only, so a second call leaves the
- * page as the first did.
+ * Writes the pinned goal's widest words into its two lines and its phone line (the count and the
+ * rest; the homes part keeps what the state put there). Text only, so a second call leaves the page
+ * as the first did.
  */
 export async function widestGameHeader(page: Page): Promise<void> {
   await page.evaluate((w) => {
-    const line1 = document.querySelector('[data-testid="goal-line1"]');
-    if (line1) line1.textContent = w.line1;
-    const line2 = document.querySelector('[data-testid="goal-line2"]');
-    if (line2) line2.textContent = w.line2;
+    const set = (sel: string, text: string) => {
+      const el = document.querySelector(sel);
+      if (el) el.textContent = text;
+    };
+    set('[data-testid="goal-line1"]', w.line1);
+    set('[data-testid="goal-line2"]', w.line2);
+    set('[data-testid="goal-phone"] .goal-count', w.phoneCount);
+    set('[data-testid="goal-phone"] .goal-rest', w.phoneRest);
   }, WIDEST_PINNED);
 }
 

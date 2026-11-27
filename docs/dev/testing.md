@@ -95,7 +95,7 @@ On `/` the brush tools sit in the dock's Paint tab: from md it is open on the le
 
 Auth specs (see [auth.md](auth.md)) use the e2e-only seams, which exist only in the `VITE_E2E=1` build running with `ENVIRONMENT=development`: `POST /api/e2e/login` signs a context in as an email, `GET /api/e2e/mail` returns the link of the latest mail of a kind (`password-reset`, `change-email-approve`, `change-email-verify`), and the `sfh_e2e_auth_methods` cookie switches sign-in methods on for one browser context. Specs use them through `loginAs`, `readMail` and `enableAuthMethods` in `e2e/helpers/auth.ts`; a spec that reads its session uses `Session` and `sessionOf` there. Server specs that need D1 use `src/lib/server/test/auth-db.ts`: `freshDb` (an in-memory D1 with the migrations applied), `makePlatform`, `seedUser` and `seedIdentity`.
 
-`e2e/game-a11y.spec.ts` scans each state of the game ([accessibility.md](accessibility.md)).
+`e2e/game-a11y.spec.ts` scans each state of the game, the rounds' too ([accessibility.md](accessibility.md)); `e2e/game-journey.spec.ts` plays the rounds ([game.md](game.md), "The journeys").
 
 Signoff's `test:e2e` step runs `npm run test:e2e`, every project; no workflow runs Playwright. Single spec: `npx playwright test e2e/data-route.spec.ts --project=chromium`.
 
@@ -104,9 +104,11 @@ Signoff's `test:e2e` step runs `npm run test:e2e`, every project; no workflow ru
 The game's rules are in [game.md](game.md), saved games in [game-save.md](game-save.md).
 
 - With `VITE_E2E=1` a page with no `sfhousing:e2e:game` key (`E2E_GAME_KEY`, `src/lib/game/e2e.ts`) gets the open game: the simulation at `/`, every control, nothing locked, nothing stored. A spec that calls neither helper below sees it.
-- `e2e/helpers/game.ts`, each called before the page loads: `seedGame(page, state?)` switches the real game on and stores a game over `NEW_GAME` (version 3; a `'runs'` state gets a `firstWinAt`); `seedV2Game(page, v2, policy?)` stores a raw version 2 save as the points build wrote it, for the upgrade journey; `newVisitor(page)` switches the real game on with nothing stored, the opening; `seedGoalAmount(page, amount)` sets the goal's amount (`sfhousing:e2e:goal`). A spec that plays the game calls `seedGoalAmount`: the fixture cannot reach 82,069 homes.
-- `e2e/helpers/play.ts` seeds and waits with every wait a state in the page or in storage (`seedRuns`, `waitSim`, `waitSaved`); the table is in [game.md](game.md), "The e2e seams".
-- A spec knows a game's page is the simulation tool when `tl-dock` shows (`waitSim`).
+- `e2e/helpers/game.ts`, each called before the page loads: `seedGame(page, state?)` switches the real game on and stores a game over `NEW_GAME` (version 3; a `'runs'` state gets a `firstWinAt`); `seedV2Game(page, v2, policy?, plan?)` stores a raw version 2 save as the points build wrote it, its policy and plan as autosave records, for the upgrade journey; `newVisitor(page)` switches the real game on with nothing stored, the opening; `seedGoalAmount(page, amount)` sets the goal's amount (`sfhousing:e2e:goal`). A spec that plays the game calls `seedGoalAmount`: the fixture cannot reach 82,069 homes.
+- `e2e/helpers/play.ts` seeds, plays and waits with every wait a state in the page or in storage (`seedRuns`, `waitSim`, `waitSaved`, `waitResult`, `playToResult`, `takeGift`); the table is in [game.md](game.md), "The e2e seams".
+- A spec knows a game's page is the simulation tool when `tl-dock` shows (`waitSim`), and a round's result by `goal-headline`'s `data-state`.
+- The rounds play at `FIXTURE_AMOUNT` (443 homes), where current law reaches the goal in Sep 2039 and the rail rule alone in Aug 2038 on fixture-0. The constants come from a probe over `openEngine` and `catalogueDoc`; re-run it when the engine or the fixture moves those months ([game.md](game.md), "The e2e seams").
+- Playback runs on the wall clock (3 years a second at 3x) and steps fewer months when frames are slow, and a loaded game opens on the whole city in 3D, which software GL draws slowly. A spec that plays or presses much calls `frameMap(page)` first, and the journeys are cut at round 1 to keep each test well inside 30 s with no raised timeout.
 - A component test with no provider gets the open game from `useGame()` (`openGame()`, `src/lib/game/store.svelte.ts`).
 
 ## The reach check
