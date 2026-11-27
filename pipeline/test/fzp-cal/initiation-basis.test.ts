@@ -197,7 +197,8 @@ const FEATURE_RAW: Record<FeatureId, number[]> = {
   storiesGap: [1, 3],
   improvementShare: [2],
   rentControlLikely: [0],
-  landUseClass: [1]
+  landUseClass: [1],
+  choiceMargin: [2]
 };
 const TRUE_INTERCEPT = -4.5;
 const TRUE_PR = 0.6; // potentialRatio high vs low
@@ -377,7 +378,7 @@ describe('fitInitiation', () => {
   });
 
   it('topEffects lists every term by coefficient range, descending', () => {
-    expect(report.topEffects).toHaveLength(8);
+    expect(report.topEffects).toHaveLength(9);
     for (let i = 1; i < report.topEffects.length; i++) {
       expect(report.topEffects[i - 1].range).toBeGreaterThanOrEqual(report.topEffects[i].range);
     }

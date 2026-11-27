@@ -5,17 +5,41 @@
  * `recordQuality`) and the `calibration.*` counts. No I/O: the step reads the files and the panel.
  * The publicly funded housing (finance-data spec 4.4, 4.6-4.8) follows today's market.
  */
+import type { OptionTable } from '../../../src/lib/data/option-table';
 import type { ScenarioParcels } from '../../../src/lib/data/scenario-codec';
+import {
+  allowedCount,
+  choiceCtxOf,
+  choiceFeatures,
+  type ChoiceCtx
+} from '../../../src/lib/sim/choice/choose';
+import type { ChoiceModel } from '../../../src/lib/sim/choice/types';
 import type { CarModel } from '../../../src/lib/sim/cars';
 import { featureValue } from '../../../src/lib/data/scenario-codec';
 import { CalibrationFormatError, parseCalibration } from '../../../src/lib/timelapse/model';
 import type { InFlightProject } from '../../../src/lib/timelapse/projects';
-import type { Calibration, Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
+import type {
+  Calibration,
+  Day,
+  FeatureId,
+  ProjectHistory,
+  Provenance
+} from '../../../src/lib/timelapse/types';
 import type { FundingFile } from '../../enrichment/funding-schema';
 import type { MarketFile } from '../../enrichment/market-schema';
+import { log } from '../../../src/lib/timelapse/math';
+import { isoOf } from '../../project-records/parse';
 import { isoToDay } from '../../project-records/multiphase';
+import { recordTargets, type RecordTargets } from '../building-records';
 import type { RawRow } from '../../project-records/types';
 import { affordableRoutes, fundedStages, routesWarning, siteChoice } from './affordable';
+import {
+  affordableRule,
+  choiceRecords,
+  fitChoiceSpread,
+  marginOverlap,
+  type ChoiceSpreadFit
+} from './choice-fit';
 import { baselineFunding } from './funding';
 import {
   FZP_BAND,
@@ -26,7 +50,13 @@ import {
   type FzpApplication
 } from './initiation';
 import { marketModel } from './market';
-import { aggregatePanel, firstFiledDays, initiationEvents, type PanelSource } from './panel';
+import {
+  aggregatePanel,
+  firstFiledDays,
+  initiationEvents,
+  withChoiceFeatures,
+  type PanelSource
+} from './panel';
 import {
   localProgramDiagnostic,
   pathwayForNew,
@@ -36,7 +66,9 @@ import {
 import { phaseGap } from './phase-gap';
 import { purgeCensor, purgeCensorTally } from './purge';
 import { calibrationReport } from './report';
+import { datasf } from './provenance';
 import { revisionModel } from './revision';
+import { shippedStep } from './shipped-step';
 import { sizeModel } from './size';
 import {
   buildSpells,
@@ -58,6 +90,12 @@ export interface CalInput {
   panel: PanelSource;
   parcels: ScenarioParcels;
   inFlight: InFlightProject[];
+  /** scenarios/fzp/options.bin: one row per parcels.bin row (the FZP application's choice). */
+  options: OptionTable;
+  /** `<derivedDir>`/panel-options.bin: one row per panel key (`scenario_panel.option_row`). */
+  panelOptions: OptionTable;
+  /** The location value's provenance (locationValueByLot). */
+  locationValue: Provenance;
   fillLevels: readonly number[];
   datasetVersion: string;
   /** the parsed `pipeline/enrichment/market.json` and its path (for error messages) */
@@ -86,6 +124,8 @@ export interface CalOutput {
   warnings: string[];
   /** V28 as measured (mode-agnostic; the step decides whether it gates) */
   backcast: { ok: boolean; detail: string };
+  /** The record check's targets (building-records.ts), written by the step beside the report. */
+  targets: RecordTargets;
 }
 
 const byId = (a: { id: string }, b: { id: string }): number =>
@@ -93,14 +133,25 @@ const byId = (a: { id: string }, b: { id: string }): number =>
 
 const sig = (x: number): string => String(Number(x.toPrecision(4)));
 
+const NULL_CAP = 0xffff;
+
 /**
- * The FZP application of the initiation model: T11's FZP-variant features, and the hostable
- * parcels that no in-flight project occupies (spec §4.6).
+ * The FZP application of the initiation model: T11's FZP-variant features, with potentialRatio,
+ * storiesGap and choiceMargin from the choice among the row's options allowed at its envelope
+ * (building-choice spec, "Start odds refit"), and the hostable parcels that no in-flight project
+ * occupies (spec §4.6). The cap is none on Local Program parcels and the base cap elsewhere, the
+ * FZP yields' rule until the options carry their own FZP cap.
  */
 export function fzpApplication(
   parcels: ScenarioParcels,
-  inFlight: readonly InFlightProject[]
+  inFlight: readonly InFlightProject[],
+  choice: ChoiceCtx
 ): FzpApplication {
+  if (choice.t.count !== parcels.count) {
+    throw new CalibrationError(
+      `options.bin has ${choice.t.count} rows, parcels.bin ${parcels.count}`
+    );
+  }
   const occupied = new Set<string>();
   for (const p of inFlight) for (const id of p.parcelIds) occupied.add(id);
   const hostable: number[] = [];
@@ -110,10 +161,111 @@ export function fzpApplication(
   return {
     features(i) {
       const f = {} as Record<FeatureId, number>;
-      for (const id of TERM_ORDER) f[id] = featureValue(parcels, i, id, 'fzp');
+      const local = parcels.localProgram[i] === 1;
+      const cap = local || parcels.baseCap[i] === NULL_CAP ? null : parcels.baseCap[i];
+      const n = allowedCount(choice.t, i, parcels.envelopeStories[i]);
+      const c = choiceFeatures(
+        choice,
+        0,
+        i,
+        n,
+        cap,
+        parcels.existingUnits[i],
+        parcels.existingStories[i]
+      );
+      for (const id of TERM_ORDER) {
+        f[id] =
+          id === 'potentialRatio' || id === 'storiesGap' || id === 'choiceMargin'
+            ? c[id]
+            : featureValue(parcels, i, id, 'fzp');
+      }
       return f;
     },
     hostable
+  };
+}
+
+/** The spread a fit with too few records takes (tier 4, invented). */
+export const FALLBACK_CHOICE_SPREAD = 1;
+
+const g = (x: number): string => (Number.isFinite(x) ? String(Number(x.toPrecision(6))) : 'none');
+
+/**
+ * `calibration.choice`: the shipped price step from `asOf`, the fitted (or, under SIZE_MIN_N
+ * records, the invented) spread and the affordable rule, each with its provenance.
+ */
+export function choiceModelOf(
+  step: ReturnType<typeof shippedStep>,
+  spread: ChoiceSpreadFit,
+  aff: ReturnType<typeof affordableRule>,
+  cohort: RecordTargets['cohort'],
+  locationValue: Provenance,
+  cal: CalProfile,
+  asOf: Day
+): ChoiceModel {
+  const window: [string, string] = [PLANNING_START, isoOf(asOf)];
+  const sources = [datasf('planningProjects'), datasf('permits')];
+  const fitted = spread.n >= cal.sizeMinN && Number.isFinite(spread.choiceSpread);
+  const bound = fitted && Math.abs(log(spread.choiceSpread / 100)) < 1e-3;
+  const records =
+    `${spread.n} histories first recorded ${window[0]} to ${window[1]} with proposed and base ` +
+    `stories at filing of at least 1 on a panel row; ${spread.excludedOver} over their limit ` +
+    `left out (sizeOverEnvelope), ${spread.noOption} with no option gaining a home left out`;
+  const choiceSpread: Provenance = fitted
+    ? {
+        tier: 2,
+        label: `SF Planning & permit records ${window[0].slice(0, 4)}–${window[1].slice(0, 4)}: choice spread (tier 2)`,
+        sources,
+        method:
+          `maximum likelihood of each record's built stories under the market choice among its ` +
+          `lot's options allowed at its base stories at filing (choose.ts choiceRow, the shipped ` +
+          `step), golden-section on ln choiceSpread in [0.001, 100]; ${records}; log-likelihood ` +
+          `${g(spread.logLik)}${bound ? '; at the upper bound: the records barely fix the spread' : ''}; ` +
+          "locationValue is today's for every record (the panel options carry no past value), " +
+          "an index against each roll year's median, so it assumes neighbourhoods kept their rank",
+        n: spread.n,
+        window
+      }
+    : {
+        tier: 4,
+        label: 'Choice spread: invented, too few records to fit',
+        sources,
+        method: `invented value ${FALLBACK_CHOICE_SPREAD}: only ${spread.n} records (fewer than SIZE_MIN_N = ${cal.sizeMinN}); ${records}`,
+        n: spread.n,
+        window
+      };
+  const known = Number.isFinite(aff.diff) && Number.isFinite(aff.se) && aff.se > 0;
+  const affordable: Provenance = known
+    ? {
+        tier: 2,
+        label: `Affordable projects' choice rule from the records: ${aff.rule} (tier 2)`,
+        sources,
+        method:
+          `built height ÷ limit, affordable mean ${g(cohort.affordable.mean)} (n = ` +
+          `${cohort.affordable.n}) minus private mean ${g(cohort.private.mean)} (n = ` +
+          `${cohort.private.n}) = ${g(aff.diff)}, SE of the difference ${g(aff.se)}; ` +
+          `'most-homes' (rule A) exactly when the difference exceeds 2 SE, else 'market' ` +
+          '(owner decision, spec)',
+        n: cohort.affordable.n + cohort.private.n
+      }
+    : {
+        tier: 4,
+        label: "Affordable projects' choice rule: market, invented default without cohort records",
+        sources,
+        method: `no cohort difference measurable (diff ${g(aff.diff)}, SE ${g(aff.se)}): the market rule`
+      };
+  return {
+    prices: [{ from: asOf, value: step.prices }],
+    choiceSpread: fitted ? spread.choiceSpread : FALLBACK_CHOICE_SPREAD,
+    affordableRule: aff.rule,
+    provenance: {
+      anchors: step.provenance.anchors,
+      aboveTopCostRatio: step.aboveTop.provenance,
+      carrying: step.provenance.carrying,
+      choiceSpread,
+      affordableRule: affordable,
+      locationValue
+    }
   };
 }
 
@@ -135,17 +287,54 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     gapImpute: { ids: n.imputed }
   });
 
-  // §4.6 initiation.
+  // The developer's choice (building-choice spec): the shipped step, the spread fitted on the
+  // records, the affordable rule from the cohort check. The panel's start features come from it.
   const firstFiled = firstFiledDays(permits);
   const lotArea = (id: string): number => {
     const i = parcels.index.get(id);
     return i === undefined ? 0 : parcels.lotAreaM2[i];
   };
+  const step = shippedStep({ histories: input.histories, permits, asOf, cal });
+  const recs = await choiceRecords(p.norm, input.panel, input.panelOptions, lotArea, asOf);
+  const spread = fitChoiceSpread(
+    recs.records,
+    step.prices,
+    step.heightTime.steps[0].value,
+    step.heightTime.upTo
+  );
+  const targets = recordTargets(input.histories, permits, parcels, asOf);
+  const aff = affordableRule(targets.cohort);
+  const choice = choiceModelOf(step, spread, aff, targets.cohort, input.locationValue, cal, asOf);
+  const heightTime = step.heightTime;
+  const panelCtx = choiceCtxOf(input.panelOptions, choice, heightTime);
+  const overlap = marginOverlap(panelCtx);
+  const filled = withChoiceFeatures(input.panel, panelCtx);
+  const panelSrc: PanelSource = {
+    years: filled.years,
+    async read(y) {
+      const rows = await filled.read(y);
+      for (const r of rows) {
+        const c = r.choice;
+        if (!c || !r.hostableBase) continue;
+        overlap.add(
+          c.optionRow,
+          allowedCount(input.panelOptions, c.optionRow, c.baseStories),
+          c.baseCap,
+          c.existingUnits
+        );
+      }
+      return rows;
+    }
+  };
+
+  // §4.6 initiation.
   const ev = initiationEvents(p.norm, firstFiled, lotArea);
-  const panel = await aggregatePanel(input.panel, ev, INITIAL_EDGES);
-  const init = fitInitiation(panel, cal, fzpApplication(parcels, input.inFlight), {
+  const panel = await aggregatePanel(panelSrc, ev, INITIAL_EDGES);
+  const fzpCtx = choiceCtxOf(input.options, choice, heightTime);
+  const init = fitInitiation(panel, cal, fzpApplication(parcels, input.inFlight, fzpCtx), {
     permitOnlyPre2015: n.method.permitOnlyPre2015
   });
+  const marginVsSlope = overlap.result();
   // Today's market (market-baseline spec §4.6), from the initiation report and the panel starts.
   const r = init.report;
   const mk = marketModel({
@@ -165,7 +354,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
   // the transition tables are fitted on, joined on the history id (`Spell.projectId`).
   const ar = affordableRoutes(p.norm, forNew, asOf);
   const bf = baselineFunding(input.funding, input.mohcd, asOf, cal);
-  const sites = await siteChoice(input.panel, init.model, p.norm, lotArea);
+  const sites = await siteChoice(filled, init.model, p.norm, lotArea);
   const stages = fundedStages(p.norm, spells, asOf);
   const ppa = ppaShare(p.norm, asOf);
   const lpDiag = localProgramDiagnostic(p.norm, asOf);
@@ -193,7 +382,9 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     market: mk.market,
     affordableRoutes: ar.routes,
     baselineFunding: bf.baselineFunding,
-    ...(input.cars?.model ? { cars: input.cars.model } : {})
+    ...(input.cars?.model ? { cars: input.cars.model } : {}),
+    choice,
+    heightTime
   };
   const json = JSON.stringify(calibration);
   try {
@@ -224,6 +415,11 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     'calibration.method.permitOnlyPre2015': n.method.permitOnlyPre2015.fired,
     'calibration.method.ppaPooled': fit.ppaPooled,
     'calibration.method.sizeOverEnvelope': size.overEnvelope.fired,
+    'calibration.choice.records': spread.n,
+    'calibration.choice.excludedOver': spread.excludedOver,
+    'calibration.choice.noOption': spread.noOption,
+    'calibration.choice.noPanelRow': recs.noPanelRow,
+    'calibration.choice.mostHomes': choice.affordableRule === 'most-homes' ? 1 : 0,
     'calibration.rung3': fit.rung3,
     'calibration.noFcd.flaggedPooled': fit.noFcdFlaggedPooled,
     'calibration.panel.parcelYears': panel.parcelYears,
@@ -274,6 +470,15 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     purge: { tally: p.tally, windows: p.windows, exits: p.exits },
     permitOnlyPre2015: n.method.permitOnlyPre2015,
     sizeOverEnvelope: size.overEnvelope,
+    choice: {
+      spread,
+      measured: recs.measured,
+      noPanelRow: recs.noPanelRow,
+      affordable: { ...aff, cohort: targets.cohort },
+      marginVsSlope,
+      filedToIssued: step.filedToIssued,
+      aboveTopN: step.aboveTop.n
+    },
     fit,
     initiation: r,
     panel,
@@ -293,5 +498,5 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     warnings
   });
 
-  return { calibration, json, reportMd, tallies, counts, warnings, backcast };
+  return { calibration, json, reportMd, tallies, counts, warnings, backcast, targets };
 }

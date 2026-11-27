@@ -8,12 +8,15 @@ import {
   duckPanelSource,
   initiationEvents,
   monthIndex,
+  withChoiceFeatures,
   type PanelSource,
   type PanelYearRow
 } from '../../lib/fzp-cal/panel';
 import { CalibrationError, type NormHistory } from '../../lib/fzp-cal/types';
 import { isoToDay } from '../../project-records/multiphase';
 import { binIndex } from '../../../src/lib/timelapse/model';
+import { choiceCtxOf } from '../../../src/lib/sim/choice/choose';
+import { choiceModel, heightTime, opt, table } from '../../../src/lib/sim/choice/test/model';
 import type { Day, FeatureId, ProjectHistory, Stage } from '../../../src/lib/timelapse/types';
 
 const d = isoToDay;
@@ -60,7 +63,8 @@ const EDGES: Record<FeatureId, number[]> = {
   storiesGap: [-100, 0, 3],
   improvementShare: [0, 0.5],
   rentControlLikely: [0, 1],
-  landUseClass: [0, 1, 2, 3, 4, 5]
+  landUseClass: [0, 1, 2, 3, 4, 5],
+  choiceMargin: [-100, 0, 0.1]
 };
 
 const FEATS: Record<FeatureId, number> = {
@@ -71,7 +75,8 @@ const FEATS: Record<FeatureId, number> = {
   storiesGap: 4,
   improvementShare: 0.3,
   rentControlLikely: 1,
-  landUseClass: 2
+  landUseClass: 2,
+  choiceMargin: 0.05
 };
 
 function row(mapblklot: string, over: Partial<PanelYearRow> = {}): PanelYearRow {
@@ -264,7 +269,8 @@ describe('aggregatePanel', () => {
       storiesGap: -2,
       improvementShare: 0,
       rentControlLikely: 0,
-      landUseClass: 4
+      landUseClass: 4,
+      choiceMargin: 0.3
     };
     const res = await aggregatePanel(
       source([2020], () => [row('A', { features: feats })]),
@@ -273,7 +279,7 @@ describe('aggregatePanel', () => {
     );
     const [cell] = [...res.cells.values()];
     expect(cell.bins).toEqual(PANEL_FEATURES.map((f) => binIndex(EDGES[f], feats[f])));
-    expect(cell.bins).toEqual([3, 0, 2, 0, 0, 0, 0, 4]);
+    expect(cell.bins).toEqual([3, 0, 2, 0, 0, 0, 0, 4, 2]);
     expect(res.maxAtRisk).toEqual({ potentialRatio: 7.5, storiesGap: -2 });
   });
 
@@ -394,14 +400,16 @@ describe('duckPanelSource', () => {
       ['roll_year', 'INTEGER'],
       ['hostable_base', 'BOOLEAN'],
       ['imputed', 'UTINYINT'],
-      ['potential_ratio_base', 'FLOAT'],
       ['existing_units', 'INTEGER'],
+      ['existing_stories', 'INTEGER'],
       ['lot_area_m2', 'INTEGER'],
       ['year_built', 'INTEGER'],
-      ['stories_gap_base', 'INTEGER'],
       ['improvement_share', 'FLOAT'],
       ['rent_control_likely', 'BOOLEAN'],
-      ['land_use_class', 'INTEGER']
+      ['land_use_class', 'INTEGER'],
+      ['option_row', 'INTEGER'],
+      ['base_stories', 'INTEGER'],
+      ['base_density_cap', 'INTEGER']
     ];
     const rows: CellValue[][] = [];
     for (const y of [2006, 2015, 2016, 2026]) {
@@ -411,14 +419,16 @@ describe('duckPanelSource', () => {
           y,
           p === 'A' || y !== 2016,
           p === 'B' ? 4 : 0,
-          3.5,
           2,
+          1,
           300,
           1925,
-          7,
           0.25,
           true,
-          5
+          5,
+          0,
+          6,
+          p === 'B' ? 40 : null
         ]);
       }
     }
@@ -433,19 +443,27 @@ describe('duckPanelSource', () => {
       hostableBase: true,
       imputed: 4,
       features: {
-        potentialRatio: 3.5,
+        potentialRatio: NaN,
         existingUnits: 2,
         lotAreaM2: 300,
         yearBuilt: 1925,
-        storiesGap: 7,
+        storiesGap: NaN,
         improvementShare: 0.25,
         rentControlLikely: 1,
-        landUseClass: 5
-      }
+        landUseClass: 5,
+        choiceMargin: NaN
+      },
+      choice: { optionRow: 0, baseStories: 6, baseCap: 40, existingUnits: 2, existingStories: 1 }
     });
+    expect(r2015[0].choice?.baseCap).toBeNull();
 
+    // The choice's features come from withChoiceFeatures over the panel options.
+    const options = table([
+      { options: [opt('V', 'walkup', 3, 12), opt('III', 'podium', 6, 40)], locationValue: 1 }
+    ]);
+    const filled = withChoiceFeatures(src, choiceCtxOf(options, choiceModel(0.5), heightTime));
     const ev = initiationEvents([hist('h', ['A'], { filed: d('2016-03-10') })], new Map(), noArea);
-    const fromDuck = await aggregatePanel(src, ev, EDGES);
+    const fromDuck = await aggregatePanel(filled, ev, EDGES);
     expect(fromDuck.exposureMonths).toBe(12 + 12 + 3);
     expect(fromDuck.events).toEqual({ record: 1, permit: 0 });
     expect(fromDuck.mask.exposure[2]).toBe(12);

@@ -273,7 +273,8 @@ export function pickOption(cum: Float32Array, n: number, u: number): number {
 /**
  * Under the market row: the expected homes after the cap and the expected stories, and the margin,
  * the best residual land value at choiceValue among gaining options ÷ (meanOptionHomes ×
- * meanOptionCost). All 0 when no option gains.
+ * meanOptionCost), with `best` that option's index in the lot's row (the first on a tie). All 0,
+ * and `best` -1, when no option gains.
  */
 export function expectations(
   ctx: ChoiceCtx,
@@ -282,12 +283,18 @@ export function expectations(
   n: number,
   cap: number | null,
   existing: number
-): { homes: number; stories: number; margin: number; gains: boolean } {
+): { homes: number; stories: number; margin: number; best: number; gains: boolean } {
   const last = residuals(ctx, step, lot, n, cap, existing);
-  if (last < 0) return { homes: 0, stories: 0, margin: 0, gains: false };
+  if (last < 0) return { homes: 0, stories: 0, margin: 0, best: -1, gains: false };
   const s = ctx.step(step);
   let top = -Infinity;
-  for (let k = 0; k < n; k++) if (rlv[k] > top) top = rlv[k];
+  let best = -1;
+  for (let k = 0; k < n; k++) {
+    if (rlv[k] > top) {
+      top = rlv[k];
+      best = k;
+    }
+  }
   const margin = top / (s.meanOptionHomes[lot] * s.meanOptionCost[lot]);
   const sum = marketWeights(ctx, step, lot, n);
   const from = ctx.t.offset[lot];
@@ -298,5 +305,28 @@ export function expectations(
     homes += p * clipped[k];
     stories += p * ctx.t.stories[from + k];
   }
-  return { homes, stories, margin, gains: true };
+  return { homes, stories, margin, best, gains: true };
+}
+
+/**
+ * The start-odds features a lot takes from its choice at a cap (spec, "Start odds refit"): the
+ * expected homes ÷ max(existing, 1), the expected stories − the existing stories, and the margin.
+ * One function for the panel, the fits and the run time. With no gaining option all three are
+ * what `expectations` gives: homes and stories 0, so the gap is −existingStories, margin 0.
+ */
+export function choiceFeatures(
+  ctx: ChoiceCtx,
+  step: number,
+  lot: number,
+  n: number,
+  cap: number | null,
+  existing: number,
+  existingStories: number
+): { potentialRatio: number; storiesGap: number; choiceMargin: number } {
+  const e = expectations(ctx, step, lot, n, cap, existing);
+  return {
+    potentialRatio: e.homes / Math.max(existing, 1),
+    storiesGap: e.stories - existingStories,
+    choiceMargin: e.margin
+  };
 }

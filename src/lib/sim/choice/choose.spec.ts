@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedCount,
   choiceCtxOf,
+  choiceFeatures,
   choiceRow,
   choiceStepAt,
   expectations,
@@ -189,13 +190,37 @@ describe('expectations', () => {
     const s = ctx.step(0);
     const rlv = 80 * (1.5 * 651_700 - 857_700 - 0.085 * 0.55 * 857_700 * 0.1);
     expect(e.margin).toBeCloseTo(rlv / (s.meanOptionHomes[lot] * s.meanOptionCost[lot]), 4);
+    expect(e.best).toBe(2);
   });
   it('gives nothing when no option gains', () => {
     expect(expectations(ctx, 0, lot, 3, 10, 12)).toEqual({
       homes: 0,
       stories: 0,
       margin: 0,
+      best: -1,
       gains: false
+    });
+  });
+});
+
+describe('choiceFeatures', () => {
+  it('reads the start features off the expectations', () => {
+    const c = ctxChoiceSpread(1e-9);
+    const e = expectations(c, 0, lot, 3, null, 4);
+    expect(choiceFeatures(c, 0, lot, 3, null, 4, 2)).toEqual({
+      potentialRatio: e.homes / 4,
+      storiesGap: e.stories - 2,
+      choiceMargin: e.margin
+    });
+    // 80 homes at 10 stories by the argmax: ratio over max(existing, 1)
+    expect(choiceFeatures(c, 0, lot, 3, null, 0, 2).potentialRatio).toBeCloseTo(80, 3);
+    expect(choiceFeatures(c, 0, lot, 3, null, 0, 2).storiesGap).toBeCloseTo(8, 3);
+  });
+  it('is 0 homes, a gap of −existing stories and no margin when nothing gains', () => {
+    expect(choiceFeatures(ctx, 0, lot, 3, 10, 12, 3)).toEqual({
+      potentialRatio: 0,
+      storiesGap: -3,
+      choiceMargin: 0
     });
   });
 });

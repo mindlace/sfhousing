@@ -171,6 +171,74 @@ Its window is the latest ten record years to `asOf`, not before 2015. Each targe
 
 Permit targets read permits issued in the window, not superseded, with stories of at least 1.
 
+## Calibration: the spread, the affordable rule and the start features
+
+The calibration step (`pipeline/lib/fzp-cal/calibrate.ts`) writes `calibration.choice` and
+`calibration.heightTime`, one step each from `calibration.asOf` (the shipped step,
+`shipped-step.ts`, the same one the options step's cost-pruned report prices on). It reads
+`scenarios/fzp/options.bin`, `<derivedDir>/panel-options.bin` and the location value's
+provenance; `scenario_panel.option_row` points each panel parcel-year into panel-options.bin.
+`calibration.size` and `size.ts` stay until the run time stops reading them (Task 9).
+
+**Choice spread** (`fitChoiceSpread`, `pipeline/lib/fzp-cal/choice-fit.ts`, tier 2). Maximum
+likelihood of each record's built stories under the market choice among its lot's options
+allowed at its base stories at filing, scored through `choiceRow` itself (preflight F13), on the
+shipped step; golden-section search on ln choiceSpread in [0.001, 100]. Records
+(`choiceRecords`): histories first recorded from 2015-01-01 to `asOf` with proposed and base
+stories at filing of at least 1, on their largest parcel's panel row of the first record's roll
+year, with that year's existing homes and base cap. A record over its limit is left out and
+counted (`excludedOver`, the same histories `sizeOverEnvelope` counts); a record whose stories
+no gaining option has takes the options at the nearest stories. The panel options carry today's
+locationValue, not the roll year's: the index is against each roll year's median, so the fit
+assumes neighbourhoods kept their rank. Under `sizeMinN` records the spread is 1, tier 4
+(invented). The report prints the log-likelihood at 0.01, 0.1, 1, 10 and 100: where most lots sit
+at break-even (choiceValue = breakEvenValue), options differ little in residual and the
+likelihood is flat above a few tenths, so the records fix only a lower bound. A fit at the upper
+bound says so in its provenance.
+
+**The affordable rule** (`affordableRule`). 'most-homes' (rule A) exactly when the affordable
+cohort's mean built height ÷ limit exceeds the private mean by more than 2 SE of the difference
+(`record-targets.json` `cohort`), else 'market'. Without a measurable difference (no cohort
+records) it is 'market' at tier 4.
+
+**Start features** (`choiceFeatures` in `choose.ts`, one function for the panel, the fits and,
+from Task 9, the run time): `potentialRatio` = expected homes ÷ max(existing, 1), `storiesGap` =
+expected stories − existing stories, and the new `choiceMargin` = the best allowed option's
+residual land value at choiceValue ÷ (meanOptionHomes × meanOptionCost). The panel takes them at
+each row's base stories and base cap (`withChoiceFeatures`, `panel.ts`); the FZP application at
+the envelope, with no cap on Local Program parcels and the base cap elsewhere. With no gaining
+option all three come from empty expectations: ratio 0, gap −existing stories, margin 0.
+`choiceMargin` bins start `[-100, 0, 0.001, 0.02, 0.05, 0.1, 0.2, 0.5]` (tier 4): a lot at
+break-even whose best-per-dollar option is allowed has margin exactly 0.
+
+**The margin and the market slope.** Both read cost against value, so they can count one change
+twice once costs move over time (spec, Non-goals). The report (section 16) gives the Pearson
+correlation, over the at-risk panel parcel-years, of `choiceMargin` with the slope's cost share
+of the row's best option (`uncoveredPerHome ÷ costPerHome` of the prototype it prices as, the
+per-project share behind `typicalUncoveredShare`). `calibration.market` is recomputed from the
+refitted model by the unchanged `market.ts`.
+
+**Live figures** (build `2026-11-27-00c716fd`, uncommitted tree, not uploaded):
+
+- choiceSpread 99.99, at the search's upper bound, from 581 records (817 measured, 2 without a
+  panel row, 171 over their limit, 63 with no gaining option). Log-likelihood -1906.5 at 0.01,
+  -847.6 at 0.1, -826.7 at 1, -823.5 at 10, -823.1 at 100: the records rule out a sharp choice
+  but do not fix the spread above about 1. On the 581 records the mean built stories ÷ limit is
+  0.81; a uniform draw over the allowed gaining options gives 0.68; the tallest allowed option
+  matches 43% of records and the most-homes option 24%.
+- Affordable rule 'most-homes': affordable mean 1.228 (n = 38), private 1.014 (n = 481),
+  difference 0.214 against 2 SE = 0.1995.
+- `choiceMargin` bins merge to `[-100, 0, 0.001, 0.02]`, coefficients 0.738, -1.863, 0.816,
+  0.308: a lot exactly at break-even starts least often. Its correlation with the slope's cost
+  share is r = -0.0046.
+- Height bands merge to ≤ 4, 5 to 7 and 8+; construction months 23.6, 25.8, 23.6.
+- `today.all` -0.544734, `today.private` -0.618236 (docs/dev/market.md).
+
+**V25** (`choiceOutcomes`, `invariants.ts`) checks both keys: one step each from `asOf`, a
+spread above 0, a known affordable rule, positive anchors and cost ratio, carrying in [0, 1],
+band edges ascending to 999 with one positive multiplier and non-negative months per band, and
+every provenance at tier 0 to 4 with tier 4 labelled invented.
+
 ## Location value (`pipeline/lib/location-value.ts`, `86_location_value.sql`)
 
 `locationValueByLot(db)` runs after the scenario SQL, on `parcels` and `sc_roll_agg` (one row per

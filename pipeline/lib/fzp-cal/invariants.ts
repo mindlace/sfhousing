@@ -113,11 +113,88 @@ export function fundingOutcomes(
   return { problems, detail: detail.join('; ') };
 }
 
+const finitePos = (x: number) => Number.isFinite(x) && x > 0;
+
+/**
+ * V25's checks of the developer's choice and the height-band stage time (building-choice plan,
+ * Task 8), which `parseCalibration` does not read: both present, one step each from `asOf`;
+ * the spread finite and above 0; a known affordable rule; positive anchors and cost ratio; a
+ * carrying rate and drawn share in [0, 1]; band edges strictly ascending to 999 with one positive
+ * multiplier and non-negative months per band; every provenance at tier 0 to 4, and a tier-4
+ * label saying "invented".
+ */
+export function choiceOutcomes(cal: Pick<Calibration, 'asOf' | 'choice' | 'heightTime'>): string[] {
+  const problems: string[] = [];
+  const c = cal.choice;
+  const ht = cal.heightTime;
+  if (!c) problems.push('no choice');
+  if (!ht) problems.push('no heightTime');
+  if (!c || !ht) return problems;
+  if (c.prices.length !== 1 || c.prices[0].from !== cal.asOf) {
+    problems.push(`choice.prices is not one step from asOf ${cal.asOf}`);
+  }
+  if (ht.steps.length !== 1 || ht.steps[0].from !== cal.asOf) {
+    problems.push(`heightTime.steps is not one step from asOf ${cal.asOf}`);
+  }
+  if (!finitePos(c.choiceSpread))
+    problems.push(`choice.choiceSpread ${c.choiceSpread} is not above 0`);
+  if (c.affordableRule !== 'market' && c.affordableRule !== 'most-homes') {
+    problems.push(`choice.affordableRule ${String(c.affordableRule)} is unknown`);
+  }
+  for (const s of c.prices) {
+    for (const [id, a] of Object.entries(s.value.anchors)) {
+      if (![a.stories, a.homes, a.costPerHome, a.valuePerHome].every(finitePos)) {
+        problems.push(`choice anchor ${id} has a value that is not above 0`);
+      }
+    }
+    if (!finitePos(s.value.aboveTopCostRatio)) {
+      problems.push(`choice.aboveTopCostRatio ${s.value.aboveTopCostRatio} is not above 0`);
+    }
+    const { rate, drawn } = s.value.carrying;
+    if (!(rate >= 0 && rate <= 1 && drawn >= 0 && drawn <= 1)) {
+      problems.push(`choice carrying rate ${rate} or drawn share ${drawn} is outside [0, 1]`);
+    }
+  }
+  const up = ht.upTo;
+  if (
+    up.length === 0 ||
+    up[up.length - 1] !== 999 ||
+    up.some((x, i) => i > 0 && !(x > up[i - 1]))
+  ) {
+    problems.push(`heightTime.upTo [${up.join(', ')}] is not strictly ascending to 999`);
+  }
+  for (const s of ht.steps) {
+    const v = s.value;
+    for (const k of ['permitIssued', 'construction', 'constructionMonths'] as const) {
+      if (v[k].length !== up.length) problems.push(`heightTime.${k} has ${v[k].length} bands`);
+    }
+    if (![...v.permitIssued, ...v.construction].every(finitePos)) {
+      problems.push('heightTime has a multiplier that is not above 0');
+    }
+    if (!v.constructionMonths.every((m) => Number.isFinite(m) && m >= 0)) {
+      problems.push('heightTime has negative or non-finite months');
+    }
+  }
+  const provs = [
+    ...Object.entries(c.provenance).map(([k, p]) => [`choice.provenance.${k}`, p] as const),
+    ['heightTime.provenance', ht.provenance] as const
+  ];
+  for (const [path, p] of provs) {
+    if (!(Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 4)) {
+      problems.push(`${path} tier ${p.tier} is not 0 to 4`);
+    } else if (p.tier === 4 && !/invented/i.test(p.label)) {
+      problems.push(`${path} is tier 4 and its label does not say invented`);
+    }
+  }
+  return problems;
+}
+
 /**
  * V25: `json` (the file's text, `fileBytes` its size) parses, `size.fillLevels` equals
  * `fillLevels` element for element (ruling A2: `parseCalibration` checks F only internally),
  * `asOf` equals the T3 (`projectsAsOf`) and T4d (`historiesAsOf`) snapshot days when given, the
- * file is at most 256 KB, and `fundingOutcomes(cal, live)` finds no problem.
+ * file is at most 256 KB, and `fundingOutcomes(cal, live)` and `choiceOutcomes(cal)` find no
+ * problem.
  */
 export function checkV25(
   json: string,
@@ -147,6 +224,7 @@ export function checkV25(
     problems.push(`asOf ${cal.asOf} differs from project histories asOf ${historiesAsOf}`);
   }
   problems.push(...fundingOutcomes(cal, live).problems);
+  problems.push(...choiceOutcomes(cal));
   return problems;
 }
 

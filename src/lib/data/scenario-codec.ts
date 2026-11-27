@@ -587,6 +587,8 @@ export function featureValue(
     case 'rentControlLikely':
     case 'landUseClass':
       return p[f][i];
+    case 'choiceMargin':
+      return fail('choiceMargin comes from the choice row (Task 9)');
     default:
       return fail(`unknown feature ${String(f satisfies never)}`);
   }

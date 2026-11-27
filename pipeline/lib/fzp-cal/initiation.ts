@@ -22,7 +22,10 @@ export const INITIAL_EDGES: Record<FeatureId, number[]> = {
   storiesGap: [-100, 0, 1, 2, 3, 5, 10],
   improvementShare: [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85],
   rentControlLikely: [0, 1],
-  landUseClass: [0, 1, 2, 3, 4, 5]
+  landUseClass: [0, 1, 2, 3, 4, 5],
+  // unitless (choose.ts expectations); 0 is a lot at break-even whose best-per-dollar option is
+  // allowed, so the second edge splits it from margins above
+  choiceMargin: [-100, 0, 0.001, 0.02, 0.05, 0.1, 0.2, 0.5]
 };
 
 /** The design's term order: the §4.6 feature table, the same order as `FitCell.bins`. */
@@ -34,7 +37,8 @@ export const TERM_ORDER: FeatureId[] = [
   'storiesGap',
   'improvementShare',
   'rentControlLikely',
-  'landUseClass'
+  'landUseClass',
+  'choiceMargin'
 ];
 
 /** Features that never merge: a binary flag and a category index. */

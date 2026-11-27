@@ -60,7 +60,8 @@ const EDGES: Record<FeatureId, number[]> = {
   storiesGap: [-100, 0, 3],
   improvementShare: [0, 0.5],
   rentControlLikely: [0, 1],
-  landUseClass: [0, 1, 2, 3, 4, 5]
+  landUseClass: [0, 1, 2, 3, 4, 5],
+  choiceMargin: [-100, 0, 0.1]
 };
 
 function row(mapblklot: string): PanelYearRow {
@@ -76,7 +77,8 @@ function row(mapblklot: string): PanelYearRow {
       storiesGap: 4,
       improvementShare: 0.3,
       rentControlLikely: 1,
-      landUseClass: 2
+      landUseClass: 2,
+      choiceMargin: 0.05
     }
   };
 }

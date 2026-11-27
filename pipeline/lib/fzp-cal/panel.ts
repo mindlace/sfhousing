@@ -2,11 +2,14 @@
  * The initiation model's panel (stage-calibration spec §4.6): the at-risk timeline from the
  * qualifying histories with each event's detection basis, aggregation of the T13 parcel panel
  * (`scenario_panel`) into fit cells, and the imputed-mask counts. Features are read, never
- * computed or altered here.
+ * altered here; the three the developer's choice gives (potentialRatio, storiesGap, choiceMargin)
+ * are computed by `withChoiceFeatures` through the run time's `choiceFeatures` (building-choice
+ * spec, "Start odds refit").
  */
 import type { Duck } from '../duck';
 import { isoToDay } from '../../project-records/multiphase';
 import type { ParcelId } from '../../../src/lib/data/parcel';
+import { allowedCount, choiceFeatures, type ChoiceCtx } from '../../../src/lib/sim/choice/choose';
 import { binIndex } from '../../../src/lib/timelapse/model';
 import type { Day, FeatureId, ProjectHistory } from '../../../src/lib/timelapse/types';
 import { startCohort, type StartCohort } from '../affordable-cohort';
@@ -31,9 +34,9 @@ export const PANEL_FEATURES: readonly FeatureId[] = [
   'storiesGap',
   'improvementShare',
   'rentControlLikely',
-  'landUseClass'
+  'landUseClass',
+  'choiceMargin'
 ];
-
 /** Timeline values. */
 const COVERED = -1;
 const EVENT_RECORD = 1;
@@ -45,12 +48,27 @@ export function monthIndex(d: Day): number {
   return (t.getUTCFullYear() - FIRST_YEAR) * 12 + t.getUTCMonth();
 }
 
-/** One `scenario_panel` row of one roll year, features mapped per the §4.6 table. */
+/** What a panel row's choice reads: its row in panel-options.bin and that roll year's base. */
+export interface PanelChoiceInput {
+  /** The row of the parcel-year's candidate inputs in panel-options.bin (sc_base_yield). */
+  optionRow: number;
+  baseStories: number;
+  /** The base density cap in homes; null for none. */
+  baseCap: number | null;
+  existingUnits: number;
+  existingStories: number;
+}
+
+/**
+ * One `scenario_panel` row of one roll year, features mapped per the §4.6 table. A row with
+ * `choice` has NaN for the choice's features until `withChoiceFeatures` fills them.
+ */
 export interface PanelYearRow {
   mapblklot: string;
   hostableBase: boolean;
   imputed: number;
   features: Record<FeatureId, number>;
+  choice?: PanelChoiceInput;
 }
 
 export type PanelSource = {
@@ -422,7 +440,10 @@ function hostable(v: unknown, mapblklot: unknown, y: number): boolean {
   return v;
 }
 
-/** A `PanelSource` over the build's `scenario_panel` table, read one roll year at a time. */
+/**
+ * A `PanelSource` over the build's `scenario_panel` table, read one roll year at a time. The
+ * choice's features are NaN: wrap it in `withChoiceFeatures`.
+ */
 export async function duckPanelSource(db: Duck): Promise<PanelSource> {
   const ys = await db.all<{ roll_year: number }>(
     'SELECT DISTINCT roll_year FROM scenario_panel ' +
@@ -433,9 +454,10 @@ export async function duckPanelSource(db: Duck): Promise<PanelSource> {
     async read(y) {
       if (!Number.isInteger(y)) throw new CalibrationError(`panel roll year ${y} not an integer`);
       const rows = await db.all<Record<string, unknown>>(
-        'SELECT mapblklot, hostable_base, imputed, potential_ratio_base, existing_units, ' +
-          'lot_area_m2, year_built, stories_gap_base, improvement_share, ' +
-          'CAST(rent_control_likely AS INTEGER) AS rcl, land_use_class ' +
+        'SELECT mapblklot, hostable_base, imputed, existing_units, existing_stories, ' +
+          'lot_area_m2, year_built, improvement_share, ' +
+          'CAST(rent_control_likely AS INTEGER) AS rcl, land_use_class, ' +
+          'option_row, base_stories, base_density_cap ' +
           `FROM scenario_panel WHERE roll_year = ${y} ORDER BY mapblklot`
       );
       return rows.map((r) => ({
@@ -443,16 +465,49 @@ export async function duckPanelSource(db: Duck): Promise<PanelSource> {
         hostableBase: hostable(r.hostable_base, r.mapblklot, y),
         imputed: num(r.imputed),
         features: {
-          potentialRatio: num(r.potential_ratio_base),
+          potentialRatio: NaN,
           existingUnits: num(r.existing_units),
           lotAreaM2: num(r.lot_area_m2),
           yearBuilt: num(r.year_built),
-          storiesGap: num(r.stories_gap_base),
+          storiesGap: NaN,
           improvementShare: num(r.improvement_share),
           rentControlLikely: num(r.rcl),
-          landUseClass: num(r.land_use_class)
+          landUseClass: num(r.land_use_class),
+          choiceMargin: NaN
+        },
+        choice: {
+          optionRow: num(r.option_row),
+          baseStories: num(r.base_stories),
+          baseCap: r.base_density_cap === null ? null : num(r.base_density_cap),
+          existingUnits: num(r.existing_units),
+          existingStories: num(r.existing_stories)
         }
       }));
+    }
+  };
+}
+
+/**
+ * `src` with the choice's features filled on every row that has `choice` inputs: the market
+ * choice among the row's panel options allowed at its base stories, under its base cap, against
+ * its existing homes, at the context's first step (the one shipped step). Rows without inputs
+ * pass through.
+ */
+export function withChoiceFeatures(src: PanelSource, ctx: ChoiceCtx): PanelSource {
+  const fill = (r: PanelYearRow, y: number): PanelYearRow => {
+    const c = r.choice;
+    if (!c) return r;
+    if (!Number.isInteger(c.optionRow) || c.optionRow < 0 || c.optionRow >= ctx.t.count) {
+      throw new CalibrationError(`panel option_row ${c.optionRow} invalid: ${r.mapblklot} ${y}`);
+    }
+    const n = allowedCount(ctx.t, c.optionRow, c.baseStories);
+    const f = choiceFeatures(ctx, 0, c.optionRow, n, c.baseCap, c.existingUnits, c.existingStories);
+    return { ...r, features: { ...r.features, ...f } };
+  };
+  return {
+    years: src.years,
+    async read(y) {
+      return (await src.read(y)).map((r) => fill(r, y));
     }
   };
 }

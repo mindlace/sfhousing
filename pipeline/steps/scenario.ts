@@ -241,6 +241,9 @@ async function writeBaseYields(
  * base_yield but never the at-risk set (partner ruling, option c): gross > 0 is "more homes than
  * existingUnits", since the generator gives none otherwise. Its eligibility is the scenario
  * eligibility on that roll year's units (sc_base_yield.eligible, sd.landuse.none-with-units).
+ * option_row is the parcel-year's row in panel-options.bin: the calibration takes potentialRatio,
+ * storiesGap and choiceMargin from the choice on it (potential_ratio_base and stories_gap_base
+ * stay for V18 until the yields go).
  */
 const PANEL_SQL = `
 CREATE OR REPLACE TABLE scenario_panel AS
@@ -251,7 +254,8 @@ SELECT f.mapblklot, f.roll_year, f.lien_day,
        f.lot_area_m2, f.improvement_share, f.rent_control_likely, f.imputed,
        (y.base_yield / greatest(f.existing_units, 1))::FLOAT AS potential_ratio_base,
        (f.base_stories - f.existing_stories)::INTEGER AS stories_gap_base,
-       (y.eligible AND f.base_stories >= 1 AND y.base_gross > 0) AS hostable_base
+       (y.eligible AND f.base_stories >= 1 AND y.base_gross > 0) AS hostable_base,
+       y.option_row
 FROM sc_features f
 JOIN sc_base_yield y
   ON y.mapblklot = f.mapblklot AND y.existing_units = f.existing_units

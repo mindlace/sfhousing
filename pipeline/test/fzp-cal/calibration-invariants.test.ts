@@ -24,6 +24,7 @@ import { checkDataset, type InvariantResult } from '../../steps/check';
 import { fixture } from '../../steps/fixture';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
 import { PARCELS_BIN, readParcelsBin } from '../../steps/scenario';
+import { OPTIONS_BIN, PANEL_OPTIONS_BIN, readOptionsBin } from '../../steps/options';
 
 const REPO = join(import.meta.dirname, '../../..');
 const skipTiles = !(await which('tippecanoe'));
@@ -421,6 +422,10 @@ describe('calibration invariants on fixture-0', () => {
         panel: await duckPanelSource(db),
         parcels: readParcelsBin(join(outDir, PARCELS_BIN)),
         inFlight: projects.projects,
+        options: readOptionsBin(join(outDir, OPTIONS_BIN)),
+        panelOptions: readOptionsBin(join(derived, PANEL_OPTIONS_BIN)),
+        // the build's location value provenance, as the build passed it
+        locationValue: (JSON.parse(json) as Calibration).choice!.provenance.locationValue,
         fillLevels: FILL_LEVELS,
         datasetVersion: 'fixture-0',
         market: {

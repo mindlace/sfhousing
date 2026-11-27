@@ -41,6 +41,7 @@ import { SB79_EXEMPTIONS_CSV } from '../sources/sfbos';
 import { FIXTURE_CAL, LIVE_CAL } from '../lib/fzp-cal/config';
 import { parseFixtureParkingFile, parseParkingFile } from '../enrichment/parking-schema';
 import { freewayLandSet, readFreewayLand } from '../lib/freeway-land';
+import type { Provenance } from '../../src/lib/timelapse/types';
 import { shippedStep } from '../lib/fzp-cal/shipped-step';
 import { locationValueByLot } from '../lib/location-value';
 import { readFundingFile, readPermits, writeCalibration } from './calibration';
@@ -334,10 +335,12 @@ export async function build(
     report.warnings.push(...projects.warnings);
     // The options step: after the scenario step (its candidates) and the projects step (the
     // permits and histories the shipped price and height-time step is fitted on).
+    let lvProvenance: Provenance | undefined;
     const options = await report.time('options', async () => {
       const candidates = scenario.candidates;
       if (!candidates) throw new BuildError('scenario step returned no candidates');
       const lv = await locationValueByLot(db);
+      lvProvenance = lv.provenance;
       const step = shippedStep({
         histories: projects.histories,
         permits: await readPermits(db, join(derivedDir, PERMITS_PARQUET)),
@@ -410,6 +413,7 @@ export async function build(
         lock,
         rawDir: opts.rawDir,
         byName,
+        locationValue: lvProvenance,
         cars: cars.model,
         carsReport: cars.report,
         carsBackcast: cars.backcast

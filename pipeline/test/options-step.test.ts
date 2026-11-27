@@ -196,7 +196,9 @@ describe('writeOptions', () => {
       step: {
         prices: shippedPrices(),
         heightTime,
-        aboveTop: { ratio: 1.21, n: [0, 0], provenance: heightTime.provenance }
+        aboveTop: { ratio: 1.21, n: [0, 0], provenance: heightTime.provenance },
+        filedToIssued: [],
+        provenance: { anchors: heightTime.provenance, carrying: heightTime.provenance }
       },
       locationValue: new Map([
         ['A', 1.2],
@@ -244,7 +246,9 @@ describe('writeOptions', () => {
         step: {
           prices: shippedPrices(),
           heightTime,
-          aboveTop: { ratio: 1.21, n: [0, 0], provenance: heightTime.provenance }
+          aboveTop: { ratio: 1.21, n: [0, 0], provenance: heightTime.provenance },
+          filedToIssued: [],
+          provenance: { anchors: heightTime.provenance, carrying: heightTime.provenance }
         },
         locationValue: new Map([['A', 1]])
       })

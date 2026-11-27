@@ -557,7 +557,8 @@ const FEATURE_IDS = Object.keys({
   storiesGap: 0,
   improvementShare: 0,
   rentControlLikely: 0,
-  landUseClass: 0
+  landUseClass: 0,
+  choiceMargin: 0
 } satisfies Record<FeatureId, 0>);
 
 function fail(path: string, message: string): never {

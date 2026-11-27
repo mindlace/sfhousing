@@ -216,7 +216,8 @@ const FEATURE_LABEL: Record<FeatureId, string> = {
   storiesGap: 'Stories allowed above the existing building',
   improvementShare: 'Share of assessed value in the building',
   rentControlLikely: 'Likely rent-controlled (2 or more homes, built before 1979)',
-  landUseClass: 'Land use'
+  landUseClass: 'Land use',
+  choiceMargin: 'Profit margin of the best building'
 };
 
 const CATEGORIES: Partial<Record<FeatureId, string[]>> = {

@@ -10,14 +10,15 @@ import { dirname, join, resolve } from 'node:path';
 import { FILL_LEVELS } from '../../src/lib/data/scenario-codec';
 import type { CarModel } from '../../src/lib/sim/cars';
 import { parseProjectsFile } from '../../src/lib/timelapse/projects';
-import type { Day, ProjectHistoriesFile } from '../../src/lib/timelapse/types';
+import type { Day, ProjectHistoriesFile, Provenance } from '../../src/lib/timelapse/types';
 import { parseFundingFile, type FundingFile } from '../enrichment/funding-schema';
 import { parseMarketFile, type MarketFile } from '../enrichment/market-schema';
 import { BuildError } from '../lib/build-error';
-import { RECORD_TARGETS_JSON, recordTargets } from '../lib/building-records';
+import { RECORD_TARGETS_JSON } from '../lib/building-records';
 import type { Duck } from '../lib/duck';
 import type { Lock } from '../lib/lock';
 import { calibrate, type CalOutput } from '../lib/fzp-cal/calibrate';
+import { locationValueByLot } from '../lib/location-value';
 import { duckPanelSource } from '../lib/fzp-cal/panel';
 import {
   CalibrationError,
@@ -27,6 +28,7 @@ import {
 } from '../lib/fzp-cal/types';
 import { recordQuality } from '../lib/quality';
 import type { InvariantResult } from './check';
+import { OPTIONS_BIN, PANEL_OPTIONS_BIN, readOptionsBin } from './options';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON, readRows } from './projects';
 import { PARCELS_BIN, readParcelsBin } from './scenario';
 
@@ -156,6 +158,8 @@ export async function writeCalibration(o: {
   lock: Lock;
   rawDir: string;
   byName: boolean;
+  /** The location value's provenance; read again from the database when absent. */
+  locationValue?: Provenance;
   /** The car step's model (written as `cars`; null until it is complete) */
   cars?: CarModel | null;
   /** The car step's report lines: section 14 (none, no section) */
@@ -194,6 +198,9 @@ export async function writeCalibration(o: {
     panel: await duckPanelSource(o.db),
     parcels,
     inFlight: projects.projects,
+    options: readOptionsBin(join(o.outDir, OPTIONS_BIN)),
+    panelOptions: readOptionsBin(join(o.derivedDir, PANEL_OPTIONS_BIN)),
+    locationValue: o.locationValue ?? (await locationValueByLot(o.db)).provenance,
     fillLevels: FILL_LEVELS,
     datasetVersion: o.datasetVersion,
     market,
@@ -216,8 +223,7 @@ export async function writeCalibration(o: {
   mkdirSync(o.derivedDir, { recursive: true });
   writeFileSync(join(o.derivedDir, CALIBRATION_REPORT_MD), a.reportMd);
   // The record check's targets (building-choice spec, Acceptance): build-internal, never uploaded.
-  const targets = recordTargets(histories.histories, permits, parcels, o.asOf);
-  writeFileSync(join(o.derivedDir, RECORD_TARGETS_JSON), JSON.stringify(targets, null, 2) + '\n');
+  writeFileSync(join(o.derivedDir, RECORD_TARGETS_JSON), JSON.stringify(a.targets, null, 2) + '\n');
 
   const v28: InvariantResult = o.cal.backcastGate
     ? { id: 'V28', ...a.backcast }

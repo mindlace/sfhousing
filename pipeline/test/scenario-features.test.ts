@@ -47,7 +47,8 @@ const PANEL_COLUMNS = [
   'imputed',
   'potential_ratio_base',
   'stories_gap_base',
-  'hostable_base'
+  'hostable_base',
+  'option_row'
 ];
 
 interface PanelRow {

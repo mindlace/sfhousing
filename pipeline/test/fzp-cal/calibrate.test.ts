@@ -34,6 +34,10 @@ import { purgeCensor } from '../../lib/fzp-cal/purge';
 import { buildSpells, normalise, qualifies } from '../../lib/fzp-cal/spells';
 import { isoToDay } from '../../project-records/multiphase';
 import { readParcelsBin } from '../../steps/scenario';
+import { readOptionsBin } from '../../steps/options';
+import { optionTableOf } from '../../../src/lib/data/option-table';
+import { allowedCount, choiceCtxOf, choiceFeatures } from '../../../src/lib/sim/choice/choose';
+import { choiceModel, heightTime } from '../../../src/lib/sim/choice/test/model';
 
 const d = isoToDay;
 const MARKET_JSON_PATH = join(import.meta.dirname, '../../enrichment/market.json');
@@ -51,6 +55,11 @@ const FIXTURE_BIN = join(
   import.meta.dirname,
   '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/parcels.bin'
 );
+const FIXTURE_OPTIONS = join(
+  import.meta.dirname,
+  '../../../e2e/fixtures/data/fixture-0/scenarios/fzp/options.bin'
+);
+const LOCATION_VALUE = { tier: 2 as const, label: 'test location value', sources: [], method: 'm' };
 
 /** Days between successive stages and the end of each synthetic history. */
 function synthetic(parcelIds: string[]): ProjectHistory[] {
@@ -155,6 +164,9 @@ beforeAll(async () => {
     panel: fakePanel(parcels.id.slice(0, 8)),
     parcels,
     inFlight,
+    options: readOptionsBin(FIXTURE_OPTIONS),
+    panelOptions: optionTableOf('test-0', []),
+    locationValue: LOCATION_VALUE,
     fillLevels: FILL_LEVELS,
     datasetVersion: 'test-0',
     market: { file: marketFile, path: 'market.json' },
@@ -181,7 +193,9 @@ describe('calibrate', () => {
       'phaseGap',
       'market',
       'affordableRoutes',
-      'baselineFunding'
+      'baselineFunding',
+      'choice',
+      'heightTime'
     ]);
     expect(a.json).toBe(JSON.stringify(JSON.parse(a.json)));
     // No whitespace between tokens: none outside string literals.
@@ -276,16 +290,17 @@ describe('calibrate', () => {
     expect(Object.keys(a.tallies)).toEqual([...SC_RULE_IDS]);
   });
 
-  it('writes the thirteen report sections in order, with the window and method counts', () => {
-    expect(REPORT_SECTIONS).toHaveLength(15);
-    expect(REPORT_SECTIONS.slice(-4)).toEqual([
+  it('writes the report sections in order, with the window and method counts', () => {
+    expect(REPORT_SECTIONS).toHaveLength(16);
+    expect(REPORT_SECTIONS.slice(-5)).toEqual([
       '## 12. Publicly funded housing: routes, stages and baseline funding',
       '## 13. Where publicly funded housing starts',
       '## 14. Car ownership',
-      '## 15. Car back-cast'
+      '## 15. Car back-cast',
+      "## 16. The developer's choice and height-band stage time"
     ]);
     // Without car data there is no section 14, and without the back-cast's inputs no 15.
-    const sections = REPORT_SECTIONS.slice(0, 13);
+    const sections = [...REPORT_SECTIONS.slice(0, 13), REPORT_SECTIONS[15]];
     const lines = a.reportMd.split('\n');
     expect(lines[0]).toBe('# Calibration report: test-0');
     const at = sections.map((h) => lines.findIndex((l) => l === h || l.startsWith(`${h}:`)));
@@ -329,7 +344,7 @@ describe('calibrate', () => {
     );
   });
 
-  it('with car report lines, ends with section 14 and keeps calibration.json without a model', async () => {
+  it('with car report lines, puts section 14 before 16 and keeps calibration.json without a model', async () => {
     const out = await calibrate(
       { ...input, cars: { model: null, report: ['Zones: 2.'] } },
       FIXTURE_CAL
@@ -337,11 +352,11 @@ describe('calibrate', () => {
     const lines = out.reportMd.trimEnd().split('\n');
     const at = lines.indexOf('## 14. Car ownership');
     expect(at).toBeGreaterThan(lines.indexOf('## 13. Where publicly funded housing starts'));
-    expect(lines.slice(at + 1)).toEqual(['', 'Zones: 2.']);
+    expect(lines.slice(at + 1, lines.indexOf(REPORT_SECTIONS[15]))).toEqual(['', 'Zones: 2.', '']);
     expect(out.json).toBe(a.json);
   });
 
-  it('with back-cast lines, ends with section 15 after 14', async () => {
+  it('with back-cast lines, puts section 15 after 14 and before 16', async () => {
     const out = await calibrate(
       { ...input, cars: { model: null, report: ['Zones: 2.'], backcast: ['| 2009 |'] } },
       FIXTURE_CAL
@@ -349,7 +364,8 @@ describe('calibrate', () => {
     const lines = out.reportMd.trimEnd().split('\n');
     const at = lines.indexOf('## 15. Car back-cast');
     expect(at).toBeGreaterThan(lines.indexOf('## 14. Car ownership'));
-    expect(lines.slice(at + 1)).toEqual(['', '| 2009 |']);
+    const end = lines.indexOf(REPORT_SECTIONS[15]);
+    expect(lines.slice(at + 1, end)).toEqual(['', '| 2009 |', '']);
     expect(out.json).toBe(a.json);
   });
 
@@ -385,17 +401,55 @@ describe('calibrate', () => {
     };
     const out = await calibrate({ ...input, cars: { model, report: ['x'] } }, FIXTURE_CAL);
     expect(out.calibration.cars).toEqual(model);
-    expect(Object.keys(JSON.parse(out.json)).slice(-2)).toEqual(['baselineFunding', 'cars']);
+    expect(Object.keys(JSON.parse(out.json)).slice(-4)).toEqual([
+      'baselineFunding',
+      'cars',
+      'choice',
+      'heightTime'
+    ]);
   });
 
-  it('the FZP application takes T11 FZP features and skips in-flight parcels', () => {
-    const app = fzpApplication(parcels, input.inFlight);
+  it('the FZP application takes the choice at the envelope and skips in-flight parcels', () => {
+    const ctx = choiceCtxOf(input.options, choiceModel(0.5), heightTime);
+    const app = fzpApplication(parcels, input.inFlight, ctx);
     const hostable = [...parcels.hostable.keys()].filter((i) => parcels.hostable[i] === 1);
     expect(app.hostable).toEqual(hostable.filter((i) => parcels.id[i] !== parcels.id[0]));
     const i = hostable[0];
-    expect(app.features(i).potentialRatio).toBe(parcels.potentialRatio.fzp[i]);
-    expect(app.features(i).storiesGap).toBe(parcels.storiesGap.fzp[i]);
+    const cap =
+      parcels.localProgram[i] === 1 || parcels.baseCap[i] === 0xffff ? null : parcels.baseCap[i];
+    const want = choiceFeatures(
+      ctx,
+      0,
+      i,
+      allowedCount(input.options, i, parcels.envelopeStories[i]),
+      cap,
+      parcels.existingUnits[i],
+      parcels.existingStories[i]
+    );
+    expect(want.potentialRatio).toBeGreaterThan(0);
+    expect(app.features(i).potentialRatio).toBe(want.potentialRatio);
+    expect(app.features(i).storiesGap).toBe(want.storiesGap);
+    expect(app.features(i).choiceMargin).toBe(want.choiceMargin);
     expect(app.features(i).lotAreaM2).toBe(parcels.lotAreaM2[i]);
+  });
+
+  it('rejects an options table that does not match parcels.bin', () => {
+    const ctx = choiceCtxOf(optionTableOf('x', []), choiceModel(0.5), heightTime);
+    expect(() => fzpApplication(parcels, input.inFlight, ctx)).toThrow(/options.bin has 0 rows/);
+  });
+
+  it('writes the choice and the height-time with one step each from asOf', () => {
+    const c = a.calibration;
+    expect(c.choice?.prices.map((s) => s.from)).toEqual([AS_OF]);
+    expect(c.heightTime?.steps.map((s) => s.from)).toEqual([AS_OF]);
+    expect(c.choice?.provenance.locationValue).toEqual(LOCATION_VALUE);
+    // no panel row carries choice inputs here: too few records, the invented spread
+    expect(c.choice?.choiceSpread).toBe(1);
+    expect(c.choice?.provenance.choiceSpread.tier).toBe(4);
+    expect(c.choice?.provenance.choiceSpread.label).toMatch(/invented/);
+    expect(Object.keys(JSON.parse(a.json)).slice(-2)).toEqual(['choice', 'heightTime']);
+    expect(a.reportMd).toContain(REPORT_SECTIONS[15]);
+    expect(a.counts['calibration.choice.records']).toBe(0);
   });
 });
 

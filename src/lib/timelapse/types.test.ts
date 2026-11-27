@@ -108,7 +108,8 @@ type RowFeatureId =
   | 'storiesGap'
   | 'improvementShare'
   | 'rentControlLikely'
-  | 'landUseClass';
+  | 'landUseClass'
+  | 'choiceMargin';
 interface RowInitiationModel {
   kind: 'logit-monthly';
   intercept: number;

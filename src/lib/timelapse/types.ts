@@ -122,7 +122,8 @@ export type FeatureId =
   | 'storiesGap' // envelope stories − existing stories
   | 'improvementShare' // improvement ÷ (land + improvement) assessed value
   | 'rentControlLikely' // 0/1: ≥ 2 units and built < 1979
-  | 'landUseClass'; // categorical: residential, mixed, commercial, pdr, vacant, other
+  | 'landUseClass' // categorical: residential, mixed, commercial, pdr, vacant, other
+  | 'choiceMargin'; // best allowed option's residual ÷ (meanOptionHomes × meanOptionCost), choose.ts
 
 export interface InitiationModel {
   kind: 'logit-monthly';
