@@ -467,6 +467,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/46e27759999582fdf4781a8e06c7c7d92d1f6603ada7980ee1be217c8b78d86c.csv",
+          "bytes": 496,
+          "name": "dgs-ccci.csv",
+          "sha256": "46e27759999582fdf4781a8e06c7c7d92d1f6603ada7980ee1be217c8b78d86c",
+          "url": "https://fixture.invalid/dgs-ccci.csv"
+        }
+      ],
+      "homepage": "https://www.dgs.ca.gov/RESD/Resources/Page-Content/Real-Estate-Services-Division-Resources-List-Folder/DGS-California-Construction-Cost-Index-CCCI",
+      "id": "dgs-ccci",
+      "label": "DGS California Construction Cost Index (CCCI), monthly",
+      "license": "Not stated by DGS; derived from ENR's Building Cost Index. Read by the choice-spread fit only, never committed or shipped.",
+      "retrievedAt": "2026-10-10T00:00:00.000Z",
+      "rowCount": 40,
+      "upstreamVersion": "fixture"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/27997afadcaa25b9885cab997e88796e49faae18434be407b1af4309da78fe40.txt",
           "bytes": 125,
           "name": "gtfs-bart/calendar.txt",

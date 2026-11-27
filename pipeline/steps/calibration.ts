@@ -5,6 +5,7 @@
 // the eight sc.* T14 tallies and the calibration.* counts into the build's single counts object,
 // and writes scenarios/fzp/calibration.json and calibration-report.md (the latter to the derived
 // cache, not shipped). No network.
+import { readCostIndex } from '../sources/dgs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { CarModel } from '../../src/lib/sim/cars';
@@ -204,6 +205,7 @@ export async function writeCalibration(o: {
     market,
     funding,
     mohcd,
+    costIndex: readCostIndex(o.lock, o.rawDir, o.byName),
     cars: { model: o.cars ?? null, report: o.carsReport ?? [], backcast: o.carsBackcast ?? [] }
   };
   const a = await calibrate(input, o.cal);

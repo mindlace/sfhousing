@@ -1553,6 +1553,24 @@
     {
       "files": [
         {
+          "archiveKey": "sources/4c051f3b0af6a553fbf61d5ef58ac5c80f8ca2d1d4664c5f3ba7c77a34fbbc81.csv",
+          "bytes": 3845,
+          "name": "dgs-ccci.csv",
+          "sha256": "4c051f3b0af6a553fbf61d5ef58ac5c80f8ca2d1d4664c5f3ba7c77a34fbbc81",
+          "url": "https://www.dgs.ca.gov/RESD/Resources/Page-Content/Real-Estate-Services-Division-Resources-List-Folder/DGS-California-Construction-Cost-Index-CCCI"
+        }
+      ],
+      "homepage": "https://www.dgs.ca.gov/RESD/Resources/Page-Content/Real-Estate-Services-Division-Resources-List-Folder/DGS-California-Construction-Cost-Index-CCCI",
+      "id": "dgs-ccci",
+      "label": "DGS California Construction Cost Index (CCCI), monthly",
+      "license": "Not stated by DGS; derived from ENR's Building Cost Index. Read by the choice-spread fit only, never committed or shipped.",
+      "retrievedAt": "2026-11-27T09:15:37.296Z",
+      "rowCount": 311,
+      "upstreamVersion": "2026-11"
+    },
+    {
+      "files": [
+        {
           "archiveKey": "sources/5bab5e4c29343d2a704d271b31d567d6bf62751d8956b5a6aaf12c9be1f1f462.zip",
           "bytes": 221536,
           "name": "gtfs-archive-bart-2008.zip",

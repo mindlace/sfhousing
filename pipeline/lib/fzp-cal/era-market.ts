@@ -7,6 +7,8 @@
  */
 import type { Sourced } from '../../../src/lib/sim/finance/evidence';
 import type { PriceStep } from '../../../src/lib/sim/choice/types';
+import type { Provenance } from '../../../src/lib/timelapse/types';
+import { DGS_CCCI_URL } from '../../sources/dgs';
 
 /**
  * Value by year: FHFA's annual House Price Index for San Francisco County (FIPS 06075),
@@ -57,64 +59,57 @@ export const ERA_VALUE_INDEX: Sourced<Record<number, number>> = {
 };
 
 /**
- * Cost by year: the California Construction Cost Index (DGS), the mean of its monthly values per
- * year (2026: January to November). It is built from ENR's Building Cost Index for San Francisco
- * and Los Angeles. Tier 1 (official aggregate).
+ * Cost by year: the DGS California Construction Cost Index (built from ENR's Building Cost Index
+ * for San Francisco and Los Angeles), the mean of its monthly values per year. Tier 1 (official
+ * aggregate). Its values are not in the code: the page states no terms of use, so `fetch` stores
+ * it in the raw cache, pinned in the lock (pipeline/sources/dgs.ts), and the calibration step
+ * passes its yearly means to `eraRatios`. Never written to the dataset.
  */
-export const ERA_COST_INDEX: Sourced<Record<number, number>> = {
-  value: {
-    2007: 4896.0,
-    2008: 5134.83,
-    2009: 5277.83,
-    2010: 5400.08,
-    2011: 5648.58,
-    2012: 5748.75,
-    2013: 5819.92,
-    2014: 5952.08,
-    2015: 6079.92,
-    2016: 6252.42,
-    2017: 6500.58,
-    2018: 6629.17,
-    2019: 6809.0,
-    2020: 7017.67,
-    2021: 7678.08,
-    2022: 8729.33,
-    2023: 9446.08,
-    2024: 9724.92,
-    2025: 10165.17,
-    2026: 10426.91
-  },
-  provenance: {
-    tier: 1,
-    label: 'DGS California Construction Cost Index, annual mean',
-    sources: [
-      {
-        label:
-          'California Department of General Services, "DGS California Construction Cost Index CCCI"',
-        url: 'https://www.dgs.ca.gov/RESD/Resources/Page-Content/Real-Estate-Services-Division-Resources-List-Folder/DGS-California-Construction-Cost-Index-CCCI'
-      }
-    ],
-    method:
-      'The mean of the monthly CCCI values on the DGS page, read 2026-11-26, per calendar year ' +
-      '(2026: January to November). DGS computes the CCCI as the average of ENR Building Cost ' +
-      'Index values for San Francisco and Los Angeles. The page states no terms of use and the ' +
-      'index derives from ENR data, so it is used for the fit only and not written to the dataset.',
-    window: ['2007-01-01', '2026-11-30']
-  }
+export const ERA_COST_PROVENANCE: Provenance = {
+  tier: 1,
+  label: 'DGS California Construction Cost Index, annual mean',
+  sources: [
+    {
+      label:
+        'California Department of General Services, "DGS California Construction Cost Index CCCI"',
+      url: DGS_CCCI_URL
+    }
+  ],
+  method:
+    'The mean of the monthly CCCI values per calendar year (the current year over its months so ' +
+    'far), from the locked dgs-ccci source. DGS computes the CCCI as the average of ENR Building ' +
+    'Cost Index values for San Francisco and Los Angeles. The page states no terms of use, so it ' +
+    'is used for the fit only and neither committed nor written to the dataset.'
 };
 
-/** The index at `year`, held at its nearest covered year outside the years it covers. */
+/**
+ * The index at `year`: its own value, or, for a year it lacks, its nearest covered year's (an
+ * earlier one on a tie). An empty index is refused.
+ */
 function at(index: Record<number, number>, year: number): number {
   const years = Object.keys(index).map(Number);
-  const y = Math.min(Math.max(year, Math.min(...years)), Math.max(...years));
-  return index[y];
+  if (years.length === 0) throw new RangeError('era-market: empty index');
+  if (year in index) return index[year];
+  let best = years[0];
+  for (const y of years) {
+    const d = Math.abs(y - year) - Math.abs(best - year);
+    if (d < 0 || (d === 0 && y < best)) best = y;
+  }
+  return index[best];
 }
 
-/** Value and cost at `year` as multiples of their values at `shipYear`. */
-export function eraRatios(year: number, shipYear: number): { value: number; cost: number } {
+/**
+ * Value and cost at `year` as multiples of their values at `shipYear`: the value from
+ * ERA_VALUE_INDEX, the cost from `cost` (the locked CCCI's yearly means, `readCostIndex`).
+ */
+export function eraRatios(
+  year: number,
+  shipYear: number,
+  cost: Record<number, number>
+): { value: number; cost: number } {
   return {
     value: at(ERA_VALUE_INDEX.value, year) / at(ERA_VALUE_INDEX.value, shipYear),
-    cost: at(ERA_COST_INDEX.value, year) / at(ERA_COST_INDEX.value, shipYear)
+    cost: at(cost, year) / at(cost, shipYear)
   };
 }
 

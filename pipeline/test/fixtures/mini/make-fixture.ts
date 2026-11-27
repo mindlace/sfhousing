@@ -27,6 +27,8 @@ import { every, tripTables, type TripSpec } from '../../gtfs-builder';
 import { synthTile, type SynthScene } from '../../lidar-synth';
 import { CENSUS_SOURCES } from '../../../census-config';
 import { censusPages } from './census-raw';
+import { CCCI_CSV } from './ccci-raw';
+import { DGS_CCCI_ID, DGS_CCCI_LABEL, DGS_CCCI_LICENSE, DGS_CCCI_URL } from '../../../sources/dgs';
 import { MOHCD_RAW, PROJECT_RAW } from './projects-raw';
 
 proj4.defs(
@@ -973,6 +975,32 @@ for (const page of await censusPages()) {
     license: spec.license,
     label: spec.label,
     homepage: spec.homepage
+  });
+}
+
+// The mini city's cost index (dgs-ccci; ccci-raw.ts): invented values in the fetcher's CSV layout.
+{
+  const name = `${DGS_CCCI_ID}.csv`;
+  const file = path.join(rawDir, name);
+  fs.writeFileSync(file, CCCI_CSV);
+  const sha256 = await sha256File(file);
+  entries.push({
+    id: DGS_CCCI_ID,
+    files: [
+      {
+        url: `https://fixture.invalid/${name}`,
+        sha256,
+        bytes: Buffer.byteLength(CCCI_CSV),
+        archiveKey: archiveKeyFor(sha256, name),
+        name
+      }
+    ],
+    retrievedAt: '2026-10-10T00:00:00.000Z',
+    upstreamVersion: 'fixture',
+    rowCount: CCCI_CSV.trim().split('\n').length - 1,
+    license: DGS_CCCI_LICENSE,
+    label: DGS_CCCI_LABEL,
+    homepage: DGS_CCCI_URL
   });
 }
 

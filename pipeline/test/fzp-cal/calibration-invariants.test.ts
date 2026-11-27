@@ -19,6 +19,8 @@ import { CALIBRATION_JSON, MARKET_JSON, readPermits, sameRuns } from '../../step
 import { parseMarketFile } from '../../enrichment/market-schema';
 import { parseFundingFile } from '../../enrichment/funding-schema';
 import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
+import { CCCI_CSV } from '../fixtures/mini/ccci-raw';
+import { annualCostIndex } from '../../sources/dgs';
 import { checkDataset, type InvariantResult } from '../../steps/check';
 import { fixture } from '../../steps/fixture';
 import { HISTORIES_JSON, PERMITS_PARQUET, PROJECTS_JSON } from '../../steps/projects';
@@ -418,6 +420,7 @@ describe('calibration invariants on fixture-0', () => {
         },
         funding: parseFundingFile(JSON.parse(readFileSync(FUNDING_JSON, 'utf8')), FUNDING_JSON),
         mohcd: MOHCD_RAW,
+        costIndex: annualCostIndex(CCCI_CSV),
         // The car step's model as the build wrote it (the mini city has a Census population).
         cars: { model: (JSON.parse(json) as Calibration).cars ?? null, report: [] }
       };

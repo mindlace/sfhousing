@@ -73,7 +73,7 @@ import { calibrationReport } from './report';
 import { datasf } from './provenance';
 import { revisionModel } from './revision';
 import { shippedStep } from './shipped-step';
-import { ERA_COST_INDEX, ERA_VALUE_INDEX, eraPrices, eraRatios } from './era-market';
+import { ERA_COST_PROVENANCE, ERA_VALUE_INDEX, eraPrices, eraRatios } from './era-market';
 import {
   buildSpells,
   gapImputeTally,
@@ -107,6 +107,8 @@ export interface CalInput {
   funding: FundingFile;
   /** the locked `datasf-mohcd-pipeline` rows, as read (finance-data spec 4.1 "Reading") */
   mohcd: RawRow[];
+  /** The locked DGS CCCI's yearly means (`readCostIndex`): the choice fit's cost by year. */
+  costIndex: Record<number, number>;
   /**
    * The car step's output: the model (written as `cars`, after `baselineFunding`) and the report
    * lines of section 14. Absent, or no lines, means no car data: no `cars` and no section 14.
@@ -223,7 +225,7 @@ export function choiceModelOf(
     datasf('planningProjects'),
     datasf('permits'),
     ...ERA_VALUE_INDEX.provenance.sources,
-    ...ERA_COST_INDEX.provenance.sources
+    ...ERA_COST_PROVENANCE.sources
   ];
   const fitted = spread.n >= cal.sizeMinN && Number.isFinite(spread.choiceSpread);
   const bound = fitted && atSearchBound(spread);
@@ -345,7 +347,7 @@ export async function calibrate(input: CalInput, cal: CalProfile): Promise<CalOu
     step.prices,
     step.heightTime.steps[0].value,
     step.heightTime.upTo,
-    (year) => eraPrices(step.prices, eraRatios(year, shipYear))
+    (year) => eraPrices(step.prices, eraRatios(year, shipYear, input.costIndex))
   );
   const choice = choiceModelOf(step, spread, aff, targets.cohort, input.locationValue, cal, asOf, {
     affordableLeftOut: market.affordable

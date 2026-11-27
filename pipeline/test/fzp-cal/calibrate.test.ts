@@ -26,6 +26,8 @@ import { datasf } from '../../lib/fzp-cal/provenance';
 import { parseMarketFile } from '../../enrichment/market-schema';
 import { parseFundingFile } from '../../enrichment/funding-schema';
 import { MOHCD_RAW } from '../fixtures/mini/projects-raw';
+import { CCCI_CSV } from '../fixtures/mini/ccci-raw';
+import { annualCostIndex } from '../../sources/dgs';
 import { PANEL_FEATURES, type PanelSource, type PanelYearRow } from '../../lib/fzp-cal/panel';
 import type { CarModel } from '../../../src/lib/sim/cars';
 import { REPORT_SECTIONS, aliasGroups, marketSection, num } from '../../lib/fzp-cal/report';
@@ -170,7 +172,8 @@ beforeAll(async () => {
     datasetVersion: 'test-0',
     market: { file: marketFile, path: 'market.json' },
     funding: fundingFile,
-    mohcd: MOHCD_RAW
+    mohcd: MOHCD_RAW,
+    costIndex: annualCostIndex(CCCI_CSV)
   };
   a = await calibrate(input, FIXTURE_CAL);
   b = await calibrate(input, FIXTURE_CAL);

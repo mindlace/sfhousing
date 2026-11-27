@@ -210,12 +210,12 @@ above the top anchor is kept. Each record year is one dated step of the fit's pr
 the fit scores records through the same `choiceRow` on the step of their year. An index is held
 at its nearest covered year outside its years (the value index has no 2026, so 2026 records take
 2025's value). Only the fit reads these indices: the shipped simulation keeps today's one step,
-and no index value is written to the dataset.
+and no index value is written to the dataset. The value index is public domain and sits in `era-market.ts` (`ERA_VALUE_INDEX`); the cost index's values are not in the repository: the calibration step reads them from the locked `dgs-ccci` source and passes them to `eraRatios`.
 
-| Index       | Source                                                                                                                                                                                                                                  | Years                                    | Licence                                                                               | Tier                                         |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------- |
-| V(y), value | FHFA House Price Index for counties, all-transactions, annual, San Francisco County (06075), column F; read 2026-11-26 (<https://www.fhfa.gov/hpi/download/annual/hpi_at_county.csv>)                                                   | 2007 to 2025                             | U.S. government work, public domain                                                   | 1 (its use for new apartments: an inference) |
-| C(y), cost  | DGS California Construction Cost Index (the average of ENR's Building Cost Index for San Francisco and Los Angeles), mean of the monthly values per year; read 2026-11-26 (DGS RESD page "DGS California Construction Cost Index CCCI") | 2007 to 2026 (2026: January to November) | not stated on the page; built from ENR data, so used for the fit only and not shipped | 1                                            |
+| Index       | Source                                                                                                                                                                                                                                                                  | Years                                        | Licence                                                                                                   | Tier                                         |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| V(y), value | FHFA House Price Index for counties, all-transactions, annual, San Francisco County (06075), column F; read 2026-11-26 (<https://www.fhfa.gov/hpi/download/annual/hpi_at_county.csv>)                                                                                   | 2007 to 2025                                 | U.S. government work, public domain                                                                       | 1 (its use for new apartments: an inference) |
+| C(y), cost  | DGS California Construction Cost Index (the average of ENR's Building Cost Index for San Francisco and Los Angeles), mean of the monthly values per year; the `dgs-ccci` lock entry, fetched into the raw cache (`pipeline/sources/dgs.ts`, [pipeline.md](pipeline.md)) | 2001 to the current year (its months so far) | not stated on the page; built from ENR data, so it is fetched, never committed, and used for the fit only | 1                                            |
 
 The assessor roll was tried first for the value index (evidence order: per record before
 official aggregates): the median value per square foot of buildings of 5 or more homes on their
@@ -352,23 +352,28 @@ statistic over the window of those 120 months as `recordTargets` computes it ove
 | Large lots               | permits issued on lots of 1,500 m² or more with `env` ≥ 13: Type I at 13 or more stories                                                                                                                                                                                                                                                                      | checked (2 SE) where n ≥ 30; report here   |
 | Cohorts                  | height ÷ limit, affordable (`kind` 1) and private, and their difference                                                                                                                                                                                                                                                                                       | report                                     |
 
-The in-limit targets are `recordTargets` run on the histories whose proposed stories are at most their base stories at filing, read from `pipeline/.cache/derived/<v>/project-histories.json` (`--histories <file>` overrides it). A checked target that the simulation has no project for misses. `checkLines(targets, sim)` and
+The in-limit targets are `recordTargets` run on the histories whose proposed stories are at most
+their base stories at filing, read from `pipeline/.cache/derived/<v>/project-histories.json`
+(`--histories <file>` overrides it; an `asOf` other than the targets' is refused, exit 2). A
+checked target that the simulation has no project for misses. `checkLines(targets, sim, inLimit)` and
 `recordExit(lines)` are the pure parts its spec tests.
 
 `cap-measure` runs the same runner over the whole window (480 months) with the score series fed
-as the ensemble's plain loop feeds it, so `rows[**Live figures** (build `2026-11-27-49765dbb`, not uploaded; records 2016-11-27 to 2026-11-27).
-Record check: 6 pass, 10 miss, 41 report, exit 1. With only the records at or under their limit, the
-records' height ÷ limit means are 0.903 (n 323), 0.839 (n 52), 0.753 (n 28), 0.568 (n 8) and 0.548
-(n 26) for ≤ 4, ≤ 6, ≤ 8, ≤ 12 and above 12; the share of all records built over their limit is
-0.193, 0.485, 0.364, 0.273 and 0.316. ≤ 8 and above 12 fall under 30 in-limit records and are now
-report lines. The misses are listed in "Known misses" below.
+as the ensemble's plain loop feeds it, so `rows[i].completedNet` is the view's row for row (its spec
+checks this against `openEngine` on fixture-0; on `2026-11-27-3abc9cb0` the 480 current-law rows
+agree exactly). The transit rule is `GAME_TRANSIT_ID` with all four stop types at 805 m; the full
+tree is `fullTree(cal)` with every band of its transit rule set to the cap. The old figures
+(`OLD_FIGURES`) are the taller-caps report's engine runs on `2026-11-25-76c90397`.
 
-2
-against 8.3 ± 2.7 months, sim n 12); construction misses at ≤ 4 (22.7 against 26.2 ± 1.3) and ≤ 12
-(18.2 against 22.9 ± 2.9, sim n 6), passes at ≤ 7. Homes per project pass at ≤ 4 and miss at ≤ 7
-(30.5 against 57 ± 16.9) and ≤ 12 (66 against 102 ± 18.0, sim n 13). The three ≤ 12 lines passed
-on `2026-11-27-3abc9cb0` with sim n 4 to 11; the check gates on the records' n only. Large lots
-are report only (records n 28).
+**Live figures** (build `2026-11-27-49765dbb`, not uploaded; records 2016-11-27 to 2026-11-27).
+Record check: 6 pass, 10 miss, 41 report, exit 1. With only the records at or under their limit,
+the records' height ÷ limit means are 0.903 (n 323), 0.839 (n 52), 0.753 (n 28), 0.568 (n 8) and
+0.548 (n 26) for ≤ 4, ≤ 6, ≤ 8, ≤ 12 and above 12, against sim 0.749, 0.695, 0.665, 0.675 and
+0.420; the share of all records built over their limit is 0.193, 0.485, 0.364, 0.273 and 0.316. ≤ 8,
+≤ 12 and above 12 have fewer than 30 in-limit records and are report lines. The code limits pass
+(no V above 6, no III above 8 among 423 starts). Permit-issued medians pass at ≤ 4 and ≤ 7,
+construction at ≤ 7, and homes per project at ≤ 4. The ten misses, with their figures and reasons,
+are in "Known misses" below. Large lots are report only (records n 28).
 
 The cap report below is still `2026-11-27-3abc9cb0`'s.
 
@@ -405,9 +410,9 @@ spec, which lets a project build over its limit.
 Open notes:
 
 - **The cost index's licence.** The DGS California Construction Cost Index page states no terms of
-  use, and the index derives from ENR's Building Cost Index. Only the fit reads it and the dataset
-  carries no index value, but its yearly means are constants in `pipeline/lib/fzp-cal/era-market.ts`,
-  in this public repository.
+  use, and the index derives from ENR's Building Cost Index. Its values are fetched into the raw
+  cache and pinned in the lock (`dgs-ccci`), never committed or shipped; whether its R2 source
+  archive is acceptable is for the owner to confirm before the next upload.
 - **The margin and the market slope overlap.** With the fitted spread, `choiceMargin` correlates
   r = -0.857 with the slope's cost share (calibration report section 16), so the start odds may
   count one change in cost against value twice (spec, Non-goals).
